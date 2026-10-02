@@ -1,10 +1,12 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WhatsAppHandoff, whatsAppHandoffNotes } from "./whatsapp-handoff";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 
 const mutate = vi.fn();
 const mutationState = vi.hoisted(() => ({ onError: undefined as (() => void) | undefined }));
+const appState = vi.hoisted(() => ({ defaultLanguage: "en" as "en" | "ar" }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
   useApiMutation: (_fn: unknown, options?: { onError?: () => void }) => {
@@ -15,15 +17,22 @@ vi.mock("@/lib/hooks/use-api", () => ({
 }));
 
 vi.mock("@/lib/providers/app-providers", () => ({
-  useApp: () => ({ session: { organization: { name: "Forge", timezone: "Asia/Amman", phoneCountryCallingCode: "962" } } }),
+  useApp: () => ({ session: { organization: { name: "Forge", timezone: "Asia/Amman", phoneCountryCallingCode: "962", defaultLanguage: appState.defaultLanguage } } }),
 }));
 
 const openedWindow = () => ({ opener: {} }) as unknown as Window;
+
+function LocaleToggle() {
+  const { locale, setLocale } = useLocale();
+  const next = locale === "en" ? "ar" : "en";
+  return <button type="button" onClick={() => setLocale(next)}>{next === "ar" ? "Switch to Arabic" : "Switch to English"}</button>;
+}
 
 describe("WhatsAppHandoff", () => {
   beforeEach(() => {
     mutate.mockReset();
     mutationState.onError = undefined;
+    appState.defaultLanguage = "en";
   });
 
   it("opens an editable Jordan-default handoff and records the attempt with the prepared message", async () => {
@@ -92,5 +101,36 @@ describe("WhatsAppHandoff", () => {
     expect(mutate).toHaveBeenCalledTimes(2);
     expect(window.open).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Close without saving" })).toBeInTheDocument();
+  });
+
+  it("uses the recipient language regardless of UI locale and preserves the date and edited draft", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="en"><LocaleToggle /><WhatsAppHandoff subject="member" subjectId="member-1" recipientName="Lina Haddad" recipientPreferredLanguage="ar" phone="079 555 0101" /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "WhatsApp" }));
+
+    const textarea = screen.getByRole("textbox", { name: "WhatsApp message" }) as HTMLTextAreaElement;
+    expect(textarea.value).toContain("مرحبًا");
+    const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
+    fireEvent.change(dateInput, { target: { value: "2030-03-18" } });
+    fireEvent.click(screen.getByText("Switch to Arabic"));
+    expect(screen.getByRole("dialog", { name: /مراسلة/ })).toBeInTheDocument();
+    expect(textarea.value).toContain("مرحبًا");
+    expect(dateInput).toHaveValue("2030-03-18");
+
+    await user.clear(textarea);
+    await user.type(textarea, "رسالة مخصصة للمراجعة");
+    fireEvent.click(screen.getByText("Switch to English"));
+    expect(textarea.value).toBe("رسالة مخصصة للمراجعة");
+    expect(dateInput).toHaveValue("2030-03-18");
+  });
+
+  it("uses the gym language when the recipient has no saved preference", async () => {
+    appState.defaultLanguage = "ar";
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="en"><WhatsAppHandoff subject="member" subjectId="member-1" recipientName="Lina Haddad" phone="079 555 0101" /></LocaleProvider>);
+
+    await user.click(screen.getByRole("button", { name: "WhatsApp" }));
+
+    expect((screen.getByRole("textbox", { name: "WhatsApp message" }) as HTMLTextAreaElement).value).toContain("مرحبًا");
   });
 });

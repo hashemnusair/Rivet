@@ -139,7 +139,7 @@ export default function MemberDetailPageClient() {
         <aside className="space-y-4 self-start">
           {can("members.write") ? (
             <div className="flex flex-wrap gap-2" aria-label={t("memberProfile.page.contactActionsLabel")}>
-              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} phone={member.phone} />
+              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />
               <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") router.replace(`/members/${memberId}`, { scroll: false }); }} />
               <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
                 <StickyNote /> {t("memberProfile.page.addNote")}

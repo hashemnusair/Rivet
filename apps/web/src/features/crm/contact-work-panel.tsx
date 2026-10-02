@@ -17,6 +17,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils/cn";
+import { leadStageLabel } from "@/features/crm/crm-labels";
 
 /**
  * Outcomes a person can record by hand, most common first. The RIVET WhatsApp
@@ -113,7 +114,7 @@ export function LogContactForm({
   const outcome = form.watch("outcome");
   const showsStage = subject === "lead" && outcome !== undefined && STAGE_OUTCOMES.has(outcome);
   const stageOptions = currentStage && !STAGE_OPTIONS.some((option) => option.value === currentStage) && !["new", "attempted", "won", "lost"].includes(currentStage)
-    ? [{ value: currentStage, label: currentStage.replaceAll("_", " ") }, ...STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))]
+    ? [{ value: currentStage, label: leadStageLabel(t, currentStage) }, ...STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))]
     : STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
 
   const chooseOutcome = (next: ContactOutcome) => {

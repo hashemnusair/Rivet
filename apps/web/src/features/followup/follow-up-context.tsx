@@ -12,6 +12,7 @@ import { useApiQuery } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
+import { followUpDeliveryDetailLabel, followUpDeliveryLabel, followUpOutcomeLabel, followUpStopReasonLabel, followUpSuppressionReasonLabel } from "@/features/followup/follow-up-labels";
 
 /**
  * The member's recorded follow-up context, as the member workspace and the
@@ -40,7 +41,7 @@ export function EvidenceLine({ item, memberId, lead }: { item: FollowUpEvidence;
   return (
     <li className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]" data-testid="follow-up-evidence" data-evidence-id={item.id}>
       {lead ? <span className="font-medium text-signal-deep">{lead}</span> : null}
-      <span className="font-medium text-ink">{item.kind === "contact" ? item.outcomeLabel ?? t("memberProfile.followUp.evidenceKind.contact") : t(`memberProfile.followUp.evidenceKind.${item.kind}`)}</span>
+      <span className="font-medium text-ink">{item.kind === "contact" ? followUpOutcomeLabel(t, item.outcome, item.outcomeLabel) ?? t("memberProfile.followUp.evidenceKind.contact") : t(`memberProfile.followUp.evidenceKind.${item.kind}`)}</span>
       <span className="text-ink-3"><RelativeText iso={item.occurredAt} /></span>
       {item.topics.map((topic) => (
         <Badge key={topic} variant={topic === "complaint" ? "danger" : topic === "callback" ? "warning" : "outline"}>{topic === "callback" ? t("memberProfile.followUp.topicCallback") : topic === "travel" ? t("memberProfile.followUp.topicTravel") : t("memberProfile.followUp.topicComplaint")}</Badge>
@@ -76,6 +77,7 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
   }
   const { renewal, messaging } = context;
   const optedOut = messaging.consent === "explicit_opt_out" || messaging.channelOptedOut;
+  const journeyStopReason = followUpStopReasonLabel(t, renewal.journeyStopReason, renewal.journeyStopLabel);
   const evidence = showAll ? context.evidence : context.evidence.slice(0, 5);
   return (
     <section data-testid="follow-up-context" aria-label={t("memberProfile.followUp.label")} className={cn("space-y-3", className)}>
@@ -84,14 +86,14 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
           {renewal.membershipId && renewal.endDate ? <><bdi>{renewal.planName ?? t("memberProfile.followUp.membershipFallback")}</bdi> · {t("memberProfile.followUp.ends")} {format.date(renewal.endDate)} <DaysUntilText date={renewal.endDate} /></> : t("memberProfile.followUp.noRenewal")}
           {renewal.hasSuccessor ? ` · ${t("memberProfile.followUp.alreadyRenewed")}` : null}
         </Row>
-        <Row label={t("memberProfile.followUp.rowReminders")}>{renewal.journeyStopLabel ? <span data-testid="follow-up-journey-stopped">{t("memberProfile.followUp.journeyStopped", { reason: isolate(renewal.journeyStopLabel) })}</span> : t("memberProfile.followUp.journeyRuns")}</Row>
+        <Row label={t("memberProfile.followUp.rowReminders")}>{journeyStopReason ? <span data-testid="follow-up-journey-stopped">{t("memberProfile.followUp.journeyStopped", { reason: isolate(journeyStopReason) })}</span> : t("memberProfile.followUp.journeyRuns")}</Row>
         <Row label={t("memberProfile.followUp.rowMessages")}>
           {optedOut ? (
             <span className="font-medium text-danger" data-testid="follow-up-opt-out">{t("memberProfile.followUp.optedOut")}</span>
           ) : messaging.consent === "explicit_opt_in" ? (
-            <span data-testid="follow-up-consent-in">{t("memberProfile.followUp.consentIn")}{messaging.suppressionReason ? ` · ${isolate(messaging.suppressionReason)}` : ""}</span>
+            <span data-testid="follow-up-consent-in">{t("memberProfile.followUp.consentIn")}{messaging.suppressionReason ? ` · ${isolate(followUpSuppressionReasonLabel(t, messaging.suppressionReason)!)}` : ""}</span>
           ) : (
-            <span data-testid="follow-up-consent-unknown">{t("memberProfile.followUp.consentUnknown")}{messaging.suppressionReason ? ` (${isolate(messaging.suppressionReason)})` : ""}</span>
+            <span data-testid="follow-up-consent-unknown">{t("memberProfile.followUp.consentUnknown")}{messaging.suppressionReason ? ` (${isolate(followUpSuppressionReasonLabel(t, messaging.suppressionReason)!)})` : ""}</span>
           )}
         </Row>
         <Row label={t("memberProfile.followUp.rowQuietHours")}>
@@ -111,7 +113,7 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
             </span>
           </Row>
         ) : null}
-        {context.lastContact ? <Row label={t("memberProfile.followUp.rowLastContact")}><bdi>{context.lastContact.label}</bdi> · <RelativeText iso={context.lastContact.at} /></Row> : null}
+        {context.lastContact ? <Row label={t("memberProfile.followUp.rowLastContact")}><bdi>{followUpOutcomeLabel(t, context.lastContact.outcome, context.lastContact.label)}</bdi> · <RelativeText iso={context.lastContact.at} /></Row> : null}
         {renewal.outstanding.amount > 0 ? <Row label={t("memberProfile.shared.owes")}><MoneyText money={renewal.outstanding} className="text-warning-deep" /></Row> : null}
       </dl>
 
@@ -121,8 +123,8 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
           <ul className="mt-1 space-y-1 text-[12.5px]">
             {messaging.deliveries.map((delivery) => (
               <li key={delivery.id}>
-                <span className="text-ink">{delivery.label}</span>
-                {delivery.detail ? <span className="text-ink-3"> · {delivery.detail}</span> : null}
+                <span className="text-ink">{followUpDeliveryLabel(t, delivery)}</span>
+                {delivery.detail ? <span className="text-ink-3"> · {followUpDeliveryDetailLabel(t, delivery, format.clock) ?? delivery.detail}</span> : null}
               </li>
             ))}
           </ul>

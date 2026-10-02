@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BRANCH_ABD } from "@/lib/mock/seed";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { NewLeadDialog } from "./new-lead-dialog";
 
 vi.mock("next/navigation", () => ({
@@ -25,6 +26,11 @@ afterEach(() => {
   resetApiForTests();
   vi.clearAllMocks();
 });
+
+function LocaleToggle() {
+  const { setLocale } = useLocale();
+  return <button type="button" onClick={() => setLocale("ar")}>Switch to Arabic</button>;
+}
 
 describe("NewLeadDialog quick capture", () => {
   it("creates a walk-in lead from name and phone while keeping extras collapsed", async () => {
@@ -53,5 +59,36 @@ describe("NewLeadDialog quick capture", () => {
       branchId: expect.any(String),
     });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the lead draft when the locale changes and parses Arabic amount digits without changing the API contract", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(
+      <LocaleProvider initialLocale="en"><LocaleToggle /><NewLeadDialog open onOpenChange={vi.fn()} /></LocaleProvider>,
+      { branchId: BRANCH_ABD },
+    );
+    const createLead = vi.spyOn(api, "createLead");
+    const nameInput = document.querySelector<HTMLInputElement>('input[name="fullName"]')!;
+    const phoneInput = document.querySelector<HTMLInputElement>('input[name="phone"]')!;
+    await user.type(nameInput, "نور خليل");
+    await user.type(phoneInput, "٠٧٩٩٠٠٠٧٧٧");
+    await user.click(screen.getByText(/Add optional details/));
+    const amountInput = document.querySelector<HTMLInputElement>('input[name="expectedValue"]')!;
+    await user.type(amountInput, "١٢٣.٤٥٠");
+
+    fireEvent.click(screen.getByText("Switch to Arabic"));
+    expect(nameInput).toHaveValue("نور خليل");
+    expect(phoneInput).toHaveValue("٠٧٩٩٠٠٠٧٧٧");
+    expect(amountInput).toHaveValue("١٢٣.٤٥٠");
+    expect(screen.getByRole("button", { name: "إضافة المهتم بالاشتراك" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "إضافة المهتم بالاشتراك" }));
+    await waitFor(() => expect(createLead).toHaveBeenCalledOnce());
+    expect(createLead.mock.calls[0]?.[0]).toMatchObject({
+      fullName: "نور خليل",
+      phone: "٠٧٩٩٠٠٠٧٧٧",
+      source: "walk_in",
+      expectedValue: { amount: 123_450, currency: "JOD" },
+    });
   });
 });

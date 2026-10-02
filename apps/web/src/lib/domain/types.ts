@@ -1348,6 +1348,8 @@ export interface Session {
     currency: string;
     timezone: string;
     locale: string;
+    /** Default language for messages when a recipient has no stored preference. */
+    defaultLanguage?: "en" | "ar";
     phoneCountryCallingCode?: string;
     brand?: BrandKit;
     /** What this gym pays RIVET, and when the paid term ends. */
@@ -1392,6 +1394,8 @@ export interface MemberSummary {
   memberNumber: string; // unique within tenant, e.g. "ABD-1042"
   fullName: string;
   fullNameAr?: string;
+  /** Stored recipient language for recipient-facing communication drafts. */
+  preferredLanguage?: PreferredLanguage;
   phone: string;
   email?: string;
   homeBranchId: UUID;

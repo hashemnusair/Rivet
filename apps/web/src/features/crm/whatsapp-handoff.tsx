@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, MessageCircle, Send } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,13 +10,16 @@ import { Input, Textarea } from "@/components/ui/input";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useLocale } from "@/lib/i18n/provider";
+import type { PreferredLanguage } from "@/lib/domain/types";
 import { buildWhatsAppUrl, DEFAULT_PHONE_COUNTRY_CALLING_CODE } from "@/lib/utils/contact";
 import { addDays, localDateTimeToISO, todayISODate } from "@/lib/utils/dates";
+import { followUpHandoffDraft } from "../../../convex/followupAssist";
 
 interface WhatsAppHandoffProps {
   subject: "lead" | "member";
   subjectId: string;
   recipientName: string;
+  recipientPreferredLanguage?: PreferredLanguage;
   phone: string;
   organizationName?: string;
   defaultCountryCallingCode?: string;
@@ -28,14 +31,6 @@ interface WhatsAppHandoffProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
-}
-
-function firstName(name: string): string {
-  return name.trim().split(/\s+/)[0] || name.trim();
-}
-
-export function defaultWhatsAppMessage(recipientName: string, organizationName: string): string {
-  return `Hi ${firstName(recipientName)}, this is ${organizationName}. Just following up with you — reply here whenever it suits you.`;
 }
 
 /** The timeline keeps what was prepared, so the next person knows what was said. */
@@ -54,6 +49,7 @@ export function WhatsAppHandoff({
   subject,
   subjectId,
   recipientName,
+  recipientPreferredLanguage,
   phone,
   organizationName,
   defaultCountryCallingCode,
@@ -70,7 +66,12 @@ export function WhatsAppHandoff({
   const invalidate = useInvalidate();
   const gymName = organizationName ?? session?.organization.name ?? "RIVET";
   const callingCode = defaultCountryCallingCode ?? session?.organization.phoneCountryCallingCode ?? DEFAULT_PHONE_COUNTRY_CALLING_CODE;
-  const preparedMessage = useMemo(() => initialMessage?.trim() || defaultWhatsAppMessage(recipientName, gymName), [gymName, initialMessage, recipientName]);
+  const preparedMessage = initialMessage?.trim() || followUpHandoffDraft(
+    { fullName: recipientName, preferredLanguage: recipientPreferredLanguage },
+    gymName,
+    session?.organization.defaultLanguage,
+  ).text;
+  const preparedMessageRef = useRef(preparedMessage);
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = (next: boolean) => {
@@ -78,20 +79,28 @@ export function WhatsAppHandoff({
     onOpenChange?.(next);
   };
   const [message, setMessage] = useState(preparedMessage);
+  const [messageEdited, setMessageEdited] = useState(false);
   const [nextFollowUp, setNextFollowUp] = useState(() => addDays(todayISODate(session?.organization.timezone), 1));
   const [error, setError] = useState<string>();
   /** Set when the browser refused the popup: the person opens the link by hand and that click is what gets logged. */
   const [blockedUrl, setBlockedUrl] = useState<string>();
   const [logFailed, setLogFailed] = useState(false);
 
+  useEffect(() => { preparedMessageRef.current = preparedMessage; }, [preparedMessage]);
+
   useEffect(() => {
     if (!open) return;
-    setMessage(preparedMessage);
+    setMessage(preparedMessageRef.current);
+    setMessageEdited(false);
     setNextFollowUp(addDays(todayISODate(session?.organization.timezone), 1));
     setError(undefined);
     setBlockedUrl(undefined);
     setLogFailed(false);
-  }, [open, preparedMessage, session?.organization.timezone]);
+  }, [open, subjectId, session?.organization.timezone]);
+
+  useEffect(() => {
+    if (open && !messageEdited) setMessage(preparedMessage);
+  }, [open, messageEdited, preparedMessage]);
 
   const logHandoff = useApiMutation<unknown, void>(
     (api) => {
@@ -154,7 +163,7 @@ export function WhatsAppHandoff({
               <p className="mt-1 text-[12px] leading-relaxed text-ink-3">{t("memberProfile.whatsapp.countryCodeHelp", { code: isolateLtr(`+${callingCode}`) })}</p>
             </div>
             <Field label={t("memberProfile.whatsapp.message")} required>
-              <Textarea rows={5} dir="auto" value={message} onChange={(event) => setMessage(event.target.value)} aria-label={t("memberProfile.whatsapp.messageAria")} disabled={logFailed || Boolean(blockedUrl)} />
+              <Textarea rows={5} dir="auto" value={message} onChange={(event) => { setMessage(event.target.value); setMessageEdited(true); }} aria-label={t("memberProfile.whatsapp.messageAria")} disabled={logFailed || Boolean(blockedUrl)} />
             </Field>
             <Field label={t("memberProfile.whatsapp.followUpOn")} hint={t("memberProfile.whatsapp.followUpHint")}>
               <Input type="date" value={nextFollowUp} onChange={(event) => setNextFollowUp(event.target.value)} aria-label={t("memberProfile.whatsapp.followUpAria")} dir="ltr" disabled={logFailed} />
