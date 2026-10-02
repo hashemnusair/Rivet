@@ -121,7 +121,7 @@ describe("recorded follow-up context", () => {
 });
 
 describe("renewal context and reminder suggestions", () => {
-  it("offers approved templates that fit the timing and describes unavailable cases", () => {
+  it("offers RIVET catalogue templates that fit the timing and describes unavailable cases", () => {
     const plain = buildMemberFollowUpContext(contextInput());
     expect(eligibleReminderTemplates(plain).map((template) => template.key)).toEqual(["renewal_7d"]);
     expect(eligibleReminderTemplates(buildMemberFollowUpContext(contextInput({ memberships: [{ ...contextInput().memberships[0]!, endDate: "2026-09-23" }] }))).map((template) => template.key)).toEqual(["renewal_3d"]);

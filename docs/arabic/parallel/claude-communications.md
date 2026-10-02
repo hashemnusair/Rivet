@@ -36,7 +36,7 @@ Edited backend files:
 
 - `emailTemplate.ts`: footer, legal links, the member "sent for" line and the attachment line now come from the catalogue. Mono value cells are `dir="ltr"`; other values are `dir="auto"`.
 - `operationalEmail.ts`: copy comes from the catalogue. Added `operationalEmailContent`, typed receipt/invoice `facts` rows, a localized status chip, `OPERATIONAL_EMAIL_COPY_VERSION`, and language-source recording. Failure notifications carry descriptors.
-- `messagingTemplates.ts`: catalogue 1.1 with the Arabic 1.0 bodies archived. Added `catalogueTemplateAt` and `MESSAGE_TEMPLATE_VERSION`. The opt-out footer is corrected.
+- `messagingTemplates.ts`: catalogue 1.1 with the Arabic 1.0 bodies archived. Added `catalogueTemplateAt` and `MESSAGE_TEMPLATE_VERSION`. The current marketing footer asks recipients to contact the gym directly; it does not claim that STOP is handled automatically.
 - `messagingWorker.ts`: queued language and body snapshot (see §2). Date variables are formatted per recipient. Outcome timeline rows and failure notifications carry descriptors.
 - `automations.ts`, `renewalJobs.ts`: language and catalogue version are captured at queue time. Renewal timeline rows carry descriptors.
 - `followupAssist.ts`: falls back to the gym default for the member's language. Reminder dates are localized. Added `followUpHandoffDraft`.
@@ -73,7 +73,7 @@ Tests (new or edited):
 
 Consent, quiet hours, opt-out, marketing suppression, email modes, gym live/sandbox, allowlist/sandbox routing, tenant/branch scoping, dedupe keys and lease/retry identities are unchanged. No test needed loosening.
 
-Remaining edit window: a custom gym template edited between queue time and the first lease is sent as edited. Once leased, the content is fixed.
+The content freeze point is the first lease, not enqueue time. The language and catalogue version are captured in the queued row, but the body is rendered on first lease; dynamic substitutions that are read from current member/gym records (and an edited custom gym template) can therefore change before that lease. Once `renderedBody` and `renderedLanguage` are stored, retries reuse them unchanged.
 
 ## 3. Descriptors and the UI consumers Codex must wire
 
@@ -171,11 +171,12 @@ Historical projection rules:
 
 - A legacy record is projected only on an exact kind/type plus whole-text match. Only a count, date, channel or error code that the system itself wrote is recovered. A legacy timeline title containing a name or amount (for example "Payment collected — JOD 25.000 cash") is not parsed, so it stays English.
 
-Limitations and blockers:
+Limitations and live-release blockers:
 
-- The opt-out footer names STOP in both languages. RIVET has no inbound keyword handler for either; this is pre-existing and Meta-side opt-out was not verified.
+- The current 1.1 marketing footer is request-only in both languages. RIVET has no inbound WhatsApp STOP/إيقاف handler; `convex/http.ts` currently routes only Resend, and the messaging-mode readiness check does not enforce an inbound opt-out integration. Do not flip live until a supported inbound/opt-out path is implemented and verified.
+- Staff can record and audit explicit opt-out for an existing member through the member editor. There is no supported lead preference control/API before conversion; leads with unknown preference are suppressed. Do not promise a lead recipient that staff can update a lead preference until that path exists, and keep lead marketing suppressed.
+- Meta approval is not represented by the internal catalogue version or category. The revised Arabic 1.1 WhatsApp bodies need Meta approval before live; the current approval state is not verified.
 - Gym-staff recipients use the gym default. Staff have no separate communication preference, and their `uiLocale` is deliberately not used.
-- The WhatsApp 1.1 Arabic bodies need Meta template re-approval before live sending (docs/19).
 - Mock-adapter descriptors (§3.5).
-- `pnpm convex:codegen` confirmation.
+- The Convex CLI `codegen` command does not activate deployed code, but it POSTs the bundle to the selected deployment's `/api/deploy2/start_push` endpoint before generating local bindings. `--dry-run` prints generated configuration rather than generated types. No codegen command was run under the no-network review constraint.
 - The UI wiring in §3.

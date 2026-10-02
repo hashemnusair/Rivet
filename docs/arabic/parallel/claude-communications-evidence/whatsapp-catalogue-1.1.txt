@@ -38,5 +38,6 @@ EN: Lina حداد, Spin 45 starts at 18:30 today. See you there. — Forge Fitne
 AR: Lina حداد، هذا رابط تصريح الدخول إلى Forge Fitness: https://www.rivetjo.com/p/AB12. يرجى إظهاره عند الدخول؛ تنتهي صلاحيته بعد فتحه بوقت قصير. — Forge Fitness
 EN: Lina حداد, here is your Forge Fitness entry pass: https://www.rivetjo.com/p/AB12. Show it at the door; it expires shortly after it is opened. — Forge Fitness
 
-Opt-out AR: يمكن إيقاف هذه الرسائل بالرد بكلمة STOP.
-Opt-out EN: Reply STOP to stop these messages.
+Marketing opt-out footer (request-only; no automatic reply handler):
+AR: لطلب إيقاف هذه الرسائل، يرجى التواصل مع النادي مباشرة.
+EN: To request that these messages stop, contact the gym directly.

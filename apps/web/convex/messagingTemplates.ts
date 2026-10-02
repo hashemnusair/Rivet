@@ -185,7 +185,8 @@ export function catalogueTemplate(key: string): CatalogueTemplate | undefined {
   return MESSAGE_TEMPLATE_CATALOGUE.find((template) => template.key === key);
 }
 
-/** Opt-out instruction appended to every message a member can decline. */
-// Both languages name the same keyword: RIVET has no Arabic keyword handler, so
-// the Arabic line must not promise one.
-export const OPT_OUT_FOOTER = { en: "Reply STOP to stop these messages.", ar: "يمكن إيقاف هذه الرسائل بالرد بكلمة STOP." } as const;
+/** Request-only opt-out instruction; it does not promise an inbound keyword handler. */
+export const OPT_OUT_FOOTER = {
+  en: "To request that these messages stop, contact the gym directly.",
+  ar: "لطلب إيقاف هذه الرسائل، يرجى التواصل مع النادي مباشرة.",
+} as const;

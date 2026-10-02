@@ -172,10 +172,60 @@ describe("outbound messaging worker", () => {
     const body = new URLSearchParams(String(init.body));
     expect(body.get("To")).toBe("whatsapp:+962795550101");
     expect(body.get("Body")).toMatch(/^Hi Lina Haddad, your Forge Fitness membership ends on/);
-    expect(body.get("Body")).toMatch(/Reply STOP to stop these messages/);
+    expect(body.get("Body")).toContain("To request that these messages stop, contact the gym directly.");
+    expect(body.get("Body")).not.toMatch(/reply\s+(?:with\s+)?STOP\b/i);
     const record = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).collect()).find((row) => row.publicId === id));
     expect(record?.data).toMatchObject({ status: "sent", providerMessageId: "SM123", deliveryMode: "live", deliveredTo: "+962795550101" });
     expect((record?.data as { attempts: Array<{ status: string }> }).attempts.at(-1)).toMatchObject({ status: "sent", mode: "live", providerMessageId: "SM123" });
+  });
+
+  it("uses a request-only opt-out footer in both recipient languages and preserves stored snapshots", async () => {
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    const enId = await queueAutomationMessage(t, organizationId, branchId);
+    const arId = await queueAutomationMessage(t, organizationId, branchId, { language: "ar" });
+    const previousBody = "Previously rendered message. Reply STOP to stop these messages.";
+    const storedId = await queueAutomationMessage(t, organizationId, branchId, {
+      language: "en",
+      catalogueVersion: "1.0",
+      renderedBody: previousBody,
+      renderedLanguage: "en",
+    });
+
+    const leased = await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 });
+    const en = leased.find((message) => message.publicId === enId);
+    const ar = leased.find((message) => message.publicId === arId);
+    const stored = leased.find((message) => message.publicId === storedId);
+
+    expect(en?.body).toContain("To request that these messages stop, contact the gym directly.");
+    expect(en?.body).not.toMatch(/reply\s+(?:with\s+)?STOP\b/i);
+    expect(ar?.language).toBe("ar");
+    expect(ar?.body).toContain("لطلب إيقاف هذه الرسائل، يرجى التواصل مع النادي مباشرة.");
+    expect(ar?.body).not.toMatch(/reply\s+(?:with\s+)?STOP\b/i);
+    expect(stored?.body).toBe(previousBody);
+  });
+
+  it("freezes dynamic substitutions at the first lease and reuses the same body on retry", async () => {
+    vi.useFakeTimers();
+    const { t, organizationId, branchId } = await seed({ gymLive: true });
+    const id = await queueAutomationMessage(t, organizationId, branchId);
+    const [first] = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    if (!first) throw new Error("The queued message must be leased");
+    expect(first.body).toContain("Lina Haddad");
+    expect(first.body).toContain("Forge Fitness");
+
+    await t.run(async (ctx) => {
+      const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "member").eq("publicId", "member-1")).unique();
+      if (!member) throw new Error("The seeded member must exist");
+      await ctx.db.patch(member._id, { data: { ...member.data, fullName: "Updated Name" } });
+      await ctx.db.patch(organizationId, { name: "Updated Gym" });
+    });
+
+    vi.setSystemTime(Date.now() + 121_000);
+    const [retry] = await t.mutation(internal.messagingWorker.leaseDue, { limit: 1 });
+    expect(retry?.publicId).toBe(id);
+    expect(retry?.body).toBe(first.body);
+    expect(retry?.body).not.toContain("Updated Name");
+    expect(retry?.body).not.toContain("Updated Gym");
   });
 
   it("never sends for a gym that kept external delivery off, and redirects a live gym to the sandbox number in sandbox mode", async () => {

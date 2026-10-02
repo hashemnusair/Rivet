@@ -21,7 +21,7 @@ import { consentForRenewalChannel, isRenewalQuietHours, nextRenewalQuietHoursEnd
  * outcomes exist for a lead or a member, what a chosen outcome does to the
  * stage, the follow-up date and the open tasks, whether renewal reminders are
  * suppressed, opted out, deferred by quiet hours or already queued, which
- * templates are approved for the timing, and which permission each reason
+ * RIVET catalogue templates fit the timing, and which permission each reason
  * check needs.
  *
  * No Convex or path-alias imports: the browser preview adapter shares it.
@@ -505,10 +505,10 @@ export function buildMemberFollowUpContext(input: FollowUpContextInput): MemberF
 }
 
 // ---------------------------------------------------------------------------
-// 4. Approved reminder templates, or a staff-written message
+// 4. RIVET catalogue reminder templates, or a staff-written message
 // ---------------------------------------------------------------------------
 
-/** Which approved renewal template fits the term's timing, if any. */
+/** Which RIVET catalogue renewal template fits the term's timing, if any. */
 export function timedRenewalTemplate(daysUntilExpiry: number | undefined, hasSuccessor: boolean): CatalogueTemplate | undefined {
   if (daysUntilExpiry === undefined || hasSuccessor) return undefined;
   const key = daysUntilExpiry >= 4 && daysUntilExpiry <= 14 ? "renewal_7d" : daysUntilExpiry >= 1 && daysUntilExpiry <= 3 ? "renewal_3d" : daysUntilExpiry === 0 ? "renewal_today" : daysUntilExpiry < 0 && daysUntilExpiry >= -45 ? "renewal_expired_3d" : undefined;
@@ -530,7 +530,7 @@ export function eligibleReminderTemplates(context: MemberFollowUpContext): Catal
 /** Why no template may be suggested for this member right now; the page hides the ask and the loader refuses it. */
 export function reminderTemplateUnavailableReason(context: MemberFollowUpContext): string | undefined {
   if (context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut) return "This member opted out of renewal messages. Call instead; no message is suggested.";
-  if (eligibleReminderTemplates(context).length === 0) return "No approved renewal reminder fits this term's timing.";
+  if (eligibleReminderTemplates(context).length === 0) return "No RIVET catalogue renewal reminder fits this term's timing.";
   return undefined;
 }
 
