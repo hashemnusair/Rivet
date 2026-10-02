@@ -15,7 +15,7 @@ import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchT
 import { todayISODate, addDays } from "@/lib/utils/dates";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_LABELS, TRANSACTION_TYPE_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
+import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/misc";
@@ -24,6 +24,9 @@ import { EmptyState, ErrorState, ForbiddenState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CollectPaymentMemberPicker } from "@/features/finance/collect-payment-picker";
 import { FinanceNav } from "@/features/finance/finance-nav";
+import { paymentMethodLabel, transactionTypeLabel } from "@/lib/i18n/labels";
+import { useFormat } from "@/lib/i18n/format";
+import { isolate } from "@/lib/i18n/bidi";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
 
@@ -34,6 +37,7 @@ const RANGE_FILTERS = ["1", "7", "30", "all"] as const;
 function TransactionsPageInner() {
   const t = useT();
   const { session } = useApp();
+  const f = useFormat(session?.organization.timezone);
   const { can } = usePermissions();
   const params = useSearchParams();
   const replaceParams = useReplaceSearchParams();
@@ -73,7 +77,7 @@ function TransactionsPageInner() {
   // error instead of being told they lack permission.
   if (!can("reports.financial.read")) {
     return (
-      <ForbiddenState description="You can't see payment details. You can still collect payments and close your own shift." />
+      <ForbiddenState description={t("salesWorkspace.ledgerForbidden")} />
     );
   }
 
@@ -81,7 +85,7 @@ function TransactionsPageInner() {
     <div className="space-y-5">
       <PageHeader
         title={t("nav.item.payments")}
-        description="All payments and refunds."
+        description={t("salesWorkspace.ledgerHint")}
         actions={
           <Button onClick={() => replaceParams({ collect: "1" }, { keepPage: true })}>
             <Plus />{" "}{t("renewFlow.payment.collectPlain")}</Button>
@@ -93,43 +97,43 @@ function TransactionsPageInner() {
       <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:items-center">
         <div className="relative sm:col-span-3 lg:w-full lg:max-w-xs">
           <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member or receipt number…" className="ps-8" aria-label="Search payments" data-touch-target />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("salesWorkspace.searchPaymentsPlaceholder")} className="ps-8" aria-label={t("salesWorkspace.searchPayments")} data-touch-target />
         </div>
         <Select value={method} onValueChange={(value) => replaceParams({ method: value === "all" ? undefined : value })}>
           <SelectTrigger sizeVariant="sm" className="w-full lg:w-40" aria-label={t("renewFlow.shared.paymentMethodAria")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All methods</SelectItem>
-            {Object.entries(PAYMENT_METHOD_LABELS).map(([k, label]) => (
-              <SelectItem key={k} value={k}>{label}</SelectItem>
+            <SelectItem value="all">{t("salesWorkspace.allMethods")}</SelectItem>
+            {Object.keys(PAYMENT_METHOD_LABELS).map((k) => (
+              <SelectItem key={k} value={k}>{paymentMethodLabel(t, k)}</SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Select value={type} onValueChange={(value) => replaceParams({ type: value === "all" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Payment or refund" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label={t("salesWorkspace.paymentOrRefund")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="all">{t("salesWorkspace.allTypes")}</SelectItem>
             <SelectItem value="payment">{t("nav.item.payments")}</SelectItem>
-            <SelectItem value="refund">Refunds</SelectItem>
+            <SelectItem value="refund">{t("salesWorkspace.refunds")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={range} onValueChange={(value) => replaceParams({ range: value === "30" ? undefined : value })}>
-          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label="Date range" data-touch-target>
+          <SelectTrigger sizeVariant="sm" className="w-full lg:w-36" aria-label={t("salesWorkspace.dateRange")} data-touch-target>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="1">{t("common.time.today")}</SelectItem>
             <SelectItem value="7">{t("common.time.last7Days")}</SelectItem>
             <SelectItem value="30">{t("common.time.last30Days")}</SelectItem>
-            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="all">{t("salesWorkspace.allTime")}</SelectItem>
           </SelectContent>
         </Select>
         {data ? (
           <span className="text-[12px] text-ink-3 tabular sm:col-span-2 lg:ms-auto lg:whitespace-nowrap">
-            {data.totalItems} results · total on this page <MoneyText money={money(pageTotal)} />
+            {t("salesWorkspace.resultsTotal", { results: t("salesWorkspace.resultCount", { count: data.totalItems }), amount: isolate(f.money(money(pageTotal, session?.organization.currency ?? "JOD"))) })}
           </span>
         ) : null}
         {["q", "method", "type", "range"].some((key) => params.has(key)) ? (
@@ -148,7 +152,7 @@ function TransactionsPageInner() {
             <ErrorState onRetry={() => refetch()} />
           </div>
         ) : !data || data.items.length === 0 ? (
-          <EmptyState title="No payments found" description="Try a wider date range or clear the filters." className="border-0" />
+          <EmptyState title={t("salesWorkspace.noPayments")} description={t("salesWorkspace.widenFilters")} className="border-0" />
         ) : (
           <>
           <ul className="divide-y divide-line lg:hidden" aria-label={t("nav.item.payments")}>
@@ -164,7 +168,7 @@ function TransactionsPageInner() {
                 <TableHead>{t("members.tabs.payments.method")}</TableHead>
                 <TableHead className="text-end">{t("common.label.amount")}</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
-                <TableHead>Staff</TableHead>
+                <TableHead>{t("salesWorkspace.staff")}</TableHead>
                 <TableHead>{t("common.label.branch")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -191,8 +195,8 @@ function TransactionsPageInner() {
                     )}
                     <span className="block font-mono text-[11px] text-ink-3">{p.memberNumber}</span>
                   </TableCell>
-                  <TableCell className="text-[12.5px]">{TRANSACTION_TYPE_LABELS[p.type]}</TableCell>
-                  <TableCell className="text-[12.5px]">{PAYMENT_METHOD_LABELS[p.method]}</TableCell>
+                  <TableCell className="text-[12.5px]">{transactionTypeLabel(t, p.type)}</TableCell>
+                  <TableCell className="text-[12.5px]">{paymentMethodLabel(t, p.method)}</TableCell>
                   <TableCell className="text-end">
                     <MoneyText money={p.amount} />
                   </TableCell>
@@ -218,6 +222,7 @@ function TransactionsPageInner() {
 }
 
 function TransactionCompactRow({ transaction }: { transaction: TransactionSummary }) {
+  const t = useT();
   const memberId = "memberId" in transaction ? transaction.memberId : transaction.customer?.memberId;
   return (
     <li className="space-y-3 px-4 py-3.5">
@@ -230,9 +235,9 @@ function TransactionCompactRow({ transaction }: { transaction: TransactionSummar
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3 text-[12.5px] text-ink-2">
         <TransactionStatusChip status={transaction.status} />
-        <span>{TRANSACTION_TYPE_LABELS[transaction.type]}</span>
-        <span>{PAYMENT_METHOD_LABELS[transaction.method]}</span>
-        <span>By {transaction.collectedByName}</span>
+        <span>{transactionTypeLabel(t, transaction.type)}</span>
+        <span>{paymentMethodLabel(t, transaction.method)}</span>
+        <span>{t("salesWorkspace.by")}{" "}{transaction.collectedByName}</span>
         <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">{transaction.receiptNumber}</Link>
       </div>
     </li>

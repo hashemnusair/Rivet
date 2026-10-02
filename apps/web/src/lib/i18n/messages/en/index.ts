@@ -1,3 +1,4 @@
+import { salesWorkspace } from "./salesWorkspace";
 import { settingsPublic } from "./settingsPublic";
 import { settingsDetails } from "./settingsDetails";
 import { settingsCore } from "./settingsCore";
@@ -36,6 +37,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  salesWorkspace,
   settingsPublic,
   settingsDetails,
   settingsCore,

@@ -285,7 +285,7 @@ describe("checkout workspace", () => {
     await user.clear(quantity);
     await user.type(quantity, "3{Enter}");
     expect(quantity).toHaveValue("3");
-    expect(screen.getByTestId("complete-retail-sale")).toHaveTextContent(`${(bar.retailPrice!.amount * 3 / 1000).toFixed(3)} JOD`);
+    expect(screen.getByTestId("complete-retail-sale")).toHaveTextContent(`JOD ${(bar.retailPrice!.amount * 3 / 1000).toFixed(3)}`);
 
     // More than the shelf holds is clamped to what is available.
     await user.clear(quantity);

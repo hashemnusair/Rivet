@@ -16,13 +16,13 @@ import { HandoverGroupsView } from "@/features/branch-ops/handover-groups";
 export function ChecklistHandover({ branchId }: { branchId: string }) {
   const t = useT();
   const day = useApiQuery(qk.checklistDay(branchId), api => api.getChecklistDay({ branchId }));
-  if (day.isLoading) return <p className="text-xs text-ink-3">Loading unfinished checklist items…</p>;
-  if (day.isError) return <p className="text-xs text-warning-deep">Unfinished checklist items could not load. <Button size="sm" variant="ghost" onClick={() => void day.refetch()}>{t("common.action.retry")}</Button></p>;
+  if (day.isLoading) return <p className="text-xs text-ink-3">{t("salesWorkspace.handoverLoading")}</p>;
+  if (day.isError) return <p className="text-xs text-warning-deep">{t("salesWorkspace.handoverFailed")}{" "}<Button size="sm" variant="ghost" onClick={() => void day.refetch()}>{t("common.action.retry")}</Button></p>;
   if (!day.data) return null;
   return (
     <div className="space-y-2">
       <HandoverGroupsView branchId={branchId} day={day.data} />
-      <Link className="inline-block text-sm underline" href={`/checklists?branch=${encodeURIComponent(branchId)}`}>Open daily checklists</Link>
+      <Link className="inline-block text-sm underline" href={`/checklists?branch=${encodeURIComponent(branchId)}`}>{t("salesWorkspace.openChecklists")}</Link>
     </div>
   );
 }

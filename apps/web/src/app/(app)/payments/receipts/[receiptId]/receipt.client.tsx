@@ -6,14 +6,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { todayISODate } from "@/lib/utils/dates";
 import { currencyDisplayName, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
+import { latinDigits } from "@/lib/utils/text";
 import { receiptHref } from "@/lib/utils/receipt-links";
-import { useFormat } from "@/lib/i18n/format";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import { paymentMethodLabel as paymentMethodName, transactionTypeLabel } from "@/lib/i18n/labels";
 import { useLocale } from "@/lib/i18n/provider";
 import { useAmountText, useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
@@ -33,12 +34,14 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const receiptId = receiptIdProp ?? paramReceiptId;
   const { can } = usePermissions();
   const { t, locale, isolate, isolateLtr } = useLocale();
-  const format = useFormat();
+  const inheritedTimeZone = useFormattingTimeZone();
   const invalidate = useInvalidate();
   const [refundOpen, setRefundOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
 
   const query = useApiQuery(qk.receipt(receiptId), (api) => api.getReceipt(receiptId));
+  const timeZone = query.data?.organization.timezone ?? inheritedTimeZone;
+  const format = useFormat(timeZone);
 
   if (query.isLoading) {
     return (
@@ -74,13 +77,13 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const currency = payment.amount.currency;
   const refundedSoFar = paymentRecord?.refundedAmount?.amount ? paymentRecord.refundedAmount : retailSale?.refundedAmount?.amount ? retailSale.refundedAmount : undefined;
   const canVoid =
-    can("payments.void") && !isRetailSale && !isRefund && !isVoided && payment.status === "completed" && payment.occurredAt.slice(0, 10) <= todayISODate() &&
+    can("payments.void") && !isRetailSale && !isRefund && !isVoided && payment.status === "completed" &&
     // void is same-day only — the API enforces; the UI reflects it
-    new Date(payment.occurredAt).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) === todayISODate();
+    todayISODate(timeZone, new Date(payment.occurredAt)) === todayISODate(timeZone);
   const refundableMinor = payment.amount.amount - (paymentRecord?.refundedAmount?.amount ?? 0);
   const canRefund = can("payments.refund") && !isRetailSale && !isRefund && !isVoided && refundableMinor > 0;
   const retailRefundable = retailSale ? retailSale.total.amount - (retailSale.refundedAmount?.amount ?? 0) : 0;
-  const retailSameDay = retailSale ? new Date(retailSale.createdAt).toLocaleDateString("en-CA", { timeZone: "Asia/Amman" }) === todayISODate() : false;
+  const retailSameDay = retailSale ? todayISODate(timeZone, new Date(retailSale.createdAt)) === todayISODate(timeZone) : false;
   const canRetailRefund = can("payments.refund") && Boolean(retailSale) && retailSale?.status !== "voided" && retailSale?.status !== "refunded" && retailRefundable > 0;
   const canRetailVoid = can("payments.void") && retailSale?.status === "completed" && retailSameDay;
 
@@ -89,7 +92,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
       <div className="no-print flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/payments">
-            <ArrowLeft /> {t("renewFlow.receipt.back")}
+            <ArrowLeft className="rtl:rotate-180" /> {t("renewFlow.receipt.back")}
           </Link>
         </Button>
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
@@ -266,7 +269,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
             <ul className="list-disc space-y-1.5 ps-4">
               <li>{t("renewFlow.receipt.guideCancel")}</li>
               <li>{t("renewFlow.receipt.guideRefund")}</li>
-              <li>{t("renewFlow.receipt.guideReview", { amount: isolateLtr("JOD 25.000") })}</li>
+              <li>{t("renewFlow.receipt.guideReview", { amount: isolate(format.money(money(25_000, currency))) })}</li>
             </ul>
           </section>
         </aside>
@@ -320,11 +323,12 @@ function RetailRefundDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
-  const { t, isolate, isolateLtr } = useLocale();
+  const { t, locale, isolate, isolateLtr } = useLocale();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [reason, setReason] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const [error, setError] = useState<string | null>(null);
+  const [errorCause, setError] = useState<unknown>();
+  const error = errorCause ? (isApiError(errorCause) ? localizeApiError(errorCause, locale).message : t("renewFlow.receipt.retailRefund.saveFailed")) : undefined;
   const returned = new Map((sale.returnedLines ?? []).map((line) => [line.productId, line.quantity]));
   const lines = sale.lines.map((line) => ({ ...line, remaining: line.quantity - (returned.get(line.productId) ?? 0) })).filter((line) => line.remaining > 0);
   const selected = lines.map((line) => ({ productId: line.productId, quantity: quantities[line.productId] ?? 0 })).filter((line) => line.quantity > 0);
@@ -337,7 +341,7 @@ function RetailRefundDialog({
       setIdempotencyKey(crypto.randomUUID());
       onDone();
     },
-    onError: (e) => setError(isApiError(e) ? e.message : t("renewFlow.receipt.retailRefund.saveFailed")),
+    onError: (e) => setError(e),
   });
 
   return (
@@ -357,20 +361,19 @@ function RetailRefundDialog({
                 </div>
                 <Input
                   aria-label={t("renewFlow.receipt.retailRefund.quantityAria", { name: isolate(line.productName) })}
-                  type="number"
+                  type="text"
                   dir="ltr"
-                  min={0}
-                  max={line.remaining}
-                  step={1}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={quantities[line.productId] ?? 0}
-                  onChange={(event) => setQuantities((current) => ({ ...current, [line.productId]: Math.min(line.remaining, Math.max(0, Math.trunc(Number(event.target.value) || 0))) }))}
+                  onChange={(event) => { const value = latinDigits(event.target.value); if (/^\d{0,8}$/.test(value)) setQuantities((current) => ({ ...current, [line.productId]: Math.min(line.remaining, Number(value)) })); }}
                 />
               </div>
             ))}
           </div>
           <div className="flex justify-between rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[13px]">
             <span className="text-ink-2">{t("renewFlow.receipt.retailRefund.refundTotal")}</span>
-            <MoneyText money={money(refundMinor)} className="font-semibold" />
+            <MoneyText money={money(refundMinor, sale.total.currency)} className="font-semibold" />
           </div>
           <Field label={t("common.label.reason")} required>
             <Textarea dir="auto" rows={2} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("renewFlow.receipt.retailRefund.reasonPlaceholder")} data-testid="retail-refund-reason" />
@@ -403,19 +406,22 @@ function RefundDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
-  const { t, isolateLtr } = useLocale();
+  const { t, locale, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
   const amountText = useAmountText();
   const moneyProblemText = useMoneyProblemText();
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [amountError, setAmountError] = useState<string | null>(null);
+  const [errorCause, setError] = useState<unknown>();
+  const error = errorCause ? (isApiError(errorCause) ? localizeApiError(errorCause, locale).message : t("renewFlow.receipt.refund.saveFailed")) : undefined;
+  const [showAmountError, setShowAmountError] = useState(false);
   void receiptId;
   const refundable = money(maxMinor, currency);
   const amountRead = amount.trim() ? readMoneyInput(amount, currency) : undefined;
   const requestedMinor = amountRead?.ok ? amountRead.money.amount : amount.trim() ? undefined : maxMinor;
   const reviewFlagged = requestedMinor !== undefined && requestedMinor > 25_000;
+  const amountError = !showAmountError || !amountRead ? undefined : !amountRead.ok ? moneyProblemText(amountRead, currency) : amountRead.money.amount <= 0 ? t("renewFlow.receipt.refund.amountPositive") : amountRead.money.amount > maxMinor ? t("renewFlow.receipt.refund.atMost", { amount: amountText(refundable) }) : undefined;
 
   // The dialog stays mounted between refunds, so each opening starts from a
   // clean draft. One idempotency key per distinct draft and per opening: a
@@ -426,7 +432,7 @@ function RefundDialog({
     setAmount("");
     setReason("");
     setError(null);
-    setAmountError(null);
+    setShowAmountError(false);
     setAttempt((current) => current + 1);
   }, [open]);
   const draftSignature = JSON.stringify({ attempt, paymentId, amount: amountRead?.ok ? amountRead.money.amount : amount.trim(), reason: reason.trim() });
@@ -441,25 +447,25 @@ function RefundDialog({
       }),
     {
       onSuccess: () => onDone(),
-      onError: (e) => setError(isApiError(e) ? e.message : t("renewFlow.receipt.refund.saveFailed")),
+      onError: (e) => setError(e),
     },
   );
 
   const submit = () => {
     setError(null);
     if (amountRead && !amountRead.ok) {
-      setAmountError(moneyProblemText(amountRead, currency));
+      setShowAmountError(true);
       return;
     }
     if (amountRead?.ok && amountRead.money.amount <= 0) {
-      setAmountError(t("renewFlow.receipt.refund.amountPositive"));
+      setShowAmountError(true);
       return;
     }
     if (amountRead?.ok && amountRead.money.amount > maxMinor) {
-      setAmountError(t("renewFlow.receipt.refund.atMost", { amount: amountText(refundable) }));
+      setShowAmountError(true);
       return;
     }
-    setAmountError(null);
+    setShowAmountError(false);
     mutation.mutate();
   };
 
@@ -478,14 +484,14 @@ function RefundDialog({
             <MoneyText money={refundable} className="font-semibold" />
           </div>
           <Field label={t("renewFlow.shared.amountWithCurrency", { currency: isolateLtr(currency) })} error={amountError ?? undefined} hint={t("renewFlow.receipt.refund.hint", { amount: isolateLtr(toMajorString(refundable)) })}>
-            <Input inputMode="decimal" dir="ltr" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountError(null); }} placeholder={toMajorString(refundable)} aria-invalid={amountError ? true : undefined} data-testid="refund-amount" />
+            <Input inputMode="decimal" dir="ltr" value={amount} onChange={(e) => { setAmount(e.target.value); setShowAmountError(false); }} placeholder={toMajorString(refundable)} aria-invalid={amountError ? true : undefined} data-testid="refund-amount" />
           </Field>
           <Field label={t("common.label.reason")} required>
             <Textarea dir="auto" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("renewFlow.receipt.refund.reasonPlaceholder")} data-testid="refund-reason" />
           </Field>
           {reviewFlagged ? (
             <p className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
-              {t("renewFlow.receipt.refund.managerReview", { amount: isolateLtr(`${currency} 25.000`) })}
+              {t("renewFlow.receipt.refund.managerReview", { amount: isolate(format.money(money(25_000, currency))) })}
             </p>
           ) : null}
           {error ? <p role="alert" className="text-[12.5px] text-danger">{error}</p> : null}
@@ -514,10 +520,11 @@ function VoidDialog({
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [reason, setReason] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [errorCause, setError] = useState<unknown>();
+  const error = errorCause ? (isApiError(errorCause) ? localizeApiError(errorCause, locale).message : t(retailSaleId ? "renewFlow.receipt.void.saleFailed" : "renewFlow.receipt.void.paymentFailed")) : undefined;
   useEffect(() => {
     if (!open) return;
     setReason("");
@@ -529,7 +536,7 @@ function VoidDialog({
 
   const mutation = useApiMutation((api) => retailSaleId ? api.voidRetailSale(retailSaleId, { reason, idempotencyKey }) : api.voidPayment(paymentId, { reason, idempotencyKey }), {
     onSuccess: () => onDone(),
-    onError: (e) => setError(isApiError(e) ? e.message : retailSaleId ? t("renewFlow.receipt.void.saleFailed") : t("renewFlow.receipt.void.paymentFailed")),
+    onError: (e) => setError(e),
   });
 
   return (

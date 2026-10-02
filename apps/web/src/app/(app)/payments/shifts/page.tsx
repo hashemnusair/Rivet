@@ -12,12 +12,14 @@ import { isoDateFromParams, pageFromParams, useReplaceSearchParams } from "@/lib
 import type { CashShift } from "@/lib/domain/types";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
-import { formatDateTime, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { canReviewCashVariance, cashShiftHistoryStatus } from "@/lib/domain/reconciliation";
 import { MoneyText } from "@/components/shared/data-display";
 import { DataPagination, Gate, PageHeader } from "@/components/shared/chrome";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
+import { paymentMethodLabel } from "@/lib/i18n/labels";
+import { useFormat } from "@/lib/i18n/format";
+import { isolate } from "@/lib/i18n/bidi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -37,6 +39,7 @@ export default function ShiftsPage() {
 function ShiftsWorkspace() {
   const t = useT();
   const { session } = useApp();
+  const f = useFormat(session?.organization.timezone);
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const params = useSearchParams();
@@ -78,7 +81,7 @@ function ShiftsWorkspace() {
     (api, v: { shiftId: string; decision: "approved" | "rejected"; note: string }) => api.reviewVariance(v.shiftId, { decision: v.decision, note: v.note }),
     {
       onSuccess: async (_d, v) => {
-        toast.success(v.decision === "approved" ? "Cash difference approved." : "Cash difference rejected.");
+        toast.success(v.decision === "approved" ? t("salesWorkspace.varianceApproved") : t("salesWorkspace.varianceRejected"));
         setVarianceReview(null);
         setVarianceReviewNote("");
         await invalidate();
@@ -110,12 +113,12 @@ function ShiftsWorkspace() {
     return (
       <div className="space-y-5">
         <PageHeader
-          title="Shifts & cash"
-          description="Open a shift with the starting cash. Count the drawer when you close it."
+          title={t("salesWorkspace.shiftsCash")}
+          description={t("salesWorkspace.shiftsHint")}
           actions={branchPicker}
         />
         <FinanceNav />
-        <StatePanel icon={Lock} title="Choose a branch first" description="Each branch has its own cash drawer. Choose a branch above." />
+        <StatePanel icon={Lock} title={t("salesWorkspace.chooseBranchFirst")} description={t("salesWorkspace.branchDrawerHint")} />
       </div>
     );
   }
@@ -123,8 +126,8 @@ function ShiftsWorkspace() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Shifts & cash"
-        description="Open a shift with the starting cash. Count the drawer when you close it."
+        title={t("salesWorkspace.shiftsCash")}
+        description={t("salesWorkspace.shiftsHint")}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {branchPicker}
@@ -146,12 +149,11 @@ function ShiftsWorkspace() {
           <h2 className="flex items-center gap-2 text-[13px] font-semibold">
             {currentShift ? (
               <>
-                <span className="size-2 rounded-full bg-success" aria-hidden /> Shift open — {session?.branches.find((b) => b.id === effectiveBranch)?.name}
+                <span className="size-2 rounded-full bg-success" aria-hidden /> {t("salesWorkspace.shiftOpenBranch", { branch: isolate(session?.branches.find((b) => b.id === effectiveBranch)?.name ?? "") })}
               </>
             ) : (
               <>
-                <Lock className="size-3.5 text-ink-3" /> No shift open
-              </>
+                <Lock className="size-3.5 text-ink-3" /> {" "}{t("salesWorkspace.noShiftOpen")}{" "}</>
             )}
           </h2>
           {currentShift ? (
@@ -160,11 +162,10 @@ function ShiftsWorkspace() {
                 size="sm"
                 onClick={() => setCloseShiftTarget(currentShift)}
                 disabled={!shiftTotalsReady}
-                title={!shiftTotalsReady ? "Wait for the drawer total to load" : undefined}
+                title={!shiftTotalsReady ? t("salesWorkspace.waitDrawer") : undefined}
                 data-testid="close-shift"
               >
-                Close shift…
-              </Button>
+                {" "}{t("salesWorkspace.closeShiftMore")}{" "}</Button>
             </Gate>
           ) : null}
         </header>
@@ -174,28 +175,27 @@ function ShiftsWorkspace() {
           </div>
         ) : currentShiftQuery.isError ? (
           <div className="p-4">
-            <ErrorState layout="section" title="Could not check the cash drawer" description="We could not tell if a shift is open at this branch." onRetry={() => currentShiftQuery.refetch()} />
+            <ErrorState layout="section" title={t("salesWorkspace.drawerCheckFailed")} description={t("salesWorkspace.drawerCheckHint")} onRetry={() => currentShiftQuery.refetch()} />
           </div>
         ) : currentShift ? (
           <div className="grid grid-cols-2 sm:grid-cols-5 [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line sm:[&>*:not(:first-child)]:border-s sm:[&>*:nth-child(n+3)]:border-t-0">
-            <Cell label="Opened" value={formatDateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
-            <Cell label="Starting cash" value={<MoneyText money={currentShift.openingFloat} />} />
+            <Cell label={t("salesWorkspace.opened")} value={f.dateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
+            <Cell label={t("salesWorkspace.startingCash")} value={<MoneyText money={currentShift.openingFloat} />} />
             {totalsQuery.isLoading ? (
               <ShiftTotalsLoading />
             ) : totalsQuery.isError || !totals ? (
               <ShiftTotalsError onRetry={() => totalsQuery.refetch()} />
             ) : (
               <>
-                <Cell label="Cash taken" value={<MoneyText money={totals.cashPayments} />} />
-                <Cell label="Expected in drawer" value={<MoneyText money={money(currentShift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount - totals.supplierCashPayments.amount + totals.supplierCashReversals.amount)} />} strong />
-                <Cell label={t("nav.item.payments")} value={<span className="tabular">{totals.paymentCount}</span>} sub={`${totals.refundCount} refunds`} />
+                <Cell label={t("salesWorkspace.cashTaken")} value={<MoneyText money={totals.cashPayments} />} />
+                <Cell label={t("salesWorkspace.expectedDrawer")} value={<MoneyText money={money(currentShift.openingFloat.amount + totals.cashPayments.amount - totals.cashRefunds.amount - totals.supplierCashPayments.amount + totals.supplierCashReversals.amount, currentShift.openingFloat.currency)} />} strong />
+                <Cell label={t("nav.item.payments")} value={<span className="tabular">{totals.paymentCount}</span>} sub={t("salesWorkspace.refundCount", { count: totals.refundCount })} />
               </>
             )}
           </div>
         ) : (
           <p className="px-4 py-6 text-[13px] text-ink-3">
-            Open a shift to take cash at this branch. Card and transfer payments work without a shift.
-          </p>
+            {" "}{t("salesWorkspace.openShiftHint")}{" "}</p>
         )}
       </section>
 
@@ -204,14 +204,14 @@ function ShiftsWorkspace() {
         permission="reports.financial.read"
         fallback={
           <section className="panel p-4">
-            <p className="text-[13px] text-ink-3">Only owners and managers can see the end-of-day cash count.</p>
+            <p className="text-[13px] text-ink-3">{t("salesWorkspace.endDayPermission")}</p>
           </section>
         }
       >
         <section className="panel overflow-hidden">
           <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">End-of-day cash count</h2>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label="Date to show" data-touch-target />
+            <h2 className="text-[13px] font-semibold">{t("salesWorkspace.endDay")}</h2>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-40" aria-label={t("salesWorkspace.dateToShow")} data-touch-target />
           </header>
           {reconQuery.isLoading ? (
             <div className="p-4">
@@ -224,10 +224,10 @@ function ShiftsWorkspace() {
           ) : recon ? (
             <div className="grid gap-0 lg:grid-cols-[1fr_260px]">
               <div className="divide-y divide-line md:hidden">
-                {recon.totalsByMethod.length === 0 ? <p className="px-4 py-8 text-center text-[13px] text-ink-3">No payments recorded on this date.</p> : recon.totalsByMethod.map((row) => (
+                {recon.totalsByMethod.length === 0 ? <p className="px-4 py-8 text-center text-[13px] text-ink-3">{t("salesWorkspace.noPaymentsDate")}</p> : recon.totalsByMethod.map((row) => (
                   <article key={row.method} className="space-y-3 px-4 py-3.5">
-                    <div className="flex items-center justify-between gap-3"><h3 className="text-[13.5px] font-semibold">{PAYMENT_METHOD_LABELS[row.method]}</h3><p className="font-medium"><MoneyText money={row.net} /></p></div>
-                    <dl className="grid grid-cols-3 gap-3 border-t border-line pt-3 text-[12px]"><div><dt className="text-ink-3">{t("dashboard.owner.collected")}</dt><dd className="mt-0.5"><MoneyText money={row.payments} /></dd></div><div><dt className="text-ink-3">{t("domain.transactionStatus.refunded")}</dt><dd className="mt-0.5">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount)} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("nav.item.payments")}</dt><dd className="mt-0.5 tabular">{row.count}</dd></div></dl>
+                    <div className="flex items-center justify-between gap-3"><h3 className="text-[13.5px] font-semibold">{paymentMethodLabel(t, row.method)}</h3><p className="font-medium"><MoneyText money={row.net} /></p></div>
+                    <dl className="grid grid-cols-3 gap-3 border-t border-line pt-3 text-[12px]"><div><dt className="text-ink-3">{t("dashboard.owner.collected")}</dt><dd className="mt-0.5"><MoneyText money={row.payments} /></dd></div><div><dt className="text-ink-3">{t("domain.transactionStatus.refunded")}</dt><dd className="mt-0.5">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount, row.refunds.currency)} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("nav.item.payments")}</dt><dd className="mt-0.5 tabular">{row.count}</dd></div></dl>
                   </article>
                 ))}
               </div>
@@ -236,24 +236,23 @@ function ShiftsWorkspace() {
                   <TableRow className="hover:bg-transparent">
                     <TableHead>{t("members.tabs.payments.method")}</TableHead>
                     <TableHead className="text-end">{t("nav.item.payments")}</TableHead>
-                    <TableHead className="text-end">Refunds</TableHead>
-                    <TableHead className="text-end">After refunds</TableHead>
-                    <TableHead className="text-end">Number</TableHead>
+                    <TableHead className="text-end">{t("salesWorkspace.refunds")}</TableHead>
+                    <TableHead className="text-end">{t("salesWorkspace.afterRefunds")}</TableHead>
+                    <TableHead className="text-end">{t("salesWorkspace.number")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {recon.totalsByMethod.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="py-8 text-center text-[13px] text-ink-3">
-                        No payments recorded on this date.
-                      </TableCell>
+                        {" "}{t("salesWorkspace.noPaymentsDate")}{" "}</TableCell>
                     </TableRow>
                   ) : (
                     recon.totalsByMethod.map((row) => (
                       <TableRow key={row.method}>
-                        <TableCell className="text-[13px]">{PAYMENT_METHOD_LABELS[row.method]}</TableCell>
+                        <TableCell className="text-[13px]">{paymentMethodLabel(t, row.method)}</TableCell>
                         <TableCell className="text-end"><MoneyText money={row.payments} /></TableCell>
-                        <TableCell className="text-end">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount)} /> : "—"}</TableCell>
+                        <TableCell className="text-end">{row.refunds.amount > 0 ? <MoneyText money={money(-row.refunds.amount, row.refunds.currency)} /> : "—"}</TableCell>
                         <TableCell className="text-end font-medium"><MoneyText money={row.net} /></TableCell>
                         <TableCell className="text-end tabular text-ink-2">{row.count}</TableCell>
                       </TableRow>
@@ -264,8 +263,8 @@ function ShiftsWorkspace() {
               <div className="border-t border-line lg:border-s lg:border-t-0">
                 <dl className="space-y-2.5 p-4 text-[13px]">
                   <ReconRow label={t("dashboard.owner.collected")}><MoneyText money={recon.totalCollected} /></ReconRow>
-                  <ReconRow label={t("domain.transactionStatus.refunded")}><MoneyText money={money(-recon.totalRefunded.amount)} /></ReconRow>
-                  <ReconRow label="Discounts given"><MoneyText money={recon.discountsTotal} /></ReconRow>
+                  <ReconRow label={t("domain.transactionStatus.refunded")}><MoneyText money={money(-recon.totalRefunded.amount, recon.totalRefunded.currency)} /></ReconRow>
+                  <ReconRow label={t("salesWorkspace.discounts")}><MoneyText money={recon.discountsTotal} /></ReconRow>
                   <div className="border-t border-line pt-2.5">
                     <ReconRow label={t("dashboard.today.kind.cash_variance")} strong>
                       <span className={cn(recon.totalVariance.amount !== 0 && "font-semibold text-warning-deep")}>
@@ -290,18 +289,18 @@ function ShiftsWorkspace() {
             <TableSkeleton rows={6} cols={6} />
           </div>
         ) : historyQuery.isError ? (
-          <div className="p-4"><ErrorState layout="section" title="Could not load shift history" onRetry={() => historyQuery.refetch()} /></div>
+          <div className="p-4"><ErrorState layout="section" title={t("salesWorkspace.historyFailed")} onRetry={() => historyQuery.refetch()} /></div>
         ) : (historyQuery.data?.items.length ?? 0) === 0 ? (
-          <EmptyState compact title="No shifts yet" className="border-0" />
+          <EmptyState compact title={t("salesWorkspace.noShifts")} className="border-0" />
         ) : (
           <>
           <ul className="divide-y divide-line lg:hidden" aria-label={t("reception.shift.history")}>
             {historyQuery.data!.items.map((shift) => {
               const historyStatus = cashShiftHistoryStatus(shift);
               return <li key={shift.id} className="space-y-3 px-4 py-3.5">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{formatDateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">Opened by {shift.openedByName}</p></div>{shift.status === "open" ? <Badge variant="success" dot>{t("dashboard.today.action.open")}</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">Needs review</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">Difference approved</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">Difference rejected</Badge> : <Badge variant="outline">No difference</Badge>}</div>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]"><div><dt className="text-ink-3">Starting cash</dt><dd className="mt-0.5"><MoneyText money={shift.openingFloat} /></dd></div><div><dt className="text-ink-3">Expected</dt><dd className="mt-0.5">{shift.expectedCash ? <MoneyText money={shift.expectedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Counted</dt><dd className="mt-0.5">{shift.countedCash ? <MoneyText money={shift.countedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">Difference</dt><dd className={cn("mt-0.5", shift.variance && shift.variance.amount !== 0 && "font-semibold text-warning-deep")}>{shift.variance ? <MoneyText money={shift.variance} signed /> : "—"}</dd></div></dl>
-                {canReviewCashVariance(shift) ? <Gate permission="reconciliation.approve_variance"><div className="flex justify-end gap-2 border-t border-line pt-3"><Button variant="secondary" size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "rejected" })}><X /> Reject</Button><Button size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "approved" })}><Check /> Approve</Button></div></Gate> : shift.varianceExplanation ? <p className="border-s-2 border-line-2 ps-3 text-[12px] text-ink-3">{shift.varianceExplanation}</p> : null}
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{f.dateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">{t("salesWorkspace.openedByName", { name: isolate(shift.openedByName) })}</p></div>{shift.status === "open" ? <Badge variant="success" dot>{t("salesWorkspace.openState")}</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">{t("salesWorkspace.needsReview")}</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">{t("salesWorkspace.differenceApproved")}</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">{t("salesWorkspace.differenceRejected")}</Badge> : <Badge variant="outline">{t("salesWorkspace.noDifference")}</Badge>}</div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]"><div><dt className="text-ink-3">{t("salesWorkspace.startingCash")}</dt><dd className="mt-0.5"><MoneyText money={shift.openingFloat} /></dd></div><div><dt className="text-ink-3">{t("salesWorkspace.expected")}</dt><dd className="mt-0.5">{shift.expectedCash ? <MoneyText money={shift.expectedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("salesWorkspace.counted")}</dt><dd className="mt-0.5">{shift.countedCash ? <MoneyText money={shift.countedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("salesWorkspace.difference")}</dt><dd className={cn("mt-0.5", shift.variance && shift.variance.amount !== 0 && "font-semibold text-warning-deep")}>{shift.variance ? <MoneyText money={shift.variance} signed /> : "—"}</dd></div></dl>
+                {canReviewCashVariance(shift) ? <Gate permission="reconciliation.approve_variance"><div className="flex justify-end gap-2 border-t border-line pt-3"><Button variant="secondary" size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "rejected" })}><X /> {" "}{t("salesWorkspace.reject")}</Button><Button size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "approved" })}><Check /> {" "}{t("salesWorkspace.approve")}</Button></div></Gate> : shift.varianceExplanation ? <p className="border-s-2 border-line-2 ps-3 text-[12px] text-ink-3">{shift.varianceExplanation}</p> : null}
               </li>;
             })}
           </ul>
@@ -309,11 +308,11 @@ function ShiftsWorkspace() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("common.label.date")}</TableHead>
-                <TableHead>Opened by</TableHead>
-                <TableHead className="text-end">Starting cash</TableHead>
-                <TableHead className="text-end">Expected</TableHead>
-                <TableHead className="text-end">Counted</TableHead>
-                <TableHead className="text-end">Difference</TableHead>
+                <TableHead>{t("salesWorkspace.openedBy")}</TableHead>
+                <TableHead className="text-end">{t("salesWorkspace.startingCash")}</TableHead>
+                <TableHead className="text-end">{t("salesWorkspace.expected")}</TableHead>
+                <TableHead className="text-end">{t("salesWorkspace.counted")}</TableHead>
+                <TableHead className="text-end">{t("salesWorkspace.difference")}</TableHead>
                 <TableHead>{t("common.label.status")}</TableHead>
                 <Gate permission="reconciliation.approve_variance">
                   <TableHead aria-label={t("dashboard.today.action.review")} />
@@ -325,7 +324,7 @@ function ShiftsWorkspace() {
                 const historyStatus = cashShiftHistoryStatus(s);
                 return (
                 <TableRow key={s.id}>
-                  <TableCell className="whitespace-nowrap text-[12.5px]">{formatDateTime(s.openedAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[12.5px]">{f.dateTime(s.openedAt)}</TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{s.openedByName}</TableCell>
                   <TableCell className="text-end"><MoneyText money={s.openingFloat} /></TableCell>
                   <TableCell className="text-end">{s.expectedCash ? <MoneyText money={s.expectedCash} /> : "—"}</TableCell>
@@ -335,15 +334,15 @@ function ShiftsWorkspace() {
                   </TableCell>
                   <TableCell>
                     {s.status === "open" ? (
-                      <Badge variant="success" dot>{t("dashboard.today.action.open")}</Badge>
+                      <Badge variant="success" dot>{t("salesWorkspace.openState")}</Badge>
                     ) : historyStatus === "variance_pending" ? (
-                      <Badge variant="warning">Needs review</Badge>
+                      <Badge variant="warning">{t("salesWorkspace.needsReview")}</Badge>
                     ) : historyStatus === "variance_approved" ? (
-                      <Badge variant="neutral">Difference approved</Badge>
+                      <Badge variant="neutral">{t("salesWorkspace.differenceApproved")}</Badge>
                     ) : historyStatus === "variance_rejected" ? (
-                      <Badge variant="signal">Difference rejected</Badge>
+                      <Badge variant="signal">{t("salesWorkspace.differenceRejected")}</Badge>
                     ) : (
-                      <Badge variant="outline">No difference</Badge>
+                      <Badge variant="outline">{t("salesWorkspace.noDifference")}</Badge>
                     )}
                   </TableCell>
                   <Gate permission="reconciliation.approve_variance">
@@ -353,8 +352,8 @@ function ShiftsWorkspace() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="Approve cash difference"
-                            title={s.varianceExplanation ?? "Approve"}
+                            aria-label={t("salesWorkspace.approveDifference")}
+                            title={s.varianceExplanation ?? t("salesWorkspace.approve")}
                             onClick={() => setVarianceReview({ shiftId: s.id, decision: "approved" })}
                           >
                             <Check className="text-success" />
@@ -362,7 +361,7 @@ function ShiftsWorkspace() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="Reject cash difference"
+                            aria-label={t("salesWorkspace.rejectDifference")}
                             onClick={() => setVarianceReview({ shiftId: s.id, decision: "rejected" })}
                           >
                             <X className="text-danger" />
@@ -390,7 +389,7 @@ function ShiftsWorkspace() {
       </section>
 
       <OpenShiftDialog open={openShiftOpen} onOpenChange={setOpenShiftOpen} branchId={effectiveBranch} onOpened={async () => {
-        toast.success("Shift opened.");
+        toast.success(t("salesWorkspace.shiftOpened"));
         await invalidate();
       }} />
       <Dialog open={Boolean(varianceReview)} onOpenChange={(open) => {
@@ -401,11 +400,11 @@ function ShiftsWorkspace() {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{varianceReview?.decision === "approved" ? "Approve cash difference" : "Reject cash difference"}</DialogTitle>
-            <DialogDescription>Your reason is saved with your name. You can&apos;t change this decision later.</DialogDescription>
+            <DialogTitle>{varianceReview?.decision === "approved" ? t("salesWorkspace.approveDifference") : t("salesWorkspace.rejectDifference")}</DialogTitle>
+            <DialogDescription>{t("salesWorkspace.reviewReasonHint")}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <label className="grid gap-2 text-[13px] font-medium">{t("common.label.reason")}<Textarea value={varianceReviewNote} onChange={(event) => setVarianceReviewNote(event.target.value)} placeholder="What did you check?" autoFocus />
+            <label className="grid gap-2 text-[13px] font-medium">{t("common.label.reason")}<Textarea value={varianceReviewNote} onChange={(event) => setVarianceReviewNote(event.target.value)} placeholder={t("salesWorkspace.reviewPlaceholder")} autoFocus />
             </label>
           </DialogBody>
           <DialogFooter>
@@ -416,7 +415,7 @@ function ShiftsWorkspace() {
               disabled={!varianceReviewNote.trim() || !varianceReview}
               onClick={() => varianceReview && reviewVariance.mutate({ ...varianceReview, note: varianceReviewNote.trim() })}
             >
-              {varianceReview?.decision === "approved" ? "Approve cash difference" : "Reject cash difference"}
+              {varianceReview?.decision === "approved" ? t("salesWorkspace.approveDifference") : t("salesWorkspace.rejectDifference")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -430,8 +429,8 @@ function ShiftsWorkspace() {
             setCloseShiftTarget(null);
             toast.success(
               closed.variance && closed.variance.amount !== 0
-                ? "Shift closed. The cash difference was sent to a manager."
-                : "Shift closed. The cash matched.",
+                ? t("salesWorkspace.shiftClosedVariance")
+                : t("salesWorkspace.shiftClosedMatches"),
             );
             await invalidate();
           }}
@@ -452,10 +451,11 @@ function Cell({ label, value, sub, strong }: { label: string; value: React.React
 }
 
 function ShiftTotalsLoading() {
+  const t = useT();
   return (
     <div className="col-span-2 flex min-h-20 items-center gap-3 border-t border-line px-4 py-3 sm:col-span-3 sm:border-t-0" role="status">
       <Skeleton className="h-9 w-full max-w-xs" />
-      <span className="text-[12px] text-ink-3">Adding up the drawer…</span>
+      <span className="text-[12px] text-ink-3">{t("salesWorkspace.addingDrawer")}</span>
     </div>
   );
 }
@@ -465,8 +465,8 @@ function ShiftTotalsError({ onRetry }: { onRetry: () => void }) {
   return (
     <div className="col-span-2 flex min-h-20 flex-wrap items-center gap-3 border-t border-warning/30 bg-warning-bg px-4 py-3 sm:col-span-3 sm:border-t-0" role="alert">
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold text-warning-deep">Could not add up the drawer</p>
-        <p className="mt-0.5 text-[12px] text-ink-2">You can close the shift once this loads.</p>
+        <p className="text-[13px] font-semibold text-warning-deep">{t("salesWorkspace.drawerTotalFailed")}</p>
+        <p className="mt-0.5 text-[12px] text-ink-2">{t("salesWorkspace.drawerRetryHint")}</p>
       </div>
       <Button type="button" variant="secondary" size="sm" onClick={onRetry}>{t("common.action.retry")}</Button>
     </div>

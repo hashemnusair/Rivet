@@ -1,3 +1,4 @@
+import { salesWorkspace } from "./salesWorkspace";
 import { settingsPublic } from "./settingsPublic";
 import { settingsDetails } from "./settingsDetails";
 import { settingsCore } from "./settingsCore";
@@ -31,6 +32,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  salesWorkspace,
   settingsPublic,
   settingsDetails,
   settingsCore,

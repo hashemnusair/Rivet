@@ -1,4 +1,5 @@
 "use client";
+import { useT, type TKey } from "@/lib/i18n/provider";
 
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
 
@@ -10,7 +11,7 @@ import type { Session, WorkspaceModuleKey } from "@/lib/domain/types";
 
 interface FinanceLink {
   href: string;
-  label: string;
+  labelKey: TKey;
   icon: typeof ArrowLeftRight;
   anyPermission: readonly string[];
   /** Optional subscription capability in addition to role permission. */
@@ -18,8 +19,8 @@ interface FinanceLink {
 }
 
 export const FINANCE_LINKS: readonly FinanceLink[] = [
-  { href: "/payments", label: "Payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
-  { href: "/payments/shifts", label: "Shifts & cash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
+  { href: "/payments", labelKey: "nav.item.payments", icon: ArrowLeftRight, anyPermission: ["reports.financial.read"] },
+  { href: "/payments/shifts", labelKey: "salesWorkspace.shiftsCash", icon: Banknote, anyPermission: ["reports.financial.read", "reconciliation.open_shift"] },
 ];
 
 export function financeLinkIsVisible(
@@ -39,12 +40,13 @@ function financeLinkIsActive(href: string, pathname: string) {
 
 /** Payments and cash shifts share one compact switcher. Reports live in the primary sidebar. */
 export function FinanceNav() {
+  const t = useT();
   const pathname = usePathname();
   const { session } = useApp();
   const links = FINANCE_LINKS.filter((item) => financeLinkIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
 
   return (
-    <nav aria-label="Finance views" className={tabListClassName}>
+    <nav aria-label={t("salesWorkspace.financeViews")} className={tabListClassName}>
       {links.map((item) => {
         const active = financeLinkIsActive(item.href, pathname);
         return (
@@ -55,7 +57,7 @@ export function FinanceNav() {
             className={tabTriggerClassName}
           >
             <item.icon className="size-3.5" aria-hidden />
-            {item.label}
+            {t(item.labelKey)}
           </Link>
         );
       })}

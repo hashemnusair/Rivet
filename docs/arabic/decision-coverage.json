@@ -33,6 +33,7 @@
       "id": "digits",
       "keys": [],
       "rules": [
+        "apps/web/src/features/checkout/sales-arabic.test.tsx",
         "apps/web/src/lib/i18n/format.test.ts",
         "apps/web/src/lib/utils/text.test.ts"
       ],
@@ -69,6 +70,7 @@
       "id": "money-format",
       "keys": [],
       "rules": [
+        "apps/web/src/features/checkout/sales-arabic.test.tsx",
         "apps/web/src/lib/i18n/format.test.ts"
       ],
       "candidateOccurrences": [],
@@ -2670,7 +2672,8 @@
     {
       "id": "card",
       "keys": [
-        "domain.paymentMethod.card"
+        "domain.paymentMethod.card",
+        "salesWorkspace.card"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2763,7 +2766,9 @@
         "renewFlow.receipt.heading",
         "settingsDetails.text181"
       ],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/checkout/sales-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/app/(app)/reports/page.tsx",
@@ -2965,7 +2970,9 @@
     {
       "id": "open-shift",
       "keys": [
-        "permissions.reconciliation_open_shift.label"
+        "permissions.reconciliation_open_shift.label",
+        "salesWorkspace.openCashShift",
+        "salesWorkspace.openShift"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2984,7 +2991,9 @@
     {
       "id": "close-shift",
       "keys": [
-        "permissions.reconciliation_close_shift.label"
+        "permissions.reconciliation_close_shift.label",
+        "salesWorkspace.closeShift",
+        "salesWorkspace.closeShiftMore"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2998,7 +3007,10 @@
     },
     {
       "id": "opening-cash",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.startingCash",
+        "salesWorkspace.startingCurrency"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3006,13 +3018,15 @@
           "line": 284
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "expected-cash",
       "keys": [
-        "dashboard.reception.expectedCash"
+        "dashboard.reception.expectedCash",
+        "salesWorkspace.expected",
+        "salesWorkspace.expectedDrawer"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3026,18 +3040,23 @@
     },
     {
       "id": "counted-cash",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.counted"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "cash-difference",
       "keys": [
-        "dashboard.today.kind.cash_variance"
+        "dashboard.today.kind.cash_variance",
+        "salesWorkspace.difference"
       ],
-      "rules": [],
+      "rules": [
+        "apps/web/src/features/checkout/sales-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/app/(app)/payments/shifts/page.tsx",
@@ -3057,24 +3076,29 @@
     },
     {
       "id": "cash-short",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.cashShort"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "cash-over",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.cashOver"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "approve-difference",
       "keys": [
-        "permissions.reconciliation_approve_variance.label"
+        "permissions.reconciliation_approve_variance.label",
+        "salesWorkspace.approveDifference"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3104,7 +3128,9 @@
     },
     {
       "id": "end-of-day",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.endDay"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3112,7 +3138,7 @@
           "line": 213
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -3864,15 +3890,19 @@
     },
     {
       "id": "out-of-stock",
-      "keys": [],
-      "rules": [],
+      "keys": [
+        "salesWorkspace.outOfStock"
+      ],
+      "rules": [
+        "apps/web/src/features/checkout/sales-arabic.test.tsx"
+      ],
       "candidateOccurrences": [
         {
           "path": "apps/web/src/features/checkout/checkout-model.ts",
           "line": 53
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
@@ -4557,7 +4587,9 @@
     },
     {
       "id": "balanced",
-      "keys": [],
+      "keys": [
+        "salesWorkspace.cashMatches"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -4565,7 +4597,7 @@
           "line": 288
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

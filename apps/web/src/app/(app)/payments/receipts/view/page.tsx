@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/misc";
@@ -16,6 +17,7 @@ function receiptIdFromHash(): string | undefined {
 }
 
 export default function RuntimeReceiptPage() {
+  const t = useT();
   const [receiptId, setReceiptId] = useState<string>();
   const [ready, setReady] = useState(false);
 
@@ -30,6 +32,6 @@ export default function RuntimeReceiptPage() {
   }, []);
 
   if (!ready) return <Skeleton className="mx-auto h-[540px] w-full max-w-md" />;
-  if (!receiptId) return <NotFoundState title="Receipt link is incomplete" />;
+  if (!receiptId) return <NotFoundState title={t("salesWorkspace.incompleteReceipt")} />;
   return <ReceiptPageClient receiptId={receiptId} />;
 }
