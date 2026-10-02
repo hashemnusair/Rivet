@@ -3509,8 +3509,14 @@
       "keys": [],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "memberProfile.pt.dialogTitle",
+          "template": "حجز {approved}"
+        }
+      ]
     },
     {
       "id": "trainer",
@@ -3576,7 +3582,8 @@
     {
       "id": "package",
       "keys": [
-        "memberProfile.pt.packageFallback"
+        "memberProfile.pt.packageFallback",
+        "ptWorkspace.packageFallback"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3605,8 +3612,18 @@
       "keys": [],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "ptWorkspace.creditsHeld",
+          "template": "{approved} المحجوز"
+        },
+        {
+          "key": "memberProfile.pt.availableSessions",
+          "template": "{approved} المتاح"
+        }
+      ]
     },
     {
       "id": "no-show",
@@ -3697,20 +3714,31 @@
       "keys": [],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
-      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
+      "status": "in progress",
+      "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals.",
+      "composedKeys": [
+        {
+          "key": "ptWorkspace.cancelledToast",
+          "template": "تم إلغاء الحصة و{approved}."
+        }
+      ]
     },
     {
       "id": "mark-complete",
-      "keys": [],
+      "keys": [
+        "ptWorkspace.completeAction",
+        "dashboard.trainer.complete"
+      ],
       "rules": [],
       "candidateOccurrences": [],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "availability",
-      "keys": [],
+      "keys": [
+        "ptWorkspace.availability"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3718,12 +3746,14 @@
           "line": 117
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {
       "id": "trainer-timeoff",
-      "keys": [],
+      "keys": [
+        "ptWorkspace.timeOff"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3731,7 +3761,7 @@
           "line": 231
         }
       ],
-      "status": "pending",
+      "status": "in progress",
       "remaining": "Verify all contextual occurrences and rendered workflows; candidates include catalogue/source literals."
     },
     {

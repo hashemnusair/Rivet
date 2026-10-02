@@ -1,3 +1,4 @@
+import { ptWorkspace } from "./ptWorkspace";
 import { classWorkspace } from "./classWorkspace";
 import { memberMigration } from "./memberMigration";
 import { memberEnrollment } from "./memberEnrollment";
@@ -35,6 +36,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  ptWorkspace,
   classWorkspace,
   memberMigration,
   memberEnrollment,

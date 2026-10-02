@@ -135,9 +135,9 @@ export function ptBookingCreditConsequence(input: {
   cancelledAt?: string | number;
   cutoffHours?: number;
   cancelledByGym?: boolean;
-}): { effect: "consume" | "return"; text: string } {
-  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be used." };
-  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be used for this no-show." };
+}): { effect: "consume" | "return"; text: string; messageKey: "ptWorkspace.creditCompleted" | "ptWorkspace.creditNoShow" | "ptWorkspace.creditReturned" | "ptWorkspace.creditLate" } {
+  if (input.action === "completed") return { effect: "consume", text: "One reserved PT credit will be used.", messageKey: "ptWorkspace.creditCompleted" };
+  if (input.action === "no_show") return { effect: "consume", text: "One reserved PT credit will be used for this no-show.", messageKey: "ptWorkspace.creditNoShow" };
   const result = ptCancellationResult({
     startsAt: input.startsAt,
     cancelledAt: input.cancelledAt ?? Date.now(),
@@ -145,8 +145,8 @@ export function ptBookingCreditConsequence(input: {
     cancelledByGym: Boolean(input.cancelledByGym),
   });
   return result.restoreCredit
-    ? { effect: "return", text: "The reserved PT credit will be returned to the member." }
-    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be used." };
+    ? { effect: "return", text: "The reserved PT credit will be returned to the member.", messageKey: "ptWorkspace.creditReturned" }
+    : { effect: "consume", text: "This is after the cancellation cutoff, so one reserved PT credit will be used.", messageKey: "ptWorkspace.creditLate" };
 }
 
 export function ptIntervalsOverlap(left: { startsAt: number; endsAt: number }, right: { startsAt: number; endsAt: number }): boolean {
