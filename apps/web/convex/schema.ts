@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { systemMessageValidator } from "./systemMessages";
 
 const organizationStatus = v.union(
   v.literal("trial"),
@@ -1152,6 +1153,9 @@ export default defineSchema({
     kind: v.string(),
     title: v.string(),
     body: v.string(),
+    // Optional stable descriptors beside the original stored English.
+    titleMessage: v.optional(systemMessageValidator),
+    bodyMessage: v.optional(systemMessageValidator),
     href: v.string(),
     dedupeKey: v.string(),
     readAt: v.optional(v.number()),
@@ -1229,6 +1233,9 @@ export default defineSchema({
     messageClass: v.union(v.literal("service"), v.literal("marketing")),
     templateVersion: v.string(),
     language: v.union(v.literal("en"), v.literal("ar")),
+    // How the language was chosen and which copy catalogue rendered the stored bytes.
+    languageSource: v.optional(v.union(v.literal("explicit"), v.literal("recipient"), v.literal("organization"), v.literal("default"))),
+    copyVersion: v.optional(v.string()),
     recipientReference: v.string(),
     recipientEmail: v.optional(v.string()),
     relatedEntityType: v.optional(v.string()),
@@ -1378,6 +1385,13 @@ export default defineSchema({
     recipientReference: v.string(),
     recipientPhone: v.optional(v.string()),
     language: v.union(v.literal("en"), v.literal("ar")),
+    languageSource: v.optional(v.union(v.literal("recipient"), v.literal("organization"), v.literal("default"))),
+    // The template catalogue version the row was queued under (absent: 1.0),
+    // and the exact body captured on the first lease; every retry sends it.
+    catalogueVersion: v.optional(v.string()),
+    renderedBody: v.optional(v.string()),
+    renderedTemplateKey: v.optional(v.string()),
+    renderedAt: v.optional(v.number()),
     consentStatus: v.union(v.literal("explicit_opt_in"), v.literal("explicit_opt_out"), v.literal("unknown"), v.literal("not_applicable")),
     consentSource: v.optional(v.string()),
     consentChangedAt: v.optional(v.number()),
@@ -1455,6 +1469,8 @@ export default defineSchema({
     publicId: v.string(),
     applicationKey: v.string(),
     gymName: v.string(),
+    // The applicant's language for their own copies; absent on older rows (English).
+    language: v.optional(v.union(v.literal("en"), v.literal("ar"))),
     // Optional for rows created before the public application collected a
     // physical address. New submissions validate and always persist it.
     gymAddress: v.optional(v.string()),

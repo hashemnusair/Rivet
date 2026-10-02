@@ -1,4 +1,5 @@
 import type { MemberImportErrorMessage } from "../imports/member-import-errors";
+import type { SystemMessage } from "../i18n/system-messages";
 import type {
   AuditCategory,
   AuditEvent,
@@ -610,8 +611,12 @@ export interface PlatformOperatorQueueItem {
 export interface OperationalNotification {
   id: string;
   kind: string;
+  /** Original stored text (English); render through `presentNotification` for the reader's language. */
   title: string;
   body: string;
+  /** Optional stable descriptors; absent on authored or older records. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   organizationId?: string;
@@ -674,6 +679,8 @@ export interface SubmitGymApplicationInput {
   billingInterval?: BillingInterval;
   /** Client retry key; never used as an authorization credential. */
   idempotencyKey?: string;
+  /** The applicant's language for their own emails (the form's current language). Absent means English. */
+  language?: "en" | "ar";
   /** Deliberately invisible browser honeypot. Bots filling it receive a generic success. */
   website?: string;
 }

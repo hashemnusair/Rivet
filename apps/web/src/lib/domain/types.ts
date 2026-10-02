@@ -1,6 +1,7 @@
 import type { EquipmentRationaleMessage } from "./equipment-rationale";
 import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
 import type { Money } from "./money";
+import type { SystemMessage } from "../i18n/system-messages";
 export type { Money } from "./money";
 
 /**
@@ -2347,8 +2348,12 @@ export interface TimelineEvent {
   memberId?: UUID;
   leadId?: UUID;
   type: TimelineEventType;
+  /** Original stored text; render through `presentTimelineEvent` for the reader's language. */
   title: string;
   body?: string;
+  /** Optional stable descriptors for system-written text; authored text has none. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   actorId?: UUID; // undefined = system/automation
   actorName?: string;
   occurredAt: ISODateTime;
