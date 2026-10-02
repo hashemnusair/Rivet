@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { ArrowRight, QrCode, Search, UserRound } from "lucide-react";
 import Link from "next/link";
@@ -66,16 +66,16 @@ function MemberHome() {
   return (
     <main className="mx-auto max-w-[1080px] px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <header>
-        <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">Hi, {customer.name.split(" ")[0]}</h1>
+        <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">{t("memberExperience.greeting", { name: customer.name.split(" ")[0] ?? customer.name })}</h1>
         <p className="mt-1 text-[13.5px] text-ink-2">
-          {count > 0 ? "Your memberships and entry codes." : "When a gym adds your membership, it shows here."}
+          {count > 0 ? t("memberExperience.homeDescription") : t("memberExperience.homeEmptyDescription")}
         </p>
       </header>
 
       <section className="mt-7" aria-labelledby="subscribed-gyms-title">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 id="subscribed-gyms-title" className="text-[17px] font-semibold">Your gyms</h2>
-          <span className="text-[12px] tabular text-ink-3">{count} {count === 1 ? "gym" : "gyms"}</span>
+          <h2 id="subscribed-gyms-title" className="text-[17px] font-semibold">{t("memberExperience.yourGyms")}</h2>
+          <span className="text-[12px] tabular text-ink-3">{t("memberExperience.gymCount", { count })}</span>
         </div>
         {count > 0 ? (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -88,8 +88,8 @@ function MemberHome() {
             layout="page"
             className="mt-3"
             icon={Search}
-            title="No gym membership yet"
-            description="Find a gym and book a free trial. When the gym adds your membership, it shows here."
+            title={t("memberExperience.noMemberships")}
+            description={t("memberExperience.findGymDescription")}
             action={<Button asChild><Link href="/customer/discover"><Search />{" "}{t("marketing.actions.findGym")}</Link></Button>}
           />
         )}
@@ -101,7 +101,8 @@ function MemberHome() {
           onOpenChange={closePass}
           membershipId={passFor.id}
           memberNumber={passFor.memberNumber}
-          gymName={passFor.gymName ?? gymFor(passFor.gymId)?.name ?? "Your gym"}
+          timeZone={passFor.timezone}
+          gymName={passFor.gymName ?? gymFor(passFor.gymId)?.name ?? t("memberExperience.yourGym")}
         />
       ) : null}
     </main>
@@ -109,15 +110,15 @@ function MemberHome() {
 }
 
 function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerMembership; gym?: MarketplaceGym; onShowPass: () => void }) {
-  const t = useT();
-  const name = membership.gymName ?? gym?.name ?? "Gym";
-  const status = membershipDisplayStatus(membership);
+  const { t, locale } = useLocale();
+  const name = membership.gymName ?? gym?.name ?? t("memberExperience.gym");
+  const status = membershipDisplayStatus(membership, undefined, { locale, timeZone: membership.timezone });
   const cover = membership.gymCoverUrl ?? gym?.cover?.url;
   const branch = membership.branchName ?? gym?.branches.find((item) => item.id === membership.branchId)?.name;
   const href = `/customer/my-gyms/${membership.id}`;
   return (
     <article className="panel overflow-hidden" aria-labelledby={`membership-${membership.id}-title`}>
-      {cover ? <div className="h-24 bg-cover bg-center" role="img" aria-label={`${name} cover image`} style={{ backgroundImage: `url(${cover})` }} /> : null}
+      {cover ? <div className="h-24 bg-cover bg-center" role="img" aria-label={t("memberExperience.cover", { gym: name })} style={{ backgroundImage: `url(${cover})` }} /> : null}
       <div className="flex items-start gap-3 p-4">
         <GymMark name={name} shortName={gym?.shortName} logoUrl={membership.gymLogoUrl ?? gym?.logo?.url} accent={gym?.accent} size="lg" />
         <div className="min-w-0 flex-1">
@@ -132,17 +133,18 @@ function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerM
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-        <Button size="sm" onClick={onShowPass}><QrCode /> Entry code</Button>
-        <Button asChild size="sm" variant="secondary"><Link href={href}>{t("memberProfile.followUp.membershipFallback")}{" "}<ArrowRight /></Link></Button>
-        <span className="ms-auto font-mono text-[12px] text-ink-3">{membership.memberNumber}</span>
+        <Button size="sm" onClick={onShowPass}><QrCode /> {t("memberExperience.entryCode")}</Button>
+        <Button asChild size="sm" variant="secondary"><Link href={href}>{t("memberProfile.followUp.membershipFallback")}{" "}<ArrowRight className="rtl:rotate-180" /></Link></Button>
+        <bdi dir="ltr" className="ms-auto font-mono text-[12px] text-ink-3">{membership.memberNumber}</bdi>
       </div>
     </article>
   );
 }
 
 function GateLoading() {
+  const t = useT();
   return (
-    <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label="Checking access">
+    <main className="flex min-h-[60vh] items-center justify-center px-4" role="status" aria-label={t("memberExperience.checkingAccess")}>
       <div className="h-1 w-40 animate-pulse rounded-full bg-sunken-2" />
     </main>
   );
@@ -153,11 +155,11 @@ function SignedOut() {
   return (
     <main className="mx-auto flex max-w-md flex-col items-center px-4 py-24 text-center">
       <span className="flex size-11 items-center justify-center rounded-lg border border-line-2 bg-surface text-ink-2"><UserRound className="size-5" aria-hidden /></span>
-      <h1 className="mt-5 font-display text-[22px] font-semibold tracking-tight">Sign in to your member account</h1>
-      <p className="mt-2 text-[13.5px] text-ink-2">Sign in to see your memberships and profile.</p>
+      <h1 className="mt-5 font-display text-[22px] font-semibold tracking-tight">{t("memberExperience.memberSignIn")}</h1>
+      <p className="mt-2 text-[13.5px] text-ink-2">{t("memberExperience.memberSignInDescription")}</p>
       <div className="mt-6 flex gap-2">
         <Button asChild><Link href="/login">{t("common.action.signIn")}</Link></Button>
-        <Button asChild variant="secondary"><Link href="/login/member/create">Create an account</Link></Button>
+        <Button asChild variant="secondary"><Link href="/login/member/create">{t("memberExperience.createAccount")}</Link></Button>
       </div>
     </main>
   );

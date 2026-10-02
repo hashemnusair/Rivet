@@ -77,3 +77,11 @@ All 116 dynamic calls in the shared error-source audit now carry a key or forwar
 Named error parameters format dates, clocks, weekdays and known system enums in Arabic; names/references remain isolated and unchanged. Original field paths, values, source messages, codes and diagnostic details are preserved. This audit covers the domain error envelope, not every direct exception/provider or notification boundary.
 
 Validation: 231 focused tests pass (class ownership/waitlists/cancellation, workspace entitlements, mock money/workflow regression, fields/parameters/catalog/hooks). Web/Convex typechecks and lint pass. No outbound messages or production writes were performed.
+
+## Member home and gym-detail checkpoint
+
+Member home, membership summaries, class booking/history/cancellation, PT package requests/booking/cancellation, referrals, freeze requests and the entry-code dialog now use typed Arabic copy for labels, prose, accessible names and transient states. Live locale changes retain a freeze draft; Arabic/Persian day input normalizes to the same numeric request. QR payloads and scanning orientation stay unchanged. Class navigation arrows and PT column dividers follow RTL. Existing English workflows retain their wording and behavior.
+
+The authenticated membership projection now carries the gym timezone as optional display context. Its member detail and entry-code views use that context; expiry decisions use the same tenant calendar boundary in either language. Gregorian Jordanian dates and 12-hour Arabic clocks replace legacy English formatting in these views. System-generated historical activity titles are still preserved until the structured event pass; user-entered notes/names remain original.
+
+Validation: 28 member/catalog tests pass, including existing English flows, Arabic late-cancellation disclosure before a write, Arabic-digit freeze input, draft preservation across locale switching, and timezone boundary/plural expiry checks. Web/Convex typechecks and lint pass. Browser/responsive verification remains in package G.

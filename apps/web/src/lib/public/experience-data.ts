@@ -134,6 +134,8 @@ export interface CustomerMembership {
   id: string;
   customerId: string;
   gymId: string;
+  /** Display context, independent of UI/recipient language. */
+  timezone?: string;
   gymName?: string;
   gymLogoUrl?: string;
   gymCoverUrl?: string;

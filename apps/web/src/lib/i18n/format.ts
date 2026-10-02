@@ -14,9 +14,10 @@ export function FormattingProvider({ timeZone, children }: { timeZone?: string; 
 
 export function useFormattingTimeZone(): string { return useContext(TimeZoneContext); }
 
-export function useFormat(): Formatters {
+export function useFormat(timeZoneOverride?: string): Formatters {
   const { locale, t } = useLocale();
-  const timeZone = useContext(TimeZoneContext);
+  const inheritedTimeZone = useContext(TimeZoneContext);
+  const timeZone = timeZoneOverride ?? inheritedTimeZone;
   const justNow = t("common.time.now");
   return useMemo(() => makeFormatters(locale, justNow, timeZone), [locale, justNow, timeZone]);
 }

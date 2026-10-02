@@ -1,5 +1,8 @@
+import { createTranslator } from "../i18n/core";
+import { makeFormatters } from "../i18n/formatters";
+import type { Locale } from "../i18n/locale";
 import type { CustomerMembership } from "./experience-data";
-import { daysFromToday, formatDate } from "@/lib/utils/dates";
+import { daysFromToday } from "@/lib/utils/dates";
 
 export type MembershipDisplayTone = "green" | "amber" | "red" | "neutral";
 
@@ -23,20 +26,22 @@ export interface MembershipDisplayStatus {
 export function membershipDisplayStatus(
   membership: Pick<CustomerMembership, "status" | "endDate">,
   now: Date = new Date(),
+  context: { locale?: Locale; timeZone?: string } = {},
 ): MembershipDisplayStatus {
-  const days = daysFromToday(membership.endDate, undefined, now);
-  const end = formatDate(membership.endDate);
+  const t = createTranslator(context.locale ?? "en");
+  const days = daysFromToday(membership.endDate, context.timeZone, now);
+  const end = makeFormatters(context.locale ?? "en", "", context.timeZone).date(membership.endDate);
   if (membership.status === "frozen") {
-    return { key: "frozen", label: "Frozen", tone: "neutral", summary: `Frozen · valid until ${end}`, daysLeft: Math.max(days, 0), ended: false };
+    return { key: "frozen", label: t("memberExperience.frozen"), tone: "neutral", summary: t("memberExperience.frozenUntil", { date: end }), daysLeft: Math.max(days, 0), ended: false };
   }
   if (days < 0) {
-    return { key: "ended", label: "Ended", tone: "red", summary: `Ended ${end}`, daysLeft: 0, ended: true };
+    return { key: "ended", label: t("memberExperience.ended"), tone: "red", summary: t("memberExperience.endedOn", { date: end }), daysLeft: 0, ended: true };
   }
   if (days === 0) {
-    return { key: "ending", label: "Ends today", tone: "amber", summary: `Ends today, ${end}`, daysLeft: 0, ended: false };
+    return { key: "ending", label: t("memberExperience.endsToday"), tone: "amber", summary: t("memberExperience.endsTodayDate", { date: end }), daysLeft: 0, ended: false };
   }
   if (days <= 14 || membership.status === "expiring") {
-    return { key: "ending", label: "Ends soon", tone: "amber", summary: `Ends in ${days} day${days === 1 ? "" : "s"} · ${end}`, daysLeft: days, ended: false };
+    return { key: "ending", label: t("memberExperience.endsSoon"), tone: "amber", summary: t("memberExperience.endsInDays", { days: t("memberExperience.dayCount", { count: days }), date: end }), daysLeft: days, ended: false };
   }
-  return { key: "active", label: "Active", tone: "green", summary: `Valid until ${end} · ${days} days left`, daysLeft: days, ended: false };
+  return { key: "active", label: t("memberExperience.active"), tone: "green", summary: t("memberExperience.validUntil", { count: days, date: end }), daysLeft: days, ended: false };
 }

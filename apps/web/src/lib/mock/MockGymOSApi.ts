@@ -1070,7 +1070,7 @@ export class MockGymOSApi implements GymOSApi {
   getCustomerExperience(): Promise<CustomerExperience> {
     return this.respond(() => {
       const persona = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId) ?? CUSTOMER_PERSONAS[0]!;
-      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS.map((membership) => ({ ...membership, referral: this.customerReferralProgram(membership) })), bookings: this.trialBookings.map((booking) => ({ ...booking })) };
+      return { customer: this.customerWithPreference(persona), memberships: INITIAL_CUSTOMER_MEMBERSHIPS.map((membership) => ({ ...membership, timezone: this.db.organization.timezone, referral: this.customerReferralProgram(membership) })), bookings: this.trialBookings.map((booking) => ({ ...booking })) };
     });
   }
 

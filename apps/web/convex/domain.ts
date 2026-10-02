@@ -3046,6 +3046,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
       gymName: stringValue(marketplaceValue.name, tenant.name),
       gymLogoUrl: optionalString(logo?.url),
       gymCoverUrl: optionalString(cover?.url),
+      timezone,
       branchId: optionalString(directoryBranch?.id) ?? stringValue(projection.branchId),
       branchName: stringValue(directoryBranch?.name, stringValue(branch?.name)),
       memberNumber: optionalString(member.memberNumber) ?? stringValue(projection.memberNumber),
