@@ -1,5 +1,7 @@
 "use client";
 
+import { authMessage, authErrorText, renderAuthMessage } from "@/lib/auth/messages";
+import type { MessageDescriptor } from "@/lib/i18n/core";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useUser } from "@clerk/nextjs";
 import { ArrowRight, UserRound } from "lucide-react";
@@ -9,7 +11,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useMemo, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
 import { englishT } from "./english-t";
 import { LoginLoading } from "./login-chrome";
@@ -44,11 +46,11 @@ function ProfileCompletionForm() {
   const { user } = useUser();
   const { t } = useLocale();
   const [beforeEmail = "", afterEmail = ""] = t("auth.profile.introWithEmail", { email: EMAIL_SLOT }).split(EMAIL_SLOT);
-  const schema = useMemo(() => createProfileCompletionSchema(t), [t]);
+  const schema = profileCompletionSchema;
+  const [serverError, setServerError] = useState<MessageDescriptor>();
   const {
     register,
     handleSubmit,
-    setError,
     formState: { errors, isSubmitting },
   } = useForm<ProfileCompletionValues>({
     resolver: zodResolver(schema),
@@ -60,14 +62,12 @@ function ProfileCompletionForm() {
 
   const submit = handleSubmit(async (values) => {
     if (!user) return;
+    setServerError(undefined);
     try {
       await user.update({ firstName: values.firstName, lastName: values.lastName });
       toast.success(t("auth.profile.ready"));
     } catch (error) {
-      // Surface Clerk's own reason so a stuck sign-in is diagnosable instead
-      // of a dead end behind a generic message.
-      const clerkMessage = (error as { errors?: Array<{ longMessage?: string; message?: string }> })?.errors?.[0];
-      setError("root", { message: clerkMessage?.longMessage ?? clerkMessage?.message ?? (error instanceof Error ? error.message : t("auth.profile.saveFailed")) });
+      setServerError(authMessage(error, "auth.profile.saveFailed"));
     }
   });
 
@@ -88,7 +88,7 @@ function ProfileCompletionForm() {
         </p>
 
         <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={submit} noValidate>
-          <Field label={t("auth.profile.firstName")} htmlFor="profile-first-name" error={errors.firstName?.message} required>
+          <Field label={t("auth.profile.firstName")} htmlFor="profile-first-name" error={errors.firstName ? authErrorText({ message: errors.firstName.message }, "auth.validation.firstName", t) : undefined} required>
             <Input
               id="profile-first-name"
               autoComplete="given-name"
@@ -98,7 +98,7 @@ function ProfileCompletionForm() {
               {...register("firstName")}
             />
           </Field>
-          <Field label={t("auth.profile.lastName")} htmlFor="profile-last-name" error={errors.lastName?.message} required>
+          <Field label={t("auth.profile.lastName")} htmlFor="profile-last-name" error={errors.lastName ? authErrorText({ message: errors.lastName.message }, "auth.validation.lastName", t) : undefined} required>
             <Input
               id="profile-last-name"
               autoComplete="family-name"
@@ -107,13 +107,13 @@ function ProfileCompletionForm() {
               {...register("lastName")}
             />
           </Field>
-          {errors.root?.message ? (
+          {serverError ? (
             <p className="text-[12px] text-danger sm:col-span-2" role="alert">
-              {errors.root.message}
+              {renderAuthMessage(serverError, t)}
             </p>
           ) : null}
           <Button type="submit" size="lg" className="sm:col-span-2" loading={isSubmitting}>
-            {t("auth.profile.submit")} <ArrowRight className="size-4" />
+            {t("auth.profile.submit")} <ArrowRight className="size-4 rtl:rotate-180" />
           </Button>
         </form>
       </div>

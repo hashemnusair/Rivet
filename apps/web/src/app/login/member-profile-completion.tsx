@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { authMessage, renderAuthMessage } from "@/lib/auth/messages";
+import type { MessageDescriptor } from "@/lib/i18n/core";
+import { englishT } from "./english-t";
+import { latinDigits } from "@/lib/utils/text";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -10,33 +14,33 @@ import type { RivetIdentity } from "@/lib/auth/rivet-identity";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
 
 const createProfileSchema = (t: TFunction) => z.object({
-  fullName: z.string().trim().min(3, t("auth.validation.fullName")).max(120),
+  fullName: z.string().trim().min(3, t("auth.validation.fullName")).max(120, t("authErrors.max120")),
   email: z.string().trim().email(t("auth.validation.emailInvalid")),
-  phone: z.string().trim().min(9, t("auth.validation.mobileRequired")).max(30).regex(/^\+?[\d\s()\-]{9,30}$/, t("auth.validation.mobileInvalid")),
+  phone: z.string().transform(latinDigits).pipe(z.string().trim().min(9, t("auth.validation.mobileRequired")).max(30, t("authErrors.max30")).regex(/^\+?[\d\s()\-]{9,30}$/, t("auth.validation.mobileInvalid"))),
   gender: z.enum(["female", "male"], { message: t("auth.validation.genderRequired") }),
 });
 
 /** Reached only after an authenticated member query confirms a missing profile. */
 export function MemberProfileCompletion({ identity, onComplete }: { identity: RivetIdentity; onComplete: () => Promise<void> }) {
   const { t, isolate } = useLocale();
-  const profileSchema = useMemo(() => createProfileSchema(t), [t]);
+  const profileSchema = createProfileSchema(englishT);
   const [fullName, setFullName] = useState(identity.fullName ?? "");
   const [phone, setPhone] = useState("");
   const [gender, setGender] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<MessageDescriptor>();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
     const parsed = profileSchema.safeParse({ fullName, email: identity.email ?? "", phone, gender });
-    if (!parsed.success) { setError(parsed.error.issues[0]?.message); return; }
+    if (!parsed.success) { setError(authMessage({ message: parsed.error.issues[0]?.message }, "authErrors.checkDetails")); return; }
     setBusy(true);
     setError(undefined);
     try {
       await getApi().registerCustomer(parsed.data);
       await onComplete();
     } catch {
-      setError(t("auth.memberSetup.saveFailed"));
+      setError({ key: "auth.memberSetup.saveFailed" });
     } finally { setBusy(false); }
   };
 
@@ -48,7 +52,7 @@ export function MemberProfileCompletion({ identity, onComplete }: { identity: Ri
     <Field label={t("auth.memberSetup.gender")} htmlFor="member-setup-gender" required><select id="member-setup-gender" value={gender} onChange={(event) => setGender(event.target.value)} className="h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" required>
       <option value="" disabled>{t("auth.memberSetup.genderChoose")}</option><option value="female">{t("auth.memberSetup.female")}</option><option value="male">{t("auth.memberSetup.male")}</option>
     </select></Field>
-    {error ? <p role="alert" className="text-[12px] text-danger">{error}</p> : null}
+    {error ? <p role="alert" className="text-[12px] text-danger">{renderAuthMessage(error, t)}</p> : null}
     <Button type="submit" className="w-full" loading={busy}>{t("auth.memberSetup.submit")}</Button>
   </form>;
 }

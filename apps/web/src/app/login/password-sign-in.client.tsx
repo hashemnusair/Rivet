@@ -1,5 +1,8 @@
 "use client";
 
+import { AuthFlowError, authErrorText, authMessage, renderAuthMessage } from "@/lib/auth/messages";
+import type { MessageDescriptor } from "@/lib/i18n/core";
+import { latinDigits } from "@/lib/utils/text";
 import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
 import { useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
@@ -27,7 +30,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
   const [password, setPassword] = useState("");
   const [verification, setVerification] = useState<VerificationKind | null>(null);
   const [code, setCode] = useState("");
-  const [localError, setLocalError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<MessageDescriptor | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const busy = fetchStatus === "fetching" || finishing || submitting;
@@ -45,14 +48,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         },
       });
       if (error) {
-        setLocalError(messageFrom(error, t("auth.signIn.errors.couldNotSignIn")));
+        setLocalError(authMessage(error, "auth.signIn.errors.couldNotSignIn"));
         return false;
       }
       if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
       else router.replace(decoratedRedirect);
       return true;
     } catch (error) {
-      setLocalError(messageFrom(error, t("auth.signIn.errors.couldNotSignIn")));
+      setLocalError(authMessage(error, "auth.signIn.errors.couldNotSignIn"));
       return false;
     } finally {
       setFinishing(false);
@@ -84,7 +87,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       return;
     }
 
-    throw new Error(t("auth.signIn.errors.unsupportedStep"));
+    throw new AuthFlowError({ key: "auth.signIn.errors.unsupportedStep" });
   };
 
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -96,7 +99,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     try {
       const { error } = await signIn.password({ emailAddress: emailAddress.trim(), password });
       if (error) {
-        setLocalError(messageFrom(error, t("auth.signIn.errors.incorrect")));
+        setLocalError(authMessage(error, "auth.signIn.errors.incorrect"));
         return;
       }
 
@@ -109,14 +112,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         try {
           await beginVerification();
         } catch (verificationError) {
-          setLocalError(messageFrom(verificationError, t("auth.signIn.errors.nextStepFailed")));
+          setLocalError(authMessage(verificationError, "auth.signIn.errors.nextStepFailed"));
         }
         return;
       }
 
-      setLocalError(t("auth.signIn.errors.anotherStep"));
+      setLocalError({ key: "auth.signIn.errors.anotherStep" });
     } catch (error) {
-      setLocalError(messageFrom(error, t("auth.signIn.errors.incorrect")));
+      setLocalError(authMessage(error, "auth.signIn.errors.incorrect"));
     } finally {
       setSubmitting(false);
     }
@@ -139,14 +142,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
               : await signIn.mfa.verifyBackupCode({ code: code.trim() });
 
       if (result.error) {
-        setLocalError(messageFrom(result.error, t("auth.signIn.errors.codeIncorrect")));
+        setLocalError(authMessage(result.error, "auth.signIn.errors.codeIncorrect"));
         return;
       }
       if (!(await finish()) && signIn.status !== "complete") {
-        setLocalError(t("auth.signIn.errors.notFinished"));
+        setLocalError({ key: "auth.signIn.errors.notFinished" });
       }
     } catch (error) {
-      setLocalError(messageFrom(error, t("auth.signIn.errors.codeIncorrect")));
+      setLocalError(authMessage(error, "auth.signIn.errors.codeIncorrect"));
     } finally {
       setSubmitting(false);
     }
@@ -158,9 +161,9 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     setSubmitting(true);
     try {
       const result = verification === "email_code" ? await signIn.mfa.sendEmailCode() : await signIn.mfa.sendPhoneCode();
-      if (result.error) setLocalError(messageFrom(result.error, t("auth.signIn.errors.resendFailed")));
+      if (result.error) setLocalError(authMessage(result.error, "auth.signIn.errors.resendFailed"));
     } catch (error) {
-      setLocalError(messageFrom(error, t("auth.signIn.errors.resendFailed")));
+      setLocalError(authMessage(error, "auth.signIn.errors.resendFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -175,7 +178,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       setCode("");
       setLocalError(null);
     } catch (error) {
-      setLocalError(messageFrom(error, t("auth.signIn.errors.startOverFailed")));
+      setLocalError(authMessage(error, "auth.signIn.errors.startOverFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -206,11 +209,11 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         </div>
         <form onSubmit={submitCode} className="mt-6 space-y-5" noValidate>
           {verification === "backup_code" ? (
-            <Field label={t("auth.signIn.verify.backupLabel")} htmlFor="login-code" error={errors.fields.code?.message} required>
+            <Field label={t("auth.signIn.verify.backupLabel")} htmlFor="login-code" error={errors.fields.code ? authErrorText(errors.fields.code, "auth.signIn.errors.codeIncorrect", t) : undefined} required>
               <Input
                 id="login-code"
                 value={code}
-                onChange={(event) => setCode(event.target.value)}
+                onChange={(event) => setCode(latinDigits(event.target.value))}
                 autoComplete="one-time-code"
                 dir="ltr"
                 autoFocus
@@ -220,14 +223,14 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           ) : (
             <VerificationCodeInput value={code} onChange={setCode} t={t} invalid={Boolean(errors.fields.code || localError)} />
           )}
-          {localError ? <p className="text-center text-[12px] text-danger" role="alert">{localError}</p> : null}
+          {localError ? <p className="text-center text-[12px] text-danger" role="alert">{renderAuthMessage(localError, t)}</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!codeReady}>
-            {t("auth.signIn.verify.submit")} <ArrowRight />
+            {t("auth.signIn.verify.submit")} <ArrowRight className="rtl:rotate-180" />
           </Button>
         </form>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-[12px]">
             <button type="button" onClick={() => void startOver()} disabled={busy} className="inline-flex items-center gap-1.5 text-ink-3 transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50">
-              <ArrowLeft className="size-3.5" /> {t("auth.signIn.verify.useAnother")}
+              <ArrowLeft className="size-3.5 rtl:rotate-180" /> {t("auth.signIn.verify.useAnother")}
             </button>
           {sentCode ? (
             <button type="button" onClick={() => void resend()} disabled={busy} className="font-medium text-ink-2 transition-colors hover:text-ink disabled:pointer-events-none disabled:opacity-50">
@@ -241,7 +244,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
 
   return (
     <form onSubmit={submitPassword} className="mt-7 space-y-4" noValidate>
-      <Field label={t("auth.signIn.emailLabel")} htmlFor="login-email" error={errors.fields.identifier?.message} required>
+      <Field label={t("auth.signIn.emailLabel")} htmlFor="login-email" error={errors.fields.identifier ? authErrorText(errors.fields.identifier, "auth.signIn.errors.incorrect", t) : undefined} required>
         <Input
           id="login-email"
           type="email"
@@ -254,7 +257,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           aria-invalid={Boolean(errors.fields.identifier)}
         />
       </Field>
-      <Field label={t("common.label.password")} htmlFor="login-password" error={errors.fields.password?.message} required>
+      <Field label={t("common.label.password")} htmlFor="login-password" error={errors.fields.password ? authErrorText(errors.fields.password, "auth.signIn.errors.incorrect", t) : undefined} required>
         <PasswordInput
           id="login-password"
           value={password}
@@ -265,7 +268,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           aria-describedby={errors.fields.password ? "login-password-error" : undefined}
         />
       </Field>
-      {localError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{localError}</p> : null}
+      {localError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{renderAuthMessage(localError, t)}</p> : null}
       <Button
         type="submit"
         size="lg"
@@ -273,7 +276,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         loading={busy}
         disabled={!signIn || !emailAddress.trim() || !password}
       >
-        {t("common.action.signIn")} <ArrowRight />
+        {t("common.action.signIn")} <ArrowRight className="rtl:rotate-180" />
       </Button>
       {signUp ? (
         <p className="text-center text-[12px] text-ink-3">
@@ -297,7 +300,7 @@ function VerificationCodeInput({ value, onChange, invalid, t }: { value: string;
   const digits = Array.from({ length: VERIFICATION_CODE_LENGTH }, (_, index) => value[index] ?? "");
 
   const update = (index: number, rawValue: string) => {
-    const incoming = rawValue.replace(/\D/g, "");
+    const incoming = latinDigits(rawValue).replace(/\D/g, "");
     if (incoming.length > 1) {
       const next = incoming.slice(0, VERIFICATION_CODE_LENGTH);
       onChange(next);
@@ -343,14 +346,4 @@ function VerificationCodeInput({ value, onChange, invalid, t }: { value: string;
       </div>
     </fieldset>
   );
-}
-
-function messageFrom(error: unknown, fallback: string): string {
-  if (typeof error !== "object" || error === null) return fallback;
-  const candidate = error as { message?: unknown; errors?: Array<{ longMessage?: unknown; message?: unknown }> };
-  const first = candidate.errors?.[0];
-  if (typeof first?.longMessage === "string") return first.longMessage;
-  if (typeof first?.message === "string") return first.message;
-  if (typeof candidate.message === "string") return candidate.message;
-  return fallback;
 }

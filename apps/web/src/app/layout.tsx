@@ -12,7 +12,7 @@ import { clerkFrontendApiOrigin, prePaintSignedInGuardScript } from "@/lib/auth/
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { dirFor } from "@/lib/i18n/config";
 import { getRequestUiPreference } from "@/lib/i18n/server";
-import { Toaster } from "sonner";
+import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import "./globals.css";
 
 /**
@@ -116,19 +116,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ExperienceProvider>
                   {children}
                 </ExperienceProvider>
-                <Toaster
-                  dir={dirFor(locale)}
-                  position="bottom-right"
-                  toastOptions={{
-                    style: {
-                      background: "#15140f",
-                      color: "#f2f0e6",
-                      border: "1px solid #2e2c22",
-                      borderRadius: "6px",
-                      fontSize: "13px",
-                    },
-                  }}
-                />
+                <LocalizedToaster />
               </AppProviders>
             </RivetIdentityProvider>
           </ConvexClientProvider>

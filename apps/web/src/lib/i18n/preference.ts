@@ -21,7 +21,7 @@ export function encodeUiPreference(value: UiLocalePreference): string { return e
 
 export function resolveUiPreference(input: { owner: string | null; savedLocale?: Locale; cookie?: UiLocalePreference; legacyLocale?: string }): UiLocalePreference {
   const eligible = input.cookie && (input.cookie.owner === input.owner || input.cookie.owner === null) ? input.cookie : undefined;
-  const locale = eligible?.pending ? eligible.locale : input.savedLocale ?? eligible?.locale ?? (!input.cookie && isLocale(input.legacyLocale) ? input.legacyLocale : DEFAULT_LOCALE);
+  const locale = eligible?.pending ? eligible.locale : input.savedLocale ?? eligible?.locale ?? (input.owner === null && !input.cookie && isLocale(input.legacyLocale) ? input.legacyLocale : DEFAULT_LOCALE);
   return { version: 1, locale, owner: input.owner, ...(eligible?.pending ? { pending: eligible.pending } : {}) };
 }
 

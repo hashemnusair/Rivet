@@ -1,3 +1,4 @@
+import { authErrors } from "./authErrors";
 import { memberExperience } from "./memberExperience";
 import { errorValues } from "./errorValues";
 import { apiErrors } from "./apiErrors";
@@ -21,6 +22,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  authErrors,
   memberExperience,
   errorValues,
   apiErrors,

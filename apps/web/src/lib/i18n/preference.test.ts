@@ -25,3 +25,9 @@ describe("UI preference ownership and first render", () => {
     for (const host of ["localhost", "preview.vercel.app", "rivetjo.com.example.org", "unknown.rivetjo.com"]) expect(localeCookieSuffix(host, false)).not.toContain("domain=");
   });
 });
+
+it("migrates an unowned legacy choice only for an anonymous first render", () => {
+  expect(resolveUiPreference({ owner: null, legacyLocale: "ar" }).locale).toBe("ar");
+  expect(resolveUiPreference({ owner: "new-account", legacyLocale: "ar" }).locale).toBe("en");
+  expect(resolveUiPreference({ owner: "new-account", savedLocale: "ar", legacyLocale: "en" }).locale).toBe("ar");
+});

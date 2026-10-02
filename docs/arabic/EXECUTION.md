@@ -85,3 +85,11 @@ Member home, membership summaries, class booking/history/cancellation, PT packag
 The authenticated membership projection now carries the gym timezone as optional display context. Its member detail and entry-code views use that context; expiry decisions use the same tenant calendar boundary in either language. Gregorian Jordanian dates and 12-hour Arabic clocks replace legacy English formatting in these views. System-generated historical activity titles are still preserved until the structured event pass; user-entered notes/names remain original.
 
 Validation: 28 member/catalog tests pass, including existing English flows, Arabic late-cancellation disclosure before a write, Arabic-digit freeze input, draft preservation across locale switching, and timezone boundary/plural expiry checks. Web/Convex typechecks and lint pass. Browser/responsive verification remains in package G.
+
+## Authentication checkpoint
+
+Custom sign-in, password/MFA, sign-up, invitations, profile completion and identity panels now render known provider codes through typed messages. Unknown diagnostics/tickets do not become UI copy. Errors retranslate on locale switching while preserving entered values; Arabic/Persian OTP and phone digits normalize before the existing requests. Names and passwords are untouched. Existing Clerk finalization, role routing, invitation validation and return URLs are retained. The provider-owned CAPTCHA/verification-delivery language still requires isolated-provider verification; this checkpoint does not certify it.
+
+Toast placement and accessible labels follow the live locale. Old unowned locale cookies no longer override an authenticated account, and pending changes received from another tab flush to the account preference.
+
+Validation: 82 of 83 tests passed in the combined auth/preference/catalog run; the sole obsolete English-message assertion was updated, then all 11 sign-up/auth-message tests passed. New Arabic tests cover sign-up through verification/finalization/profile return, MFA, normalized requests, unknown provider text and language changes without data loss. Web typecheck and lint pass; diff whitespace check passes. No real verification messages were sent.

@@ -1,5 +1,6 @@
 "use client";
 
+import { authErrorText } from "@/lib/auth/messages";
 import { isRivetHost, RIVET_HOSTS, postSignInPath } from "@/lib/routing/host-routing";
 import { useAction } from "convex/react";
 import { useClerk } from "@clerk/nextjs";
@@ -42,9 +43,7 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
     return (
       <NotEntitled
         title={identity.accountDeactivated ? t("auth.identity.deactivatedTitle") : t("auth.identity.loadFailedTitle")}
-        // The deactivated text is written here and translated. Any other message comes from the
-        // identity service and is shown as it arrives.
-        body={identity.accountDeactivated ? t("auth.identity.deactivatedBody") : (identity.errorMessage ?? t("auth.identity.loadFailedBody"))}
+        body={identity.accountDeactivated ? t("auth.identity.deactivatedBody") : authErrorText({ message: identity.errorMessage }, "auth.identity.loadFailedBody", t)}
       />
     );
   }

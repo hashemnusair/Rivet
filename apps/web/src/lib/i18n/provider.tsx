@@ -118,6 +118,7 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
       if (incoming && incoming.owner === preference.current.owner) {
         apply(incoming, false);
         setPreferenceStatus(incoming.pending && incoming.owner ? "pending" : incoming.owner ? "saved" : "device");
+        if (incoming.pending && incoming.owner) flush();
       }
     };
     window.addEventListener("storage", onStorage);

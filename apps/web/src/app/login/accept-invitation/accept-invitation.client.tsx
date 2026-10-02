@@ -1,10 +1,11 @@
 "use client";
 
+import { AuthFlowError, authErrorText } from "@/lib/auth/messages";
 import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { useAction } from "convex/react";
 import { ArrowRight, CircleAlert, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -47,11 +48,7 @@ function normalizeInvitationStatus(value: string | null): InvitationStatus {
   return "invalid";
 }
 
-/**
- * Never surface a Clerk response containing the invitation ticket itself.
- * Known failures are worded here (and translated). Any other Clerk message is
- * shown as Clerk wrote it, with the ticket removed.
- */
+/** Known invitation codes and safe provider descriptors only; never show a raw ticket. */
 export function invitationErrorMessage(error: unknown, t: TFunction = englishT): string {
   const record = error && typeof error === "object" ? error as { code?: unknown; message?: unknown; longMessage?: unknown; long_message?: unknown } : {};
   const code = typeof record.code === "string" ? record.code.toLowerCase() : "";
@@ -60,8 +57,7 @@ export function invitationErrorMessage(error: unknown, t: TFunction = englishT):
   if (code.includes("already_accepted")) return t("auth.invitation.error.alreadyUsed");
   if (code.includes("email_address_mismatch") || code.includes("email_mismatch")) return t("auth.invitation.error.emailMismatch");
   if (code.includes("invitation_not_accepted")) return t("auth.invitation.error.notConfirmed");
-  const message = [record.longMessage, record.long_message, record.message].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  return message ? message.replace(/(?:__clerk_ticket|ticket)=?[^&\s]*/gi, "invitation link").slice(0, 240) : t("auth.invitation.error.generic");
+  return authErrorText(error, "auth.invitation.error.generic", t);
 }
 
 function InvitationFrame({ children }: { children: ReactNode }) {
@@ -131,12 +127,13 @@ export function AcceptInvitation() {
 function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; status: "sign_in" | "sign_up"; onSignInStarted: () => void }) {
   const router = useRouter();
   const { t } = useLocale();
-  const invitationAccountSchemaForReader = useMemo(() => createInvitationAccountSchema(t), [t]);
+  const invitationAccountSchemaForReader = invitationAccountSchema;
   const { fetchStatus: signInFetchStatus, signIn } = useSignIn();
   const { fetchStatus: signUpFetchStatus, signUp } = useSignUp();
   const claimInvitation = useAction(api.users.claimInvitation);
   const [state, setState] = useState<InvitationState>(status === "sign_up" ? "form" : "processing");
-  const [error, setError] = useState<string>();
+  const [errorSource, setError] = useState<unknown>();
+  const error = errorSource ? invitationErrorMessage(errorSource, t) : undefined;
   const [values, setValues] = useState({ firstName: "", lastName: "", password: "", confirmPassword: "" });
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof typeof values, string>>>({});
   const attempted = useRef(false);
@@ -150,7 +147,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       const result = await signIn.create({ strategy: "ticket", ticket });
       if (result.error) throw result.error;
       if (signIn.status !== "complete") {
-        throw new Error(t("auth.invitation.error.needsSignInStep"));
+        throw new AuthFlowError({ key: "auth.invitation.error.needsSignInStep" });
       }
       const finalized = await signIn.finalize();
       if (finalized.error) throw finalized.error;
@@ -161,7 +158,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       router.replace("/login");
     })().catch((reason: unknown) => {
       setState("error");
-      setError(invitationErrorMessage(reason, t));
+      setError(reason);
     });
   }, [claimInvitation, onSignInStarted, router, signIn, signInFetchStatus, status, t, ticket]);
 
@@ -193,7 +190,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       });
       if (result.error) throw result.error;
       if (signUp.status !== "complete") {
-        throw new Error(t("auth.invitation.error.needsDetails"));
+        throw new AuthFlowError({ key: "auth.invitation.error.needsDetails" });
       }
       const finalized = await signUp.finalize();
       if (finalized.error) throw finalized.error;
@@ -205,7 +202,7 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
       router.replace("/login");
     } catch (reason: unknown) {
       setState("form");
-      setError(invitationErrorMessage(reason, t));
+      setError(reason);
     }
   };
 
@@ -219,13 +216,13 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label={t("auth.invitation.form.firstName")} htmlFor="invitation-first-name" error={fieldErrors.firstName} required><Input id="invitation-first-name" autoComplete="given-name" dir="auto" autoFocus value={values.firstName} onChange={(event) => setValues((current) => ({ ...current, firstName: event.target.value }))} /></Field>
-              <Field label={t("auth.invitation.form.lastName")} htmlFor="invitation-last-name" error={fieldErrors.lastName} required><Input id="invitation-last-name" autoComplete="family-name" dir="auto" value={values.lastName} onChange={(event) => setValues((current) => ({ ...current, lastName: event.target.value }))} /></Field>
+              <Field label={t("auth.invitation.form.firstName")} htmlFor="invitation-first-name" error={fieldErrors.firstName ? authErrorText({ message: fieldErrors.firstName }, "auth.validation.firstName", t) : undefined} required><Input id="invitation-first-name" autoComplete="given-name" dir="auto" autoFocus value={values.firstName} onChange={(event) => setValues((current) => ({ ...current, firstName: event.target.value }))} /></Field>
+              <Field label={t("auth.invitation.form.lastName")} htmlFor="invitation-last-name" error={fieldErrors.lastName ? authErrorText({ message: fieldErrors.lastName }, "auth.validation.lastName", t) : undefined} required><Input id="invitation-last-name" autoComplete="family-name" dir="auto" value={values.lastName} onChange={(event) => setValues((current) => ({ ...current, lastName: event.target.value }))} /></Field>
             </div>
-            <Field label={t("auth.invitation.form.password")} htmlFor="invitation-password" hint={t("auth.invitation.form.passwordHint")} error={fieldErrors.password} required><PasswordInput id="invitation-password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} aria-describedby={fieldErrors.password ? "invitation-password-error" : "invitation-password-hint"} /></Field>
-            <Field label={t("auth.invitation.form.confirmPassword")} htmlFor="invitation-confirm-password" error={fieldErrors.confirmPassword} required><PasswordInput id="invitation-confirm-password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))} aria-describedby={fieldErrors.confirmPassword ? "invitation-confirm-password-error" : undefined} /></Field>
+            <Field label={t("auth.invitation.form.password")} htmlFor="invitation-password" hint={t("auth.invitation.form.passwordHint")} error={fieldErrors.password ? authErrorText({ message: fieldErrors.password }, "auth.validation.passwordMin", t) : undefined} required><PasswordInput id="invitation-password" autoComplete="new-password" value={values.password} onChange={(event) => setValues((current) => ({ ...current, password: event.target.value }))} aria-describedby={fieldErrors.password ? "invitation-password-error" : "invitation-password-hint"} /></Field>
+            <Field label={t("auth.invitation.form.confirmPassword")} htmlFor="invitation-confirm-password" error={fieldErrors.confirmPassword ? authErrorText({ message: fieldErrors.confirmPassword }, "auth.validation.passwordMismatch", t) : undefined} required><PasswordInput id="invitation-confirm-password" autoComplete="new-password" value={values.confirmPassword} onChange={(event) => setValues((current) => ({ ...current, confirmPassword: event.target.value }))} aria-describedby={fieldErrors.confirmPassword ? "invitation-confirm-password-error" : undefined} /></Field>
             {error ? <p className="flex items-start gap-2 rounded-md border border-danger/25 bg-danger-bg px-3 py-2.5 text-[12px] leading-relaxed text-danger" role="alert"><CircleAlert className="mt-0.5 size-4 shrink-0" />{error}</p> : null}
-            <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>{t("auth.invitation.form.submit")} <ArrowRight className="size-4" /></Button>
+            <Button type="submit" size="lg" className="mt-1 w-full" loading={signUpFetchStatus === "fetching"} disabled={signUpFetchStatus === "fetching"}>{t("auth.invitation.form.submit")} <ArrowRight className="size-4 rtl:rotate-180" /></Button>
           </form>
           <p className="mt-5 flex items-center gap-2 text-[12.5px] leading-relaxed text-ink-3"><LockKeyhole className="size-3.5 shrink-0" aria-hidden />{t("auth.invitation.form.onceOnly")}</p>
         </div>
@@ -261,5 +258,5 @@ function InvitationError({ title, body, tone = "error", action }: { title: strin
 
 function InvitationConflict({ onSignOut }: { onSignOut: () => void }) {
   const { t } = useLocale();
-  return <div className="mt-7" role="status"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" aria-hidden />{t("auth.invitation.conflict.title")}</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">{t("auth.invitation.conflict.body")}</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>{t("auth.invitation.conflict.submit")} <ArrowRight className="size-4" /></Button></div>;
+  return <div className="mt-7" role="status"><div className="rounded-lg border border-warning/30 bg-warning-bg p-4"><p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><CircleAlert className="size-4" aria-hidden />{t("auth.invitation.conflict.title")}</p><p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep/90">{t("auth.invitation.conflict.body")}</p></div><Button className="mt-5 w-full" size="lg" onClick={onSignOut}>{t("auth.invitation.conflict.submit")} <ArrowRight className="size-4 rtl:rotate-180" /></Button></div>;
 }
