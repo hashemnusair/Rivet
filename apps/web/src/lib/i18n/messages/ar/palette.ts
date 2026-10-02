@@ -70,6 +70,7 @@ export const palette: typeof En = {
   },
 
   hints: {
+    opensForm: "يفتح نموذجًا، دون حفظ أي بيانات بعد",
     move: "تنقل",
     open: "فتح",
     close: "إغلاق",

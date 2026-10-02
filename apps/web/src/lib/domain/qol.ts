@@ -186,11 +186,17 @@ export interface ExportRequestInput {
 
 export type WorkspaceSearchKind = "member" | "lead" | "receipt" | "page" | "action";
 
+/** Optional source facts beside the original search/recent subtitle. Unknown history remains original. */
+export type WorkspaceSubtitle =
+  | { kind: "lead"; stage: string; phone: string }
+  | { kind: "receipt"; memberName?: string; status: string };
+
 export interface WorkspaceSearchResult {
   kind: WorkspaceSearchKind;
   id: string;
   title: string;
   subtitle?: string;
+  subtitleParts?: WorkspaceSubtitle;
   href: string;
   keywords?: string[];
 }
@@ -200,6 +206,7 @@ export interface RecentWorkspaceItem {
   id: string;
   title: string;
   subtitle?: string;
+  subtitleParts?: WorkspaceSubtitle;
   href: string;
   viewedAt: ISODateTime;
 }

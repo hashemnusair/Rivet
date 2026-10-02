@@ -48,3 +48,24 @@ describe("command palette in Arabic", () => {
     expect(screen.getByText("مهام اليوم")).toBeInTheDocument();
   });
 });
+
+
+describe("Arabic keyword destinations", () => {
+  it("finds an Arabic catalogue entry from diacritics without rewriting the query", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<LocaleProvider initialLocale="ar"><CommandPalette open onOpenChange={() => undefined} /></LocaleProvider>);
+    const input = screen.getByRole("combobox", { name: "البحث الشامل" });
+    await user.type(input, "أَنْوَاع الاشتراكات");
+    expect(await screen.findByText("أنواع الاشتراكات")).toBeInTheDocument();
+    expect(input).toHaveValue("أَنْوَاع الاشتراكات");
+    expect(screen.queryByText("Membership plans")).not.toBeInTheDocument();
+  });
+
+  it("does not expose owner permission settings to reception through Arabic keywords", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<LocaleProvider initialLocale="ar"><CommandPalette open onOpenChange={() => undefined} /></LocaleProvider>, { role: "receptionist" });
+    await user.type(screen.getByRole("combobox", { name: "البحث الشامل" }), "الصلاحيات");
+    await screen.findByText(/لا توجد نتائج/);
+    expect(screen.queryByText("الإعدادات: الأدوار والصلاحيات")).not.toBeInTheDocument();
+  });
+});

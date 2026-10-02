@@ -76,6 +76,7 @@ export const palette = {
   },
 
   hints: {
+    opensForm: "opens a form. Nothing is saved yet",
     move: "move",
     open: "open",
     close: "close",

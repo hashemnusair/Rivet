@@ -200,3 +200,12 @@ Validation: 34 analytics/overview/CSV/catalog tests passed; seven dual-language 
 Operational rule fields, branch/area capacities and receipt tax use text controls so Arabic/Persian digits reach normalization before browser number-input sanitization. Empty, fractional, out-of-range and over-precision drafts remain visible and block saving. Switching language preserves those drafts; discarding resets even an invalid draft whose last valid underlying value never changed. Existing fee currency precision, integer policy limits, canonical payloads and original receipt/footer text remain intact. In-flight mutation refusals and post-save refresh warnings use the current UI language without resubmitting a write or losing its request/error envelope.
 
 Validation: 22 focused settings/parser/shared-query tests pass, including five new numeric settings journeys and two delayed-response language-switch cases. Focused lint, the locked-decision checksum and whitespace checks pass. Whole-repository gates are deferred until the parallel packets have finished editing their owned namespaces.
+
+
+## Shared navigation and search checkpoint
+
+All 59 navigation catalogue entries have Arabic titles/descriptions and Arabic/English comparison aliases. Search removes Arabic diacritics and normalizes digit sets without rewriting the query, source names or stored references. Permission/module filtering still runs before searching; destination IDs, form flags and URLs remain canonical. Known server page/action results and recent destinations render in the current language. Optional source facts localize lead/payment statuses beside unchanged original search/recent subtitles; unknown historical subtitles stay original. The mock search now uses the same existing Arabic comparison helper as server search. Demo-only controls and role descriptions also follow the UI language.
+
+Distinct timeline anchors restore direct follow-up evidence links. This does not modify event records.
+
+Validation: 23 navigation, real palette, member timeline and backend tests pass, including normalized Arabic queries, unchanged source contracts, explicit module/permission exclusions, tenant isolation, Arabic phone search and per-user recent metadata. Focused lint and the decision lock pass. A mid-edit whole-web typecheck reported only other parallel packets' in-progress errors; those owners received the log and will resolve them before final integration gates.

@@ -32,13 +32,7 @@ import { NotificationCenter } from "./notification-center";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { WorkspaceRecentTracker } from "./workspace-recent-tracker";
 
-const DEMO_ROLES: Array<{ role: RoleKey; blurb: string }> = [
-  { role: "owner", blurb: "Sees everything: all branches, money, history and settings." },
-  { role: "manager", blurb: "Runs the gym: approvals, cash counts and staff." },
-  { role: "salesperson", blurb: "Trials, follow-ups and selling memberships." },
-  { role: "receptionist", blurb: "Front desk: find members, check in, take payments." },
-  { role: "trainer", blurb: "Their own PT schedule, free times and session results." },
-];
+const DEMO_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const satisfies readonly RoleKey[];
 
 export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const { session, organizations, selectOrganization, setBranch, signOut, switchRole, behavior, setBehavior, resetDemo } = useApp();
@@ -168,7 +162,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Demo controls"
+            aria-label={t("shell.demo.controls")}
             className={cn((behavior.failNextRequest || behavior.failNextPublicSubscription || behavior.forceEmptyLists || behavior.latencyMs !== 120) && "text-signal")}
           >
             <Beaker />
@@ -176,61 +170,61 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80">
           <div className="border-b border-line px-4 py-3">
-            <p className="font-display text-[14px] font-semibold">Demo controls</p>
-            <p className="text-[12px] text-ink-3">Try the states a live gym could see.</p>
+            <p className="font-display text-[14px] font-semibold">{t("shell.demo.controls")}</p>
+            <p className="text-[12px] text-ink-3">{t("shell.demo.description")}</p>
           </div>
           <div className="space-y-3 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[13px] font-medium">Simulated latency</p>
-                <p className="text-[12px] text-ink-3">Make the app feel slower.</p>
+                <p className="text-[13px] font-medium">{t("shell.demo.latency")}</p>
+                <p className="text-[12px] text-ink-3">{t("shell.demo.latencyHint")}</p>
               </div>
               <Select
                 value={String(behavior.latencyMs)}
                 onValueChange={(v) => setBehavior({ latencyMs: Number(v) })}
               >
-                <SelectTrigger sizeVariant="sm" className="w-24" aria-label="Latency">
+                <SelectTrigger sizeVariant="sm" className="w-24" aria-label={t("shell.demo.latencyLabel")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0">None</SelectItem>
-                  <SelectItem value="120">Normal</SelectItem>
-                  <SelectItem value="700">Slow</SelectItem>
-                  <SelectItem value="1600">Painful</SelectItem>
+                  <SelectItem value="0">{t("shell.demo.none")}</SelectItem>
+                  <SelectItem value="120">{t("shell.demo.normal")}</SelectItem>
+                  <SelectItem value="700">{t("shell.demo.slow")}</SelectItem>
+                  <SelectItem value="1600">{t("shell.demo.verySlow")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
-                <p className="text-[13px] font-medium">Fail next request</p>
-                <p className="text-[12px] text-ink-3">The next load or save shows an error.</p>
+                <p className="text-[13px] font-medium">{t("shell.demo.failNext")}</p>
+                <p className="text-[12px] text-ink-3">{t("shell.demo.failNextHint")}</p>
               </div>
               <Switch
                 checked={behavior.failNextRequest}
                 onCheckedChange={(v) => setBehavior({ failNextRequest: v })}
-                aria-label="Fail next request"
+                aria-label={t("shell.demo.failNext")}
               />
             </label>
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
-                <p className="text-[13px] font-medium">Fail next public subscription</p>
-                <p className="text-[12px] text-ink-3">Live updates on public pages fail until you press Retry or turn this off.</p>
+                <p className="text-[13px] font-medium">{t("shell.demo.failPublic")}</p>
+                <p className="text-[12px] text-ink-3">{t("shell.demo.failPublicHint")}</p>
               </div>
               <Switch
                 checked={behavior.failNextPublicSubscription}
                 onCheckedChange={(v) => setBehavior({ failNextPublicSubscription: v })}
-                aria-label="Fail next public subscription"
+                aria-label={t("shell.demo.failPublic")}
               />
             </label>
             <label className="flex items-center justify-between gap-3 cursor-pointer">
               <div>
-                <p className="text-[13px] font-medium">Force empty lists</p>
-                <p className="text-[12px] text-ink-3">Every list shows as empty.</p>
+                <p className="text-[13px] font-medium">{t("shell.demo.emptyLists")}</p>
+                <p className="text-[12px] text-ink-3">{t("shell.demo.emptyListsHint")}</p>
               </div>
               <Switch
                 checked={behavior.forceEmptyLists}
                 onCheckedChange={(v) => setBehavior({ forceEmptyLists: v })}
-                aria-label="Force empty lists"
+                aria-label={t("shell.demo.emptyLists")}
               />
             </label>
 
@@ -243,13 +237,18 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               loading={resetting}
               onClick={async () => {
                 setResetting(true);
-                await resetDemo();
-                setResetting(false);
-                toast.success("Demo data is back to how it started.");
+                try {
+                  await resetDemo();
+                  toast.success(t("shell.demo.resetDone"));
+                } catch {
+                  toast.error(t("shell.demo.resetFailed"));
+                } finally {
+                  setResetting(false);
+                }
               }}
             >
               <RotateCcw className="size-3.5" />
-              Reset demo data
+              {t("shell.demo.reset")}
             </Button>
           </div>
         </PopoverContent>
@@ -280,16 +279,16 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel className="flex items-center gap-1.5">
-                  <UsersRound className="size-3" /> Switch demo role
+                  <UsersRound className="size-3" /> {t("shell.demo.switchRole")}
                 </DropdownMenuLabel>
                 {DEMO_ROLES.map((d) => (
-                  <DropdownMenuItem key={d.role} onClick={() => switchRole(d.role)} className="flex items-start gap-2">
+                  <DropdownMenuItem key={d} onClick={() => switchRole(d)} className="flex items-start gap-2">
                     <span className="mt-0.5 size-4 shrink-0">
-                      {role === d.role ? <Check className="size-3.5 text-success" /> : <UserRound className="size-3.5" />}
+                      {role === d ? <Check className="size-3.5 text-success" /> : <UserRound className="size-3.5" />}
                     </span>
                     <span>
-                      <span className="block font-medium">{roleLabel(t, d.role)}</span>
-                      <span className="block text-[12px] text-ink-3">{d.blurb}</span>
+                      <span className="block font-medium">{roleLabel(t, d)}</span>
+                      <span className="block text-[12px] text-ink-3">{t(`shell.demo.role.${d}`)}</span>
                     </span>
                   </DropdownMenuItem>
                 ))}

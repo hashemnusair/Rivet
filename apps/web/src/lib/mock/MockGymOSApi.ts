@@ -9793,13 +9793,13 @@ export class MockGymOSApi implements GymOSApi {
 
   searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> {
     return this.respond(() => {
-      const query = search.trim().toLocaleLowerCase();
+      const query = searchKey(search);
       if (query.length < 2) return [];
       const permissions = permissionsFor(this.db, currentRole(this.db));
       const results: import("@/lib/domain/qol").WorkspaceSearchResult[] = [];
-      if (permissions.includes("members.read")) results.push(...this.db.members.filter((item) => [item.fullName, item.memberNumber, item.phone].some((value) => value.toLocaleLowerCase().includes(query))).slice(0, 6).map((item) => ({ kind: "member" as const, id: item.id, title: item.fullName, subtitle: `${item.memberNumber} · ${item.phone}`, href: `/members/${item.id}` })));
-      if (permissions.includes("crm.read")) results.push(...this.db.leads.filter((item) => [item.fullName, item.phone, item.email].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "lead" as const, id: item.id, title: item.fullName, subtitle: `${item.stage} · ${item.phone}`, href: `/crm/leads/${item.id}` })));
-      if (permissions.includes("reports.financial.read")) results.push(...this.db.payments.filter((item) => [item.receiptNumber, item.externalReference].some((value) => value?.toLocaleLowerCase().includes(query))).slice(0, 5).map((item) => ({ kind: "receipt" as const, id: item.receiptId, title: item.receiptNumber, subtitle: `${this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member"} · ${item.status}`, href: `/payments/receipts/${item.receiptId}` })));
+      if (permissions.includes("members.read")) results.push(...this.db.members.filter((item) => this.matchesSearch([item.fullName, item.fullNameAr, item.memberNumber, item.phone], query)).slice(0, 6).map((item) => ({ kind: "member" as const, id: item.id, title: item.fullName, subtitle: `${item.memberNumber} · ${item.phone}`, href: `/members/${item.id}` })));
+      if (permissions.includes("crm.read")) results.push(...this.db.leads.filter((item) => this.matchesSearch([item.fullName, item.phone, item.email], query)).slice(0, 5).map((item) => ({ kind: "lead" as const, id: item.id, title: item.fullName, subtitle: `${item.stage} · ${item.phone}`, subtitleParts: { kind: "lead" as const, stage: item.stage, phone: item.phone }, href: `/crm/leads/${item.id}` })));
+      if (permissions.includes("reports.financial.read")) results.push(...this.db.payments.filter((item) => this.matchesSearch([item.receiptNumber, item.externalReference], query)).slice(0, 5).map((item) => ({ kind: "receipt" as const, id: item.receiptId, title: item.receiptNumber, subtitle: `${this.db.members.find((member) => member.id === item.memberId)?.fullName ?? "Member"} · ${item.status}`, subtitleParts: { kind: "receipt" as const, memberName: this.db.members.find((member) => member.id === item.memberId)?.fullName, status: item.status }, href: `/payments/receipts/${item.receiptId}` })));
       return results;
     });
   }

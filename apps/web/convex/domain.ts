@@ -1,3 +1,4 @@
+import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
 import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
 import { searchKey } from "../src/lib/utils/text";
@@ -5071,11 +5072,11 @@ async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Dat
   }
   if (hasPermission(actor, "crm.read")) {
     const rows = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter((lead) => matchesSearch([lead.fullName, lead.phone, lead.email, lead.source], search)).slice(0, 6);
-    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
+    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, subtitleParts: { kind: "lead", stage: stringValue(lead.stage), phone: stringValue(lead.phone) }, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
   }
   if (hasPermission(actor, "reports.financial.read")) {
     const rows = (await recordsOf(ctx, actor, "payment")).map((record) => data(record.data)).filter((payment) => matchesSearch([payment.receiptNumber, payment.externalReference, payment.idempotencyKey, payment.memberName, payment.memberNumber], search)).slice(0, 6);
-    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
+    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, subtitleParts: { kind: "receipt", memberName: optionalString(payment.memberName) ?? optionalString(payment.memberNumber), status: stringValue(payment.status) }, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
   }
   const navigation: Data[] = workspacePages(actor).map((row) => ({ kind: "page", ...row }));
   const actions: Data[] = workspaceQuickActions(actor).map((row) => ({ kind: "action", ...row }));
@@ -5084,7 +5085,7 @@ async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Dat
 }
 
 function recentWorkspaceItemView(row: Doc<"recentWorkspaceItems">): Data {
-  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, href: row.href, viewedAt: utcIso(row.viewedAt) };
+  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, subtitleParts: row.subtitleParts, href: row.href, viewedAt: utcIso(row.viewedAt) };
 }
 
 function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
@@ -9453,11 +9454,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const title = stringValue(input.title).trim().slice(0, 160);
       if (!title) domainError("VALIDATION_ERROR", "Recent-item title is required.", { correlationId: actor.correlationId });
       const subtitle = optionalString(input.subtitle)?.trim().slice(0, 240);
+      const subtitleParts = parseWorkspaceSubtitle(input.subtitleParts, kind);
       const href = workspaceInternalHref(input.href, actor.correlationId);
       const existing = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_entity", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id).eq("kind", kind as "member" | "lead" | "receipt" | "page").eq("entityPublicId", entityPublicId)).unique();
       const viewedAt = Date.now();
-      if (existing) await ctx.db.patch(existing._id, { title, subtitle, href, viewedAt });
-      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, href, viewedAt });
+      if (existing) await ctx.db.patch(existing._id, { title, subtitle, subtitleParts, href, viewedAt });
+      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, subtitleParts, href, viewedAt });
       const all = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").collect();
       await Promise.all(all.slice(20).map((row) => ctx.db.delete(row._id)));
       return undefined;

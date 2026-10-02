@@ -1,3 +1,4 @@
+import { navigationCatalogue } from "./navigationCatalogue";
 import { crmCompletion } from "./crmCompletion";
 import { platformFinance } from "./platformFinance";
 import { platformConsole } from "./platformConsole";
@@ -50,6 +51,7 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  navigationCatalogue,
   crmCompletion,
   platformFinance,
   platformConsole,

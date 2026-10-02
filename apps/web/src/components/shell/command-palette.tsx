@@ -11,12 +11,13 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
+import { localizeNavigationEntry, workspaceTargetCopy } from "@/lib/i18n/navigation";
 import { workspacePageTitle } from "./workspace-recent-tracker";
 import { Badge } from "@/components/ui/badge";
 import { navigationAccessFromSession } from "@/features/navigation/navigation-assist";
 import { keywordSearchNavigation, permittedNavigationEntries, type NavigationEntry } from "../../../convex/navigationCatalogue";
 
-type PaletteTarget = Pick<WorkspaceSearchResult, "kind" | "id" | "title" | "subtitle" | "href">;
+type PaletteTarget = Pick<WorkspaceSearchResult, "kind" | "id" | "title" | "subtitle" | "subtitleParts" | "href">;
 
 /** Plain names for the record and place kinds; the raw keys are storage identifiers. */
 const KIND_LABEL_KEYS: Record<string, TKey> = { member: "palette.kind.member", lead: "palette.kind.lead", receipt: "palette.kind.receipt", page: "palette.kind.page", action: "palette.kind.action", destination: "palette.kind.page", report: "palette.kind.report", form: "palette.kind.form", settings: "palette.kind.setting" };
@@ -42,7 +43,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
   const settledQuery = useDebouncedValue(query.trim(), 200);
-  const catalogue = useMemo(() => permittedNavigationEntries(navigationAccessFromSession(session)), [session]);
+  const catalogue = useMemo(() => permittedNavigationEntries(navigationAccessFromSession(session)).map(entry => localizeNavigationEntry(t, entry)), [session, t]);
   const places = useMemo(() => (settledQuery.length >= 2 ? keywordSearchNavigation(catalogue, settledQuery, 6) : []), [catalogue, settledQuery]);
   const search = useApiQuery(qk.workspaceSearch(settledQuery), (api) => api.searchWorkspace(settledQuery), { enabled: open && settledQuery.length >= 2, retry: false });
   const recents = useApiQuery(qk.workspaceRecents, (api) => api.listRecentWorkspaceItems(), { enabled: open });
@@ -89,7 +90,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   if (!signedIn) return null;
   const go = (target: PaletteTarget) => {
     onOpenChange(false);
-    if (target.kind !== "action") recordRecent.mutate({ kind: target.kind, id: target.id, title: target.title, subtitle: target.subtitle, href: target.href });
+    if (target.kind !== "action") recordRecent.mutate({ kind: target.kind, id: target.id, title: target.title, subtitle: target.subtitle, subtitleParts: target.subtitleParts, href: target.href });
     router.push(target.href);
   };
   const grouped = (search.data ?? []).reduce<Record<string, WorkspaceSearchResult[]>>((groups, result) => { (groups[result.kind] ??= []).push(result); return groups; }, {});
@@ -99,7 +100,6 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const groupLabel = (kind: string) => { const key = GROUP_LABEL_KEYS[kind]; return key ? t(key) : kind; };
   /** Pinned and recent items were stored in the language they were saved in; known ones are shown in the current language. */
   const pinnedTitle = (item: { targetKey: string; label: string }) => (isQuickActionId(item.targetKey) ? t(QUICK_ACTIONS[item.targetKey].title) : item.label);
-  const recentTitle = (item: RecentWorkspaceItem) => (item.kind === "page" ? workspacePageTitle(t, item.id) ?? item.title : item.title);
 
   return <Command.Dialog open={open} onOpenChange={onOpenChange} label={t("palette.search.dialogLabel")} className="fixed inset-0 z-[90]" shouldFilter={false}>
     <button type="button" tabIndex={-1} aria-label={t("palette.search.closeLabel")} className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
@@ -110,13 +110,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">{t("palette.search.searching")}</p> : null}
           {search.isError ? <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger"><p>{t("palette.search.errorMessage")}</p><button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => { void search.refetch(); }}>{t("palette.search.errorRetry")}</button></div> : null}
           {!search.isLoading && !search.isError && search.data?.length === 0 && catalogueMatches.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">{t("palette.search.noMatches", { query: isolate(settledQuery) })}</p> : null}
-          {Object.entries(grouped).map(([kind, results]) => <Command.Group key={kind} heading={<GroupHeading>{groupLabel(kind)}</GroupHeading>}>{results.map((result) => <PaletteItem key={`${result.kind}-${result.id}`} onSelect={() => go(result)} icon={result.kind === "receipt" ? ReceiptText : result.kind === "lead" ? UserPlus : result.kind === "member" ? Users : result.kind === "action" ? Star : ArrowRight} title={result.title} subtitle={result.subtitle} trailing={<Badge variant="outline">{kindLabel(t, result.kind)}</Badge>} />)}</Command.Group>)}
+          {Object.entries(grouped).map(([kind, results]) => <Command.Group key={kind} heading={<GroupHeading>{groupLabel(kind)}</GroupHeading>}>{results.map((result) => <PaletteItem key={`${result.kind}-${result.id}`} onSelect={() => go(result)} icon={result.kind === "receipt" ? ReceiptText : result.kind === "lead" ? UserPlus : result.kind === "member" ? Users : result.kind === "action" ? Star : ArrowRight} title={workspaceTargetCopy(t, result).title} subtitle={workspaceTargetCopy(t, result).subtitle} trailing={<Badge variant="outline">{kindLabel(t, result.kind)}</Badge>} />)}</Command.Group>)}
           {catalogueMatches.length ? <Command.Group heading={<GroupHeading>{t("palette.groups.places")}</GroupHeading>}>{catalogueMatches.map((entry) => <PaletteItem key={entry.id} onSelect={() => openEntry(entry)} icon={ArrowRight} title={entry.label} subtitle={entry.description} trailing={<Badge variant="outline">{kindLabel(t, entry.kind)}</Badge>} />)}</Command.Group> : null}
         </> : <>
           {pins.isError || recents.isError ? <div role="alert" className="mx-1 mb-2 border-s-2 border-danger ps-3 text-[12.5px] text-danger"><p>{t("palette.pinned.loadError")}</p><button type="button" className="mt-1 font-medium underline underline-offset-2" onClick={() => { void pins.refetch(); void recents.refetch(); }}>{t("common.action.retry")}</button></div> : null}
           {(pins.data?.length ?? 0) > 0 ? <Command.Group heading={<GroupHeading>{t("palette.groups.pinned")}</GroupHeading>}>{pins.data?.map((item) => <PaletteItem key={item.id} onSelect={() => go({ kind: "action", id: item.targetKey, title: pinnedTitle(item), href: item.href })} icon={Star} title={pinnedTitle(item)} subtitle={t("palette.pinned.subtitle")} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={t("palette.pinned.unpin", { name: isolate(pinnedTitle(item)) })} onClick={(event) => { event.stopPropagation(); unpin.mutate(item.id); }}><StarOff className="size-3.5" /></button>} />)}</Command.Group> : null}
           <Command.Group heading={<GroupHeading>{t("palette.groups.quickActions")}</GroupHeading>}>{quickActions.map((item) => { const pinned = pinnedByTarget.get(item.id); return <PaletteItem key={item.id} onSelect={() => go({ kind: "action", ...item })} icon={item.icon} title={item.title} subtitle={item.subtitle} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={t(pinned ? "palette.pinned.unpin" : "palette.pinned.pin", { name: isolate(item.title) })} onClick={(event) => { event.stopPropagation(); if (pinned) unpin.mutate(pinned.id); else pin.mutate({ targetKey: item.id, kind: "action", label: item.title, href: item.href }); }}>{pinned ? <StarOff className="size-3.5" /> : <Star className="size-3.5" />}</button>} />; })}</Command.Group>
-          {(recents.data?.length ?? 0) > 0 ? <Command.Group heading={<div className="flex items-center justify-between"><GroupHeading>{t("palette.groups.recent")}</GroupHeading><button type="button" className="px-2 pt-2 text-[12px] text-ink-3 hover:text-ink" onClick={() => clearRecents.mutate()}>{t("palette.groups.clearRecent")}</button></div>}>{recents.data?.map((item) => <PaletteItem key={`${item.kind}-${item.id}`} onSelect={() => go(item)} icon={Clock3} title={recentTitle(item)} subtitle={item.subtitle} trailing={<Badge variant="outline">{kindLabel(t, item.kind)}</Badge>} />)}</Command.Group> : null}
+          {(recents.data?.length ?? 0) > 0 ? <Command.Group heading={<div className="flex items-center justify-between"><GroupHeading>{t("palette.groups.recent")}</GroupHeading><button type="button" className="px-2 pt-2 text-[12px] text-ink-3 hover:text-ink" onClick={() => clearRecents.mutate()}>{t("palette.groups.clearRecent")}</button></div>}>{recents.data?.map((item) => <PaletteItem key={`${item.kind}-${item.id}`} onSelect={() => go(item)} icon={Clock3} title={workspaceTargetCopy(t, item).title} subtitle={workspaceTargetCopy(t, item).subtitle} trailing={<Badge variant="outline">{kindLabel(t, item.kind)}</Badge>} />)}</Command.Group> : null}
           <Command.Group heading={<GroupHeading>{t("palette.groups.goTo")}</GroupHeading>}>{pages.map((page) => <PaletteItem key={page.href} onSelect={() => go({ kind: "page", ...page })} icon={page.icon} title={page.title} subtitle={page.subtitle} />)}</Command.Group>
         </>}
       </Command.List>

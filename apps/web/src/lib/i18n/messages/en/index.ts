@@ -1,3 +1,4 @@
+import { navigationCatalogue } from "./navigationCatalogue";
 import { crmCompletion } from "./crmCompletion";
 import { platformFinance } from "./platformFinance";
 import { platformConsole } from "./platformConsole";
@@ -55,6 +56,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  navigationCatalogue,
   crmCompletion,
   platformFinance,
   platformConsole,

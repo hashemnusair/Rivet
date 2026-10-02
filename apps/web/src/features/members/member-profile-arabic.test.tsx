@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Task } from "@/lib/domain/types";
+import type { Task, TimelineEvent } from "@/lib/domain/types";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { MemberTasksPanel } from "./member-tabs";
@@ -51,4 +51,12 @@ describe("member profile in Arabic", () => {
     renderArabic(<TimelineFeed events={[]} />);
     expect(screen.getByText("لا يوجد شيء مسجّل بعد.")).toBeInTheDocument();
   });
+});
+
+
+it("keeps distinct timeline anchors for follow-up evidence links", () => {
+  const events = ["first", "second"].map(id => ({ id, organizationId: "org", memberId: "member", type: "note", title: "ملاحظة", body: "Original note", occurredAt: now, actorName: "Omar" } as TimelineEvent));
+  const { container } = renderArabic(<TimelineFeed events={events} />);
+  expect(container.querySelector("#timeline-event-first")).toHaveTextContent("Original note");
+  expect(container.querySelector("#timeline-event-second")).toHaveTextContent("Original note");
 });

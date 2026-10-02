@@ -68,7 +68,7 @@ export function WorkspaceRecentTracker() {
   const record = useApiMutation((api, item: Omit<RecentWorkspaceItem, "viewedAt">) => api.recordRecentWorkspaceItem(item));
   const target = useMemo<Omit<RecentWorkspaceItem, "viewedAt"> | undefined>(() => {
     if (memberId && member.data) return { kind: "member", id: memberId, title: member.data.fullName, subtitle: member.data.memberNumber, href: pathname };
-    if (leadId && lead.data) return { kind: "lead", id: leadId, title: lead.data.fullName, subtitle: `${leadStageName(t, lead.data.stage)} · ${lead.data.phone}`, href: pathname };
+    if (leadId && lead.data) return { kind: "lead", id: leadId, title: lead.data.fullName, subtitle: `${leadStageName(t, lead.data.stage)} · ${lead.data.phone}`, subtitleParts: { kind: "lead", stage: lead.data.stage, phone: lead.data.phone }, href: pathname };
     if (receiptId && receipt.data) return { kind: "receipt", id: receiptId, title: receipt.data.receipt.receiptNumber, subtitle: receipt.data.member?.fullName ?? receipt.data.customer?.fullName ?? t("palette.kind.receipt"), href: pathname };
     if (memberId || leadId || receiptId) return undefined;
     const page = PAGE_LABELS.find((item) => pathname === item.prefix || pathname.startsWith(`${item.prefix}/`));

@@ -1103,6 +1103,10 @@ export default defineSchema({
     entityPublicId: v.string(),
     title: v.string(),
     subtitle: v.optional(v.string()),
+    subtitleParts: v.optional(v.union(
+      v.object({ kind: v.literal("lead"), stage: v.string(), phone: v.string() }),
+      v.object({ kind: v.literal("receipt"), memberName: v.optional(v.string()), status: v.string() }),
+    )),
     href: v.string(),
     viewedAt: v.number(),
   })
