@@ -26,8 +26,8 @@ export function renderDocumentPdf(options: DocumentPdfOptions, body: PdfBlock[])
     subject: options.meta,
     documentLabel: options.label,
     runningTitle: options.title,
-    footer: `${options.reference} · RIVET, ${BRAND_CONTACT.city}`,
-    footerPlaceholder: brandLegalLine() || undefined,
+    footer: `${options.reference} · RIVET, ${options.locale === "ar" ? BRAND_CONTACT.cityAr : BRAND_CONTACT.city}`,
+    footerPlaceholder: brandLegalLine(options.locale) || undefined,
     lockupJpeg: RIVET_LOCKUP_JPEG,
     glyphJpeg: RIVET_GLYPH_JPEG,
   });

@@ -1,3 +1,6 @@
+import { publicDocuments } from "./publicDocuments";
+import { publicPrivacy } from "./publicPrivacy";
+import { publicTerms } from "./publicTerms";
 import { setup } from "./setup";
 import { permissions } from "./permissions";
 import { customerPortal } from "./customerPortal";
@@ -30,6 +33,9 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  publicDocuments,
+  publicPrivacy,
+  publicTerms,
   setup,
   permissions,
   customerPortal,

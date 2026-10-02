@@ -1,3 +1,4 @@
+import { createTranslator } from "@/lib/i18n/core";
 import type { Metadata, Viewport } from "next";
 import { HostRouteGuard } from "@/components/auth/host-route-guard";
 import { RIVET_HOSTS, RIVET_ORIGINS } from "@/lib/routing/host-routing";
@@ -11,7 +12,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { clerkFrontendApiOrigin, prePaintSignedInGuardScript } from "@/lib/auth/pre-paint-signed-in-guard";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { dirFor } from "@/lib/i18n/config";
-import { getRequestUiPreference } from "@/lib/i18n/server";
+import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import "./globals.css";
 
@@ -55,14 +56,17 @@ const instrumentSans = Instrument_Sans({
 
 const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://rivet.jo");
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const t = createTranslator(locale);
+  return {
   metadataBase,
   title: {
-    default: "RIVET — Gym revenue & operations",
+    default: t("publicDocuments.siteTitle"),
     template: "%s · RIVET",
   },
   description:
-    "RIVET is the revenue and operations system for gyms: members, memberships, sales pipeline, reception, payments and reconciliation — with full staff accountability.",
+    t("publicDocuments.siteDescription"),
   applicationName: "RIVET",
   appleWebApp: {
     capable: true,
@@ -70,18 +74,21 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   openGraph: {
-    title: "RIVET — Every member. Every dinar. Every shift.",
-    description: "The revenue and operations system for gyms—and one simple membership home for their customers.",
+    locale: locale === "ar" ? "ar_JO" : "en_JO",
+    alternateLocale: locale === "ar" ? "en_JO" : "ar_JO",
+    title: t("publicDocuments.socialTitle"),
+    description: t("publicDocuments.socialDescription"),
     type: "website",
-    images: [{ url: "/brand/rivet-social-preview.png", width: 1200, height: 630, alt: "RIVET gym operations" }],
+    images: [{ url: "/brand/rivet-social-preview.png", width: 1200, height: 630, alt: t("publicDocuments.socialAlt") }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "RIVET — Gym revenue & operations",
-    description: "One operating loop for gym sales, members, entry, payments, and accountability.",
+    title: t("publicDocuments.siteTitle"),
+    description: t("publicDocuments.twitterDescription"),
     images: ["/brand/rivet-social-preview.png"],
   },
-};
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

@@ -1,3 +1,7 @@
+"use client";
+import { useLocale } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
+import { PRIVACY_POLICY_VERSION, TERMS_OF_SERVICE_VERSION } from "@/lib/legal/legal-versions";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RIVET_CONTACT } from "@/lib/rivet-contact";
@@ -20,25 +24,31 @@ export interface LegalSection {
  * a line of the running text holds about eighty characters; the PDF keeps
  * the page's own measure.
  */
-export function LegalDocument({ context, label, title, summary, version, sections, related }: { context?: string; label: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
-  const meta = `Version ${version} · Governed by the laws of the Hashemite Kingdom of Jordan`;
-  const target = label.toLowerCase().replace(/\s+/g, "-");
+export function LegalDocument({ context, label, title, summary, version, sections, related, documentId }: { documentId?: string; context?: string; label: string; title: string; summary: string; version: string; sections: LegalSection[]; related?: Array<{ label: string; href: string }> }) {
+  const { locale, t } = useLocale();
+  const f = useFormat();
+  const versionNumber = version.split(" ·")[0] ?? version;
+  const displayVersion = locale === "ar" && (version === PRIVACY_POLICY_VERSION || version === TERMS_OF_SERVICE_VERSION) ? `${versionNumber} · ${f.date("2026-09-14")}` : version;
+  const meta = t("publicDocuments.legalMeta", { version: displayVersion });
+  const reference = t("publicDocuments.version", { version: versionNumber });
+  const target = documentId ?? label.toLowerCase().replace(/\s+/g, "-");
   return (
     <div className="px-4 py-8 sm:px-8 lg:py-12">
       {context ? <p className="context-label mx-auto mb-3 max-w-[794px]">{context}</p> : null}
       <DocumentSheet
+        locale={locale}
         label={label}
         title={title}
         meta={meta}
-        reference={`Version ${version.split(" ·")[0] ?? version}`}
+        reference={reference}
         testId="legal-document"
         className="max-w-[46rem]"
-        actions={<DownloadDocumentButton target={target} label={label} title={title} meta={meta} reference={`Version ${version.split(" ·")[0] ?? version}`} version={version} />}
+        actions={<DownloadDocumentButton locale={locale} target={target} label={label} title={title} meta={meta} reference={reference} version={version} />}
       >
         <p className="text-[14px] leading-[1.55] text-ink-2">{summary}</p>
 
-        <nav aria-label="Contents" className="mt-6 border-y border-line py-4">
-          <p className="text-[12px] font-semibold text-ink-3">Contents</p>
+        <nav aria-label={t("publicDocuments.contents")} className="mt-6 border-y border-line py-4">
+          <p className="text-[12px] font-semibold text-ink-3">{t("publicDocuments.contents")}</p>
           <ol className="mt-2 grid gap-1 text-[13px] sm:grid-cols-2">
             {sections.map((section, index) => (
               <li key={section.id}>
@@ -61,7 +71,7 @@ export function LegalDocument({ context, label, title, summary, version, section
 
         {related?.length ? (
           <p className="mt-6 text-[13px] text-ink-3" data-pdf-skip>
-            Related documents:{" "}
+            {t("publicDocuments.related")}{" "}
             {related.map((item, index) => (
               <span key={item.href}>
                 {index > 0 ? " · " : ""}
@@ -76,16 +86,17 @@ export function LegalDocument({ context, label, title, summary, version, section
 }
 
 export function ContactBlock() {
+  const { locale, t } = useLocale();
   return (
     <dl className="grid gap-2 sm:grid-cols-[140px_1fr]">
-      <dt className="text-ink-3">Phone</dt>
+      <dt className="text-ink-3">{t("common.label.phone")}</dt>
       <dd><a href={RIVET_CONTACT.phoneHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a></dd>
       <dt className="text-ink-3">WhatsApp</dt>
       <dd><a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.whatsappDisplay}</a></dd>
       <dt className="text-ink-3">Instagram</dt>
       <dd><a href={RIVET_CONTACT.instagramHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.instagramHandle}</a></dd>
-      <dt className="text-ink-3">Post</dt>
-      <dd>{RIVET_CONTACT.legalName}, {RIVET_CONTACT.city}</dd>
+      <dt className="text-ink-3">{t("publicDocuments.post")}</dt>
+      <dd>{RIVET_CONTACT.legalName}, {locale === "ar" ? t("agreementDocument.city") : RIVET_CONTACT.city}</dd>
     </dl>
   );
 }

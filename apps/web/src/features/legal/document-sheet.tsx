@@ -91,7 +91,7 @@ export function DocumentSheet({
           <span className="font-medium uppercase tracking-[0.06em]">{reference ?? label}</span>
           <span>RIVET, {locale === "ar" ? createTranslator(locale)("agreementDocument.city") : RIVET_CONTACT.city} · {BRAND_CONTACT.email}</span>
         </div>
-        {brandLegalLine() ? <p className="mt-1 font-mono text-[11px] text-ink-3">{brandLegalLine()}</p> : null}
+        {brandLegalLine(locale) ? <p className="mt-1 font-mono text-[11px] text-ink-3">{brandLegalLine(locale)}</p> : null}
       </footer>
     </article>
   );

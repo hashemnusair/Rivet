@@ -1,3 +1,6 @@
+import { publicDocuments } from "./publicDocuments";
+import { publicPrivacy } from "./publicPrivacy";
+import { publicTerms } from "./publicTerms";
 import { setup } from "./setup";
 import { permissions } from "./permissions";
 import { customerPortal } from "./customerPortal";
@@ -25,6 +28,9 @@ import { shell } from "./shell";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
+  publicDocuments,
+  publicPrivacy,
+  publicTerms,
   setup,
   permissions,
   customerPortal,

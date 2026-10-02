@@ -1,11 +1,13 @@
+import { getRequestLocale } from "@/lib/i18n/server";
+import { createTranslator } from "@/lib/i18n/core";
 import type { Metadata } from "next";
 import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { TermsOfService } from "@/features/legal/terms-of-service";
 
-export const metadata: Metadata = {
-  title: "Terms of service · RIVET",
-  description: "The terms on which RIVET provides its website and platform, including the data processing addendum.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = createTranslator(await getRequestLocale());
+  return { title: t("publicTerms.text092"), description: t("publicDocuments.termsDescription") };
+}
 
 export default function TermsPage() {
   return (

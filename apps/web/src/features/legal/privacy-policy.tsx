@@ -1,204 +1,207 @@
+"use client";
+import { useT } from "@/lib/i18n/provider";
+import type { TFunction } from "@/lib/i18n/core";
 import Link from "next/link";
 import { PRIVACY_POLICY_VERSION } from "@/lib/legal/legal-versions";
 import { ContactBlock, LegalDocument, LegalList, LegalTable, type LegalSection } from "./legal-document";
 
-const SECTIONS: LegalSection[] = [
+const sectionsFor = (t: TFunction): LegalSection[] => [
   {
     id: "who-we-are",
-    title: "Who we are",
+    title: t("publicPrivacy.text001"),
     body: (
       <>
-        <p>RIVET is a revenue and operations platform for gyms, based in Amman, Jordan. In this policy, “RIVET”, “we” and “us” mean RIVET, Amman, Jordan, the operator of this website and the RIVET platform. “You” means the person reading this, whether you visit the website, run or work at a gym that uses RIVET, or are a member of such a gym.</p>
-        <p>We are the data controller for the website and for the accounts of gyms that use RIVET. For the member records that gyms keep in RIVET, the gym is the controller and RIVET is a processor acting on the gym’s instructions.</p>
+        <p>{t("publicPrivacy.text002")}</p>
+        <p>{t("publicPrivacy.text003")}</p>
       </>
     ),
   },
   {
     id: "who-this-covers",
-    title: "Who this policy covers",
+    title: t("publicPrivacy.text004"),
     body: (
       <>
-        <p>Three groups of people, with different relationships to RIVET.</p>
+        <p>{t("publicPrivacy.text005")}</p>
         <LegalList items={[
-          <><strong>Visitors:</strong> anyone who uses this website, including people who ask for a walkthrough or send a gym application.</>,
-          <><strong>Customers:</strong> gyms that subscribe to RIVET, and the owners, managers and staff who use it. This includes the people who sign the subscription agreement on a gym’s behalf.</>,
-          <><strong>Members:</strong> people whose details a gym keeps in RIVET: its members, trial visitors and leads.</>,
+          <><strong>{t("publicPrivacy.text006")}</strong> {" "}{t("publicPrivacy.text007")}</>,
+          <><strong>{t("publicPrivacy.text008")}</strong> {" "}{t("publicPrivacy.text009")}</>,
+          <><strong>{t("publicPrivacy.text010")}</strong> {" "}{t("publicPrivacy.text011")}</>,
         ]} />
-        <p>If you are a member, your gym decides what it collects about you and why. Questions about that go to the gym first. We help gyms answer them, and we never use member data for our own marketing.</p>
+        <p>{t("publicPrivacy.text012")}</p>
       </>
     ),
   },
   {
     id: "what-we-collect",
-    title: "What we collect",
+    title: t("publicPrivacy.text013"),
     body: (
       <>
-        <h3 className="font-semibold text-ink">On the website</h3>
+        <h3 className="font-semibold text-ink">{t("publicPrivacy.text014")}</h3>
         <LegalList items={[
-          "What you enter in the gym application form: gym name, your name, phone or WhatsApp number, email, and the plan you are interested in.",
-          "Server logs: IP address, browser type, pages requested and timestamps, kept for security and to keep the site running.",
+          t("publicPrivacy.text015"),
+          t("publicPrivacy.text016"),
         ]} />
-        <h3 className="font-semibold text-ink">When a gym joins RIVET</h3>
+        <h3 className="font-semibold text-ink">{t("publicPrivacy.text017")}</h3>
         <LegalList items={[
-          "The gym’s legal details: registered name, trade name, commercial registration number, address, city and number of branches.",
-          "The signatory’s details: full name, role, national ID or passport number, phone number and email address.",
-          "The signature itself, as an image, with the date and time of signing, the device used, and the version and cryptographic fingerprint of the agreement that was signed. Together these form the evidence that the agreement was signed and by whom.",
-          "Billing details: invoices, payment records and the bank or card details you choose to pay with, which are handled by our payment partners rather than stored by us.",
+          t("publicPrivacy.text018"),
+          t("publicPrivacy.text019"),
+          t("publicPrivacy.text020"),
+          t("publicPrivacy.text021"),
         ]} />
-        <h3 className="font-semibold text-ink">On the platform, about customers and their staff</h3>
+        <h3 className="font-semibold text-ink">{t("publicPrivacy.text022")}</h3>
         <LegalList items={[
-          "Account details for each staff user: name, role, phone number, email address and login records.",
-          "The audit trail: what each user did in RIVET and when. This is a core part of the product and cannot be switched off.",
-          "Support conversations on WhatsApp, phone or email.",
+          t("publicPrivacy.text023"),
+          t("publicPrivacy.text024"),
+          t("publicPrivacy.text025"),
         ]} />
-        <h3 className="font-semibold text-ink">On the platform, about members, on behalf of gyms</h3>
+        <h3 className="font-semibold text-ink">{t("publicPrivacy.text026")}</h3>
         <LegalList items={[
-          "Identity and contact details the gym records: name, phone number, email, date of birth, gender, national ID or membership number, emergency contact and, if the gym uses it, a check-in photo.",
-          "Membership and payment records: plans, start and end dates, freezes, invoices, payments and balances.",
-          "Attendance: check-ins, class bookings and visit history.",
-          "Messages the gym sends through RIVET, their delivery status and any opt-out requests.",
+          t("publicPrivacy.text027"),
+          t("publicPrivacy.text028"),
+          t("publicPrivacy.text029"),
+          t("publicPrivacy.text030"),
         ]} />
       </>
     ),
   },
   {
     id: "why-we-use-it",
-    title: "Why we use it, and on what basis",
+    title: t("publicPrivacy.text031"),
     body: (
-      <LegalTable headers={["Purpose", "Data", "Basis"]} rows={[
-        ["Answering a gym application or walkthrough request", "Application form", "Your request, and our legitimate interest in responding to it"],
-        ["Entering into and performing the subscription agreement", "Gym details, signatory details, signature evidence, billing", "Performance of a contract; legal obligations for commercial records"],
-        ["Confirming who signed on the gym’s behalf and preventing impersonation", "Signatory name and ID or passport number", "Legitimate interest in the validity of the contract; legal obligations"],
-        ["Running the platform for a gym", "Staff accounts, member records, audit trail", "Performance of the contract with the gym; for member data, the gym’s instructions"],
-        ["Sending reminders and notices to members for a gym", "Member name, phone number, membership details", "The gym’s instructions; the gym is responsible for having a lawful basis and any required consent"],
-        ["Support", "Support conversations, account details", "Performance of the contract"],
-        ["Security, fraud prevention and keeping records of who did what", "Logs, audit trail", "Legitimate interest; legal obligations"],
-        ["Invoicing and tax", "Billing records", "Legal obligation"],
-        ["Telling customers about RIVET updates and offers", "Customer contact details", "Consent, which you can withdraw at any time"],
-        ["Improving the product", "Usage statistics, aggregated so that no person can be identified", "Legitimate interest"],
+      <LegalTable headers={[t("publicPrivacy.text032"), t("publicPrivacy.text033"), t("publicPrivacy.text034")]} rows={[
+        [t("publicPrivacy.text035"), t("publicPrivacy.text036"), t("publicPrivacy.text037")],
+        [t("publicPrivacy.text038"), t("publicPrivacy.text039"), t("publicPrivacy.text040")],
+        [t("publicPrivacy.text041"), t("publicPrivacy.text042"), t("publicPrivacy.text043")],
+        [t("publicPrivacy.text044"), t("publicPrivacy.text045"), t("publicPrivacy.text046")],
+        [t("publicPrivacy.text047"), t("publicPrivacy.text048"), t("publicPrivacy.text049")],
+        [t("publicPrivacy.text050"), t("publicPrivacy.text051"), t("publicPrivacy.text052")],
+        [t("publicPrivacy.text053"), t("publicPrivacy.text054"), t("publicPrivacy.text055")],
+        [t("publicPrivacy.text056"), t("publicPrivacy.text057"), t("publicPrivacy.text058")],
+        [t("publicPrivacy.text059"), t("publicPrivacy.text060"), t("publicPrivacy.text061")],
+        [t("publicPrivacy.text062"), t("publicPrivacy.text063"), t("publicPrivacy.text064")],
       ]} />
     ),
   },
   {
     id: "national-id",
-    title: "National ID numbers",
+    title: t("publicPrivacy.text065"),
     body: (
       <>
-        <p>We ask the person signing the subscription agreement for their national ID number, or passport number if they are not Jordanian. We ask for one reason: so that a binding agreement is tied to an identifiable person authorised to act for the gym, and cannot later be disowned or forged.</p>
-        <p>The number is stored in the contract record only, on infrastructure that encrypts data at rest. Access is limited to the RIVET staff who manage contracts, and every time one of them reveals it the access is written to RIVET’s audit trail. It is never used for marketing, never shown to gym staff, and never shared with anyone except where the law requires it. In the signed copy you receive, all but the last four characters are masked. It is deleted with the contract record at the end of the retention period in section 09.</p>
-        <p>Gyms may also choose to record their members’ national ID numbers in RIVET, for example as a membership identifier. That is the gym’s decision as controller, and the same access controls apply.</p>
+        <p>{t("publicPrivacy.text066")}</p>
+        <p>{t("publicPrivacy.text067")}</p>
+        <p>{t("publicPrivacy.text068")}</p>
       </>
     ),
   },
   {
     id: "messages",
-    title: "Messages we send for gyms",
+    title: t("publicPrivacy.text069"),
     body: (
       <>
-        <p>Gyms use RIVET to send operational messages to their own members over WhatsApp: renewal reminders, payment reminders, class booking confirmations and notices such as changed opening hours. When we send these, we do so on the gym’s instructions, using the numbers the gym has on record.</p>
-        <p>Every message names the gym it comes from.</p>
-        <p>We keep quiet hours. Each gym sets its own window (by default 22:00 to 08:00 Amman time); reminders that fall inside it wait until it ends, unless a member has explicitly asked for a message at a particular time.</p>
-        <p>You can stop messages from a gym at any time by replying STOP or إيقاف, or by telling the gym. The gym sees the opt-out and RIVET enforces it.</p>
-        <p>Marketing broadcasts are sent only to members who have given the gym consent to receive them, and always carry an opt-out.</p>
+        <p>{t("publicPrivacy.text070")}</p>
+        <p>{t("publicPrivacy.text071")}</p>
+        <p>{t("publicPrivacy.text072")}</p>
+        <p>{t("publicPrivacy.text073")}</p>
+        <p>{t("publicPrivacy.text074")}</p>
       </>
     ),
   },
   {
     id: "sharing",
-    title: "Who we share data with",
+    title: t("publicPrivacy.text075"),
     body: (
       <>
-        <p>We do not sell personal data. We share it only with:</p>
+        <p>{t("publicPrivacy.text076")}</p>
         <LegalList items={[
-          "Service providers who work for us under contract and only on our instructions: cloud hosting and backups, WhatsApp delivery providers, email delivery, identity and sign-in, payment and invoicing partners, and secure storage for signed agreements.",
-          "Professional advisers such as accountants, auditors and lawyers, where necessary.",
-          "Authorities, where the law, a court order or a competent authority requires it.",
-          "A successor, if RIVET is sold or merged, in which case this policy continues to apply and you will be told.",
+          t("publicPrivacy.text077"),
+          t("publicPrivacy.text078"),
+          t("publicPrivacy.text079"),
+          t("publicPrivacy.text080"),
         ]} />
-        <p>Within the platform, a gym’s data is visible only to that gym’s users, according to the roles the gym sets. Owners see everything for their gym. Staff see what their role needs.</p>
+        <p>{t("publicPrivacy.text081")}</p>
       </>
     ),
   },
   {
     id: "storage",
-    title: "Where data is stored",
+    title: t("publicPrivacy.text082"),
     body: (
       <>
-        <p>RIVET is operated from Amman. Our servers and backups may be located outside Jordan, with cloud providers that hold recognised security certifications. Where data leaves Jordan we rely on contracts with those providers that require them to protect it to at least the standard described in this policy, and we transfer only what the service needs.</p>
-        <p>Gyms can export their own data from RIVET at any time.</p>
+        <p>{t("publicPrivacy.text083")}</p>
+        <p>{t("publicPrivacy.text084")}</p>
       </>
     ),
   },
   {
     id: "retention",
-    title: "How long we keep it",
+    title: t("publicPrivacy.text085"),
     body: (
-      <LegalTable headers={["Record", "Kept for"]} rows={[
-        ["Gym applications and walkthrough enquiries", "Twelve months after our last contact with you, then deleted"],
-        ["Subscription agreements and signature evidence, including ID numbers", "The life of the agreement, then the period Jordanian commercial and tax law requires for business records"],
-        ["Invoices and payment records", "The period required by Jordanian tax law"],
-        ["Staff user accounts and the audit trail", "While the gym’s subscription is active, then twelve months"],
-        ["Member records held for a gym", "While the gym’s subscription is active. After it ends, the gym can export everything for 30 days; we delete it within 90 days unless the law requires otherwise"],
-        ["Server logs", "90 days"],
-        ["Support conversations", "24 months"],
+      <LegalTable headers={[t("publicPrivacy.text086"), t("publicPrivacy.text087")]} rows={[
+        [t("publicPrivacy.text088"), t("publicPrivacy.text089")],
+        [t("publicPrivacy.text090"), t("publicPrivacy.text091")],
+        [t("publicPrivacy.text092"), t("publicPrivacy.text093")],
+        [t("publicPrivacy.text094"), t("publicPrivacy.text095")],
+        [t("publicPrivacy.text096"), t("publicPrivacy.text097")],
+        [t("publicPrivacy.text098"), t("publicPrivacy.text099")],
+        [t("publicPrivacy.text100"), t("publicPrivacy.text101")],
       ]} />
     ),
   },
   {
     id: "security",
-    title: "Security",
+    title: t("publicPrivacy.text102"),
     body: (
       <>
-        <p>Data is encrypted in transit and at rest. Access inside RIVET is by role, every action is logged, and RIVET staff can reach customer data only when support or operations require it. We keep backups, test restoring them, and require confidentiality from everyone who works with us.</p>
-        <p>If a breach affects your data we will tell the affected gym without undue delay, tell members where the gym asks us to or the law requires, and notify the competent authority as the law requires.</p>
+        <p>{t("publicPrivacy.text103")}</p>
+        <p>{t("publicPrivacy.text104")}</p>
       </>
     ),
   },
   {
     id: "your-rights",
-    title: "Your rights",
+    title: t("publicPrivacy.text105"),
     body: (
       <>
-        <p>You can ask us to:</p>
+        <p>{t("publicPrivacy.text106")}</p>
         <LegalList items={[
-          "tell you what personal data we hold about you and give you a copy;",
-          "correct data that is wrong or incomplete;",
-          "delete data, where we have no legal reason to keep it;",
-          "restrict or object to how we use it;",
-          "give you the data you provided in a usable format;",
-          "withdraw consent, where consent is the basis, without affecting what was done before.",
+          t("publicPrivacy.text107"),
+          t("publicPrivacy.text108"),
+          t("publicPrivacy.text109"),
+          t("publicPrivacy.text110"),
+          t("publicPrivacy.text111"),
+          t("publicPrivacy.text112"),
         ]} />
-        <p>To do any of these, contact us using section 15. We will confirm your identity first, and reply within 30 days. If you are a member of a gym, ask the gym; it holds your data and can act directly, and we will support it.</p>
-        <p>You also have the right to complain to the competent data protection authority in Jordan established under the Personal Data Protection Law No. 24 of 2023.</p>
+        <p>{t("publicPrivacy.text113")}</p>
+        <p>{t("publicPrivacy.text114")}</p>
       </>
     ),
   },
   {
     id: "children",
-    title: "Children",
-    body: <p>RIVET is a business platform and this website is not directed at children. Gyms may register members under 18 with a parent’s or guardian’s consent; that consent is the gym’s responsibility to obtain and record. If you believe a child’s data has been given to us without consent, contact us and we will help remove it.</p>,
+    title: t("publicPrivacy.text115"),
+    body: <p>{t("publicPrivacy.text116")}</p>,
   },
   {
     id: "cookies",
-    title: "Cookies and tracking",
+    title: t("publicPrivacy.text117"),
     body: (
       <>
-        <p>This website runs no advertising scripts and nothing on it tracks you across other sites. The platform uses only the cookies needed to keep you signed in and to remember choices such as your branch.</p>
-        <p>Links to Instagram and WhatsApp take you to services with their own privacy policies.</p>
+        <p>{t("publicPrivacy.text118")}</p>
+        <p>{t("publicPrivacy.text119")}</p>
       </>
     ),
   },
   {
     id: "changes",
-    title: "Changes to this policy",
-    body: <p>When this policy changes we publish the new version here with its date. If a change affects how we use customers’ or members’ data in a meaningful way, we tell customers directly by email or WhatsApp before it takes effect.</p>,
+    title: t("publicPrivacy.text120"),
+    body: <p>{t("publicPrivacy.text121")}</p>,
   },
   {
     id: "contact",
-    title: "Contact",
+    title: t("publicPrivacy.text122"),
     body: (
       <>
-        <p>For anything about this policy or your data:</p>
+        <p>{t("publicPrivacy.text123")}</p>
         <ContactBlock />
       </>
     ),
@@ -206,18 +209,21 @@ const SECTIONS: LegalSection[] = [
 ];
 
 export function PrivacyPolicy() {
+  const t = useT();
   return (
     <LegalDocument
-      label="Privacy policy"
-      title="Privacy policy"
-      summary="What RIVET collects, why, who it is shared with, how long it is kept, and what you can do about it. This policy covers the RIVET website, the RIVET platform, and the messages RIVET sends on behalf of gyms."
+      label={t("publicPrivacy.text124")}
+      title={t("publicPrivacy.text124")}
+      summary={t("publicPrivacy.text125")}
       version={PRIVACY_POLICY_VERSION}
-      sections={SECTIONS}
-      related={[{ label: "Terms of service", href: "/terms" }]}
+      sections={sectionsFor(t)}
+      documentId="privacy-policy"
+      related={[{ label: t("publicPrivacy.text126"), href: "/terms" }]}
     />
   );
 }
 
 export function PrivacyPolicyLink({ className }: { className?: string }) {
-  return <Link href="/privacy" className={className}>Privacy policy</Link>;
+  const t = useT();
+  return <Link href="/privacy" className={className}>{t("publicPrivacy.text124")}</Link>;
 }

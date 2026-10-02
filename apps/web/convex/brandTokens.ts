@@ -40,7 +40,7 @@ export const BRAND_CONTACT = {
   instagram: "@rivet.jo",
   website: "www.rivetjo.com",
   supportHours: "Support 09:00–21:00 Amman time, Saturday to Thursday",
-  supportHoursAr: "الدعم 09:00–21:00 بتوقيت عمّان، من السبت إلى الخميس",
+  supportHoursAr: "الدعم من 9:00 ص إلى 9:00 م بتوقيت عمّان، من السبت إلى الخميس",
   /** The one address RIVET prints: on invoices, in footers, for questions. */
   email: "sales@rivetjo.com",
 } as const;
@@ -66,8 +66,8 @@ export const BRAND_LEGAL: {
 } = {};
 
 /** "RIVET Technologies LLC · CR 12345" when known; empty otherwise. */
-export function brandLegalLine(): string {
-  return [BRAND_LEGAL.legalEntity, BRAND_LEGAL.registrationNumber ? `CR ${BRAND_LEGAL.registrationNumber}` : undefined, BRAND_LEGAL.taxNumber ? `Tax no. ${BRAND_LEGAL.taxNumber}` : undefined].filter(Boolean).join(" · ");
+export function brandLegalLine(locale: "en" | "ar" = "en"): string {
+  return [BRAND_LEGAL.legalEntity, BRAND_LEGAL.registrationNumber ? `${locale === "ar" ? "السجل التجاري" : "CR"} ${BRAND_LEGAL.registrationNumber}` : undefined, BRAND_LEGAL.taxNumber ? `${locale === "ar" ? "الرقم الضريبي" : "Tax no."} ${BRAND_LEGAL.taxNumber}` : undefined].filter(Boolean).join(" · ");
 }
 
 export const BRAND_YEAR = 2026;

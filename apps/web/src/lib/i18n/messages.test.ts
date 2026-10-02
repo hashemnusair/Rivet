@@ -65,7 +65,7 @@ describe("message catalogues", () => {
   });
 
   it("have no accidental raw English in Arabic (brands and technical tokens are allowlisted)", () => {
-    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS)\b|™/g;
+    const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|Starter|Growth|Pro|STOP)\b|™/g;
     const raw = [...arLeaves.entries()].flatMap(([key, leaf]) =>
       strings(leaf)
         .filter(() => key !== "crm.newLead.emailPlaceholder") // Literal email example, not product prose.
@@ -77,7 +77,7 @@ describe("message catalogues", () => {
   });
 
   it("keep Arabic letters out of English except the language's own name", () => {
-    const leaks = [...enLeaves.entries()].filter(([key, leaf]) => !new Set(["common.language.arabic", "members.header.arabic"]).has(key) && strings(leaf).some((text) => /[؀-ۿ]/.test(text))).map(([key]) => key);
+    const leaks = [...enLeaves.entries()].filter(([key, leaf]) => !new Set(["common.language.arabic", "members.header.arabic", "publicPrivacy.text073"]).has(key) && strings(leaf).some((text) => /[؀-ۿ]/.test(text))).map(([key]) => key);
     expect(leaks).toEqual([]);
   });
 });
