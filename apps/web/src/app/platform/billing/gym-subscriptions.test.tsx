@@ -64,8 +64,8 @@ describe("Gym subscriptions section", () => {
 
     expect(screen.queryByText("Legacy Row")).not.toBeInTheDocument();
     const activeRow = screen.getByRole("row", { name: /Forge Fitness/ });
-    expect(activeRow).toHaveTextContent("Pro · monthly");
-    expect(activeRow).toHaveTextContent("15 Sep 2026");
+    expect(activeRow).toHaveTextContent("Pro · Monthly");
+    expect(activeRow).toHaveTextContent("15 Sept 2026");
 
     await user.click(within(activeRow).getByRole("button", { name: /Change plan/ }));
     expect(onBill).toHaveBeenCalledWith("gym-active");
@@ -96,7 +96,7 @@ describe("Gym subscriptions section", () => {
     const user = userEvent.setup();
     render(<GymSubscriptions gyms={gyms} onBill={vi.fn()} />);
 
-    await user.click(within(screen.getByRole("row", { name: /Iron Temple/ })).getByRole("button", { name: "Cancel" }));
+    await user.click(within(screen.getByRole("row", { name: /Iron Temple/ })).getByRole("button", { name: "Cancel subscription" }));
     const dialog = screen.getByRole("dialog", { name: /Cancel Iron Temple's subscription\?/ });
     await user.type(within(dialog).getByLabelText("Reason for this change"), "Owner closed the business.");
     await user.click(within(dialog).getByRole("button", { name: "Cancel subscription" }));

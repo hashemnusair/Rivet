@@ -141,7 +141,7 @@ describe("Platform gyms directory", () => {
 
     expect(screen.getByRole("heading", { name: "active Fitness" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Archived Fitness" })).not.toBeInTheDocument();
-    expect(screen.getByText("1 gym shown.")).toBeInTheDocument();
+    expect(screen.getByText("1 gym shown")).toBeInTheDocument();
   });
 
   it("filters by subscription status and supports searching by gym id", () => {
