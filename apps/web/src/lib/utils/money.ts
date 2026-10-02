@@ -140,6 +140,15 @@ export function formatMoney(m: Money, opts: FormatMoneyOptions = {}): string {
   const locale = opts.locale ?? "en-JO";
   const exp = exponentFor(m.currency);
   const major = m.amount / 10 ** exp;
+  if (locale.startsWith("ar")) {
+    const amount = new Intl.NumberFormat("en-US-u-nu-latn", {
+      minimumFractionDigits: opts.compact && Math.abs(major) >= 1000 ? 0 : exp,
+      maximumFractionDigits: opts.compact && Math.abs(major) >= 1000 ? 1 : exp,
+      signDisplay: opts.signDisplay,
+    }).format(opts.compact && Math.abs(major) >= 1000 ? major / (Math.abs(major) >= 1_000_000 ? 1_000_000 : 1000) : major);
+    const scale = opts.compact && Math.abs(major) >= 1000 ? (Math.abs(major) >= 1_000_000 ? " مليون" : " ألف") : "";
+    return `${amount}${scale}${opts.hideCurrency ? "" : ` ${m.currency.toUpperCase() === "JOD" ? "د.أ" : m.currency.toUpperCase()}`}`;
+  }
   if (opts.compact && Math.abs(major) >= 1000) {
     if (opts.hideCurrency) {
       return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(major);
@@ -193,7 +202,7 @@ export type MoneyInputResult =
  * currency is stripped; any other currency's text is a mismatch, never a hint.
  */
 const CURRENCY_ALIASES: Record<string, string[]> = {
-  JOD: ["JD", "JDS", "DINAR", "DINARS", "د.ا", "دينار", "دنانير"],
+  JOD: ["JD", "JDS", "DINAR", "DINARS", "د.أ", "د.ا", "دينار", "دنانير"],
   USD: ["$", "US$", "DOLLAR", "DOLLARS"],
   EUR: ["€", "EURO", "EUROS"],
   SAR: ["SR", "RIYAL", "RIYALS", "ر.س", "ريال"],
@@ -244,7 +253,7 @@ export function readMoneyInput(raw: string, currency = "JOD"): MoneyInputResult 
   const example = toMajorString(money(40 * 10 ** exp, code));
   const fail = (problem: MoneyInputProblem, message: string): MoneyInputResult => ({ ok: false, problem, message });
 
-  let text = toWesternDigits(raw).replace(/[\u00a0\u202f\u2009]/g, " ").trim();
+  let text = toWesternDigits(raw).replace(/[\u061c\u200e\u200f\u2066-\u2069]/g, "").replace(/[\u00a0\u202f\u2009]/g, " ").trim();
   if (!text) return fail("empty", "Enter an amount.");
 
   let mismatch: string | undefined;

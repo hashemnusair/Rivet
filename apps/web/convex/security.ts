@@ -47,6 +47,7 @@ type MaybeUser = {
   email: string;
   fullName: string;
   profileNameUpdatedAt?: number;
+  uiLocale?: "en" | "ar";
   phone?: string;
   platformAdmin: boolean;
   status?: AccountStatus;

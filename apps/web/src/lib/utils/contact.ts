@@ -1,3 +1,4 @@
+import { latinDigits } from "./text";
 /** Contact values shared by the CRM forms and the credential-free adapter. */
 export const LEAD_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const LEAD_PHONE_PATTERN = /^\+?[\d\s()-]{9,18}$/;
@@ -26,7 +27,7 @@ export function normalizeLeadName(value: string): string {
 }
 
 export function phoneDigits(value?: string | null): string {
-  return (value ?? "").replace(/\D/g, "");
+  return latinDigits(value ?? "").replace(/\D/g, "");
 }
 
 export function normalizeCountryCallingCode(value?: string | null): string {

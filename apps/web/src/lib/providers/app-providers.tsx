@@ -1,5 +1,6 @@
 "use client";
 
+import { FormattingProvider } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -418,7 +419,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={value}>
-      {children}
+      <FormattingProvider timeZone={session?.organization.timezone}>{children}</FormattingProvider>
     </AppContext.Provider>
   );
 }

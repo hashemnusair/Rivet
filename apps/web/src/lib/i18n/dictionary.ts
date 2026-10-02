@@ -1,4 +1,4 @@
-import { DEFAULT_LOCALE, type Locale } from "./config";
+import { DEFAULT_LOCALE, type Locale } from "./locale";
 
 /**
  * Message catalogue plumbing.
@@ -88,7 +88,7 @@ export function selectPluralForm(forms: PluralCategories, locale: Locale, count:
 /** `{name}` placeholders. A missing variable stays visible so review catches it. */
 export function interpolate(template: string, vars: MessageVars | undefined): string {
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
 }
 
 /** Names of the `{param}` placeholders in one template. */
@@ -128,8 +128,11 @@ export function translate({ messages, fallback, locale }: TranslateOptions, path
     return path;
   }
 
-  if (typeof leaf === "string") return interpolate(leaf, vars);
-
-  const count = typeof vars?.count === "number" ? vars.count : 0;
-  return interpolate(selectPluralForm(leaf, leafLocale, count), vars);
+  if (isPluralForms(leaf) && (typeof vars?.count !== "number" || !Number.isFinite(vars.count))) {
+    throw new TypeError(`[i18n] message "${path}" requires a finite count`);
+  }
+  const template = typeof leaf === "string" ? leaf : selectPluralForm(leaf, leafLocale, vars!.count as number);
+  const missing = placeholdersOf(template).filter((name) => !vars || !Object.hasOwn(vars, name));
+  if (missing.length) throw new TypeError(`[i18n] message "${path}" requires: ${[...new Set(missing)].join(", ")}`);
+  return interpolate(template, vars);
 }

@@ -1,3 +1,4 @@
+import { searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import type {
@@ -4305,12 +4306,12 @@ export class MockGymOSApi implements GymOSApi {
 
   private matchesSearch(haystack: Array<string | undefined>, search?: string): boolean {
     if (!search) return true;
-    const q = search.trim().toLowerCase();
+    const q = searchKey(search);
     if (!q) return true;
     const normalized = q.replace(/[\s-]/g, "");
     return haystack.some((h) => {
       if (!h) return false;
-      const s = h.toLowerCase();
+      const s = searchKey(h);
       return s.includes(q) || s.replace(/[\s-]/g, "").includes(normalized) || phoneSearchMatches(h, q);
     });
   }

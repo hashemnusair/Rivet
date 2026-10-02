@@ -3,24 +3,12 @@
 import type { ComponentProps } from "react";
 import type { Money } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
-import { useFormat } from "@/lib/i18n/format";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
-import { TENANT_TIMEZONE } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
 
-// Every date, time, amount and relative label in the product renders through
-// this file, so these are the components that make the workspace bilingual:
-// they read the reader's language from `useFormat` instead of the module-scope
-// English formatters in `lib/utils`.
-//
-// Direction rules (verified in Arabic, see the bidi notes in CURRENT_STATE):
-// - Money is `JOD 40.000` with Latin digits in both languages, so it is pinned
-//   left-to-right; the sign is prepended inside the pinned run.
-// - Clock times are digits only, so they are pinned left-to-right.
-// - Dates contain a month word, so they take their direction from their own
-//   first strong character (`dir="auto"`): "18 Oct 2026" stays left-to-right
-//   and "18 تشرين الأول 2026" reads right-to-left.
-
-/** Money always in tabular mono — the ledger voice of the product. */
+// Values are isolated independently of surrounding prose. Amount signs stay
+// with Latin digits; the Arabic currency label follows the page's direction.
 export function MoneyText({
   money,
   hideCurrency,
@@ -37,14 +25,12 @@ export function MoneyText({
   const format = useFormat();
   if (!money) return <span className={cn("tabular text-ink-3", className)}>—</span>;
   const negative = money.amount < 0;
-  const abs = { ...money, amount: Math.abs(money.amount) };
-  const formatted = format.money(abs, { hideCurrency, compact });
+  const formatted = format.money(money, { hideCurrency, compact, signDisplay: signed ? "exceptZero" : "auto" });
+  const numberPrefix = formatted.match(/^([+−-]?[0-9,.]+)(.*)$/);
   return (
-    <span dir="ltr" className={cn("tabular", negative && "text-danger", className)}>
-      {signed && money.amount > 0 ? "+" : null}
-      {negative ? "−" : null}
-      {formatted}
-    </span>
+    <bdi dir="auto" title={compact ? format.money(money) : undefined} className={cn("tabular", negative && "text-danger", className)}>
+      {numberPrefix ? <><bdi dir="ltr">{numberPrefix[1]}</bdi>{numberPrefix[2]}</> : formatted}
+    </bdi>
   );
 }
 
@@ -57,7 +43,7 @@ export function DateText({ iso, className }: { iso?: string | null; className?: 
 export function TimeText({ iso, className }: { iso?: string | null; className?: string }) {
   const format = useFormat();
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span dir="ltr" className={cn("whitespace-nowrap tabular", className)}>{format.time(iso)}</span>;
+  return <bdi dir="auto" className={cn("whitespace-nowrap tabular", className)}>{format.time(iso)}</bdi>;
 }
 
 export function DateTimeText({ iso, className }: { iso?: string | null; className?: string }) {
@@ -80,7 +66,8 @@ export function RelativeText({ iso, className, ...rest }: { iso?: string | null 
 export function DaysUntilText({ date, className }: { date: string; className?: string }) {
   const format = useFormat();
   const { t } = useLocale();
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: TENANT_TIMEZONE });
+  const timeZone = useFormattingTimeZone();
+  const today = todayISODate(timeZone);
   const ms = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
   const days = Math.round(ms / 86_400_000);
   let label: string;

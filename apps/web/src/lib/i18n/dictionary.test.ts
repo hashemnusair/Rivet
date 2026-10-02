@@ -29,6 +29,14 @@ describe("translate", () => {
     expect(words).toEqual(["لا أعضاء", "عضو واحد", "عضوان", "3 أعضاء", "11 عضوًا", "100 عضو"]);
   });
 
+  it("requires variables and a finite plural count instead of displaying a false zero", () => {
+    expect(() => t("ar", "hello")).toThrow("requires: name");
+    expect(() => t("ar", "members")).toThrow("finite count");
+    expect(() => t("ar", "members", { count: Number.NaN })).toThrow("finite count");
+    expect(t("ar", "members", { count: 1.5 })).toBe("1.5 عضو");
+    expect(t("ar", "members", { count: -3 })).toBe("-3 أعضاء");
+  });
+
   it("selects English plurals", () => {
     expect([1, 2].map((count) => t("en", "members", { count }))).toEqual(["1 member", "2 members"]);
   });

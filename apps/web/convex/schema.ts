@@ -1040,6 +1040,8 @@ export default defineSchema({
     fullName: v.string(),
     /** Set when the account owner explicitly chooses a display name in RIVET. */
     profileNameUpdatedAt: v.optional(v.number()),
+    /** Personal screen language; never the member communication preference. */
+    uiLocale: v.optional(v.union(v.literal("en"), v.literal("ar"))),
     phone: v.optional(v.string()),
     platformAdmin: v.boolean(),
     status: v.optional(accountStatus),

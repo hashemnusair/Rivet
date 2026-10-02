@@ -2,11 +2,13 @@
 
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { RoleKey } from "@/lib/domain/types";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { dataMode } from "@/lib/api/ConvexGymOSApi";
+import { useLocale } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/config";
 import { DEMO_AUTH_BYPASS } from "./demo-auth";
 
 /** Emitted by the ticket flow after a provider-verified invitation claim. */
@@ -131,8 +133,11 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
   const { user } = useUser();
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const ensureCurrentUser = useMutation(api.users.ensureCurrent);
-  const claimInvitation = useAction(api.users.claimInvitation);
+  const setUiLocale = useMutation(api.users.setUiLocale);
   const userId = user?.id;
+  const { bindAccount } = useLocale();
+  const saveUiLocale = useCallback((locale: Locale) => setUiLocale({ locale, accountId: userId ?? "" }), [setUiLocale, userId]);
+  const claimInvitation = useAction(api.users.claimInvitation);
   const fullName = [user?.firstName?.trim(), user?.lastName?.trim()].filter(Boolean).join(" ") || undefined;
   const syncKey = userId ? `${userId}:${fullName ?? ""}` : undefined;
   const [claimNonce, setClaimNonce] = useState(0);
@@ -242,6 +247,14 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
       })),
     };
   }
+
+  const savedUiLocale = result && !result.pending && result.user ? result.user.uiLocale : undefined;
+  const localeIdentityReady = value.status === "ready";
+  useEffect(() => {
+    if (!clerkLoaded || authLoading) return;
+    if (!clerkSignedIn) bindAccount(null);
+    else if (userId) bindAccount(userId, localeIdentityReady ? savedUiLocale : undefined, localeIdentityReady ? saveUiLocale : undefined);
+  }, [authLoading, bindAccount, clerkLoaded, clerkSignedIn, localeIdentityReady, savedUiLocale, saveUiLocale, userId]);
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;
 }
