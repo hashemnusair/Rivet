@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
 import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { ROLE_LABELS } from "@/lib/domain/permissions";
+import { roleLabel } from "@/lib/i18n/labels";
 import { useApp } from "@/lib/providers/app-providers";
 import type { UserProfile } from "@/lib/domain/types";
 import { Field } from "@/components/ui/field";
@@ -83,7 +83,7 @@ export function MyProfileSection() {
             <Input value={profileQuery.data.email} readOnly aria-readonly="true" />
           </Field>
           <Field label="Your role" hint="Only staff with “Manage staff” access can change roles.">
-            <Input value={role ? ROLE_LABELS[role] : "—"} readOnly aria-readonly="true" />
+            <Input value={role ? roleLabel(t, role) : "—"} readOnly aria-readonly="true" />
           </Field>
         </div>
       </SettingsPanel>

@@ -1,11 +1,17 @@
 import type { MetadataRoute } from "next";
+import { createTranslator } from "@/lib/i18n/core";
+import { getRequestLocale } from "@/lib/i18n/server";
+import { dirFor, type Locale } from "@/lib/i18n/locale";
 
-export default function manifest(): MetadataRoute.Manifest {
+export function memberManifest(locale: Locale): MetadataRoute.Manifest {
+  const t = createTranslator(locale);
   return {
     id: "/customer",
-    name: "RIVET Member",
+    lang: locale,
+    dir: dirFor(locale),
+    name: t("setup.manifestName"),
     short_name: "RIVET",
-    description: "Your RIVET memberships, entry passes, visits, and gym discovery.",
+    description: t("setup.manifestDescription"),
     start_url: "/customer/my-gyms",
     scope: "/",
     display: "standalone",
@@ -21,13 +27,15 @@ export default function manifest(): MetadataRoute.Manifest {
       },
     ],
     shortcuts: [
-      { name: "My memberships", short_name: "Memberships", url: "/customer/my-gyms", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
-      { name: "Entry QR", short_name: "Entry QR", url: "/customer/my-gyms?entry=1", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
-      { name: "Payments and receipts", short_name: "Payments", url: "/customer/finance", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
-      { name: "Personal training", short_name: "PT", url: "/customer/my-gyms?section=pt", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
+      { name: t("setup.myMemberships"), short_name: t("setup.memberships"), url: "/customer/my-gyms", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
+      { name: t("setup.entryQr"), short_name: t("setup.entryQr"), url: "/customer/my-gyms?entry=1", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
+      { name: t("setup.paymentsReceipts"), short_name: t("setup.payments"), url: "/customer/finance", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
+      { name: t("setup.personalTraining"), short_name: t("setup.ptShort"), url: "/customer/my-gyms?section=pt", icons: [{ src: "/icon.png", sizes: "512x512", type: "image/png" }] },
     ],
     launch_handler: {
       client_mode: "navigate-existing",
     },
   };
 }
+
+export default async function manifest(): Promise<MetadataRoute.Manifest> { return memberManifest(await getRequestLocale()); }

@@ -1,4 +1,6 @@
 "use client";
+import { permissionCopy, roleDescription } from "@/lib/i18n/permissions";
+import { roleLabel } from "@/lib/i18n/labels";
 import { useT } from "@/lib/i18n/provider";
 
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
@@ -7,7 +9,7 @@ import { toast } from "sonner";
 import { ApiError, isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { PERMISSIONS, PERMISSION_LABELS, ROLE_LABELS } from "@/lib/domain/permissions";
+import { PERMISSIONS } from "@/lib/domain/permissions";
 import type { Branch, NotificationSettings, PaymentMethod, RoleKey, StaffUser, Zone, ZoneKind } from "@/lib/domain/types";
 import { useApp } from "@/lib/providers/app-providers";
 import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
@@ -483,7 +485,7 @@ export function UsersSection() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[13.5px] font-medium">{u.name}</p>
-                    <Badge variant={u.role === "owner" ? "ink" : "neutral"}>{ROLE_LABELS[u.role]}</Badge>
+                    <Badge variant={u.role === "owner" ? "ink" : "neutral"}>{roleLabel(t, u.role)}</Badge>
                     <StatusBadge status={u.status} />
                   </div>
                   <p className="mt-0.5 truncate text-[12.5px] text-ink-2">{u.email}</p>
@@ -516,7 +518,7 @@ export function UsersSection() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><Badge variant={u.role === "owner" ? "ink" : "neutral"}>{ROLE_LABELS[u.role]}</Badge></TableCell>
+                  <TableCell><Badge variant={u.role === "owner" ? "ink" : "neutral"}>{roleLabel(t, u.role)}</Badge></TableCell>
                   <TableCell className="text-[12.5px] text-ink-2">{branchCodes(u)}</TableCell>
                   <TableCell><StatusBadge status={u.status} /></TableCell>
                   <TableCell className="whitespace-nowrap text-[12.5px] text-ink-3">{activity(u)}</TableCell>
@@ -595,7 +597,7 @@ function InviteUserDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 </SelectTrigger>
                 <SelectContent>
                   {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
-                    <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                    <SelectItem key={r} value={r}>{roleLabel(t, r)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -684,7 +686,7 @@ function EditAccessDialog({
               </SelectTrigger>
               <SelectContent>
                 {(["manager", "salesperson", "receptionist", "trainer"] as RoleKey[]).map((r) => (
-                  <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                  <SelectItem key={r} value={r}>{roleLabel(t, r)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -707,9 +709,10 @@ function EditAccessDialog({
 // ---------------------------------------------------------------------------
 // Roles & permissions matrix
 // ---------------------------------------------------------------------------
-const ROLES_DESCRIPTION = "What each role can do. The owner always has full access. Staff get changes the next time they sign in.";
+
 
 export function RolesSection() {
+  const t = useT();
   const invalidate = useInvalidate();
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const roles = settingsQuery.data?.roles ?? [];
@@ -721,43 +724,43 @@ export function RolesSection() {
     (api, v: { role: RoleKey; permissions: string[] }) => api.updateRolePermissions(v.role, { permissions: v.permissions }),
     {
       onSuccess: async () => {
-        toast.success("Access updated.");
+        toast.success(t("setup.accessUpdated"));
         await invalidate([qk.settings, qk.session]);
       },
-      onError: (e) => toast.error(errorMessage(e, "Could not update access.")),
+      onError: (e) => toast.error(errorMessage(e, t("setup.accessUpdateFailed"))),
     },
   );
 
-  if (settingsQuery.isLoading) return <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}><Skeleton className="h-96 w-full" /></SettingsSection>;
-  if (settingsQuery.isError) return <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
+  if (settingsQuery.isLoading) return <SettingsSection title={t("setup.rolesTitle")} description={t("setup.rolesDescription")}><Skeleton className="h-96 w-full" /></SettingsSection>;
+  if (settingsQuery.isError) return <SettingsSection title={t("setup.rolesTitle")} description={t("setup.rolesDescription")}><ErrorState layout="section" onRetry={() => settingsQuery.refetch()} /></SettingsSection>;
 
   const flip = (role: (typeof editableRoles)[number], perm: string, checked: boolean) =>
     toggle.mutate({ role: role.key, permissions: checked ? [...role.permissions, perm] : role.permissions.filter((p) => p !== perm) });
   const pendingFor = (role: RoleKey) => toggle.isPending && toggle.variables?.role === role;
 
   return (
-    <SettingsSection title="Roles & access" description={ROLES_DESCRIPTION}>
+    <SettingsSection title={t("setup.rolesTitle")} description={t("setup.rolesDescription")}>
       {/* Phones: one role at a time, one permission per row. */}
       <div className="md:hidden">
         <SettingsPanel
-          title="Access by role"
+          title={t("setup.accessByRole")}
           bodyClassName="p-0"
           control={
             <Select value={selectedPhoneRole?.key ?? ""} onValueChange={(value) => setPhoneRole(value as RoleKey)}>
-              <SelectTrigger aria-label="Role to edit" className="w-40"><SelectValue placeholder="Choose a role" /></SelectTrigger>
-              <SelectContent>{editableRoles.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}</SelectContent>
+              <SelectTrigger aria-label={t("setup.roleToEdit")} className="w-40"><SelectValue placeholder={t("setup.chooseRole")} /></SelectTrigger>
+              <SelectContent>{editableRoles.map((r) => <SelectItem key={r.key} value={r.key}>{roleLabel(t, r.key)}</SelectItem>)}</SelectContent>
             </Select>
           }
         >
           {selectedPhoneRole ? (
             <div className="px-4">
-              <p className="border-b border-line py-3 text-[12.5px] leading-5 text-ink-3">{selectedPhoneRole.description}</p>
+              <p className="border-b border-line py-3 text-[12.5px] leading-5 text-ink-3">{selectedPhoneRole.isSystem ? roleDescription(t, selectedPhoneRole.key) : selectedPhoneRole.description}</p>
               <div className="divide-y divide-line">
                 {PERMISSIONS.map((perm) => (
                   <SettingsToggleRow
                     key={perm}
-                    label={PERMISSION_LABELS[perm].label}
-                    hint={PERMISSION_LABELS[perm].hint}
+                    label={permissionCopy(t, perm).label}
+                    hint={permissionCopy(t, perm).hint}
                     checked={selectedPhoneRole.permissions.includes(perm)}
                     disabled={pendingFor(selectedPhoneRole.key)}
                     onCheckedChange={(checked) => flip(selectedPhoneRole, perm, checked)}
@@ -771,17 +774,17 @@ export function RolesSection() {
 
       {/* Tablets and desktops: the whole matrix at once. */}
       <div className="hidden md:block">
-        <SettingsPanel title="What each role can do" description="Tick a box to give a role that access. Each change saves right away." bodyClassName="p-0">
+        <SettingsPanel title={t("setup.eachRole")} description={t("setup.accessHint")} bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-line">
                   <th scope="col" className="sticky start-0 z-10 min-w-[240px] bg-surface px-4 py-2.5 text-start text-[11.5px] font-semibold text-ink-3">
-                    Access
+                    {t("setup.accessColumn")}
                   </th>
                   {editableRoles.map((r) => (
                     <th key={r.key} scope="col" className="min-w-[96px] whitespace-nowrap px-3 py-2.5 text-center text-[11.5px] font-semibold text-ink-3">
-                      {r.label}
+                      {roleLabel(t, r.key)}
                     </th>
                   ))}
                 </tr>
@@ -790,8 +793,8 @@ export function RolesSection() {
                 {PERMISSIONS.map((perm) => (
                   <tr key={perm} className="border-b border-line/70 last:border-0">
                     <th scope="row" className="sticky start-0 z-10 bg-surface px-4 py-2 text-start font-normal">
-                      <p className="text-[13px] font-medium text-ink">{PERMISSION_LABELS[perm].label}</p>
-                      <p className="text-[12px] leading-4 text-ink-3">{PERMISSION_LABELS[perm].hint}</p>
+                      <p className="text-[13px] font-medium text-ink">{permissionCopy(t, perm).label}</p>
+                      <p className="text-[12px] leading-4 text-ink-3">{permissionCopy(t, perm).hint}</p>
                     </th>
                     {editableRoles.map((r) => {
                       const checked = r.permissions.includes(perm);
@@ -802,7 +805,7 @@ export function RolesSection() {
                             type="button"
                             role="switch"
                             aria-checked={checked}
-                            aria-label={`${r.label} — ${PERMISSION_LABELS[perm].label}`}
+                            aria-label={`${roleLabel(t, r.key)} — ${permissionCopy(t, perm).label}`}
                             disabled={pending}
                             aria-busy={pending || undefined}
                             data-touch-target

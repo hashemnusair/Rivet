@@ -126,6 +126,20 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
     return () => { window.removeEventListener("storage", onStorage); window.removeEventListener("online", flush); };
   }, [apply, flush]);
 
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let cancelled = false;
+    const notify = () => {
+      navigator.serviceWorker.controller?.postMessage({ type: "rivet:ui-locale", locale });
+      void navigator.serviceWorker.getRegistration().then(registration => {
+        if (!cancelled) registration?.active?.postMessage({ type: "rivet:ui-locale", locale });
+      }).catch(() => undefined);
+    };
+    notify();
+    navigator.serviceWorker.addEventListener("controllerchange", notify);
+    return () => { cancelled = true; navigator.serviceWorker.removeEventListener("controllerchange", notify); };
+  }, [locale]);
+
   const value = useMemo<LocaleContextValue>(() => ({ locale, dir: dirFor(locale), switchEnabled: ARABIC_ENABLED, setLocale, bindAccount, preferenceStatus, t: createTranslator(locale), isolate: locale === "ar" ? isolateText : String, isolateLtr: locale === "ar" ? isolateLtrText : String }), [locale, setLocale, bindAccount, preferenceStatus]);
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

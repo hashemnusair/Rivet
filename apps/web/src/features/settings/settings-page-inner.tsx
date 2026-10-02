@@ -29,7 +29,9 @@ import { ChecklistsSection } from "@/features/settings/checklists-section";
 import { MyProfileSection } from "@/features/settings/my-profile-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { PERMISSION_LABELS, type Permission } from "@/lib/domain/permissions";
+import type { Permission } from "@/lib/domain/permissions";
+import { permissionCopy } from "@/lib/i18n/permissions";
+import type { TFunction } from "@/lib/i18n/core";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ContextLabel } from "@/components/ui/typography";
 
@@ -101,18 +103,17 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
 const ALL_ENTRIES = SETTINGS_GROUPS.flatMap((group) => group.entries);
 
 /** The access is named exactly as it is on the Roles & access page, so the two never drift apart. */
-const accessNeeded = (permission: Permission, task: string) =>
-  `${task} needs the “${PERMISSION_LABELS[permission].label}” access. Ask the owner if you need it.`;
-
-const PERMISSION_COPY: Record<string, string> = {
-  "settings.manage": accessNeeded("settings.manage", "Changing gym settings"),
-  "users.manage": accessNeeded("users.manage", "Changing staff and roles"),
-  "profiles.manage": accessNeeded("profiles.manage", "Changing the public gym page"),
-  "operations.manage": accessNeeded("operations.manage", "Changing daily checklists"),
-};
+const accessNeeded = (t: TFunction, permission: Permission, task: string) =>
+  t("setup.accessNeeded", { task, permission: permissionCopy(t, permission).label });
 
 export function SettingsPageInner() {
   const t = useT();
+  const PERMISSION_COPY: Record<string, string> = {
+    "settings.manage": accessNeeded(t, "settings.manage", t("setup.changeSettings")),
+    "users.manage": accessNeeded(t, "users.manage", t("setup.changeStaff")),
+    "profiles.manage": accessNeeded(t, "profiles.manage", t("setup.changePublicPage")),
+    "operations.manage": accessNeeded(t, "operations.manage", t("setup.changeChecklists")),
+  };
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();

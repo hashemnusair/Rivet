@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import manifest from "./manifest";
+import { memberManifest } from "./manifest";
+import { vi } from "vitest";
+vi.mock("@/lib/i18n/server", () => ({ getRequestLocale: async () => "en" }));
+const manifest = () => memberManifest("en");
 
 describe("member PWA manifest", () => {
   it("launches the member home as a standalone app", () => {
@@ -31,4 +34,12 @@ describe("member PWA manifest", () => {
       "/customer/my-gyms?section=pt",
     ]);
   });
+});
+
+it("localizes install labels without changing scope, identity or deep links", () => {
+  const en = memberManifest("en"), ar = memberManifest("ar");
+  expect(ar.lang).toBe("ar"); expect(ar.dir).toBe("rtl");
+  expect(ar.name).toBe("RIVET للأعضاء");
+  expect(ar.id).toBe(en.id); expect(ar.scope).toBe(en.scope); expect(ar.start_url).toBe(en.start_url);
+  expect(ar.shortcuts?.map(shortcut => shortcut.url)).toEqual(en.shortcuts?.map(shortcut => shortcut.url));
 });

@@ -1558,7 +1558,8 @@
       "id": "freeze",
       "keys": [
         "memberProfile.header.menu.freeze",
-        "renewFlow.adjust.freeze.title"
+        "renewFlow.adjust.freeze.title",
+        "permissions.memberships_freeze.label"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2887,7 +2888,9 @@
     },
     {
       "id": "void-payment",
-      "keys": [],
+      "keys": [
+        "permissions.payments_void.label"
+      ],
       "rules": [],
       "candidateOccurrences": [],
       "status": "pending",
@@ -2949,7 +2952,9 @@
     },
     {
       "id": "open-shift",
-      "keys": [],
+      "keys": [
+        "permissions.reconciliation_open_shift.label"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -2966,7 +2971,9 @@
     },
     {
       "id": "close-shift",
-      "keys": [],
+      "keys": [
+        "permissions.reconciliation_close_shift.label"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -3054,7 +3061,9 @@
     },
     {
       "id": "approve-difference",
-      "keys": [],
+      "keys": [
+        "permissions.reconciliation_approve_variance.label"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
@@ -4568,7 +4577,9 @@
     },
     {
       "id": "roles",
-      "keys": [],
+      "keys": [
+        "setup.rolesTitle"
+      ],
       "rules": [],
       "candidateOccurrences": [
         {
