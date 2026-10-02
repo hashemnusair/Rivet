@@ -12,6 +12,7 @@ import {
   presentNotification,
   presentSystemText,
   presentTimelineEvent,
+  renewalReasonMessage,
   systemMessage,
   type SystemTextContext,
 } from "./system-messages";
@@ -82,9 +83,26 @@ describe("system message descriptors", () => {
     expect(presentSystemText(original, { key: "communicationCompletion.notifications.termEnds", params: { endDate: { date: "3 Oct" } } }, AR)).toBe(original);
     expect(presentSystemText(original, { key: "communicationCompletion.timeline.paymentCollected", params: { amount: { amountMinor: 1.5, currency: "JOD" }, method: { enum: "paymentMethod", value: "cash" } } }, AR)).toBe(original);
     expect(presentSystemText(original, { key: "communicationCompletion.timeline.paymentCollected", params: { amount: { amountMinor: 25000, currency: "JOD" }, method: { enum: "paymentMethod", value: "barter" } } }, AR)).toBe(original);
+    expect(presentSystemText(original, systemMessage("communicationCompletion.timeline.value", { value: { enum: "renewalReason", value: "constructor" } }), AR)).toBe(original);
+    expect(presentSystemText(original, systemMessage("communicationCompletion.timeline.value", { value: { enum: "renewalReason", value: "toString" } }), AR)).toBe(original);
     expect(presentSystemText(original, { key: "settings.title" }, AR)).toBe(original);
     expect(presentSystemText(original, "not a descriptor", AR)).toBe(original);
     expect(isRenderableSystemMessage(null)).toBe(false);
+  });
+
+  it("rejects impossible dates, inherited keys, invalid plural counts and recursive data", () => {
+    const original = "Stored source text";
+    for (const date of ["2026-02-31", "2026-13-01", "2026-00-00"]) {
+      expect(presentSystemText(original, systemMessage("communicationCompletion.notifications.termEnds", { endDate: { date } }), AR)).toBe(original);
+    }
+    expect(presentSystemText(original, { key: "communicationCompletion.email.footer.terms" }, AR)).toBe(original);
+    expect(presentSystemText(original, { key: "communicationCompletion.notifications.toString" }, AR)).toBe(original);
+    expect(presentSystemText(original, systemMessage("communicationCompletion.timeline.membershipExtended", { count: "3" }), AR)).toBe(original);
+    expect(presentSystemText(original, systemMessage("communicationCompletion.timeline.paymentCollected", { amount: { amountMinor: 1000, currency: "JOD" }, method: { enum: "paymentMethod", value: "constructor" } }), AR)).toBe(original);
+    const cyclic: { key: string; params: Record<string, unknown> } = { key: "communicationCompletion.notifications.facts2", params: { a: "authored" } };
+    cyclic.params.b = { message: cyclic };
+    expect(presentSystemText(original, cyclic, AR)).toBe(original);
+    expect(presentSystemText(original, systemMessage("communicationCompletion.notifications.termEnds", { endDate: { date: "2028-02-29" } }), AR)).toContain("29 شباط 2028");
   });
 
   it("formats exact positive and negative JOD amounts, Jordanian dates, Arabic clocks and approved enums", () => {
@@ -102,6 +120,25 @@ describe("system message descriptors", () => {
     expect(presentSystemText("x", booking, AR)).toBe("موعد حصتك: 4 تشرين الأول، 12:00 م.");
     const outcome = systemMessage("communicationCompletion.timeline.messageAccepted", { channel: { enum: "channel", value: "whatsapp" }, context: { enum: "messageContext", value: "renewal" } });
     expect(presentSystemText("WhatsApp renewal reminder accepted by the provider", outcome, AR)).toBe("تذكير التجديد عبر واتساب: تم الإرسال");
+  });
+
+  it("localizes only known renewal reasons and class calendar dates", () => {
+    const cancelled = renewalReasonMessage("membership_term_changed");
+    expect(cancelled).toEqual(systemMessage("communicationCompletion.timeline.value", { value: { enum: "renewalReason", value: "membership_term_changed" } }));
+    expect(strip(presentSystemText("membership term changed", cancelled, AR))).toBe("تغيّرت تواريخ الاشتراك");
+    expect(renewalReasonMessage("A staff-authored reason")).toBeUndefined();
+    expect(renewalReasonMessage("constructor")).toBeUndefined();
+    expect(renewalReasonMessage("toString")).toBeUndefined();
+    expect(presentSystemText("Gym-specific historical reason", renewalReasonMessage("A staff-authored reason"), AR)).toBe("Gym-specific historical reason");
+
+    const event = {
+      type: "class_booked",
+      title: "Booked Small group",
+      body: "2026-10-12",
+      bodyMessage: systemMessage("communicationCompletion.timeline.value", { value: { date: "2026-10-12" } }),
+    };
+    expect(presentTimelineEvent(event, AR)).toEqual({ title: "Booked Small group", body: "12 تشرين الأول 2026" });
+    expect(presentTimelineEvent(event, EN).body).toBe("2026-10-12");
   });
 
   it("selects all Arabic plural forms from the real count", () => {
@@ -153,6 +190,43 @@ describe("historical records", () => {
     expect(unknown).toEqual({ title: "Payment collected — JOD 25.000 cash" });
     const sandboxed = presentTimelineEvent({ type: "renewal_message_sandboxed", title: "Renewal message prepared in sandbox", body: "A whatsapp reminder was prepared but not sent." }, AR);
     expect(sandboxed).toEqual({ title: "تم تجهيز رسالة التجديد في وضع الاختبار", body: "تم تجهيز تذكير عبر واتساب دون إرساله." });
+  });
+
+  it("recovers exact historical renewal and class bodies even when the title already has a descriptor", () => {
+    const stopped = presentTimelineEvent({
+      type: "renewal_journey_cancelled",
+      title: "Renewal follow-up stopped",
+      titleMessage: systemMessage("communicationCompletion.timeline.renewalStopped"),
+      body: "membership term changed",
+      meta: { reason: "membership_term_changed" },
+    }, AR);
+    expect(stopped).toEqual({ title: "توقفت متابعة التجديد", body: "تغيّرت تواريخ الاشتراك" });
+
+    const suppressed = presentTimelineEvent({
+      type: "renewal_message_suppressed",
+      title: "Renewal message suppressed",
+      body: "Explicit consent is required for renewal messages",
+    }, AR);
+    expect(suppressed.body).toBe("تتطلب رسائل التجديد موافقة صريحة");
+
+    const unknown = presentTimelineEvent({
+      type: "renewal_journey_cancelled",
+      title: "Renewal follow-up stopped",
+      body: "A gym-specific reason with details",
+      meta: { reason: "A gym-specific reason with details" },
+    }, AR);
+    expect(unknown.body).toBe("A gym-specific reason with details");
+
+    const authoredCollision = presentTimelineEvent({
+      type: "renewal_journey_cancelled",
+      title: "Renewal follow-up stopped",
+      body: "member requested no contact",
+      meta: { reason: "member requested no contact" },
+    }, AR);
+    expect(authoredCollision.body).toBe("member requested no contact");
+
+    const classDate = presentTimelineEvent({ type: "class_waitlisted", title: "Joined the HIIT waitlist", body: "2026-10-12" }, AR);
+    expect(classDate.body).toBe("12 تشرين الأول 2026");
   });
 
   it("prefers a stored descriptor over projection and never invents a body", () => {

@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
-import { systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
+import { renewalReasonMessage, systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
 import { MESSAGE_TEMPLATE_VERSION } from "./messagingTemplates";
 import { checkpointForDays, consentForRenewalChannel, isRenewalQuietHours as isQuietHours, nextRenewalQuietHoursEnd as nextQuietHoursEnd, renewalDedupeKey, renewalMessageSuppressionReason, renewalStopReason, RENEWAL_CHECKPOINTS, RENEWAL_POLICY_VERSION } from "./renewalPolicy";
 
@@ -315,7 +315,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
     if (reason) {
       const updated = await updateDeliveryStatus(ctx, { delivery, status: "cancelled", now, reason, cancellationReason: reason });
       if (updated.taskPublicId) await cancelTaskIfOpen(ctx, organization._id, updated.taskPublicId, reason, now);
-      await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId, branchId: updated.branchId, memberPublicId: updated.memberPublicId, type: "renewal_journey_cancelled", title: "Renewal follow-up stopped", body: reason.replaceAll("_", " "), occurredAt: now, meta: { deliveryId: updated.publicId, membershipId: updated.membershipPublicId, reason } });
+      await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId, branchId: updated.branchId, memberPublicId: updated.memberPublicId, type: "renewal_journey_cancelled", title: "Renewal follow-up stopped", body: reason.replaceAll("_", " "), bodyMessage: renewalReasonMessage(reason), occurredAt: now, meta: { deliveryId: updated.publicId, membershipId: updated.membershipPublicId, reason } });
       cancelled += 1;
       continue;
     }
@@ -324,7 +324,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       const reasonForSuppression = suppressionReason(consent.status, delivery.channel, delivery.recipientPhone);
       if (reasonForSuppression && ACTIONABLE_DELIVERY_STATUSES.includes(delivery.status)) {
         await updateDeliveryStatus(ctx, { delivery, status: "suppressed", now, reason: reasonForSuppression, consentStatus: consent.status, consentSource: consent.source, consentChangedAt: consent.changedAt, channelOptedOut: consent.channelOptedOut });
-        await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId, branchId: delivery.branchId, memberPublicId: delivery.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: reasonForSuppression, occurredAt: now, meta: { deliveryId: delivery.publicId, channel: delivery.channel } });
+        await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId, branchId: delivery.branchId, memberPublicId: delivery.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: reasonForSuppression, bodyMessage: renewalReasonMessage(reasonForSuppression), occurredAt: now, meta: { deliveryId: delivery.publicId, channel: delivery.channel } });
         suppressed += 1;
         continue;
       }
@@ -411,7 +411,7 @@ async function createDelivery(ctx: MutationCtx, input: {
     await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "task_created", afterStatus: "queued", details: { taskPublicId, dueAt: taskDueAt ?? now }, occurredAt: now });
     await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_call_task_created", title: "Renewal call task created", body: `Call ${input.memberName} before membership end date.`, bodyMessage: systemMessage("communicationCompletion.timeline.renewalCallTaskBody", { member: input.memberName }), occurredAt: now, meta: { deliveryId, taskPublicId, membershipId: input.membershipPublicId } });
   } else if (initialStatus === "suppressed") {
-    await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: initialReason, occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
+    await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: initialReason, bodyMessage: renewalReasonMessage(initialReason), occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
   } else if (initialStatus === "deferred") {
     await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "deferred", afterStatus: "deferred", reason: "Tenant quiet hours", details: { deferredUntil: input.quietUntil }, occurredAt: now });
   } else if (initialStatus === "queued") {

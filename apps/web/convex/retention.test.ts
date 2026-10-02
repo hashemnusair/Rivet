@@ -49,7 +49,13 @@ describe("retention queue", () => {
       audit: await ctx.db.query("auditEvents").collect(),
     }));
     expect(persisted.retention[0]?.data).toMatchObject({ memberId: "member-retention", snoozedUntil: "2026-09-07", reason: "Member asked us to call next week." });
-    expect(persisted.timeline[0]?.data).toMatchObject({ memberId: "member-retention", meta: { kind: "retention_snooze", until: "2026-09-07" } });
+    expect(persisted.timeline[0]?.data).toMatchObject({
+      memberId: "member-retention",
+      title: "Retention follow-up snoozed until 2026-09-07",
+      titleMessage: { key: "communicationCompletion.timeline.retentionSnoozed", params: { date: { date: "2026-09-07" } } },
+      body: "Member asked us to call next week.",
+      meta: { kind: "retention_snooze", until: "2026-09-07" },
+    });
     expect(persisted.audit[0]).toMatchObject({ action: "retention.snooze", reason: "Member asked us to call next week." });
   });
 });

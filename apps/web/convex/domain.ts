@@ -1,3 +1,4 @@
+import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
 import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
 import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
@@ -35,7 +36,7 @@ import { logRedactedServerError } from "./telemetry";
 import { marketingStatusFromProvenance, marketingSuppressionReason } from "./marketing";
 import { enqueueOperationalEmail, type OperationalEmailFacts } from "./operationalEmail";
 import { resolveRecipientLanguage, type CommunicationLanguageSource } from "../src/lib/i18n/communication";
-import { systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
+import { isRenderableSystemMessage, systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
@@ -84,9 +85,9 @@ import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dash
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefScope, type BriefSourceInput, type BriefSourceKey, type OperatingBrief } from "./operatingBrief";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
-import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, isContactOutcome, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
 import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
-import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
+import { buildCsvDocument, exportList, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -1137,6 +1138,14 @@ async function insertTimeline(ctx: MutationCtx, actor: ActorContext, value: Data
   });
 }
 
+function contactAttemptTitleMessage(outcome: string, kind: "contact" | "call"): SystemMessage | undefined {
+  if (outcome === "whatsapp_opened") return systemMessage("communicationCompletion.timeline.whatsappOpened");
+  if (!isContactOutcome(outcome)) return undefined;
+  return systemMessage(kind === "call" ? "communicationCompletion.timeline.callAttempt" : "communicationCompletion.timeline.contactAttempt", {
+    outcome: { enum: "contactOutcome", value: outcome },
+  });
+}
+
 async function insertAudit(
   ctx: MutationCtx,
   actor: ActorContext,
@@ -1372,7 +1381,7 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
   const timeline: FollowUpTimelineLike[] = timelineRows
     .map((row) => data(row.data))
     .filter((event) => identityIds.includes(stringValue(event.memberId)))
-    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
+    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), ...(isRenderableSystemMessage(event.bodyMessage) ? { bodyMessage: event.bodyMessage } : {}), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
   const deliveries: FollowUpDeliveryLike[] = deliveryRows.flat().map((row) => ({ id: row.publicId, checkpointKey: row.checkpointKey, channel: row.channel, status: row.status, suppressionReason: row.suppressionReason, cancellationReason: row.cancellationReason, deferredUntil: row.deferredUntil, attempts: row.attempts.length, updatedAt: row.updatedAt, membershipId: row.membershipPublicId }));
   const notifications = data(settings.notifications);
   const tasks = hasPermission(actor, "crm.read") ? await followUpRelatedTasks(ctx, actor, { memberId }) : [];
@@ -1697,6 +1706,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       currency: actor.organization.currency,
       timezone: actor.organization.timezone,
       locale: actor.organization.locale ?? "en-JO",
+      defaultLanguage: actor.organization.defaultLanguage ?? "en",
       brand,
       // What the gym pays RIVET, so Settings can state the term without a
       // second round trip.
@@ -1797,12 +1807,12 @@ async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input:
     contactsByMember.set(stringValue(event.memberId), contacts);
   }
   for (const contacts of contactsByMember.values()) contacts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
-  const search = optionalString(input.search)?.trim().toLowerCase();
+  const search = optionalString(input.search);
   return filtered.flatMap((risk) => {
     const member = memberSummaryById.get(risk.memberId);
     const membership = membershipSummaryById.get(risk.membershipId);
     if (!member || !membership) return [];
-    if (search && ![member.fullName, member.memberNumber, member.phone, membership.planName].some((value) => stringValue(value).toLowerCase().includes(search))) return [];
+    if (search && !matchesSearch([member.fullName, member.memberNumber, member.phone, membership.planName], search)) return [];
     const contact = contactsByMember.get(risk.memberId)?.[0];
     return [{ ...risk, member, membership, lastContactAt: optionalString(contact?.occurredAt), lastContactOutcome: optionalString(data(contact?.meta).outcome), recommendedSnoozeDays: numberValue(retention.defaultSnoozeDays, 7) }];
   });
@@ -1836,6 +1846,7 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
     memberNumber: stringValue(value.memberNumber),
     fullName: stringValue(value.fullName),
     fullNameAr: optionalString(value.fullNameAr),
+    preferredLanguage: value.preferredLanguage === "ar" ? "ar" : value.preferredLanguage === "en" ? "en" : undefined,
     phone: stringValue(value.phone),
     email: optionalString(value.email),
     homeBranchId: stringValue(value.homeBranchId),
@@ -1915,6 +1926,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
       memberNumber: stringValue(value.memberNumber),
       fullName: stringValue(value.fullName),
       fullNameAr: optionalString(value.fullNameAr),
+      preferredLanguage: value.preferredLanguage === "ar" ? "ar" : value.preferredLanguage === "en" ? "en" : undefined,
       phone: stringValue(value.phone),
       email: optionalString(value.email),
       homeBranchId: stringValue(value.homeBranchId),
@@ -4624,24 +4636,20 @@ const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
   operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When"],
 };
 
-function exportFilterSummary(filters: Data): string {
-  const entries = Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== "");
-  return entries.length > 0
-    ? entries.map(([key, value]) => `${exportStatusLabel(key)}: ${String(value)}`).join("; ")
-    : "None";
-}
-
-function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data; locale: "en" | "ar" }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+  const copy = makeExportCopy(metadata.locale);
   const normalized = rows.slice(0, 2_000);
   const content = buildCsvDocument({
-    title: metadata.title,
+    locale: metadata.locale,
+    title: copy.label(metadata.title),
     metadata: [
-      { label: "Generated at", value: formatExportDateTime(metadata.generatedAt, metadata.timezone) },
-      { label: "Timezone", value: metadata.timezone },
-      { label: "Branch scope", value: metadata.branchScope },
-      { label: "Applied filters", value: exportFilterSummary(metadata.filters) },
+      { label: copy.label("Generated at"), value: copy.dateTime(metadata.generatedAt, metadata.timezone) },
+      { label: copy.label("Timezone"), value: metadata.timezone },
+      { label: copy.label("Branch scope"), value: copy.scope(metadata.branchScope) },
+      { label: copy.label("Applied filters"), value: copy.filters(metadata.filters) },
     ],
-    headers: metadata.headers,
+    headers: metadata.headers.map(copy.label),
+    // Keys stay canonical inside the builder. Only human-facing headers change.
     rows: normalized.map((row) => metadata.headers.map((header) => row[header] as string | number | boolean | null | undefined)),
   });
   const contentBytes = new TextEncoder().encode(content).byteLength;
@@ -4664,7 +4672,8 @@ function exportMatchesFilters(row: Data, filters: Data, timezone: string): boole
   return true;
 }
 
-async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data): Promise<Data[]> {
+async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data, locale: "en" | "ar"): Promise<Data[]> {
+  const copy = makeExportCopy(locale);
   const timezone = actor.organization.timezone || TZ_FALLBACK;
   const currency = actor.organization.currency || JOD;
   const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
@@ -4685,20 +4694,20 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Arabic name": summary.fullNameAr,
         "Phone": summary.phone,
         "Email": summary.email,
-        "Gender": exportStatusLabel(optionalString(raw.gender)),
-        "Member status": exportStatusLabel(optionalString(summary.status)),
-        "Membership status": exportStatusLabel(optionalString(summary.membershipStatus)),
+        "Gender": copy.status(optionalString(raw.gender)),
+        "Member status": copy.status(optionalString(summary.status)),
+        "Membership status": copy.status(optionalString(summary.membershipStatus)),
         "Current plan": summary.currentPlanName,
-        "Membership ends": summary.membershipEndDate,
+        "Membership ends": copy.date(optionalString(summary.membershipEndDate)),
         "Outstanding amount": formatMinorUnits(amountOf(summary.outstanding), currency),
         "Currency": currency,
-        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? "Unknown branch",
-        "Last check-in": formatExportDateTime(optionalString(summary.lastCheckInAt), timezone),
-        "Preferred language": exportStatusLabel(optionalString(raw.preferredLanguage)),
-        "Marketing consent": exportStatusLabel(marketingStatus),
+        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? copy.label("Unknown branch"),
+        "Last check-in": copy.dateTime(optionalString(summary.lastCheckInAt), timezone),
+        "Preferred language": copy.status(optionalString(raw.preferredLanguage)),
+        "Marketing consent": copy.status(marketingStatus),
         "Tags": exportList(summary.tags),
         "Notes": optionalString(raw.notes),
-        "Created": formatExportDateTime(optionalString(summary.createdAt), timezone),
+        "Created": copy.dateTime(optionalString(summary.createdAt), timezone),
       };
     });
   }
@@ -4713,18 +4722,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Phone": lead.phone,
         "Email": lead.email,
         "Branch": lead.branchName,
-        "Stage": exportStatusLabel(optionalString(lead.stage)),
-        "Source": exportStatusLabel(optionalString(lead.source)),
-        "Owner": lead.ownerName ?? "Unassigned",
+        "Stage": copy.status(optionalString(lead.stage)),
+        "Source": copy.status(optionalString(lead.source)),
+        "Owner": lead.ownerName ?? copy.label("Unassigned"),
         "Expected value": lead.expectedValue ? formatMinorUnits(amountOf(expected), expectedCurrency) : "",
         "Currency": lead.expectedValue ? expectedCurrency : "",
-        "Next follow-up": formatExportDateTime(optionalString(lead.nextFollowUpAt), timezone),
-        "Last contacted": formatExportDateTime(optionalString(lead.lastContactAt), timezone),
-        "Last contact outcome": exportStatusLabel(optionalString(lead.lastContactOutcome)),
+        "Next follow-up": copy.dateTime(optionalString(lead.nextFollowUpAt), timezone),
+        "Last contacted": copy.dateTime(optionalString(lead.lastContactAt), timezone),
+        "Last contact outcome": copy.status(optionalString(lead.lastContactOutcome)),
         "Overdue": booleanValue(lead.overdue),
         "Lost reason": optionalString(lead.lostReason),
-        "Created": formatExportDateTime(optionalString(lead.createdAt), timezone),
-        "Updated": formatExportDateTime(optionalString(lead.updatedAt), timezone),
+        "Created": copy.dateTime(optionalString(lead.createdAt), timezone),
+        "Updated": copy.dateTime(optionalString(lead.updatedAt), timezone),
       };
     });
   }
@@ -4734,16 +4743,16 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return transactions.map((payment) => {
       const paymentCurrency = currencyOf(payment.amount, currency);
       return {
-        "When": formatExportDateTime(optionalString(payment.occurredAt), timezone),
+        "When": copy.dateTime(optionalString(payment.occurredAt), timezone),
         "Member": payment.memberName,
         "Member number": payment.memberNumber,
         "Branch": payment.branchName,
         "Receipt number": payment.receiptNumber,
-        "Transaction type": exportStatusLabel(optionalString(payment.type)),
-        "Payment method": exportStatusLabel(optionalString(payment.method)),
+        "Transaction type": copy.status(optionalString(payment.type)),
+        "Payment method": copy.status(optionalString(payment.method)),
         "Amount": formatMinorUnits(amountOf(payment.amount), paymentCurrency),
         "Currency": paymentCurrency,
-        "Status": exportStatusLabel(optionalString(payment.status)),
+        "Status": copy.status(optionalString(payment.status)),
         "Refunded amount": payment.refundedAmount ? formatMinorUnits(amountOf(payment.refundedAmount), paymentCurrency) : "",
         "Recorded by": payment.collectedByName,
         "External reference": payment.externalReference,
@@ -4760,18 +4769,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         const member = members.get(stringValue(charge.memberId));
         const chargeCurrency = currencyOf(charge.total, currency);
         return {
-          "Member": member ? member.fullName : "Unknown member",
+          "Member": member ? member.fullName : copy.label("Unknown member"),
           "Member number": member ? member.memberNumber : "",
           "Description": charge.description,
-          "Issued": charge.issueDate,
-          "Due": charge.dueDate,
+          "Issued": copy.date(optionalString(charge.issueDate)),
+          "Due": copy.date(optionalString(charge.dueDate)),
           "Total": formatMinorUnits(amountOf(charge.total), chargeCurrency),
           "Paid": formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
           "Outstanding": formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
           "Currency": chargeCurrency,
-          "Status": exportStatusLabel(optionalString(charge.status)),
+          "Status": copy.status(optionalString(charge.status)),
           "Collectible now": booleanValue(charge.collectible),
-          "Created": formatExportDateTime(optionalString(charge.createdAt), timezone),
+          "Created": copy.dateTime(optionalString(charge.createdAt), timezone),
         };
       });
   }
@@ -4781,17 +4790,17 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return events.map((event) => ({ id: event.publicId, branchId: event.branchId ? branchPublicIdsByInternalId.get(String(event.branchId)) : undefined, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, occurredAt: utcIso(event.occurredAt) }))
       .filter((row) => exportMatchesFilters(row, filters, timezone))
       .map((event) => ({
-        "When": formatExportDateTime(event.occurredAt, timezone),
-        "Branch": event.branchId ? branchNames.get(event.branchId) ?? "Unknown branch" : "Organization-wide",
+        "When": copy.dateTime(event.occurredAt, timezone),
+        "Branch": event.branchId ? branchNames.get(event.branchId) ?? copy.label("Unknown branch") : copy.label("Organization-wide"),
         "Recorded by": event.actorName,
-        "Role": exportStatusLabel(event.actorRole),
-        "Category": exportStatusLabel(event.category),
+        "Role": copy.status(event.actorRole),
+        "Category": copy.status(event.category),
         "Action": event.action.replaceAll("_", " "),
-        "Record type": exportStatusLabel(event.entityType),
+        "Record type": copy.status(event.entityType),
         "Record": event.entityLabel,
         "Summary": event.summary,
         "Reason": event.reason,
-        "Approval status": exportStatusLabel(event.approvalStatus),
+        "Approval status": copy.status(event.approvalStatus),
       }));
   }
   if (kind === "personal_training") {
@@ -4800,18 +4809,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters, timezone)).map((order) => {
       const member = visibleMembers.get(order.memberId);
       return {
-        "Member": member?.fullName ?? "Unknown member",
+        "Member": member?.fullName ?? copy.label("Unknown member"),
         "Member number": member?.memberNumber,
         "Package": order.packageName,
         "Sessions purchased": order.sessions,
         "Total price": formatMinorUnits(order.totalPriceMinor, order.currency),
         "Currency": order.currency,
-        "Status": exportStatusLabel(order.status),
-        "Paid": formatExportDateTime(order.paidAt, timezone),
+        "Status": copy.status(order.status),
+        "Paid": copy.dateTime(order.paidAt, timezone),
         "Refunded sessions": order.refundedSessions,
         "Refunded amount": formatMinorUnits(order.refundedMinor, order.currency),
-        "Created": formatExportDateTime(order.createdAt, timezone),
-        "Updated": formatExportDateTime(order.updatedAt, timezone),
+        "Created": copy.dateTime(order.createdAt, timezone),
+        "Updated": copy.dateTime(order.updatedAt, timezone),
       };
     });
   }
@@ -4832,16 +4841,16 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
   ];
   return operationRows.filter((row) => exportMatchesFilters(row, filters, timezone)).map((row) => ({
-    "Record type": row.recordType,
-    "Branch": row.branchId ? branchNames.get(row.branchId) ?? "Unknown branch" : "Organization-wide",
+    "Record type": copy.label(stringValue(row.recordType)),
+    "Branch": row.branchId ? branchNames.get(row.branchId) ?? copy.label("Unknown branch") : copy.label("Organization-wide"),
     "SKU": row.sku,
     "Product or supplier": row.itemName,
-    "Unit": row.unit ? exportStatusLabel(row.unit) : "",
-    "Status": exportStatusLabel(row.status),
+    "Unit": row.unit ? copy.status(row.unit) : "",
+    "Status": copy.status(row.status),
     "Reorder point": row.reorderPoint,
     "Quantity on hand": row.quantityOnHand,
     "Committed quantity": row.committedQuantity,
-    "Movement type": exportStatusLabel(row.movementType),
+    "Movement type": copy.status(row.movementType),
     "Quantity change": row.quantityChange,
     "Amount": row.amountMinor === undefined ? "" : formatMinorUnits(row.amountMinor, row.currency),
     "Currency": row.currency,
@@ -4849,16 +4858,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     "Phone": row.phone,
     "Email": row.email,
     "Reason": row.reason,
-    "Reference type": exportStatusLabel(row.referenceType),
-    "When": formatExportDateTime(row.occurredAt, timezone),
+    "Reference type": copy.status(row.referenceType),
+    "When": copy.dateTime(row.occurredAt, timezone),
   }));
 }
 
 function exportJobView(value: Data): Data {
-  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
+  return { locale: exportLocale(value.locale), failureMessageKey: value.failureMessageKey === "exports.tooLarge" ? "exports.tooLarge" : undefined, failureMessageParams: value.failureMessageKey === "exports.tooLarge" ? { count: numberValue(data(value.failureMessageParams).count) } : undefined, id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
 }
 
 async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const locale = exportLocale(input.locale);
+  const copy = makeExportCopy(locale);
   const { user } = await requireMember(ctx);
   const idempotencyKey = stringValue(input.idempotencyKey).trim();
   if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
@@ -4906,7 +4917,7 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
         paid: formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
         outstanding: formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
         currency: chargeCurrency,
-        status: exportStatusLabel(optionalString(charge.status)),
+        status: copy.status(optionalString(charge.status)),
         id: record.publicId,
       };
     }));
@@ -4914,9 +4925,9 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const checkIn = data(record.data);
       return {
         gym: context.organization.name,
-        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? "Gym branch",
-        occurredAt: formatExportDateTime(optionalString(checkIn.occurredAt), timezone),
-        result: exportStatusLabel(optionalString(checkIn.decision)),
+        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? copy.label("Gym branch"),
+        occurredAt: copy.dateTime(optionalString(checkIn.occurredAt), timezone),
+        result: copy.status(optionalString(checkIn.decision)),
         reason: exportList(checkIn.reasonCodes) || optionalString(checkIn.reason),
         recordedBy: optionalString(checkIn.actorName),
         id: record.publicId,
@@ -4926,10 +4937,10 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const event = data(record.data);
       return {
         gym: context.organization.name,
-        occurredAt: formatExportDateTime(optionalString(event.occurredAt), timezone),
-        type: exportStatusLabel(optionalString(event.type)),
-        title: optionalString(event.title),
-        detail: optionalString(event.body) ?? optionalString(event.detail),
+        occurredAt: copy.dateTime(optionalString(event.occurredAt), timezone),
+        type: copy.status(optionalString(event.type)),
+        title: copy.systemText(optionalString(event.title), event.titleMessage, timezone),
+        detail: copy.systemText(optionalString(event.body) ?? optionalString(event.detail), event.bodyMessage, timezone),
         recordedBy: optionalString(event.actorName),
         id: record.publicId,
       };
@@ -4938,11 +4949,11 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const occurrence = await ctx.db.get(booking.occurrenceId);
       return {
         gym: context.organization.name,
-        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? "Gym branch",
-        className: occurrence?.name ?? "Class",
-        startsAt: formatExportDateTime(booking.startsAt, timezone),
-        status: exportStatusLabel(booking.status),
-        bookedAt: formatExportDateTime(booking.bookedAt, timezone),
+        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? copy.label("Gym branch"),
+        className: occurrence?.name ?? copy.label("Class"),
+        startsAt: copy.dateTime(booking.startsAt, timezone),
+        status: copy.status(booking.status),
+        bookedAt: copy.dateTime(booking.bookedAt, timezone),
         fromWaitlist: booking.fromWaitlist,
         id: booking.publicId,
       };
@@ -4957,45 +4968,45 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
     ["Arabic name", optionalString(profile.nameAr)],
     ["Email", stringValue(profile.email, user.email)],
     ["Phone", optionalString(profile.phone)],
-    ["Date of birth", optionalString(profile.dateOfBirth)],
-    ["Gender", exportStatusLabel(optionalString(profile.gender))],
-    ["Preferred language", exportStatusLabel(optionalString(profile.preferredLanguage))],
+    ["Date of birth", copy.date(optionalString(profile.dateOfBirth))],
+    ["Gender", copy.status(optionalString(profile.gender))],
+    ["Preferred language", copy.status(optionalString(profile.preferredLanguage))],
     ["Address", optionalString(profile.addressLine1)],
     ["City", optionalString(profile.city)],
     ["Emergency contact", optionalString(profile.emergencyContactName)],
     ["Emergency relationship", optionalString(profile.emergencyContactRelationship)],
     ["Emergency phone", optionalString(profile.emergencyContactPhone)],
   ];
-  rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+  rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => [copy.label("Profile"), "", "", "", copy.label(label), value, "", "", ""]));
   rows.push(...memberships.map((membership): CsvValue[] => {
     const context = contexts.find((item) => item.membershipId === membership.membershipId || item.membershipId === membership.id);
     const currency = context?.organization.currency ?? JOD;
     return [
-      "Membership",
+      copy.label("Membership"),
       membership.gymName,
       membership.branchName,
-      membership.startDate,
+      copy.date(optionalString(membership.startDate)),
       membership.planName,
       details(
-        optionalString(membership.memberNumber) ? `Member ${optionalString(membership.memberNumber)}` : undefined,
-        optionalString(membership.endDate) ? `Ends ${optionalString(membership.endDate)}` : undefined,
-        optionalString(membership.lastCheckInAt) ? `Last check-in ${formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK)}` : undefined,
+        optionalString(membership.memberNumber) ? copy.t("exportDocuments.phrases.member_number", { value: stringValue(membership.memberNumber) }) : undefined,
+        optionalString(membership.endDate) ? copy.t("exportDocuments.phrases.ends", { value: copy.date(optionalString(membership.endDate)) }) : undefined,
+        optionalString(membership.lastCheckInAt) ? copy.t("exportDocuments.phrases.last_check_in", { value: copy.dateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK) }) : undefined,
       ),
       formatMinorUnits(numberValue(membership.balanceMinor), currency),
       currency,
-      exportStatusLabel(optionalString(membership.status)),
+      copy.status(optionalString(membership.status)),
     ];
   }));
   rows.push(...charges.map((charge): CsvValue[] => [
-    "Charge",
+    copy.label("Charge"),
     charge.gym,
     "",
-    charge.issueDate,
+    copy.date(optionalString(charge.issueDate)),
     charge.description,
     details(
-      charge.dueDate ? `Due ${charge.dueDate}` : undefined,
-      charge.total ? `Total ${charge.total} ${charge.currency}` : undefined,
-      charge.paid ? `Paid ${charge.paid} ${charge.currency}` : undefined,
+      charge.dueDate ? copy.t("exportDocuments.phrases.due", { value: copy.date(optionalString(charge.dueDate)) }) : undefined,
+      charge.total ? copy.t("exportDocuments.phrases.total", { value: `${charge.total} ${charge.currency}` }) : undefined,
+      charge.paid ? copy.t("exportDocuments.phrases.paid", { value: `${charge.paid} ${charge.currency}` }) : undefined,
     ),
     charge.outstanding,
     charge.currency,
@@ -5004,26 +5015,26 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   rows.push(...transactions.map((transaction): CsvValue[] => {
     const currency = currencyOf(transaction.amount, JOD);
     return [
-      "Payment",
+      copy.label("Payment"),
       transaction.gymName,
       transaction.branchName,
-      formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK),
-      optionalString(transaction.receiptNumber) ? `${exportStatusLabel(optionalString(transaction.type))} · Receipt ${optionalString(transaction.receiptNumber)}` : exportStatusLabel(optionalString(transaction.type)),
-      details(exportStatusLabel(optionalString(transaction.method)), optionalString(transaction.explanation)),
+      copy.dateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK),
+      optionalString(transaction.receiptNumber) ? copy.t("exportDocuments.phrases.receipt", { type: copy.status(optionalString(transaction.type)), number: stringValue(transaction.receiptNumber) }) : copy.status(optionalString(transaction.type)),
+      details(copy.status(optionalString(transaction.method)), copy.paymentExplanation(stringValue(transaction.type), stringValue(transaction.status), optionalString(transaction.explanation))),
       formatMinorUnits(amountOf(transaction.amount), currency),
       currency,
-      exportStatusLabel(optionalString(transaction.status)),
+      copy.status(optionalString(transaction.status)),
     ];
   }));
-  rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branch, visit.occurredAt, "Gym visit", visit.reason, "", "", visit.result]));
-  rows.push(...timeline.map((event): CsvValue[] => ["Account activity", event.gym, "", event.occurredAt, event.title || event.type, event.detail, "", "", ""]));
+  rows.push(...visits.map((visit): CsvValue[] => [copy.label("Check-in"), visit.gym, visit.branch, visit.occurredAt, copy.label("Gym visit"), visit.reason, "", "", visit.result]));
+  rows.push(...timeline.map((event): CsvValue[] => [copy.label("Account activity"), event.gym, "", event.occurredAt, event.title || event.type, event.detail, "", "", ""]));
   rows.push(...classBookings.map((booking): CsvValue[] => [
-    "Class booking",
+    copy.label("Class booking"),
     booking.gym,
     booking.branch,
     booking.startsAt,
     booking.className,
-    details(booking.bookedAt ? `Booked ${booking.bookedAt}` : undefined, booking.fromWaitlist ? "Promoted from waitlist" : undefined),
+    details(booking.bookedAt ? copy.t("exportDocuments.phrases.booked", { value: stringValue(booking.bookedAt) }) : undefined, booking.fromWaitlist ? copy.label("Promoted from waitlist") : undefined),
     "",
     "",
     booking.status,
@@ -5031,43 +5042,44 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   rows.push(...trialBookings.map((booking): CsvValue[] => {
     const gymId = stringValue(booking.gymId);
     return [
-      "Trial booking",
-      marketplaceNames.get(gymId) ?? "Unknown gym",
-      marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? "Unknown branch",
-      details(optionalString(booking.preferredDate), optionalString(booking.preferredTime)),
-      optionalString(booking.goal) || "Gym trial",
-      optionalString(booking.createdAt) ? `Requested ${formatExportDateTime(optionalString(booking.createdAt), personalTimezone)}` : "",
+      copy.label("Trial booking"),
+      marketplaceNames.get(gymId) ?? copy.label("Unknown gym"),
+      marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? copy.label("Unknown branch"),
+      details(copy.date(optionalString(booking.preferredDate)), copy.clock(optionalString(booking.preferredTime))),
+      optionalString(booking.goal) || copy.label("Gym trial"),
+      optionalString(booking.createdAt) ? copy.t("exportDocuments.phrases.requested", { value: copy.dateTime(optionalString(booking.createdAt), personalTimezone) }) : "",
       "",
       "",
-      exportStatusLabel(optionalString(booking.status)),
+      copy.status(optionalString(booking.status)),
     ];
   }));
   rows.push(...[...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event): CsvValue[] => [
-    "Marketing preference",
+    copy.label("Marketing preference"),
     "",
     "",
-    formatExportDateTime(event.changedAt, personalTimezone),
-    "Marketing messages",
-    `Recorded through ${exportStatusLabel(event.source)}`,
+    copy.dateTime(event.changedAt, personalTimezone),
+    copy.label("Marketing messages"),
+    copy.t("exportDocuments.phrases.recorded_through", { value: copy.status(event.source) }),
     "",
     "",
-    `${event.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(event.status)}`,
+    `${event.optedIn ? copy.label("Allowed") : copy.label("Not allowed")} · ${copy.status(event.status)}`,
   ]));
   const totalRows = rows.length;
   const content = buildCsvDocument({
-    title: "My RIVET data",
+    locale,
+    title: copy.label("My RIVET data"),
     metadata: [
-      { label: "Generated at", value: formatExportDateTime(now, personalTimezone) },
-      { label: "Account", value: stringValue(profile.email, user.email) },
-      { label: "Included gyms", value: [...organizations.values()].map((organization) => organization.name).join("; ") || "None" },
+      { label: copy.label("Generated at"), value: copy.dateTime(now, personalTimezone) },
+      { label: copy.label("Account"), value: stringValue(profile.email, user.email) },
+      { label: copy.label("Included gyms"), value: [...organizations.values()].map((organization) => organization.name).join("; ") || copy.label("None") },
     ],
-    headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+    headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"].map(copy.label),
     rows,
-    emptyMessage: "No personal data was available for export.",
+    emptyMessage: copy.label("No personal data was available for export."),
   });
   if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { message: { key: "apiErrors.personalExportLimit", params: { count: String(totalRows) } }, correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
-  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+  return { id: idempotencyKey, locale, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
 function workspaceInternalHref(value: unknown, correlationId: string): string {
@@ -7053,7 +7065,7 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
       createdAt: isoNow(),
     }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
     chargeVersion = String((await recordOf(ctx, actor, "charge", chargeId)).updatedAt);
-    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.openingBalanceImported", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, bodyMessage: systemMessage("communicationCompletion.timeline.openingBalanceImportedBody", { cutoff: { date: stringValue(importData.migrationCutoffDate) } }), meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
   }
   let evidenceId: string | undefined;
   let evidenceVersion: string | undefined;
@@ -7075,9 +7087,10 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
       createdAt: isoNow(),
     }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
     evidenceVersion = String((await recordOf(ctx, actor, "migrationPaymentEvidence", evidenceId)).updatedAt);
-    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${optionalString(row.historicalPaymentReference) ? ` · ${stringValue(row.historicalPaymentReference)}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
+    const historicalReference = optionalString(row.historicalPaymentReference);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.historicalPaymentEvidenceImported", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${historicalReference ? ` · ${historicalReference}` : ""}. No RIVET payment or receipt was created.`, bodyMessage: systemMessage(historicalReference ? "communicationCompletion.timeline.historicalPaymentEvidenceImportedBodyWithReference" : "communicationCompletion.timeline.historicalPaymentEvidenceImportedBody", { date: { date: stringValue(row.historicalPaymentDate) }, ...(historicalReference ? { reference: historicalReference } : {}) }), meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
   }
-  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, titleMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImported", { plan: stringValue(plan.name) }), body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, bodyMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImportedBody", { startDate: { date: stringValue(row.membershipStartDate) }, endDate: { date: stringValue(row.membershipEndDate) }, cutoffDate: { date: stringValue(importData.migrationCutoffDate) } }), meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
   await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
   return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
 }
@@ -7400,7 +7413,9 @@ async function createMembershipMutation(
     title: operation === "plan_change" ? `Membership plan changed to ${stringValue(planData.name)}` : `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`,
     titleMessage: operation === "plan_change" ? systemMessage("communicationCompletion.timeline.membershipPlanChanged", { plan: stringValue(planData.name) }) : renewal ? systemMessage("communicationCompletion.timeline.membershipRenewed", { plan: stringValue(planData.name) }) : systemMessage("communicationCompletion.timeline.membershipSold", { plan: stringValue(planData.name) }),
     body: operation === "plan_change" ? `${options.reason ?? "Plan change"} Effective ${membership.startDate}; no proration applied.` : `Term ${membership.startDate} → ${membership.endDate}.`,
-    ...(operation === "plan_change" ? {} : { bodyMessage: systemMessage("communicationCompletion.timeline.membershipTerm", { startDate: { date: stringValue(membership.startDate) }, endDate: { date: stringValue(membership.endDate) } }) }),
+    bodyMessage: operation === "plan_change"
+      ? systemMessage("communicationCompletion.timeline.membershipPlanChangeBody", { reason: options.reason ?? "Plan change", date: { date: stringValue(membership.startDate) } })
+      : systemMessage("communicationCompletion.timeline.membershipTerm", { startDate: { date: stringValue(membership.startDate) }, endDate: { date: stringValue(membership.endDate) } }),
     actorId: publicUserId(actor.user),
     actorName: actor.user.fullName,
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
@@ -7603,7 +7618,7 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
   const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
   const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, body: related ? `Follow-on to: ${related.title}` : undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
 
@@ -7645,7 +7660,7 @@ async function resolveFollowUpTasksForContact(
     const record = byId.get(task.id);
     if (!record) continue;
     const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: completedOutcome, completedAt: isoNow() });
-    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, body: completedOutcome, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(updated.title) }), body: completedOutcome, ...(isContactOutcome(outcome) ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskContactCompleted", { outcome: { enum: "contactOutcome", value: outcome } }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   }
   if (resolution.reschedule && nextFollowUpAt) {
     const record = byId.get(resolution.reschedule.id);
@@ -7861,7 +7876,7 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
           const next = kind === "members_add_tags" ? [...new Set([...current, ...tags])] : current.filter((tag) => !tags.includes(tag));
           if (JSON.stringify(current) === JSON.stringify(next)) { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { tags: next });
-          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, titleMessage: systemMessage(kind === "members_add_tags" ? "communicationCompletion.timeline.tagsAdded" : "communicationCompletion.timeline.tagsRemoved", { tags: tags.join(", ") }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "members_assign_branch") {
           if (member.homeBranchId === publicBranchId(branch!)) { skippedCount += 1; continue; }
           await ctx.db.patch(record._id, { branchId: branch!._id, data: { ...member, homeBranchId: publicBranchId(branch!) }, updatedAt: Date.now() });
@@ -7965,7 +7980,7 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     await patchRecord(ctx, actor, merged, { status: "archived", archivedAt: now, mergedIntoMemberId: survivingMemberId, mergedAt: now });
     const mergedProjections = projections.filter((projection) => stringValue(data(projection.data).memberId) === mergedMemberId);
     await Promise.all(mergedProjections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
-    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
+    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, titleMessage: systemMessage("communicationCompletion.timeline.memberMerged", { memberNumber: stringValue(mergedValue.memberNumber) }), body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
     const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
     mergeAuditReference = stringValue(audit.publicId);
   }
@@ -8024,7 +8039,7 @@ async function grantIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, mem
   });
   await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: stringValue(membership.memberId), type: "grant", quantity: sessions, reason: `Included with ${stringValue(plan.name)} membership term` });
   const scheduled = startsAt > now;
-  await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} ${scheduled ? "scheduled" : "granted"}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, startsAt: utcIso(startsAt) } });
+  await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} ${scheduled ? "scheduled" : "granted"}`, titleMessage: systemMessage(scheduled ? "communicationCompletion.timeline.ptIncludedCreditsScheduled" : "communicationCompletion.timeline.ptIncludedCreditsGranted", { count: sessions }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, startsAt: utcIso(startsAt) } });
   await insertAudit(ctx, actor, { category: "memberships", action: scheduled ? "pt.credit.schedule" : "pt.credit.grant", entityType: "pt_entitlement", entityId: (await ctx.db.get(entitlementId))?.publicId ?? membershipId, entityLabel: stringValue(membership.memberId), summary: `${scheduled ? "Scheduled" : "Granted"} ${sessions} included PT session${sessions === 1 ? "" : "s"}`, branchId: stringValue(membership.homeBranchId), after: { sessions, membershipId, startsAt: utcIso(startsAt) } });
 }
 
@@ -8080,7 +8095,7 @@ async function revokeUnusedIncludedPtCredits(ctx: MutationCtx, actor: ActorConte
   if (unused <= 0) return;
   await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + unused, status: entitlement.reserved > 0 ? "active" : "revoked", updatedAt: Date.now() });
   await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -unused, reason });
-  await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_refunded", title: `${unused} unused included PT session${unused === 1 ? "" : "s"} revoked`, body: reason, meta: { membershipId, entitlementId: entitlement.publicId } });
+  await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_refunded", title: `${unused} unused included PT session${unused === 1 ? "" : "s"} revoked`, titleMessage: systemMessage("communicationCompletion.timeline.ptIncludedCreditsRevoked", { count: unused }), body: reason, meta: { membershipId, entitlementId: entitlement.publicId } });
   await insertAudit(ctx, actor, { category: "memberships", action: "pt.credit.revoke", entityType: "pt_entitlement", entityId: entitlement.publicId, entityLabel: entitlement.memberPublicId, summary: `Revoked ${unused} unused included PT session${unused === 1 ? "" : "s"}`, reason, before: { available: unused }, after: { available: 0 } });
 }
 
@@ -8131,7 +8146,7 @@ async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorConte
   await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + available, status: "revoked", updatedAt: Date.now() });
   await ctx.db.patch(order._id, { status: "pending_payment", updatedAt: Date.now() });
   await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -available, reason });
-  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: "PT package activation reversed after payment void", body: reason, meta: { orderId: order.publicId, chargeId } });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: "PT package activation reversed after payment void", titleMessage: systemMessage("communicationCompletion.timeline.ptPackageActivationReversed"), body: reason, meta: { orderId: order.publicId, chargeId } });
   await insertAudit(ctx, actor, { category: "payments", action: "pt.package.activation_reverse", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Revoked ${available} unused PT credit${available === 1 ? "" : "s"} after payment void`, reason, before: { orderStatus: order.status, available }, after: { orderStatus: "pending_payment", available: 0 } });
 }
 
@@ -9474,6 +9489,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 
   switch (operation) {
     case "exports.request": {
+      const locale = exportLocale(input.locale);
       const kind = staffExportKind(input.kind, actor.correlationId);
       requireExportPermission(actor, kind);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
@@ -9489,8 +9505,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const generatedAt = isoNow();
       const branchScope = branchId ? `branch:${branchId}` : actor.branchScope === "all" ? "all accessible branches" : `${actor.branchIds.length} assigned branches`;
-      const rows = await staffExportRows(ctx, actor, kind, filters);
+      const rows = await staffExportRows(ctx, actor, kind, filters, locale);
       const csv = csvFromRows(rows, {
+        locale,
         title: STAFF_EXPORT_TITLES[kind],
         headers: STAFF_EXPORT_HEADERS[kind],
         generatedAt,
@@ -9502,7 +9519,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
       const status = csv.complete ? "completed" : "failed";
       const failureMessage = csv.complete ? undefined : `This export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Narrow the date, branch, or search filters and try again.`;
-      const value = { id, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
+      const value = { id, locale, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, ...(failureMessage ? { failureMessageKey: "exports.tooLarge", failureMessageParams: { count: csv.totalRows } } : {}), timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
       await insertRecord(ctx, actor, "exportJob", value);
       await insertAudit(ctx, actor, { category: "settings", action: csv.complete ? "data.export" : "data.export_rejected", entityType: "data_export", entityId: id, entityLabel: fileName, summary: csv.complete ? `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)` : `Rejected oversized ${kind.replaceAll("_", " ")} export (${csv.totalRows} rows)`, after: { kind, status, rowCount: csv.rowCount, totalRows: csv.totalRows, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
       return exportJobView(value);
@@ -9861,7 +9878,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const nextFollowUpAt = optionalString(input.nextFollowUpAt);
       await resolveFollowUpTasksForContact(ctx, actor, { memberId: member.publicId }, stringValue(data(member.data).fullName), outcome, nextFollowUpAt, { createWhenMissing: true });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, ...(outcome === "whatsapp_opened" ? { titleMessage: systemMessage("communicationCompletion.timeline.whatsappOpened") } : {}), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      const titleMessage = contactAttemptTitleMessage(outcome, "contact");
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, ...(titleMessage ? { titleMessage } : {}), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
     }
     case "retention.snooze": {
       requirePermission(actor, "crm.write");
@@ -9876,7 +9894,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const value = { id: publicId, memberId: member.publicId, snoozedUntil: until, snoozedAt: isoNow(), snoozedById: publicUserId(actor.user), reason: optionalString(input.reason)?.trim() };
       if (existing) await patchRecord(ctx, actor, existing, value);
       else await insertRecord(ctx, actor, "retentionState", value, { branchId: optionalString(memberData.homeBranchId), memberPublicId: member.publicId });
-      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, body: value.reason, meta: { kind: "retention_snooze", until } });
+      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, titleMessage: systemMessage("communicationCompletion.timeline.retentionSnoozed", { date: { date: until } }), body: value.reason, meta: { kind: "retention_snooze", until } });
       await insertAudit(ctx, actor, { category: "crm", action: "retention.snooze", entityType: "member", entityId: member.publicId, entityLabel: `${stringValue(memberData.fullName)} · ${stringValue(memberData.memberNumber)}`, summary: `At-risk follow-up snoozed until ${until}`, reason: value.reason, before, after: value, branchId: optionalString(memberData.homeBranchId) });
       return undefined;
     }
@@ -10262,7 +10280,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const entitlementId = await ctx.db.insert("ptEntitlements", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), source: "manual", grantKind: "introductory", membershipPublicId: membershipRecord.publicId, granted: sessionCount, reserved: 0, consumed: 0, revoked: 0, startsAt: now, expiresAt: ptWallTime(addDays(stringValue(membership.endDate), 1), 0, actor.organization.timezone || TZ_FALLBACK) - 1, status: "active", createdAt: now, updatedAt: now });
         const entitlement = (await ctx.db.get(entitlementId))!;
         await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "grant", quantity: sessionCount, reason: stringValue(input.reason) });
-        await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_granted", title: `${sessionCount} introductory PT credits granted`, body: stringValue(input.reason), meta: { entitlementId: entitlement.publicId, migrationId } });
+        await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_granted", title: `${sessionCount} introductory PT credits granted`, titleMessage: systemMessage("communicationCompletion.timeline.ptIntroductoryCreditsGranted", { count: sessionCount }), body: stringValue(input.reason), meta: { entitlementId: entitlement.publicId, migrationId } });
         grantedMemberships += 1;
       }
       const result = { eligibleMemberships: Math.max(0, memberships.length - grantedMembershipIds.size - grantedMemberships), alreadyGranted: grantedMembershipIds.size + grantedMemberships, sessionCount, grantedMemberships, migrationId };
@@ -10319,7 +10337,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + sessions, status: ptAvailable({ ...entitlement, revoked: entitlement.revoked + sessions }) === 0 && entitlement.reserved === 0 ? "revoked" : "active", updatedAt: Date.now() });
       await ctx.db.patch(order._id, { refundedSessions: nextSessions, refundedMinor: cumulativeMinor, status: nextSessions >= terms.sessionCount ? "refunded" : "partially_refunded", updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: order.memberPublicId, type: "refund_revoke", quantity: -sessions, reason: stringValue(input.reason) });
-      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, body: `${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)} · ${stringValue(input.reason)}`, meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, titleMessage: systemMessage("communicationCompletion.timeline.ptCreditsRefunded", { count: sessions }), body: `${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)} · ${stringValue(input.reason)}`, bodyMessage: systemMessage("communicationCompletion.timeline.ptCreditsRefundedBody", { amount: { amountMinor: refundMinor, currency: actor.organization.currency }, reason: stringValue(input.reason) }), meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
       await insertAudit(ctx, actor, { category: "payments", action: "pt.package.refund", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Refunded ${sessions} unused PT session${sessions === 1 ? "" : "s"} — ${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)}`, reason: stringValue(input.reason), before: { available, refundedSessions: previousSessions, refundedMinor: previousMinor }, after: { available: available - sessions, refundedSessions: nextSessions, refundedMinor: cumulativeMinor } });
       return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
     }
@@ -10808,7 +10826,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       // are the same work and must not survive as duplicates on Today.
       await resolveFollowUpTasksForContact(ctx, actor, { leadId: record.publicId }, stringValue(current.fullName), outcome, nextStage === "lost" ? undefined : optionalString(input.nextFollowUpAt), { createWhenMissing: false });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, ...(outcome === "whatsapp_opened" ? { titleMessage: systemMessage("communicationCompletion.timeline.whatsappOpened") } : {}), body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      const titleMessage = contactAttemptTitleMessage(outcome, "call");
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, ...(titleMessage ? { titleMessage } : {}), body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
       if (nextStage === "lost") {
         await insertAudit(ctx, actor, {
           category: "crm",
@@ -10869,7 +10888,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         updatedAt: isoNow(),
       }, { branchId, leadPublicId: lead.publicId });
       const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", titleMessage: systemMessage("communicationCompletion.timeline.trialScheduled"), body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
+      const trialGoal = optionalString(input.goal);
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", titleMessage: systemMessage("communicationCompletion.timeline.trialScheduled"), body: `${preferredDate} · ${preferredTime}${trialGoal ? ` · ${trialGoal}` : ""}`, bodyMessage: systemMessage(trialGoal ? "communicationCompletion.timeline.trialScheduledBodyWithGoal" : "communicationCompletion.timeline.trialScheduledBody", { date: { date: preferredDate }, time: { clock: preferredTime }, ...(trialGoal ? { goal: trialGoal } : {}) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
       await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
       const activities = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
@@ -10975,7 +10995,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const reference = typeof input.reference === "string" ? input.reference.trim() : undefined;
       const updated = await patchRecord(ctx, actor, offerRecord, { status: "sent", deliveryChannel: channel, deliveredAt, deliveredById: publicUserId(actor.user), deliveryReference: reference || undefined });
       await patchRecord(ctx, actor, lead, { stage: "offer_sent", updatedAt: deliveredAt });
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerSent", { plan: stringValue(current.planName) }), body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerSent", { plan: stringValue(current.planName) }), body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, bodyMessage: systemMessage(reference ? "communicationCompletion.timeline.offerDeliveryConfirmedBodyWithReference" : "communicationCompletion.timeline.offerDeliveryConfirmedBody", { channel: { enum: "channel", value: channel }, ...(reference ? { reference } : {}) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
       await insertAudit(ctx, actor, { category: "crm", action: "offer.delivered", entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer delivery confirmed via ${channel}`, reason: reference || `Manual ${channel} delivery confirmation`, before: { status: "draft" }, after: { status: "sent", deliveryChannel: channel }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
@@ -11011,7 +11031,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "task", recordId(input.taskId));
       const value = data(record.data);
       const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: stringValue(input.outcome), completedAt: isoNow() });
-      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await toTask(ctx, actor, updated);
     }
     case "leads.complete_sale": {
@@ -11147,6 +11167,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         body: existingMemberRecord
           ? `${stringValue(member.memberNumber)} received a new active membership record.`
           : `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
+        bodyMessage: existingMemberRecord
+          ? systemMessage("communicationCompletion.timeline.leadConvertedExistingMemberBody", { memberNumber: stringValue(member.memberNumber) })
+          : systemMessage("communicationCompletion.timeline.leadConvertedNewMemberBody", { name: stringValue(leadData.fullName), memberNumber: stringValue(member.memberNumber) }),
         actorId: publicUserId(actor.user),
         actorName: actor.user.fullName,
         meta: { membershipId: data(sale.membership).id, planId: planData.id },

@@ -62,6 +62,23 @@ describe("member migration batches", () => {
     expect(records.find((record) => record.memberPublicId === memberId && record.entityType === "charge")?.data).toMatchObject({ total: { amount: 12_500 }, migration: { kind: "opening_receivable", accountingPostingEligible: false } });
     expect(records.find((record) => record.memberPublicId === memberId && record.entityType === "migrationPaymentEvidence")?.data).toMatchObject({ amount: { amount: 80_000 }, sourceReference: "OLD-44", readOnly: true, accountingPostingEligible: false });
     expect(records.filter((record) => record.memberPublicId === memberId && ["payment", "receipt", "shift"].includes(record.entityType))).toHaveLength(0);
+    const timeline = records.filter((record) => record.memberPublicId === memberId && record.entityType === "timeline").map((record) => record.data as Record<string, unknown>);
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Opening balance imported — JOD 12.500",
+      titleMessage: { key: "communicationCompletion.timeline.openingBalanceImported", params: { amount: { amountMinor: 12_500, currency: "JOD" } } },
+      bodyMessage: { key: "communicationCompletion.timeline.openingBalanceImportedBody", params: { cutoff: { date: "2026-08-30" } } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Historical payment evidence imported — JOD 80.000",
+      titleMessage: { key: "communicationCompletion.timeline.historicalPaymentEvidenceImported", params: { amount: { amountMinor: 80_000, currency: "JOD" } } },
+      body: "Read-only evidence through 2026-08-20 · OLD-44. No RIVET payment or receipt was created.",
+      bodyMessage: { key: "communicationCompletion.timeline.historicalPaymentEvidenceImportedBodyWithReference", params: { date: { date: "2026-08-20" }, reference: "OLD-44" } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Monthly membership history imported",
+      titleMessage: { key: "communicationCompletion.timeline.membershipHistoryImported", params: { plan: "Monthly" } },
+      bodyMessage: { key: "communicationCompletion.timeline.membershipHistoryImportedBody", params: { startDate: { date: "2026-08-01" }, endDate: { date: "2026-10-07" }, cutoffDate: { date: "2026-08-30" } } },
+    }));
 
     const undone = await owner.mutation(api.domain.mutate, operation("members.import.undo", { importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "import-membership-undo-0001", reason: "Incorrect migration cutoff" })) as { archivedCount: number; skippedCount: number };
     expect(undone).toMatchObject({ archivedCount: 1, skippedCount: 0 });

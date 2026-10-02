@@ -143,6 +143,11 @@ describe("outbound messaging worker", () => {
         ? (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).first())?.data
         : await ctx.db.query("renewalDeliveries").first();
       expect(result).toMatchObject({ status: "suppressed", suppressionReason: expect.any(String) });
+      const event = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>).find((item) => item.type === "message");
+      expect(event?.body).toBe(source === "renewal" ? "Recipient opted out of renewal messages" : "Recipient opted out of marketing messages");
+      if (source === "renewal") {
+        expect(event?.bodyMessage).toEqual({ key: "communicationCompletion.timeline.value", params: { value: { enum: "renewalReason", value: "Recipient opted out of renewal messages" } } });
+      } else expect(event).not.toHaveProperty("bodyMessage");
     });
   });
 

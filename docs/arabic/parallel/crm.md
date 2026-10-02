@@ -24,8 +24,16 @@ Implemented in `/Users/eliashreish/.codex/worktrees/complete-arabic-support/Rive
 - `apps/web/src/lib/i18n/messages/ar/crmCompletion.ts`
 - `apps/web/src/lib/domain/types.ts` — optional `MemberSummary.preferredLanguage` and `Session.organization.defaultLanguage`.
 - `apps/web/convex/domain.ts` — canonical default in `buildSession`, member preference in both summary projections, and normalized at-risk candidate search.
+- `apps/web/convex/domain.ts` — follow-up context projection now forwards only valid timeline `bodyMessage` descriptors into evidence.
 - `apps/web/src/lib/mock/MockGymOSApi.ts` — matching session/summary projections and at-risk search.
 - `apps/web/src/lib/mock/MockGymOSApi.test.ts` — Arabic name/digit search invariant.
+- `apps/web/convex/renewalJobs.ts` — additive descriptors on known cancellation and suppression timeline bodies.
+- `apps/web/convex/messagingWorker.ts` — maps only exact renewal suppression reasons; automation/provider diagnostics stay original.
+- `apps/web/convex/classes.ts` — additive date descriptor for booked/waitlisted class timeline bodies.
+- `apps/web/convex/followupAssist.ts` — keeps valid body descriptors and full generated source bodies in follow-up evidence.
+- `apps/web/src/lib/i18n/system-messages.ts` — finite `renewalReason` enum mapping and exact legacy projections for known renewal reasons and class dates.
+- `apps/web/src/features/followup/follow-up-context.tsx` — localizes evidence descriptors before excerpt truncation, keeping inserted bidi isolates balanced.
+- Tests: `apps/web/convex/renewalJobs.test.ts`, `messagingWorker.test.ts`, `classBookings.test.ts`, `followupAssist.test.ts`, `apps/web/src/lib/i18n/system-messages.test.ts`, and `apps/web/src/features/followup/follow-up-context.test.tsx`.
 
 ## Decision and key mapping
 
@@ -36,6 +44,8 @@ Implemented in `/Users/eliashreish/.codex/worktrees/complete-arabic-support/Rive
 - `plural`, `digits`, `calendar`, `months`, `money-format`, and `time-format`: Arabic queue/selection/day counts use six-form plural objects and Latin digits; inputs normalize Arabic digits before validation; money remains integer minor units; displayed dates/times use the existing locale formatter and organization timezone. Search uses `searchKey` on both query and candidate fields for comparison only.
 - `crm-labels.ts` maps known contact outcomes, lead sources/stages, risk kinds, and priorities to typed keys. Unknown or historical values remain verbatim. Stored user-authored notes, names, email/phone values, lost reasons, offer response text, and technical state/API keys are not rewritten.
 - The follow-up panel uses `crmCompletion.followUpContext.*` for exact known renewal stop/suppression reasons, generated delivery statuses/details, and checkpoint labels; contact outcomes reuse the existing `memberProfile.contact.outcome.*` map. Free-form/unknown reasons and outcomes are preserved. `reminderTemplateUnavailableReason()` is not consumed by visible CRM/follow-up UI (only defined and unit-tested), so its current English sentence is not projected to staff.
+- Generated cancellation/suppression reasons are localized through `communicationCompletion.timeline.value` with the typed `renewalReason` enum, mapped to the existing `crmCompletion.followUpContext.stopReason.*` and `.suppressionReason.*` leaves. The new descriptors are additive: event body/meta values and delivery state remain unchanged. Historical projection requires the exact event type plus known body/metadata; class booking dates require an exact valid ISO calendar date. Unknown stop reasons, authored text and non-renewal suppression diagnostics receive no descriptor.
+- Class booked/waitlisted events retain their original ISO body and add a date descriptor. The follow-up API projection carries valid descriptors through `FollowUpTimelineLike` and `FollowUpEvidence`; the UI translates before clipping to 200 characters. Provider diagnostic text remains inside the translated failure sentence verbatim and directionally isolated.
 
 ## Preserved authored and historical content
 
@@ -74,6 +84,15 @@ pnpm --dir apps/web exec eslint src/features/followup/follow-up-context.tsx src/
 ```
 
 Result: 3 files, 16 tests passed; focused ESLint passed. Tests cover known Arabic stop/suppression/status/outcome labels, exact preservation for authored/unknown history, and deferred times formatted as `23:05` in English versus `11:05 م` in Arabic. Full app typecheck had passed before this final UI-only addendum; the primary agent owns the integrated typecheck gate.
+
+Bounded generated-message/evidence closure:
+
+```sh
+pnpm --dir apps/web exec vitest run --configLoader runner src/lib/i18n/messages.test.ts src/lib/i18n/system-messages.test.ts src/lib/i18n/system-messages.timeline-completion.test.ts convex/followupAssist.test.ts convex/renewalJobs.test.ts convex/messagingWorker.test.ts convex/classBookings.test.ts src/features/followup/follow-up-context.test.tsx
+pnpm --dir apps/web exec eslint convex/renewalJobs.ts convex/messagingWorker.ts convex/classes.ts convex/followupAssist.ts convex/domain.ts convex/renewalJobs.test.ts convex/messagingWorker.test.ts convex/classBookings.test.ts convex/followupAssist.test.ts src/lib/i18n/system-messages.ts src/lib/i18n/system-messages.test.ts src/features/followup/follow-up-context.tsx src/features/followup/follow-up-context.test.tsx
+```
+
+Result: 8 files passed, 77 tests passed; focused ESLint and `git diff --check` passed. The suite covers class date producers and legacy rendering, renewal stop/suppression producer descriptors and exact history fallback, source-gated messaging suppression, evidence descriptor survival, post-translation Arabic excerpt clipping, provider diagnostics, authored content, and catalogue parity. No whole-web or Convex typecheck was run in this closure; the primary agent owns integrated typechecks. Consent, delivery, authorization, idempotency and state transitions were not changed.
 
 ## Remaining limitation
 

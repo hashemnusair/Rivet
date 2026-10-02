@@ -94,9 +94,18 @@ describe("dated class booking", () => {
     const cancelled = await a.mutation(api.domain.mutate, operation("customer.classes.cancel", { membershipId: "membership-class-a", occurrenceId, bookingId: first.occurrence.booking.id })) as { outcome: string; promotedMemberId: string };
     expect(cancelled).toMatchObject({ outcome: "cancelled", promotedMemberId: "member-class-b" });
 
-    const persisted = await t.run(async (ctx) => ({ bookings: await ctx.db.query("classBookings").collect(), notifications: await ctx.db.query("operationalNotifications").collect() }));
+    const persisted = await t.run(async (ctx) => ({ bookings: await ctx.db.query("classBookings").collect(), notifications: await ctx.db.query("operationalNotifications").collect(), timeline: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect() }));
     expect(persisted.bookings.find((booking) => booking.memberPublicId === "member-class-b")).toMatchObject({ status: "booked", fromWaitlist: true });
     expect(persisted.notifications).toEqual([expect.objectContaining({ kind: "class_waitlist_promoted", recipientUserId: fixture.customerB })]);
+    const classEvents = persisted.timeline.map((record) => record.data as Record<string, unknown>);
+    expect(classEvents.find((event) => event.type === "class_booked" && event.memberId === "member-class-a")).toMatchObject({
+      body: date,
+      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { date } } },
+    });
+    expect(classEvents.find((event) => event.type === "class_waitlisted" && event.memberId === "member-class-b")).toMatchObject({
+      body: date,
+      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { date } } },
+    });
   });
 
   it("blocks audience mismatches for members and requires a reason for staff override", async () => {

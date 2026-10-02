@@ -1,3 +1,4 @@
+import { exportLocale, makeExportCopy } from "@/lib/exports/copy";
 import { describeStatementText, statementWarningMessages } from "../domain/statement-messages";
 import { describeAccountingReason } from "../domain/accounting-messages";
 import { describeEquipmentRationale } from "../domain/equipment-rationale";
@@ -5,6 +6,7 @@ import { describeMemberImportError } from "@/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { createTranslator } from "@/lib/i18n/core";
+import { systemMessage } from "@/lib/i18n/system-messages";
 import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
@@ -76,7 +78,7 @@ import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellat
 import { deriveMembershipStatus, evaluateCheckIn, isMembershipUsable } from "@/lib/domain/status";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "@/lib/members/lookup";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "@/lib/crm/lead-progression";
-import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "@/lib/crm/contact-outcomes";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, isContactOutcome, resolveFollowUpTasks, shouldClearLeadFollowUp } from "@/lib/crm/contact-outcomes";
 import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
@@ -92,7 +94,7 @@ import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "@/lib/retention/at-risk";
-import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
+import { buildCsvDocument, exportList, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
 import { exponentFor, money, toMajorString, zeroMoney } from "@/lib/utils/money";
 import { buildSeed } from "./seed";
 import { buildPlatformOverview } from "../../../convex/platformOverview";
@@ -844,8 +846,8 @@ export class MockGymOSApi implements GymOSApi {
     const at = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
     const base = { organizationId: this.db.organization.id, branchId: branch?.id, recipientId: owner.id };
     const seeded: MockOperationalNotification[] = [
-      { ...base, id: "NOT-demo-pt-1", kind: "pt_booking", title: "New PT booking", body: `${members[0]?.fullName ?? "Member"} · ${at(-30)}`, href: "/pt?booking=demo-booking-1", dedupeKey: "pt-booking:demo-booking-1", createdAt: at(26) },
-      { ...base, id: "NOT-demo-pt-2", kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: at(-54), href: "/pt?booking=demo-booking-1", dedupeKey: "pt-reschedule:demo-booking-1:1", createdAt: at(5) },
+      { ...base, id: "NOT-demo-pt-1", kind: "pt_booking", title: "New PT booking", titleMessage: systemMessage("communicationCompletion.notifications.ptBooking"), body: `${members[0]?.fullName ?? "Member"} · ${at(-30)}`, bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: members[0]?.fullName ?? "Member", b: { message: systemMessage("communicationCompletion.notifications.when", { at: at(-30) }) } }), href: "/pt?booking=demo-booking-1", dedupeKey: "pt-booking:demo-booking-1", createdAt: at(26) },
+      { ...base, id: "NOT-demo-pt-2", kind: "pt_booking_rescheduled", title: "PT booking rescheduled", titleMessage: systemMessage("communicationCompletion.notifications.ptBookingRescheduled"), body: at(-54), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: at(-54) }), href: "/pt?booking=demo-booking-1", dedupeKey: "pt-reschedule:demo-booking-1:1", createdAt: at(5) },
       { ...base, id: "NOT-demo-renewal-1", kind: "renewal", title: "Renewal due this week", body: `${members[0]?.fullName ?? "Member"} · membership ends in 5 days`, href: `/members/${members[0]?.id ?? "member"}?action=renew`, dedupeKey: "renewal:demo-1", createdAt: at(20) },
       { ...base, id: "NOT-demo-risk-1", kind: "at_risk", title: "Member at risk", body: `${members[1]?.fullName ?? "Member"} · no visit for 21 days`, href: `/members/${members[1]?.id ?? "member"}`, dedupeKey: "at-risk:demo-2", createdAt: at(18) },
       { ...base, id: "NOT-demo-support-1", kind: "support_reply", title: "RIVET replied to your support case", body: "Charged twice for July and our billing date", href: "/support?case=SUP-219", dedupeKey: "support-reply:SUP-219:seed", readAt: at(3), createdAt: at(4) },
@@ -932,7 +934,7 @@ export class MockGymOSApi implements GymOSApi {
       const respondedAt = nowISO();
       Object.assign(offer, { status: input.outcome, respondedAt, responseReason: input.reason?.trim().slice(0, 240) || (input.outcome === "declined" ? "Declined by recipient" : undefined) });
       if (input.outcome === "declined") Object.assign(lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
-      this.activity({ leadId: lead.id, type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${input.outcome} — ${offer.planName}`, body: input.reason?.trim() || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.id, outcome: input.outcome, source: "public_link" } });
+      this.activity({ leadId: lead.id, type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${input.outcome} — ${offer.planName}`, titleMessage: systemMessage(input.outcome === "accepted" ? "communicationCompletion.timeline.offerAccepted" : "communicationCompletion.timeline.offerDeclined", { plan: offer.planName }), body: input.reason?.trim() || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.id, outcome: input.outcome, source: "public_link" } });
       return this.publicOfferView(offer, lead);
     }, "public");
   }
@@ -2236,15 +2238,17 @@ export class MockGymOSApi implements GymOSApi {
             const amount = row.openingBalanceMinor!;
             const chargeId = mockUuid();
             this.db.charges.push({ id: chargeId, organizationId: this.db.organization.id, memberId: member.id, membershipId, description: `Opening balance at ${preview.migrationCutoffDate}`, subtotal: money(amount, this.db.organization.currency), discount: money(0, this.db.organization.currency), tax: money(0, this.db.organization.currency), total: money(amount, this.db.organization.currency), paidAmount: money(0, this.db.organization.currency), outstandingAmount: money(amount, this.db.organization.currency), status: "unpaid", issueDate: preview.migrationCutoffDate, dueDate: preview.migrationCutoffDate, migration: { importBatchId: preview.id, sourceRowNumber: row.rowNumber, kind: "opening_receivable", accountingPostingEligible: false }, createdAt: nowISO() });
-            this.activity({ memberId: member.id, type: "note", title: `Opening balance imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Outstanding as of ${preview.migrationCutoffDate}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: preview.id, chargeId, sourceRowNumber: row.rowNumber } });
+            this.activity({ memberId: member.id, type: "note", title: `Opening balance imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.openingBalanceImported", { amount: { amountMinor: amount, currency: this.db.organization.currency } }), body: `Outstanding as of ${preview.migrationCutoffDate}. No receipt, cash movement, or historical sale was created.`, bodyMessage: systemMessage("communicationCompletion.timeline.openingBalanceImportedBody", { cutoff: { date: preview.migrationCutoffDate! } }), meta: { importBatchId: preview.id, chargeId, sourceRowNumber: row.rowNumber } });
           }
           if ((row.historicalPaidMinor ?? 0) > 0) {
             const amount = row.historicalPaidMinor!;
             const evidenceId = mockUuid();
             this.memberImportPaymentEvidence.push({ id: evidenceId, memberId: member.id, membershipId, amount: money(amount, this.db.organization.currency), lastPaymentDate: row.historicalPaymentDate!, sourceReference: row.historicalPaymentReference, importBatchId: preview.id, sourceRowNumber: row.rowNumber });
-            this.activity({ memberId: member.id, type: "note", title: `Historical payment evidence imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, body: `Read-only evidence through ${row.historicalPaymentDate}${row.historicalPaymentReference ? ` · ${row.historicalPaymentReference}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: preview.id, evidenceId, sourceRowNumber: row.rowNumber } });
+            this.activity({ memberId: member.id, type: "note", title: `Historical payment evidence imported — ${this.db.organization.currency} ${(amount / 10 ** exponentFor(this.db.organization.currency)).toFixed(exponentFor(this.db.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.historicalPaymentEvidenceImported", { amount: { amountMinor: amount, currency: this.db.organization.currency } }), body: `Read-only evidence through ${row.historicalPaymentDate}${row.historicalPaymentReference ? ` · ${row.historicalPaymentReference}` : ""}. No RIVET payment or receipt was created.`, bodyMessage: row.historicalPaymentReference
+              ? systemMessage("communicationCompletion.timeline.historicalPaymentEvidenceImportedBodyWithReference", { date: { date: row.historicalPaymentDate! }, reference: row.historicalPaymentReference })
+              : systemMessage("communicationCompletion.timeline.historicalPaymentEvidenceImportedBody", { date: { date: row.historicalPaymentDate! } }), meta: { importBatchId: preview.id, evidenceId, sourceRowNumber: row.rowNumber } });
           }
-          this.activity({ memberId: member.id, type: "note", title: `${plan.name} membership history imported`, body: `${row.membershipStartDate} → ${row.membershipEndDate} · source cutoff ${preview.migrationCutoffDate}`, meta: { importBatchId: preview.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+          this.activity({ memberId: member.id, type: "note", title: `${plan.name} membership history imported`, titleMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImported", { plan: plan.name }), body: `${row.membershipStartDate} → ${row.membershipEndDate} · source cutoff ${preview.migrationCutoffDate}`, bodyMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImportedBody", { startDate: { date: row.membershipStartDate! }, endDate: { date: row.membershipEndDate! }, cutoffDate: { date: preview.migrationCutoffDate! } }), meta: { importBatchId: preview.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
           this.audit({ category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${member.fullName} · ${plan.name}`, summary: `Imported active or scheduled membership history from row ${row.rowNumber}`, after: { startDate: row.membershipStartDate ?? null, endDate: row.membershipEndDate ?? null, activeFreeze: activeFreeze ? "yes" : "no", openingBalanceMinor: row.openingBalanceMinor ?? 0, historicalPaidMinor: row.historicalPaidMinor ?? 0, importBatchId: preview.id, financialPostingEligible: "no" } });
         }
         row.status = "committed";
@@ -3479,7 +3483,7 @@ export class MockGymOSApi implements GymOSApi {
       supportCase.firstResponseAt ??= createdAt;
       supportCase.updatedAt = createdAt;
       supportCase.status = "waiting";
-      if (supportCase.creatorId) this.operationalNotifications.unshift({ id: `NOT-${crypto.randomUUID()}`, kind: "support_reply", title: "RIVET replied to your support case", body: supportCase.subject, href: `/support?case=${supportCase.id}`, dedupeKey: `support-reply:${supportCase.id}:${createdAt}`, createdAt, organizationId: this.db.organization.id, branchId: supportCase.branchId, recipientId: supportCase.creatorId });
+      if (supportCase.creatorId) this.operationalNotifications.unshift({ id: `NOT-${crypto.randomUUID()}`, kind: "support_reply", title: "RIVET replied to your support case", titleMessage: systemMessage("communicationCompletion.notifications.supportReply"), body: supportCase.subject, href: `/support?case=${supportCase.id}`, dedupeKey: `support-reply:${supportCase.id}:${createdAt}`, createdAt, organizationId: this.db.organization.id, branchId: supportCase.branchId, recipientId: supportCase.creatorId });
       return { ...supportCase, messages: supportCase.messages.map((message) => ({ ...message })) };
     });
   }
@@ -4049,6 +4053,7 @@ export class MockGymOSApi implements GymOSApi {
       memberNumber: m.memberNumber,
       fullName: m.fullName,
       fullNameAr: m.fullNameAr,
+      preferredLanguage: m.preferredLanguage,
       phone: m.phone,
       email: m.email,
       homeBranchId: m.homeBranchId,
@@ -4175,7 +4180,7 @@ export class MockGymOSApi implements GymOSApi {
     const now = nowISO();
     const entitlement: T.PtEntitlement = { id: mockUuid(), organizationId: this.db.organization.id, memberId: membership.memberId, source: "included", membershipId, granted: sessions, reserved: 0, consumed: 0, revoked: 0, available: sessions, expiresAt: `${membership.endDate}T23:59:59.999Z`, status: "active", createdAt: now, updatedAt: now };
     this.ptEntitlements.push(entitlement);
-    this.activity({ memberId: membership.memberId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} granted`, meta: { membershipId, entitlementId: entitlement.id } });
+    this.activity({ memberId: membership.memberId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} granted`, titleMessage: systemMessage("communicationCompletion.timeline.ptIncludedCreditsGranted", { count: sessions }), meta: { membershipId, entitlementId: entitlement.id } });
     return entitlement;
   }
 
@@ -4393,6 +4398,7 @@ export class MockGymOSApi implements GymOSApi {
         currency: org.currency,
         timezone: org.timezone,
         locale: org.locale,
+        defaultLanguage: org.defaultLanguage ?? "en",
         phoneCountryCallingCode: org.phoneCountryCallingCode,
         brand: this.db.brand,
         subscription: {
@@ -5251,6 +5257,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.id,
         type: "member_created",
         title: "Member profile created",
+        titleMessage: systemMessage("communicationCompletion.timeline.memberCreated"),
         actorId: this.actor().id,
         actorName: this.actor().name,
       });
@@ -5333,7 +5340,9 @@ export class MockGymOSApi implements GymOSApi {
           memberId: m.id,
           type: "marketing_preference_changed",
           title: `Marketing messages ${m.marketingOptIn ? "enabled" : "disabled"}`,
+          titleMessage: systemMessage(m.marketingOptIn ? "communicationCompletion.timeline.marketingEnabled" : "communicationCompletion.timeline.marketingDisabled"),
           body: `Preference changed from ${beforePreference.optedIn ? "opted in" : "opted out"} to ${m.marketingOptIn ? "opted in" : "opted out"}.`,
+          ...(beforePreference.optedIn !== m.marketingOptIn ? { bodyMessage: systemMessage(m.marketingOptIn ? "communicationCompletion.timeline.marketingNowIn" : "communicationCompletion.timeline.marketingNowOut") } : {}),
           actorId: this.actor().id,
           actorName: this.actor().name,
           meta: { optedIn: m.marketingOptIn, source: m.marketingPreference.source },
@@ -5429,6 +5438,9 @@ export class MockGymOSApi implements GymOSApi {
         memberId,
         type: "call_attempt",
         title: input.outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${input.outcome.replace(/_/g, " ")}`,
+        titleMessage: input.outcome === "whatsapp_opened"
+          ? systemMessage("communicationCompletion.timeline.whatsappOpened")
+          : isContactOutcome(input.outcome) ? systemMessage("communicationCompletion.timeline.contactAttempt", { outcome: { enum: "contactOutcome", value: input.outcome } }) : undefined,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -5459,7 +5471,7 @@ export class MockGymOSApi implements GymOSApi {
       task.status = "completed";
       task.outcome = outcome;
       task.completedAt = nowISO();
-      if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task completed: ${task.title}`, body: outcome, actorId: this.actor().id, actorName: this.actor().name });
+      if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task completed: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.title }), body: outcome, ...(isContactOutcome(input.outcome) ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskContactCompleted", { outcome: { enum: "contactOutcome", value: input.outcome } }) } : {}), actorId: this.actor().id, actorName: this.actor().name });
     }
     if (resolution.reschedule && input.nextFollowUpAt) {
       resolution.reschedule.dueAt = input.nextFollowUpAt;
@@ -5493,6 +5505,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId,
         type: "note",
         title: "Note added",
+        titleMessage: systemMessage("communicationCompletion.timeline.noteAdded"),
         body: input.body,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -5764,7 +5777,7 @@ export class MockGymOSApi implements GymOSApi {
       const now = nowISO();
       const booking: T.PtBooking = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: member.id, memberName: member.fullName, trainerProfileId: trainer.id, trainerName: trainer.displayName, branchId: branch.id, branchName: branch.name, entitlementId: entitlement.id, startsAt: input.startsAt, endsAt: new Date(Date.parse(input.startsAt) + 3_600_000).toISOString(), status: "reserved", bookedById: this.actor().id, createdAt: now, updatedAt: now };
       this.ptBookings.push(booking);
-      this.activity({ memberId: member.id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.id } });
+      this.activity({ memberId: member.id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptBooked", { trainer: trainer.displayName }), meta: { bookingId: booking.id } });
       this.audit({ category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.id, entityLabel: `${member.fullName} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: branch.id });
       return { ...booking };
     }
@@ -5804,7 +5817,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!result.restoreCredit) entitlement.consumed += 1;
       entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
       booking.status = result.status; booking.cancellationReason = input.reason.trim(); booking.updatedAt = nowISO();
-      this.activity({ memberId: booking.memberId, type: "pt_booking_cancelled", title: result.restoreCredit ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: input.reason, meta: { bookingId } });
+      this.activity({ memberId: booking.memberId, type: "pt_booking_cancelled", title: result.restoreCredit ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", titleMessage: systemMessage(result.restoreCredit ? "communicationCompletion.timeline.ptCancelledRestored" : "communicationCompletion.timeline.ptCancelledUsed"), body: input.reason, meta: { bookingId } });
       return { ...booking };
     }
   }
@@ -5839,7 +5852,7 @@ export class MockGymOSApi implements GymOSApi {
       const collision = this.ptBookings.some((item) => item.id !== booking.id && item.memberId === booking.memberId && ["reserved", "confirmed"].includes(item.status) && item.startsAt < new Date(Date.parse(input.startsAt) + 3_600_000).toISOString() && input.startsAt < item.endsAt);
       if (collision) throw ApiError.of(ERR.CONFLICT, "The member already has a PT booking at this time.");
       booking.trainerProfileId = trainer.id; booking.trainerName = trainer.displayName; booking.branchId = branch.id; booking.branchName = branch.name; booking.startsAt = input.startsAt; booking.endsAt = new Date(Date.parse(input.startsAt) + 3_600_000).toISOString(); booking.updatedAt = nowISO();
-      this.activity({ memberId: booking.memberId, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: input.reason, meta: { bookingId: booking.id, startsAt: booking.startsAt } });
+      this.activity({ memberId: booking.memberId, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptRescheduled", { trainer: trainer.displayName }), body: input.reason, meta: { bookingId: booking.id, startsAt: booking.startsAt } });
       this.audit({ category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.id, entityLabel: booking.memberName, summary: "Rescheduled PT booking without changing credit balance", reason: input.reason, branchId: branch.id });
       return { ...booking };
     }
@@ -5861,7 +5874,7 @@ export class MockGymOSApi implements GymOSApi {
       const entitlement = this.ptEntitlements.find((item) => item.id === booking.entitlementId)!;
       entitlement.reserved = Math.max(0, entitlement.reserved - 1); entitlement.consumed += 1; entitlement.available = ptAvailableCredits(entitlement); entitlement.updatedAt = nowISO();
       booking.status = status; booking.outcomeReason = reason?.trim() || undefined; booking.updatedAt = nowISO();
-      this.activity({ memberId: booking.memberId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", body: reason, meta: { bookingId } });
+      this.activity({ memberId: booking.memberId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", titleMessage: systemMessage(status === "completed" ? "communicationCompletion.timeline.ptCompleted" : "communicationCompletion.timeline.ptNoShow"), body: reason, meta: { bookingId } });
       return { ...booking };
     });
   }
@@ -5884,7 +5897,7 @@ export class MockGymOSApi implements GymOSApi {
       const now = nowISO();
       const order: T.PtPackageOrder = { id: input.idempotencyKey, organizationId: this.db.organization.id, memberId: membership.memberId, packageId: ptPackage.id, chargeId: charge.id, packageNameSnapshot: ptPackage.name, sessionCountSnapshot: ptPackage.sessionCount, totalPriceSnapshot: { ...ptPackage.totalPrice }, validityDaysSnapshot: ptPackage.validityDays, status: "pending_payment", createdAt: now, updatedAt: now };
       this.ptOrders.push(order);
-      this.activity({ memberId: membership.memberId, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.id, chargeId: charge.id } });
+      this.activity({ memberId: membership.memberId, type: "pt_package_requested", title: `${ptPackage.name} requested`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageRequested", { package: ptPackage.name }), meta: { orderId: order.id, chargeId: charge.id } });
       return { ...order };
     });
   }
@@ -5918,7 +5931,7 @@ export class MockGymOSApi implements GymOSApi {
       order.cancelledAt = nowISO();
       order.cancellationReason = input.reason.trim();
       order.updatedAt = nowISO();
-      this.activity({ memberId: order.memberId, type: "pt_package_cancelled", title: "PT package order cancelled", body: input.reason, meta: { orderId: order.id, chargeId: order.chargeId } });
+      this.activity({ memberId: order.memberId, type: "pt_package_cancelled", title: "PT package order cancelled", titleMessage: systemMessage("communicationCompletion.timeline.ptPackageCancelled"), body: input.reason, meta: { orderId: order.id, chargeId: order.chargeId } });
       this.audit({ category: "payments", action: "pt.package.cancel", entityType: "pt_package_order", entityId: order.id, entityLabel: order.memberId, summary: "Cancelled pending PT package order and voided unpaid charge", reason: input.reason });
       this.ptCancellationIdempotency.set(idempotencyKey, { signature, result: { ...order } });
       return { ...order };
@@ -5940,7 +5953,7 @@ export class MockGymOSApi implements GymOSApi {
       order.refundedSessions = refundedSessions;
       order.refundedAmount = money(Math.floor((totalPriceMinor * refundedSessions) / totalSessions));
       order.status = entitlement.available === 0 ? "refunded" : "partially_refunded"; order.updatedAt = nowISO();
-      this.activity({ memberId: order.memberId, type: "pt_credit_refunded", title: `${input.sessions} PT credit${input.sessions === 1 ? "" : "s"} refunded`, body: input.reason, meta: { orderId } });
+      this.activity({ memberId: order.memberId, type: "pt_credit_refunded", title: `${input.sessions} PT credit${input.sessions === 1 ? "" : "s"} refunded`, titleMessage: systemMessage("communicationCompletion.timeline.ptCreditsRefunded", { count: input.sessions }), body: input.reason, meta: { orderId } });
       return { ...order };
     });
   }
@@ -6141,7 +6154,11 @@ export class MockGymOSApi implements GymOSApi {
         memberId: member.id,
         type: isPlanChange ? "membership_plan_changed" : isRenewal ? "membership_renewed" : "membership_sold",
         title: isPlanChange ? `Membership plan changed to ${plan.name}` : `${plan.name} ${isRenewal ? "membership renewed" : "membership sold"}`,
+        titleMessage: systemMessage(isPlanChange ? "communicationCompletion.timeline.membershipPlanChanged" : isRenewal ? "communicationCompletion.timeline.membershipRenewed" : "communicationCompletion.timeline.membershipSold", { plan: plan.name }),
         body: isPlanChange ? `${args.reason ?? "Plan change"} Effective ${record.startDate}; no proration applied.` : `Term ${record.startDate} → ${record.endDate}.`,
+        bodyMessage: isPlanChange
+          ? systemMessage("communicationCompletion.timeline.membershipPlanChangeBody", { reason: args.reason ?? "Plan change", date: { date: record.startDate } })
+          : systemMessage("communicationCompletion.timeline.membershipTerm", { startDate: { date: record.startDate }, endDate: { date: record.endDate } }),
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { membershipId: record.id },
@@ -6417,6 +6434,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.memberId,
         type: "membership_frozen",
         title: `Membership frozen ${input.startDate} → ${input.endDate}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.membershipFrozen", { startDate: { date: input.startDate }, endDate: { date: input.endDate } }),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6472,6 +6490,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.memberId,
         type: "membership_unfrozen",
         title: "Freeze ended early",
+        titleMessage: systemMessage("communicationCompletion.timeline.freezeEnded"),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6519,6 +6538,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.memberId,
         type: "membership_extended",
         title: `Membership extended by ${input.days} day${input.days === 1 ? "" : "s"}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.membershipExtended", { count: input.days }),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6574,6 +6594,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.memberId,
         type: "membership_cancelled",
         title: "Membership cancelled",
+        titleMessage: systemMessage("communicationCompletion.timeline.membershipCancelled"),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6640,6 +6661,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: record.memberId,
         type: "membership_transferred",
         title: `Membership transferred to ${branch.name}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.membershipTransferred", { branch: branch.name }),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6780,6 +6802,7 @@ export class MockGymOSApi implements GymOSApi {
         leadId: lead.id,
         type: "member_created",
         title: "Lead captured",
+        titleMessage: systemMessage("communicationCompletion.timeline.leadCaptured"),
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6845,7 +6868,7 @@ export class MockGymOSApi implements GymOSApi {
       if (changedFields.length === 0) return this.getLeadSync(leadId);
       Object.assign(lead, { fullName, phone, email, updatedAt: nowISO() });
       this.audit({ category: "crm", action: "lead.contact.update", entityType: "lead", entityId: lead.id, entityLabel: fullName, summary: "Lead contact details corrected", before, after });
-      this.activity({ leadId, type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: this.actor().id, actorName: this.actor().name, meta: { fields: changedFields.join(",") } });
+      this.activity({ leadId, type: "lead_contact_updated", title: "Lead contact details corrected", titleMessage: systemMessage("communicationCompletion.timeline.leadContactUpdated"), body: "Contact details were updated; pipeline status was unchanged.", bodyMessage: systemMessage("communicationCompletion.timeline.leadContactUpdatedBody"), actorId: this.actor().id, actorName: this.actor().name, meta: { fields: changedFields.join(",") } });
       return this.getLeadSync(leadId);
     });
   }
@@ -6890,6 +6913,9 @@ export class MockGymOSApi implements GymOSApi {
         leadId,
         type: "call_attempt",
         title: input.outcome === "whatsapp_opened" ? outcomeLabels[input.outcome] : `Call — ${outcomeLabels[input.outcome].toLowerCase()}`,
+        titleMessage: input.outcome === "whatsapp_opened"
+          ? systemMessage("communicationCompletion.timeline.whatsappOpened")
+          : isContactOutcome(input.outcome) ? systemMessage("communicationCompletion.timeline.callAttempt", { outcome: { enum: "contactOutcome", value: input.outcome } }) : undefined,
         body: input.notes,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -6939,7 +6965,7 @@ export class MockGymOSApi implements GymOSApi {
       lead.stage = "trial_booked";
       lead.nextFollowUpAt = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
       lead.updatedAt = nowISO();
-      this.activity({ leadId, type: "trial_confirmed", title: "Trial scheduled", body: `${input.preferredDate} · ${input.preferredTime}`, actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId: booking.id } });
+      this.activity({ leadId, type: "trial_confirmed", title: "Trial scheduled", titleMessage: systemMessage("communicationCompletion.timeline.trialScheduled"), body: `${input.preferredDate} · ${input.preferredTime}`, bodyMessage: systemMessage("communicationCompletion.timeline.trialScheduledBody", { date: { date: input.preferredDate }, time: { clock: input.preferredTime } }), actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId: booking.id } });
       this.audit({ category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${lead.fullName} · ${input.preferredDate} ${input.preferredTime}`, summary: "Trial scheduled by staff", branchId: lead.branchId });
       return this.getLeadSync(lead.id);
     });
@@ -6972,7 +6998,8 @@ export class MockGymOSApi implements GymOSApi {
       lead.updatedAt = nowISO();
       const labels = { confirmed: "Trial confirmed", completed: "Trial completed", no_show: "Trial marked as no-show", cancelled: "Trial cancelled" } as const;
       const eventTypes = { confirmed: "trial_confirmed", completed: "trial_completed", no_show: "trial_no_show", cancelled: "trial_cancelled" } as const;
-      this.activity({ leadId: lead.id, type: eventTypes[input.status], title: labels[input.status], body: input.note, actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId, status: input.status } });
+      const titleKeys = { confirmed: "communicationCompletion.notifications.trialConfirmed", completed: "communicationCompletion.notifications.trialCompleted", no_show: "communicationCompletion.notifications.trialNoShow", cancelled: "communicationCompletion.notifications.trialCancelled" } as const;
+      this.activity({ leadId: lead.id, type: eventTypes[input.status], title: labels[input.status], titleMessage: systemMessage(titleKeys[input.status]), body: input.note, actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId, status: input.status } });
       if ((input.status === "completed" || input.status === "no_show") && !this.db.tasks.some((task) => task.leadId === lead.id && task.type === "trial_follow_up" && task.status === "open")) {
         this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "trial_follow_up", title: input.status === "no_show" ? "Reschedule missed trial" : "Follow up after trial", ownerId: lead.ownerId ?? this.actor().id, ownerName: this.db.users.find((user) => user.id === lead.ownerId)?.name ?? this.actor().name, dueAt: followUpAt, priority: input.status === "no_show" ? "high" : "normal", status: "open", leadId: lead.id, subjectName: lead.fullName, createdById: this.actor().id, createdAt: nowISO() });
       }
@@ -7038,7 +7065,11 @@ export class MockGymOSApi implements GymOSApi {
         leadId: lead.id,
         type: "offer_sent",
         title: `Offer delivery confirmed — ${offer.planName}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.offerSent", { plan: offer.planName }),
         body: `${input.channel === "manual" ? "Manual delivery" : input.channel} confirmed${input.reference?.trim() ? ` · ${input.reference.trim()}` : ""}.`,
+        bodyMessage: input.reference?.trim()
+          ? systemMessage("communicationCompletion.timeline.offerDeliveryConfirmedBodyWithReference", { channel: { enum: "channel", value: input.channel }, reference: input.reference.trim() })
+          : systemMessage("communicationCompletion.timeline.offerDeliveryConfirmedBody", { channel: { enum: "channel", value: input.channel } }),
         actorId: this.actor().id,
         actorName: this.actor().name,
         meta: { offerId: offer.id, channel: input.channel },
@@ -7083,6 +7114,7 @@ export class MockGymOSApi implements GymOSApi {
         leadId: lead.id,
         type: input.outcome === "accepted" ? "offer_accepted" : "offer_declined",
         title: `Offer ${input.outcome} — ${offer.planName}`,
+        titleMessage: systemMessage(input.outcome === "accepted" ? "communicationCompletion.timeline.offerAccepted" : "communicationCompletion.timeline.offerDeclined", { plan: offer.planName }),
         body: reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -7187,7 +7219,9 @@ export class MockGymOSApi implements GymOSApi {
           memberId: input.memberId,
           type: "task_created",
           title: `Task: ${input.title}`,
+          titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: input.title }),
           body: related ? `Follow-on to: ${related.title}` : undefined,
+          ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}),
           actorId: this.actor().id,
           actorName: this.actor().name,
         });
@@ -7209,6 +7243,7 @@ export class MockGymOSApi implements GymOSApi {
           memberId: task.memberId,
           type: "task_completed",
           title: `Task completed: ${task.title}`,
+          titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.title }),
           body: input.outcome,
           actorId: this.actor().id,
           actorName: this.actor().name,
@@ -7293,7 +7328,7 @@ export class MockGymOSApi implements GymOSApi {
         task.outcome = "Membership sold";
         task.completedAt = nowISO();
       }
-      this.activity({ leadId: lead.id, memberId: member.id, type: "lead_converted", title: `Membership sold — ${plan.name}`, actorId: this.actor().id, actorName: this.actor().name, meta: { membershipId: sale.membership.id, planId: plan.id } });
+      this.activity({ leadId: lead.id, memberId: member.id, type: "lead_converted", title: `Membership sold — ${plan.name}`, titleMessage: systemMessage("communicationCompletion.timeline.leadConverted", { plan: plan.name }), actorId: this.actor().id, actorName: this.actor().name, meta: { membershipId: sale.membership.id, planId: plan.id } });
       this.audit({ category: "crm", action: "lead.membership_sale_completed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: `${existingMember ? "Existing member sold" : "Lead converted with"} ${plan.name} membership`, before: { stage: "trial_completed" }, after: { stage: "won", memberId: member.id, membershipId: sale.membership.id, planId: plan.id, reusedExistingMember: existingMember ? "yes" : "no" }, branchId: lead.branchId });
       return { member: this.toMemberDetail(member), plan: this.toPlan(plan), membership: sale.membership, charge: sale.charge };
     });
@@ -7339,6 +7374,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: record.id,
       type: "member_created",
       title: "Member profile created",
+      titleMessage: systemMessage("communicationCompletion.timeline.memberCreated"),
       actorId: this.actor().id,
       actorName: this.actor().name,
     });
@@ -7492,14 +7528,14 @@ export class MockGymOSApi implements GymOSApi {
       }).filter((risk) => !branchId || risk.branchId === branchId)
         .filter((risk) => currentRole(this.db) !== "salesperson" || risk.assignedSalespersonId === this.actor().id)
         .filter((risk) => !query.reason || query.reason === "all" || risk.reasons.some((reason) => reason.kind === query.reason));
-      const search = query.search?.trim().toLowerCase();
+      const search = query.search;
       const items = risks.flatMap((risk): T.AtRiskMemberItem[] => {
         const member = this.db.members.find((candidate) => candidate.id === risk.memberId);
         const membership = this.db.memberships.find((candidate) => candidate.id === risk.membershipId);
         if (!member || !membership) return [];
         const memberSummary = this.toMemberSummary(member);
         const membershipSummary = this.toMembershipSummary(membership);
-        if (search && ![memberSummary.fullName, memberSummary.memberNumber, memberSummary.phone, membershipSummary.planName].some((value) => value.toLowerCase().includes(search))) return [];
+        if (search && !this.matchesSearch([memberSummary.fullName, memberSummary.memberNumber, memberSummary.phone, membershipSummary.planName], search)) return [];
         const contact = this.db.activities.filter((activity) => activity.memberId === member.id && activity.type === "call_attempt").sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))[0];
         return [{ ...risk, member: memberSummary, membership: membershipSummary, lastContactAt: contact?.occurredAt, lastContactOutcome: contact?.meta?.outcome ? String(contact.meta.outcome) : undefined, recommendedSnoozeDays: this.db.operationalPolicies.retention.defaultSnoozeDays }];
       });
@@ -7521,7 +7557,7 @@ export class MockGymOSApi implements GymOSApi {
       const existing = this.retentionStates.find((state) => state.memberId === member.id);
       if (existing) Object.assign(existing, { snoozedUntil: input.until, reason: input.reason?.trim() });
       else this.retentionStates.push({ memberId: member.id, snoozedUntil: input.until, reason: input.reason?.trim() });
-      this.activity({ memberId: member.id, type: "note", title: `Retention follow-up snoozed until ${input.until}`, body: input.reason?.trim(), actorId: this.actor().id, actorName: this.actor().name, meta: { kind: "retention_snooze", until: input.until } });
+      this.activity({ memberId: member.id, type: "note", title: `Retention follow-up snoozed until ${input.until}`, titleMessage: systemMessage("communicationCompletion.timeline.retentionSnoozed", { date: { date: input.until } }), body: input.reason?.trim(), actorId: this.actor().id, actorName: this.actor().name, meta: { kind: "retention_snooze", until: input.until } });
       this.audit({ category: "crm", action: "retention.snooze", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `At-risk follow-up snoozed until ${input.until}`, reason: input.reason?.trim(), after: { until: input.until }, branchId: member.homeBranchId });
     });
   }
@@ -7689,6 +7725,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       type: "check_in",
       title: `Checked in — ${checkIn.branchName}`,
+      titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }),
       body: overrideReason,
       actorId: this.actor().id,
       actorName: this.actor().name,
@@ -7863,6 +7900,7 @@ export class MockGymOSApi implements GymOSApi {
       memberId: member.id,
       type: "payment_collected",
       title: `Payment collected — ${this.amountText(amount)} ${args.method.replace("_", " ")}`,
+      titleMessage: systemMessage("communicationCompletion.timeline.paymentCollected", { amount: { amountMinor: amount, currency: charge.total.currency }, method: { enum: "paymentMethod", value: args.method } }),
       actorId: this.actor().id,
       actorName: this.actor().name,
       meta: { receiptNumber, receiptId: receipt.id },
@@ -7945,7 +7983,7 @@ export class MockGymOSApi implements GymOSApi {
         const movement: T.StockMovement = { id: mockUuid(), organizationId: this.db.organization.id, branchId: branch.id, productId: line.product.id, productSku: line.product.sku, productName: line.product.name, productUnit: line.product.unit, type: "sale", quantityDelta: -line.quantity, quantity: line.quantity, unitCost: line.unitCost, totalCost: soldCostMinor === undefined || !knownCost ? undefined : { amount: soldCostMinor, currency: knownCost.currency }, reason: `Retail sale ${receiptNumber}`, referenceType: "retail_sale", referenceId: sale.id, idempotencyKey: `${idempotencyKey}:${line.product.id}`, financialPostingStatus: "not_posted", occurredAt: now, createdAt: now, createdById: this.actor().id };
         this.db.stockMovements.unshift(movement);
       }
-      if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.amountText(totalMinor)}`, actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
+      if (member) this.activity({ memberId: member.id, type: "payment_collected", title: `Retail sale — ${this.amountText(totalMinor)}`, titleMessage: systemMessage("communicationCompletion.timeline.retailSale", { amount: { amountMinor: totalMinor, currency: sale.total.currency } }), actorId: this.actor().id, actorName: this.actor().name, meta: { receiptNumber, receiptId: receipt.id, retailSaleId: sale.id, saleType: "retail" } });
       this.audit({ category: "operations", action: "operations.retail_sale.create", entityType: "retail_sale", entityId: sale.id, entityLabel: receiptNumber, summary: `Retail sale ${receiptNumber} · ${this.amountText(totalMinor)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: branch.id });
       const detail: T.ReceiptDetail & { receiptId: T.UUID; retailSale: T.RetailSale } = { receipt, receiptId: receipt.id, organization: { name: this.db.organization.name, timezone: this.db.organization.timezone, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent }, branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone }, member: member ? { fullName: member.fullName, memberNumber: member.memberNumber } : undefined, customer, payment, retailSale: sale, relatedPayments: [] };
       this.operationsIdempotency.set(`retail_checkout:${idempotencyKey}`, { signature, result: detail });
@@ -8235,6 +8273,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: original.memberId,
         type: "payment_refunded",
         title: `Payment refunded — ${this.amountText(money(amount, original.amount.currency))}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.paymentRefunded", { amount: { amountMinor: amount, currency: original.amount.currency } }),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -8298,6 +8337,7 @@ export class MockGymOSApi implements GymOSApi {
         memberId: original.memberId,
         type: "payment_voided",
         title: `Payment voided — ${original.receiptNumber}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.paymentVoided", { receipt: original.receiptNumber }),
         body: input.reason,
         actorId: this.actor().id,
         actorName: this.actor().name,
@@ -9611,6 +9651,8 @@ export class MockGymOSApi implements GymOSApi {
 
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> {
     return this.respond(() => {
+      const locale = exportLocale(input.locale);
+      const copy = makeExportCopy(locale);
       const now = nowISO();
       const existing = this.exportJobs.find((job) => job.id === input.idempotencyKey);
       if (existing) return { ...existing };
@@ -9636,24 +9678,24 @@ export class MockGymOSApi implements GymOSApi {
         rows = this.db.members.filter((member) => (!requestedBranchId || member.homeBranchId === requestedBranchId) && inRange(member.createdAt) && matches([member.fullName, member.fullNameAr, member.phone, member.email, member.memberNumber])).map((member) => {
           const membership = this.currentMembership(member.id);
           const plan = membership ? plans.get(membership.planId) : undefined;
-          return [member.memberNumber, member.fullName, member.fullNameAr, member.phone, member.email, exportStatusLabel(member.gender), exportStatusLabel(member.status), plan?.name, membership?.endDate, formatMinorUnits(this.outstandingForMember(member.id).amount, this.db.organization.currency), this.db.organization.currency, branches.get(member.homeBranchId), exportStatusLabel(member.preferredLanguage), exportStatusLabel(member.marketingPreference?.status ?? (member.marketingOptIn ? "explicit_opt_in" : "explicit_opt_out")), exportList(member.tags), formatExportDateTime(member.createdAt, TZ)];
+          return [member.memberNumber, member.fullName, member.fullNameAr, member.phone, member.email, copy.status(member.gender), copy.status(member.status), plan?.name, copy.date(membership?.endDate), formatMinorUnits(this.outstandingForMember(member.id).amount, this.db.organization.currency), this.db.organization.currency, branches.get(member.homeBranchId), copy.status(member.preferredLanguage), copy.status(member.marketingPreference?.status ?? (member.marketingOptIn ? "explicit_opt_in" : "explicit_opt_out")), exportList(member.tags), copy.dateTime(member.createdAt, TZ)];
         });
       } else if (input.kind === "leads") {
         title = "CRM leads";
         headers = ["Full name", "Phone", "Email", "Branch", "Stage", "Source", "Owner", "Expected value", "Currency", "Next follow-up", "Lost reason", "Created", "Updated"];
-        rows = this.db.leads.filter((lead) => (!requestedBranchId || lead.branchId === requestedBranchId) && inRange(lead.createdAt) && matches([lead.fullName, lead.phone, lead.email])).map((lead) => [lead.fullName, lead.phone, lead.email, branches.get(lead.branchId), exportStatusLabel(lead.stage), exportStatusLabel(lead.source), lead.ownerId ? users.get(lead.ownerId) : "Unassigned", lead.expectedValue ? formatMinorUnits(lead.expectedValue.amount, lead.expectedValue.currency) : "", lead.expectedValue?.currency, formatExportDateTime(lead.nextFollowUpAt, TZ), lead.lostReason, formatExportDateTime(lead.createdAt, TZ), formatExportDateTime(lead.updatedAt, TZ)]);
+        rows = this.db.leads.filter((lead) => (!requestedBranchId || lead.branchId === requestedBranchId) && inRange(lead.createdAt) && matches([lead.fullName, lead.phone, lead.email])).map((lead) => [lead.fullName, lead.phone, lead.email, branches.get(lead.branchId), copy.status(lead.stage), copy.status(lead.source), lead.ownerId ? users.get(lead.ownerId) : copy.label("Unassigned"), lead.expectedValue ? formatMinorUnits(lead.expectedValue.amount, lead.expectedValue.currency) : "", lead.expectedValue?.currency, copy.dateTime(lead.nextFollowUpAt, TZ), lead.lostReason, copy.dateTime(lead.createdAt, TZ), copy.dateTime(lead.updatedAt, TZ)]);
       } else if (input.kind === "payments") {
         title = "Payment ledger";
         headers = ["When", "Member", "Member number", "Branch", "Receipt number", "Transaction type", "Payment method", "Amount", "Currency", "Status", "Refunded amount", "Recorded by", "External reference", "Refund reason", "Void reason"];
-        rows = this.db.payments.filter((payment) => (!requestedBranchId || payment.branchId === requestedBranchId) && inRange(payment.occurredAt) && matches([payment.receiptNumber, payment.externalReference, members.get(payment.memberId)?.fullName])).map((payment) => [formatExportDateTime(payment.occurredAt, TZ), members.get(payment.memberId)?.fullName, members.get(payment.memberId)?.memberNumber, branches.get(payment.branchId), payment.receiptNumber, exportStatusLabel(payment.type), exportStatusLabel(payment.method), formatMinorUnits(payment.amount.amount, payment.amount.currency), payment.amount.currency, exportStatusLabel(payment.status), payment.refundedAmount ? formatMinorUnits(payment.refundedAmount.amount, payment.refundedAmount.currency) : "", payment.collectedByName, payment.externalReference, payment.refundReason, payment.voidReason]);
+        rows = this.db.payments.filter((payment) => (!requestedBranchId || payment.branchId === requestedBranchId) && inRange(payment.occurredAt) && matches([payment.receiptNumber, payment.externalReference, members.get(payment.memberId)?.fullName])).map((payment) => [copy.dateTime(payment.occurredAt, TZ), members.get(payment.memberId)?.fullName, members.get(payment.memberId)?.memberNumber, branches.get(payment.branchId), payment.receiptNumber, copy.status(payment.type), copy.status(payment.method), formatMinorUnits(payment.amount.amount, payment.amount.currency), payment.amount.currency, copy.status(payment.status), payment.refundedAmount ? formatMinorUnits(payment.refundedAmount.amount, payment.refundedAmount.currency) : "", payment.collectedByName, payment.externalReference, payment.refundReason, payment.voidReason]);
       } else if (input.kind === "membership_liabilities") {
         title = "Outstanding member balances";
         headers = ["Member", "Member number", "Description", "Issued", "Due", "Total", "Paid", "Outstanding", "Currency", "Status"];
-        rows = this.db.charges.filter((charge) => charge.outstandingAmount.amount > 0 && (!requestedBranchId || members.get(charge.memberId)?.homeBranchId === requestedBranchId) && matches([charge.description, members.get(charge.memberId)?.fullName])).map((charge) => [members.get(charge.memberId)?.fullName, members.get(charge.memberId)?.memberNumber, charge.description, charge.issueDate, charge.dueDate, formatMinorUnits(charge.total.amount, charge.total.currency), formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency), formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency), charge.total.currency, exportStatusLabel(charge.status)]);
+        rows = this.db.charges.filter((charge) => charge.outstandingAmount.amount > 0 && (!requestedBranchId || members.get(charge.memberId)?.homeBranchId === requestedBranchId) && matches([charge.description, members.get(charge.memberId)?.fullName])).map((charge) => [members.get(charge.memberId)?.fullName, members.get(charge.memberId)?.memberNumber, charge.description, copy.date(charge.issueDate), copy.date(charge.dueDate), formatMinorUnits(charge.total.amount, charge.total.currency), formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency), formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency), charge.total.currency, copy.status(charge.status)]);
       } else if (input.kind === "audit") {
         title = "Activity log";
         headers = ["When", "Branch", "Recorded by", "Role", "Category", "Action", "Record type", "Record", "Summary", "Reason", "Approval status"];
-        rows = this.db.audits.filter((event) => (!requestedBranchId || !event.branchId || event.branchId === requestedBranchId) && matches([event.actorName, event.action, event.entityLabel, event.summary])).map((event) => [formatExportDateTime(event.occurredAt, TZ), event.branchId ? branches.get(event.branchId) : "Organization-wide", event.actorName, exportStatusLabel(event.actorRole), exportStatusLabel(event.category), exportStatusLabel(event.action), exportStatusLabel(event.entityType), event.entityLabel, event.summary, event.reason, exportStatusLabel(event.approvalStatus)]);
+        rows = this.db.audits.filter((event) => (!requestedBranchId || !event.branchId || event.branchId === requestedBranchId) && matches([event.actorName, event.action, event.entityLabel, event.summary])).map((event) => [copy.dateTime(event.occurredAt, TZ), event.branchId ? branches.get(event.branchId) : copy.label("Organization-wide"), event.actorName, copy.status(event.actorRole), copy.status(event.category), copy.status(event.action), copy.status(event.entityType), event.entityLabel, event.summary, event.reason, copy.status(event.approvalStatus)]);
       } else if (input.kind === "personal_training") {
         title = "Personal training package orders";
         headers = ["Member", "Member number", "Package", "Sessions purchased", "Total price", "Currency", "Status", "Paid", "Refunded sessions", "Refunded amount", "Created", "Updated"];
@@ -9661,31 +9703,32 @@ export class MockGymOSApi implements GymOSApi {
           const member = members.get(order.memberId);
           const total = order.totalPriceSnapshot ?? money(0, this.db.organization.currency);
           const refunded = order.refundedAmount ?? money(0, total.currency);
-          return [member?.fullName ?? order.memberName, member?.memberNumber, order.packageNameSnapshot ?? order.packageName, order.sessionCountSnapshot, formatMinorUnits(total.amount, total.currency), total.currency, exportStatusLabel(order.status), formatExportDateTime(order.paidAt, TZ), order.refundedSessions ?? 0, formatMinorUnits(refunded.amount, refunded.currency), formatExportDateTime(order.createdAt, TZ), formatExportDateTime(order.updatedAt, TZ)];
+          return [member?.fullName ?? order.memberName, member?.memberNumber, order.packageNameSnapshot ?? order.packageName, order.sessionCountSnapshot, formatMinorUnits(total.amount, total.currency), total.currency, copy.status(order.status), copy.dateTime(order.paidAt, TZ), order.refundedSessions ?? 0, formatMinorUnits(refunded.amount, refunded.currency), copy.dateTime(order.createdAt, TZ), copy.dateTime(order.updatedAt, TZ)];
         });
       } else if (input.kind === "operations") {
         title = "Products, suppliers, and inventory activity";
         headers = ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "When"];
         const productById = new Map(this.db.products.map((product) => [product.id, product]));
         rows = [
-          ...this.db.products.filter((product) => matches([product.sku, product.name])).map((product): CsvValue[] => ["Product", "Organization-wide", product.sku, product.name, exportStatusLabel(product.unit), exportStatusLabel(product.status), product.reorderPoint, "", "", "", "", product.retailPrice ? formatMinorUnits(product.retailPrice.amount, product.retailPrice.currency) : "", product.retailPrice?.currency, "", "", "", "", formatExportDateTime(product.createdAt, TZ)]),
-          ...this.db.suppliers.filter((supplier) => matches([supplier.name, supplier.contactName, supplier.email, supplier.phone])).map((supplier): CsvValue[] => ["Supplier", "Organization-wide", "", supplier.name, "", exportStatusLabel(supplier.status), "", "", "", "", "", "", "", supplier.contactName, supplier.phone, supplier.email, "", formatExportDateTime(supplier.createdAt, TZ)]),
-          ...this.db.inventoryBalances.filter((balance) => (!requestedBranchId || balance.branchId === requestedBranchId) && matches([productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name])).map((balance): CsvValue[] => ["Inventory balance", branches.get(balance.branchId), productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name, exportStatusLabel(productById.get(balance.productId)?.unit), "", "", balance.quantityOnHand, balance.committedQuantity, "", "", balance.totalCost ? formatMinorUnits(balance.totalCost.amount, balance.totalCost.currency) : "", balance.totalCost?.currency, "", "", "", "", formatExportDateTime(balance.updatedAt, TZ)]),
-          ...this.db.stockMovements.filter((movement) => (!requestedBranchId || movement.branchId === requestedBranchId) && matches([movement.productSku, movement.productName, movement.reason])).map((movement): CsvValue[] => ["Stock movement", branches.get(movement.branchId), movement.productSku ?? productById.get(movement.productId)?.sku, movement.productName ?? productById.get(movement.productId)?.name, exportStatusLabel(movement.productUnit ?? productById.get(movement.productId)?.unit), "", "", "", "", exportStatusLabel(movement.type), movement.quantityDelta, movement.totalCost ? formatMinorUnits(movement.totalCost.amount, movement.totalCost.currency) : "", movement.totalCost?.currency, "", "", "", movement.reason, formatExportDateTime(movement.occurredAt, TZ)]),
+          ...this.db.products.filter((product) => matches([product.sku, product.name])).map((product): CsvValue[] => [copy.label("Product"), copy.label("Organization-wide"), product.sku, product.name, copy.status(product.unit), copy.status(product.status), product.reorderPoint, "", "", "", "", product.retailPrice ? formatMinorUnits(product.retailPrice.amount, product.retailPrice.currency) : "", product.retailPrice?.currency, "", "", "", "", copy.dateTime(product.createdAt, TZ)]),
+          ...this.db.suppliers.filter((supplier) => matches([supplier.name, supplier.contactName, supplier.email, supplier.phone])).map((supplier): CsvValue[] => [copy.label("Supplier"), copy.label("Organization-wide"), "", supplier.name, "", copy.status(supplier.status), "", "", "", "", "", "", "", supplier.contactName, supplier.phone, supplier.email, "", copy.dateTime(supplier.createdAt, TZ)]),
+          ...this.db.inventoryBalances.filter((balance) => (!requestedBranchId || balance.branchId === requestedBranchId) && matches([productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name])).map((balance): CsvValue[] => [copy.label("Inventory balance"), branches.get(balance.branchId), productById.get(balance.productId)?.sku, productById.get(balance.productId)?.name, copy.status(productById.get(balance.productId)?.unit), "", "", balance.quantityOnHand, balance.committedQuantity, "", "", balance.totalCost ? formatMinorUnits(balance.totalCost.amount, balance.totalCost.currency) : "", balance.totalCost?.currency, "", "", "", "", copy.dateTime(balance.updatedAt, TZ)]),
+          ...this.db.stockMovements.filter((movement) => (!requestedBranchId || movement.branchId === requestedBranchId) && matches([movement.productSku, movement.productName, movement.reason])).map((movement): CsvValue[] => [copy.label("Stock movement"), branches.get(movement.branchId), movement.productSku ?? productById.get(movement.productId)?.sku, movement.productName ?? productById.get(movement.productId)?.name, copy.status(movement.productUnit ?? productById.get(movement.productId)?.unit), "", "", "", "", copy.status(movement.type), movement.quantityDelta, movement.totalCost ? formatMinorUnits(movement.totalCost.amount, movement.totalCost.currency) : "", movement.totalCost?.currency, "", "", "", movement.reason, copy.dateTime(movement.occurredAt, TZ)]),
         ];
       }
       const content = buildCsvDocument({
-        title,
+        locale,
+        title: copy.label(title),
         metadata: [
-          { label: "Generated at", value: formatExportDateTime(now, this.db.organization.timezone) },
-          { label: "Timezone", value: this.db.organization.timezone },
-          { label: "Branch scope", value: requestedBranchId ? branches.get(requestedBranchId) ?? requestedBranchId : "All accessible branches" },
-          { label: "Applied search", value: search || "None" },
+          { label: copy.label("Generated at"), value: copy.dateTime(now, this.db.organization.timezone) },
+          { label: copy.label("Timezone"), value: this.db.organization.timezone },
+          { label: copy.label("Branch scope"), value: requestedBranchId ? branches.get(requestedBranchId) ?? requestedBranchId : copy.label("All accessible branches") },
+          { label: copy.label("Applied search"), value: search || copy.label("None") },
         ],
-        headers,
+        headers: headers.map(copy.label),
         rows,
       });
-      const job: import("@/lib/domain/qol").ExportJob = { id: input.idempotencyKey, kind: input.kind, status: "completed", fileName: `rivet-${input.kind}-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: rows.length, totalRows: rows.length, content, timezone: this.db.organization.timezone, branchScope: requestedBranchId ? `branch:${requestedBranchId}` : "all branches", filters: input.filters, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      const job: import("@/lib/domain/qol").ExportJob = { id: input.idempotencyKey, locale, kind: input.kind, status: "completed", fileName: `rivet-${input.kind}-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: rows.length, totalRows: rows.length, content, timezone: this.db.organization.timezone, branchScope: requestedBranchId ? `branch:${requestedBranchId}` : "all branches", filters: input.filters, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
       this.exportJobs.unshift(job);
       return { ...job };
     });
@@ -9695,8 +9738,9 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => this.exportJobs.map((job) => ({ ...job })));
   }
 
-  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> {
+  requestMemberPersonalDataExport(idempotencyKey: string, locale: "en" | "ar" = "en"): Promise<import("@/lib/domain/qol").ExportJob> {
     return this.respond(() => {
+      const copy = makeExportCopy(locale);
       const now = nowISO();
       const profile = this.registeredCustomers.get(this.activeCustomerId) ?? CUSTOMER_PERSONAS.find((item) => item.id === this.activeCustomerId);
       const memberships = INITIAL_CUSTOMER_MEMBERSHIPS.filter((item) => item.customerId === this.activeCustomerId);
@@ -9714,80 +9758,81 @@ export class MockGymOSApi implements GymOSApi {
         ["Arabic name", profile?.nameAr],
         ["Email", profile?.email],
         ["Phone", profile?.phone],
-        ["Date of birth", profile?.dateOfBirth],
-        ["Gender", exportStatusLabel(profile?.gender)],
-        ["Preferred language", exportStatusLabel(profile?.preferredLanguage)],
+        ["Date of birth", copy.date(profile?.dateOfBirth)],
+        ["Gender", copy.status(profile?.gender)],
+        ["Preferred language", copy.status(profile?.preferredLanguage)],
         ["Address", profile?.addressLine1],
         ["City", profile?.city],
         ["Emergency contact", profile?.emergencyContactName],
         ["Emergency relationship", profile?.emergencyContactRelationship],
         ["Emergency phone", profile?.emergencyContactPhone],
       ];
-      rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+      rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => [copy.label("Profile"), "", "", "", copy.label(label), value, "", "", ""]));
       rows.push(...memberships.map((membership): CsvValue[] => [
-        "Membership",
+        copy.label("Membership"),
         membership.gymName ?? this.db.organization.name,
         membership.branchName,
-        membership.startDate,
+        copy.date(membership.startDate),
         membership.planName,
-        details(`Member ${membership.memberNumber}`, `Ends ${membership.endDate}`, membership.lastCheckInAt ? `Last check-in ${formatExportDateTime(membership.lastCheckInAt, TZ)}` : undefined),
+        details(copy.t("exportDocuments.phrases.member_number", { value: membership.memberNumber }), copy.t("exportDocuments.phrases.ends", { value: copy.date(membership.endDate) }), membership.lastCheckInAt ? copy.t("exportDocuments.phrases.last_check_in", { value: copy.dateTime(membership.lastCheckInAt, TZ) }) : undefined),
         formatMinorUnits(membership.balanceMinor, this.db.organization.currency),
         this.db.organization.currency,
-        exportStatusLabel(membership.status),
+        copy.status(membership.status),
       ]));
       rows.push(...charges.map((charge): CsvValue[] => [
-        "Charge",
+        copy.label("Charge"),
         this.db.organization.name,
         "",
-        charge.issueDate,
+        copy.date(charge.issueDate),
         charge.description,
-        details(charge.dueDate ? `Due ${charge.dueDate}` : undefined, `Total ${formatMinorUnits(charge.total.amount, charge.total.currency)} ${charge.total.currency}`, `Paid ${formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency)} ${charge.paidAmount.currency}`),
+        details(charge.dueDate ? copy.t("exportDocuments.phrases.due", { value: copy.date(charge.dueDate) }) : undefined, copy.t("exportDocuments.phrases.total", { value: `${formatMinorUnits(charge.total.amount, charge.total.currency)} ${charge.total.currency}` }), copy.t("exportDocuments.phrases.paid", { value: `${formatMinorUnits(charge.paidAmount.amount, charge.paidAmount.currency)} ${charge.paidAmount.currency}` })),
         formatMinorUnits(charge.outstandingAmount.amount, charge.outstandingAmount.currency),
         charge.outstandingAmount.currency,
-        exportStatusLabel(charge.status),
+        copy.status(charge.status),
       ]));
       rows.push(...transactions.map((transaction): CsvValue[] => [
-        "Payment",
+        copy.label("Payment"),
         transaction.gymName,
         transaction.branchName,
-        formatExportDateTime(transaction.occurredAt, TZ),
-        `${exportStatusLabel(transaction.type)} · Receipt ${transaction.receiptNumber}`,
-        details(exportStatusLabel(transaction.method), transaction.explanation),
+        copy.dateTime(transaction.occurredAt, TZ),
+        copy.t("exportDocuments.phrases.receipt", { type: copy.status(transaction.type), number: transaction.receiptNumber ?? "" }),
+        details(copy.status(transaction.method), copy.paymentExplanation(transaction.type, transaction.status, transaction.explanation)),
         formatMinorUnits(transaction.amount.amount, transaction.amount.currency),
         transaction.amount.currency,
-        exportStatusLabel(transaction.status),
+        copy.status(transaction.status),
       ]));
-      rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branchName, formatExportDateTime(visit.occurredAt, TZ), "Gym visit", "", "", "", exportStatusLabel(visit.decision)]));
-      rows.push(...activity.map((event): CsvValue[] => ["Account activity", event.gym, "", formatExportDateTime(event.occurredAt, TZ), event.title ?? exportStatusLabel(event.type), event.detail, "", "", ""]));
+      rows.push(...visits.map((visit): CsvValue[] => [copy.label("Check-in"), visit.gym, visit.branchName, copy.dateTime(visit.occurredAt, TZ), copy.label("Gym visit"), "", "", "", copy.status(visit.decision)]));
+      rows.push(...activity.map((event): CsvValue[] => [copy.label("Account activity"), event.gym, "", copy.dateTime(event.occurredAt, TZ), event.title ?? copy.status(event.type), event.detail, "", "", ""]));
       rows.push(...trials.map((booking): CsvValue[] => {
         const relatedMembership = memberships.find((membership) => membership.gymId === booking.gymId);
-        const branchName = this.db.branches.find((branch) => branch.id === booking.branchId)?.name ?? relatedMembership?.branchName ?? "Unknown branch";
-        return ["Trial booking", relatedMembership?.gymName ?? this.db.organization.name, branchName, details(booking.preferredDate, booking.preferredTime), booking.goal || "Gym trial", "", "", "", exportStatusLabel(booking.status)];
+        const branchName = this.db.branches.find((branch) => branch.id === booking.branchId)?.name ?? relatedMembership?.branchName ?? copy.label("Unknown branch");
+        return [copy.label("Trial booking"), relatedMembership?.gymName ?? this.db.organization.name, branchName, details(copy.date(booking.preferredDate), copy.clock(booking.preferredTime)), booking.goal || copy.label("Gym trial"), "", "", "", copy.status(booking.status)];
       }));
       rows.push(...preferenceHistory.map((preference): CsvValue[] => [
-        "Marketing preference",
+        copy.label("Marketing preference"),
         "",
         "",
-        formatExportDateTime(preference.changedAt, TZ),
-        "Marketing messages",
-        `Recorded through ${exportStatusLabel(preference.source)}`,
+        copy.dateTime(preference.changedAt, TZ),
+        copy.label("Marketing messages"),
+        copy.t("exportDocuments.phrases.recorded_through", { value: copy.status(preference.source) }),
         "",
         "",
-        `${preference.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(preference.status)}`,
+        `${preference.optedIn ? copy.label("Allowed") : copy.label("Not allowed")} · ${copy.status(preference.status)}`,
       ]));
       const content = buildCsvDocument({
-        title: "My RIVET data",
+        locale,
+        title: copy.label("My RIVET data"),
         metadata: [
-          { label: "Generated at", value: formatExportDateTime(now, this.db.organization.timezone) },
-          { label: "Account", value: profile?.email ?? "No email recorded" },
-          { label: "Included gyms", value: [...new Set(memberships.map((membership) => membership.gymName ?? this.db.organization.name))].join("; ") || "None" },
+          { label: copy.label("Generated at"), value: copy.dateTime(now, this.db.organization.timezone) },
+          { label: copy.label("Account"), value: profile?.email ?? copy.label("No email recorded") },
+          { label: copy.label("Included gyms"), value: [...new Set(memberships.map((membership) => membership.gymName ?? this.db.organization.name))].join("; ") || copy.label("None") },
         ],
-        headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+        headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"].map(copy.label),
         rows,
-        emptyMessage: "No personal data was available for export.",
+        emptyMessage: copy.label("No personal data was available for export."),
       });
       const totalRows = rows.length;
-      return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
+      return { id: idempotencyKey, locale, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: new Date(Date.now() + 86_400_000).toISOString() };
     });
   }
 
@@ -11721,7 +11766,7 @@ export class MockGymOSApi implements GymOSApi {
       next.status = "booked";
       next.fromWaitlist = true;
       promoted.push(next);
-      this.activity({ memberId: next.memberId, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, body: `A place opened for ${occurrence.date}.`, meta: { occurrenceId: occurrence.id, bookingId: next.bookingId } });
+      this.activity({ memberId: next.memberId, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromoted", { className: occurrence.name }), body: `A place opened for ${occurrence.date}.`, bodyMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromotedBody", { classDate: { date: occurrence.date } }), meta: { occurrenceId: occurrence.id, bookingId: next.bookingId } });
     }
     return promoted;
   }
@@ -11752,7 +11797,7 @@ export class MockGymOSApi implements GymOSApi {
         throw ApiError.of(ERR.NOT_FOUND, "Active class booking not found.");
       }
       const result = this.cancelClassRosterEntry(occurrence, booking);
-      this.activity({ memberId: member.id, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: result.outcome === "late_cancelled" ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined, meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      this.activity({ memberId: member.id, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classCancelled", { className: occurrence.name }), ...(result.outcome === "late_cancelled" ? { body: "Cancelled after the gym's cutoff. No fee or membership penalty was applied.", bodyMessage: systemMessage("communicationCompletion.timeline.classCancelledLate") } : {}), meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
       return { occurrence: this.customerOccurrenceFor(input.membershipId, occurrence.id), outcome: result.outcome, promotedMemberId: result.promoted[0]?.memberId };
     });
   }
@@ -11779,7 +11824,7 @@ export class MockGymOSApi implements GymOSApi {
       if (status === "waitlisted" && (!policy.waitlistEnabled || waiting >= policy.waitlistSize)) throw ApiError.of(ERR.CONFLICT, policy.waitlistEnabled ? "This class and its waitlist are full." : "This class is full.");
       const entry: T.ClassOccurrenceRosterEntry = { bookingId: mockUuid(), memberId: member.id, membershipId: membership.id, name: member.fullName, status, bookedAt: nowISO(), fromWaitlist: false };
       occurrence.roster.push(entry);
-      this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
+      this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, titleMessage: systemMessage(status === "booked" ? "communicationCompletion.timeline.classBooked" : "communicationCompletion.timeline.classWaitlisted", { className: occurrence.name }), body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
       this.audit({ category: "operations", action: status === "booked" ? "classes.booking.create" : "classes.waitlist.join", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${member.fullName} ${status === "booked" ? "booked" : "joined the waitlist for"} ${occurrence.name}`, reason: override });
       return this.refreshClassOccurrence(occurrence);
     });
@@ -11795,7 +11840,7 @@ export class MockGymOSApi implements GymOSApi {
       // A repeated removal changes nothing and reports the roster as it is.
       if (!["booked", "waitlisted"].includes(booking.status)) return this.refreshClassOccurrence(occurrence);
       const result = this.cancelClassRosterEntry(occurrence, booking);
-      this.activity({ memberId: booking.memberId, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, body: input.reason?.trim(), meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
+      this.activity({ memberId: booking.memberId, type: result.outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classCancelled", { className: occurrence.name }), body: input.reason?.trim(), meta: { occurrenceId: occurrence.id, bookingId: booking.bookingId, late: result.outcome === "late_cancelled" } });
       this.audit({ category: "operations", action: result.outcome === "late_cancelled" ? "classes.booking.cancel_late" : "classes.booking.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${booking.name} cancelled ${occurrence.name}`, reason: input.reason?.trim() });
       return this.refreshClassOccurrence(occurrence);
     });
@@ -11825,7 +11870,7 @@ export class MockGymOSApi implements GymOSApi {
       occurrence.cancelReason = input.reason.trim();
       for (const entry of occurrence.roster.filter(entry => ["booked", "waitlisted"].includes(entry.status))) {
         entry.status = "cancelled";
-        this.activity({ memberId: entry.memberId, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: occurrence.cancelReason, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, cancelledByGym: true } });
+        this.activity({ memberId: entry.memberId, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classGymCancelled", { className: occurrence.name }), body: occurrence.cancelReason, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, cancelledByGym: true } });
       }
       this.audit({ category: "operations", action: "classes.occurrence.cancel", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason: occurrence.cancelReason });
       return this.refreshClassOccurrence(occurrence);

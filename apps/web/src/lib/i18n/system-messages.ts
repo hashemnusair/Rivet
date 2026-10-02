@@ -5,6 +5,7 @@ import type { Formatters } from "./formatters";
 import type { Locale } from "./locale";
 import { communicationCompletion as enCatalogue } from "./messages/en/communicationCompletion";
 import { domain as enDomain } from "./messages/en/domain";
+import { memberProfile as enMemberProfile } from "./messages/en/memberProfile";
 
 /**
  * Stable, translatable descriptors for system-generated notifications and
@@ -24,7 +25,7 @@ import { domain as enDomain } from "./messages/en/domain";
 export type SystemMessageKey = Extract<TKey, `communicationCompletion.notifications.${string}` | `communicationCompletion.timeline.${string}`>;
 
 /** Enumerations a parameter may name; each maps to catalogue labels. */
-export type SystemMessageEnum = "channel" | "paymentMethod" | "messageContext";
+export type SystemMessageEnum = "channel" | "paymentMethod" | "messageContext" | "contactOutcome" | "renewalReason";
 
 export type SystemMessageParam =
   /** Verbatim text (a name, reference, branch or plan): isolated, never translated. */
@@ -57,17 +58,49 @@ export function systemMessage(key: SystemMessageKey, params?: Record<string, Sys
 }
 
 const PREFIX = "communicationCompletion.";
+const RENEWAL_STOP_REASON_PATHS = {
+  member_or_membership_not_found: "crmCompletion.followUpContext.stopReason.noCurrentMembership",
+  membership_renewed: "crmCompletion.followUpContext.stopReason.alreadyRenewed",
+  membership_cancelled: "crmCompletion.followUpContext.stopReason.membershipCancelled",
+  member_not_active: "crmCompletion.followUpContext.stopReason.memberInactive",
+  member_requested_no_contact: "crmCompletion.followUpContext.stopReason.memberNoContact",
+  membership_frozen: "crmCompletion.followUpContext.stopReason.membershipFrozen",
+  membership_not_started: "crmCompletion.followUpContext.stopReason.notStarted",
+  membership_expired: "crmCompletion.followUpContext.stopReason.termEnded",
+  membership_depleted: "crmCompletion.followUpContext.stopReason.visitsUsed",
+  membership_term_changed: "crmCompletion.followUpContext.stopReason.termChanged",
+  membership_not_found: "crmCompletion.followUpContext.stopReason.membershipNotFound",
+  member_not_found: "crmCompletion.followUpContext.stopReason.memberNotFound",
+} satisfies Record<string, TKey>;
+const RENEWAL_SUPPRESSION_REASON_PATHS = {
+  "A valid member phone number is not available": "crmCompletion.followUpContext.suppressionReason.phoneUnavailable",
+  "Recipient opted out of renewal messages": "crmCompletion.followUpContext.suppressionReason.recipientOptedOut",
+  "Explicit consent is required for renewal messages": "crmCompletion.followUpContext.suppressionReason.consentRequired",
+} satisfies Record<string, TKey>;
 const ENUM_PATHS: Record<SystemMessageEnum, (value: string) => string | undefined> = {
-  channel: (value) => value in enCatalogue.values.channel ? `communicationCompletion.values.channel.${value}` : undefined,
-  paymentMethod: (value) => value in enDomain.paymentMethod ? `domain.paymentMethod.${value}` : undefined,
+  channel: (value) => Object.hasOwn(enCatalogue.values.channel, value) ? `communicationCompletion.values.channel.${value}` : undefined,
+  paymentMethod: (value) => Object.hasOwn(enDomain.paymentMethod, value) ? `domain.paymentMethod.${value}` : undefined,
   messageContext: (value) => value === "message" ? "communicationCompletion.timeline.contextMessage" : value === "renewal" ? "communicationCompletion.timeline.contextRenewal" : undefined,
+  contactOutcome: (value) => Object.hasOwn(enMemberProfile.contact.outcome, value) ? `memberProfile.contact.outcome.${value}` : undefined,
+  renewalReason: (value) => Object.hasOwn(RENEWAL_STOP_REASON_PATHS, value)
+    ? RENEWAL_STOP_REASON_PATHS[value as keyof typeof RENEWAL_STOP_REASON_PATHS]
+    : Object.hasOwn(RENEWAL_SUPPRESSION_REASON_PATHS, value)
+      ? RENEWAL_SUPPRESSION_REASON_PATHS[value as keyof typeof RENEWAL_SUPPRESSION_REASON_PATHS]
+      : undefined,
 };
 
+/** Create a descriptor only for an explicitly known renewal stop/suppression reason. */
+export function renewalReasonMessage(value: string | undefined): SystemMessage | undefined {
+  if (typeof value !== "string" || !ENUM_PATHS.renewalReason(value)) return undefined;
+  return systemMessage("communicationCompletion.timeline.value", { value: { enum: "renewalReason", value } });
+}
+
 function leafFor(key: string): unknown {
-  if (!key.startsWith(PREFIX)) return undefined;
+  if (!/^communicationCompletion\.(notifications|timeline)\./.test(key)) return undefined;
   let node: unknown = enCatalogue;
   for (const segment of key.slice(PREFIX.length).split(".")) {
     if (!node || typeof node !== "object" || isPluralForms(node)) return undefined;
+    if (!Object.hasOwn(node, segment)) return undefined;
     node = (node as Record<string, unknown>)[segment];
   }
   return typeof node === "string" || isPluralForms(node) ? node : undefined;
@@ -82,28 +115,39 @@ function placeholders(leaf: unknown): Set<string> {
 
 /** Whether the descriptor names a real catalogue entry and supplies every value it needs. */
 export function isRenderableSystemMessage(message: unknown): message is SystemMessage {
-  if (!message || typeof message !== "object") return false;
+  return validMessage(message, 0);
+}
+
+// Stored descriptors are data. Bound nesting even for malformed/cyclic mock or
+// newer API values so presentation always falls back rather than throwing.
+function validMessage(message: unknown, depth: number): message is SystemMessage {
+  if (depth > 4 || !message || typeof message !== "object" || Array.isArray(message)) return false;
   const { key, params } = message as { key?: unknown; params?: unknown };
   if (typeof key !== "string") return false;
   const leaf = leafFor(key);
   if (!leaf) return false;
   if (params !== undefined && (!params || typeof params !== "object" || Array.isArray(params))) return false;
   const supplied = (params ?? {}) as Record<string, unknown>;
-  for (const name of placeholders(leaf)) if (!validParam(supplied[name])) return false;
-  return Object.values(supplied).every(validParam);
+  if (isPluralForms(leaf) && (typeof supplied.count !== "number" || !Number.isFinite(supplied.count))) return false;
+  for (const name of placeholders(leaf)) if (!Object.hasOwn(supplied, name) || !validParam(supplied[name], depth)) return false;
+  return Object.values(supplied).every((value) => validParam(value, depth));
 }
 
-function validParam(value: unknown): boolean {
+function validParam(value: unknown, depth: number): boolean {
   if (typeof value === "string") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
-  if ("date" in item) return typeof item.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date);
+  if ("date" in item) {
+    if (typeof item.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) return false;
+    const date = new Date(`${item.date}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === item.date;
+  }
   if ("at" in item) return typeof item.at === "string" && Number.isFinite(Date.parse(item.at));
   if ("clock" in item) return typeof item.clock === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(item.clock);
   if ("amountMinor" in item) return Number.isSafeInteger(item.amountMinor) && typeof item.currency === "string" && /^[A-Z]{3}$/.test(item.currency);
-  if ("enum" in item) return typeof item.value === "string" && typeof item.enum === "string" && item.enum in ENUM_PATHS && Boolean(ENUM_PATHS[item.enum as SystemMessageEnum](item.value));
-  if ("message" in item) return isRenderableSystemMessage(item.message);
+  if ("enum" in item) return typeof item.value === "string" && typeof item.enum === "string" && Object.hasOwn(ENUM_PATHS, item.enum) && Boolean(ENUM_PATHS[item.enum as SystemMessageEnum](item.value));
+  if ("message" in item) return validMessage(item.message, depth + 1);
   return false;
 }
 
@@ -255,6 +299,23 @@ const LEGACY_TIMELINE_BODIES: Record<string, Record<string, SystemMessageKey>> =
   },
 };
 
+function legacyRenewalBodyMessage(type: string, body: string, meta?: Record<string, unknown>): SystemMessage | undefined {
+  if (type === "renewal_journey_cancelled") {
+    const reason = typeof meta?.reason === "string" && Object.hasOwn(RENEWAL_STOP_REASON_PATHS, meta.reason) ? meta.reason : undefined;
+    return reason && reason.replaceAll("_", " ") === body ? renewalReasonMessage(reason) : undefined;
+  }
+  if (type === "renewal_message_suppressed" && Object.hasOwn(RENEWAL_SUPPRESSION_REASON_PATHS, body)) {
+    return renewalReasonMessage(body);
+  }
+  if ((type === "class_booked" || type === "class_waitlisted") && /^\d{4}-\d{2}-\d{2}$/.test(body)) {
+    const date = new Date(`${body}T00:00:00Z`);
+    if (Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === body) {
+      return systemMessage("communicationCompletion.timeline.value", { value: { date: body } });
+    }
+  }
+  return undefined;
+}
+
 const SANDBOX_CHANNEL = /^A (whatsapp|sms) reminder was prepared but not sent\.$/;
 const MESSAGE_OUTCOME = /^(WhatsApp|SMS) (message|renewal reminder) (accepted by the provider|failed|not sent)$/;
 const MESSAGE_FAILED_AFTER = /^Failed after (\d+) attempts?(?: \(([^()]+)\))?\. Managers were notified; follow up by phone\.$/;
@@ -300,9 +361,11 @@ export function legacyTimelineMessages(record: { type: string; title: string; bo
   const outcome = record.type === "message" ? legacyMessageOutcome(record) : {};
   const bodyKey = LEGACY_TIMELINE_BODIES[record.type]?.[body];
   const channel = record.type === "renewal_message_sandboxed" ? body.match(SANDBOX_CHANNEL)?.[1] : undefined;
+  const renewalOrClassBody = legacyRenewalBodyMessage(record.type, body, record.meta);
   return {
     ...(titleKey ? { titleMessage: systemMessage(titleKey) } : {}),
     ...(bodyKey ? { bodyMessage: systemMessage(bodyKey, channel ? { channel: { enum: "channel", value: channel } } : undefined) } : {}),
+    ...(renewalOrClassBody ? { bodyMessage: renewalOrClassBody } : {}),
     ...outcome,
   };
 }
@@ -318,7 +381,7 @@ export function presentNotification(record: PresentableRecord & { kind: string; 
 
 /** Title and body for a timeline event in the reader's language. A body without a descriptor is authored text and stays as written. */
 export function presentTimelineEvent(record: PresentableRecord & { type: string; title: string; body?: string; meta?: Record<string, unknown> }, context: SystemTextContext): { title: string; body?: string } {
-  const legacy = record.titleMessage || record.bodyMessage ? {} : legacyTimelineMessages(record);
+  const legacy = legacyTimelineMessages(record);
   const body = record.body === undefined && !record.bodyMessage ? undefined : presentSystemText(record.body, record.bodyMessage ?? legacy.bodyMessage, context);
   return { title: presentSystemText(record.title, record.titleMessage ?? legacy.titleMessage, context), ...(body === undefined ? {} : { body }) };
 }

@@ -10,7 +10,7 @@ import { MESSAGE_MAX_ATTEMPTS, MESSAGE_RETRY_MINUTES, parseMessagingAllowlist, r
 import { OPT_OUT_FOOTER, catalogueTemplateAt, renderMessageTemplate } from "./messagingTemplates";
 import { communicationLanguageOf, resolveRecipientLanguage } from "../src/lib/i18n/communication";
 import { makeFormatters } from "../src/lib/i18n/formatters";
-import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
+import { renewalReasonMessage, systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 
 /**
  * Outbound WhatsApp worker.
@@ -122,7 +122,7 @@ async function recordDeliveryOutcomeOnTimeline(ctx: MutationCtx, input: {
     ? systemMessage(input.mode === "sandbox" ? "communicationCompletion.timeline.messageSandboxed" : "communicationCompletion.timeline.messageHandedOver")
     : input.state === "failed"
       ? systemMessage(input.reason ? "communicationCompletion.timeline.messageFailedAfterReason" : "communicationCompletion.timeline.messageFailedAfter", { count: input.attempts, ...(input.reason ? { reason: input.reason } : {}) })
-      : input.reason ? undefined : systemMessage("communicationCompletion.timeline.messageSuppressedByRules");
+      : input.reason ? input.source === "renewal" ? renewalReasonMessage(input.reason) : undefined : systemMessage("communicationCompletion.timeline.messageSuppressedByRules");
   await ctx.db.insert("domainRecords", {
     organizationId: input.organizationId,
     entityType: "timeline",

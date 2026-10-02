@@ -105,6 +105,18 @@ describe("PT credit lifecycle", () => {
       expect(a.orders[0]?.status).toBe("active");
       expect(a.availableSessions).toBe(12);
 
+      // Voiding a newly activated package reverses its unused package credits and records a typed presentation descriptor.
+      const reversalOrder = await memberB.mutation(api.domain.mutate, operation("customer.pt.package.request", { membershipId: "membership-b", packageId: "life-package-12", idempotencyKey: "life-reversal-order" })) as { id: string; chargeId: string };
+      const reversalPayment = await reception.mutation(api.domain.mutate, operation("payments.create", { memberId: "member-b", chargeId: reversalOrder.chargeId, amount: { amount: 240_000, currency: "JOD" }, method: "card", externalReference: "POS-VOID-1", idempotencyKey: "life-reversal-pay" })) as { payment: { id: string } };
+      await owner.mutation(api.domain.mutate, operation("payments.void", { paymentId: reversalPayment.payment.id, reason: "Recorded against the wrong package", idempotencyKey: "life-reversal-void" }));
+      const reversalEvent = (await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()))
+        .map((record) => record.data as Record<string, unknown>)
+        .find((event) => event.memberId === "member-b" && event.title === "PT package activation reversed after payment void");
+      expect(reversalEvent).toMatchObject({
+        titleMessage: { key: "communicationCompletion.timeline.ptPackageActivationReversed" },
+        body: "Recorded against the wrong package",
+      });
+
       // Included-style credits: two introductory sessions on every active membership, once.
       await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "life-intro" }));
       await owner.mutation(api.domain.mutate, operation("pt.introductory.apply", { sessionCount: 2, reason: "Pilot introduction approved by owner", idempotencyKey: "life-intro" }));
@@ -112,6 +124,13 @@ describe("PT credit lifecycle", () => {
       expect(a.availableSessions).toBe(14);
       await assertConserved(t, a, "member-a");
       expect((await experienceOf(memberB, "membership-b")).availableSessions).toBe(2);
+      const introductoryEvent = (await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()))
+        .map((record) => record.data as Record<string, unknown>)
+        .find((event) => event.memberId === "member-a" && event.title === "2 introductory PT credits granted");
+      expect(introductoryEvent).toMatchObject({
+        titleMessage: { key: "communicationCompletion.timeline.ptIntroductoryCreditsGranted", params: { count: 2 } },
+        body: "Pilot introduction approved by owner",
+      });
 
       // Staff and member bookings, replayed by idempotency key.
       const day2 = await slotsOn(2);
@@ -168,6 +187,14 @@ describe("PT credit lifecycle", () => {
       // Unused-credit refunds revoke package credits only, and never below zero.
       const refunded = await owner.mutation(api.domain.mutate, operation("pt.package.refund", { orderId: order.id, sessions: 9, reason: "Member relocating; unused sessions refunded" })) as { refundedSessions: number; refundedAmount: { amount: number } };
       expect(refunded).toMatchObject({ refundedSessions: 9, refundedAmount: { amount: 180_000 } });
+      const refundEvent = (await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()))
+        .map((record) => record.data as Record<string, unknown>)
+        .find((event) => event.memberId === "member-a" && event.title === "9 PT credits refunded");
+      expect(refundEvent).toMatchObject({
+        titleMessage: { key: "communicationCompletion.timeline.ptCreditsRefunded", params: { count: 9 } },
+        bodyMessage: { key: "communicationCompletion.timeline.ptCreditsRefundedBody", params: { amount: { amountMinor: 180_000, currency: "JOD" }, reason: "Member relocating; unused sessions refunded" } },
+      });
+      expect(refundEvent?.body).toContain("Member relocating; unused sessions refunded");
       await expectCode(owner.mutation(api.domain.mutate, operation("pt.package.refund", { orderId: order.id, sessions: 5, reason: "Over-refund attempt" })), "VALIDATION_ERROR");
       a = await experienceOf(memberA);
       expect(a.availableSessions).toBe(2);

@@ -21,12 +21,13 @@ async function seed(t: TestConvex<typeof schema>) {
     const owner = await ctx.db.insert("users", { publicId: "plan-owner", authSubject: "clerk-plan-owner", email: "owner@plan.example", fullName: "Plan Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: organization, userId: owner, role: "owner", branchIds: [branch], branchScope: "all", active: true, createdAt: now, updatedAt: now });
     const insertRecord = async (entityType: string, publicId: string, data: Record<string, unknown>) => await ctx.db.insert("domainRecords", { organizationId: organization, entityType, publicId, branchId: branch, memberPublicId: entityType === "member" ? publicId : undefined, createdAt: now, updatedAt: now, data: { id: publicId, ...data } });
-    await insertRecord("plan", "plan-basic", { name: "Basic", code: "BASIC", kind: "time", durationDays: 30, basePrice: { amount: 30_000, currency: "JOD" }, branchAccess: "all", status: "active", freezeAllowanceDays: 5 });
-    await insertRecord("plan", "plan-pro", { name: "Pro", code: "PRO", kind: "time", durationDays: 30, basePrice: { amount: 50_000, currency: "JOD" }, branchAccess: "all", status: "active", freezeAllowanceDays: 5 });
+    await insertRecord("plan", "plan-basic", { name: "Basic", code: "BASIC", kind: "time", durationDays: 30, basePrice: { amount: 30_000, currency: "JOD" }, branchAccess: "all", status: "active", freezeAllowanceDays: 5, includedPtSessions: 2 });
+    await insertRecord("plan", "plan-pro", { name: "Pro", code: "PRO", kind: "time", durationDays: 30, basePrice: { amount: 50_000, currency: "JOD" }, branchAccess: "all", status: "active", freezeAllowanceDays: 5, includedPtSessions: 4 });
     await insertRecord("member", "member-immediate", { fullName: "Immediate Member", memberNumber: "MAIN-1000", phone: "+962790000101", homeBranchId: "plan-branch", status: "active", createdAt: new Date(now).toISOString() });
     await insertRecord("member", "member-next", { fullName: "Next Renewal Member", memberNumber: "MAIN-1001", phone: "+962790000102", homeBranchId: "plan-branch", status: "active", createdAt: new Date(now).toISOString() });
     await insertRecord("membership", "membership-immediate", { memberId: "member-immediate", planId: "plan-basic", homeBranchId: "plan-branch", startDate: dateInDays(-2), endDate: dateInDays(20), salePrice: { amount: 30_000, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, status: "active", frozenDaysUsed: 0, freezes: [] });
     await insertRecord("membership", "membership-next", { memberId: "member-next", planId: "plan-basic", homeBranchId: "plan-branch", startDate: dateInDays(-10), endDate: dateInDays(5), salePrice: { amount: 30_000, currency: "JOD" }, discount: { amount: 0, currency: "JOD" }, status: "active", frozenDaysUsed: 0, freezes: [] });
+    await ctx.db.insert("ptEntitlements", { organizationId: organization, publicId: "included-immediate", memberPublicId: "member-immediate", source: "included", membershipPublicId: "membership-immediate", granted: 2, reserved: 0, consumed: 0, revoked: 0, startsAt: now - 86_400_000, expiresAt: now + 20 * 86_400_000, status: "active", createdAt: now, updatedAt: now });
   });
 }
 
@@ -66,5 +67,28 @@ describe("membership plan change verification", () => {
     expect(oldImmediate?.data).toMatchObject({ cancelledAt: expect.any(String) });
     expect(oldNext?.data).not.toHaveProperty("cancelledAt");
     expect(persisted.audits.filter((event) => event.action === "membership.plan_change")).toHaveLength(2);
+    const timeline = (await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect())).map((record) => record.data as Record<string, unknown>);
+    expect(timeline).toContainEqual(expect.objectContaining({
+      memberId: "member-immediate",
+      title: "2 unused included PT sessions revoked",
+      titleMessage: { key: "communicationCompletion.timeline.ptIncludedCreditsRevoked", params: { count: 2 } },
+      body: "Superseded by immediate plan change: Member requested an immediate upgrade.",
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      memberId: "member-immediate",
+      title: "4 included PT sessions granted",
+      titleMessage: { key: "communicationCompletion.timeline.ptIncludedCreditsGranted", params: { count: 4 } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      memberId: "member-next",
+      title: "4 included PT sessions scheduled",
+      titleMessage: { key: "communicationCompletion.timeline.ptIncludedCreditsScheduled", params: { count: 4 } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      memberId: "member-immediate",
+      type: "membership_plan_changed",
+      body: `Member requested an immediate upgrade. Effective ${immediate.membership.startDate}; no proration applied.`,
+      bodyMessage: { key: "communicationCompletion.timeline.membershipPlanChangeBody", params: { reason: "Member requested an immediate upgrade.", date: { date: immediate.membership.startDate } } },
+    }));
   });
 });

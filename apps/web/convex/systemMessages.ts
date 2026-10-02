@@ -13,6 +13,10 @@ const systemMessageParam = v.union(
   v.object({ clock: v.string() }),
   v.object({ amountMinor: v.number(), currency: v.string() }),
   v.object({ enum: v.string(), value: v.string() }),
+  // Nested descriptor parameters are deliberately opaque at the storage
+  // boundary: their bounded recursive validation happens in the pure presenter.
+  // This keeps future descriptor additions backward compatible; it is never an
+  // authorization or executable input.
   v.object({ message: v.object({ key: v.string(), params: v.optional(v.record(v.string(), v.any())) }) }),
 );
 

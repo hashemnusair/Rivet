@@ -33,6 +33,70 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("tenant data exports", () => {
+  it("freezes an Arabic export across locale-changing retries and localizes every dataset header", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-owner-export" });
+    const titles = {
+      members: "قائمة الأعضاء", leads: "العملاء المحتملون", payments: "سجل الدفعات",
+      audit: "سجل النشاط", membership_liabilities: "المبالغ المتبقية على المشتركين",
+      personal_training: "طلبات باقات التدريب الشخصي", operations: "المنتجات والمورّدون وحركة المخزون",
+    };
+    for (const [kind, title] of Object.entries(titles)) {
+      const input = { kind, locale: "ar", idempotencyKey: `arabic-export-${kind}`, filters: {} };
+      const result = await owner.mutation(api.domain.mutate, operation("exports.request", input)) as { id: string; content: string; locale: string };
+      expect(result.locale).toBe("ar");
+      expect(result.content).toContain(title);
+      expect(result.content).toContain("تاريخ إنشاء الملف");
+      expect(result.content).toContain("جميع الفروع المتاحة");
+      expect(result.content).not.toContain("Generated at");
+      expect(result.content).not.toContain("Must Not Leak");
+      if (kind === "members") {
+        expect(result.content).toContain('"Doe, ""Jane"""');
+        expect(result.content).toContain("'=2+2");
+        expect(result.content).toContain("رقم المشترك,الاسم الكامل");
+      }
+      if (kind === "payments") {
+        expect(result.content).toContain("كاش");
+        expect(result.content).toContain("40.000,JOD");
+        expect(result.content).toContain("R-200");
+      }
+      const retry = await owner.mutation(api.domain.mutate, operation("exports.request", { ...input, locale: "en" }));
+      expect(retry).toEqual(result);
+    }
+    const trainer = t.withIdentity({ subject: "clerk-trainer-export" });
+    await expectCode(trainer.mutation(api.domain.mutate, operation("exports.request", { kind: "payments", locale: "ar", idempotencyKey: "arabic-denied-export" })), "FORBIDDEN");
+  });
+
+  it("exports Arabic personal data without changing authored names, money or recipient preference", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const customer = t.withIdentity({ subject: "clerk-customer-export" });
+    await t.run(async (ctx) => {
+      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-export")).unique();
+      if (!organization) throw new Error("Missing export test gym");
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: "arabic-export-event", memberPublicId: "member-customer-export", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "arabic-export-event", memberId: "member-customer-export", type: "payment_voided", occurredAt: "2026-10-03T09:00:00Z", title: "Payment voided — R-200", titleMessage: { key: "communicationCompletion.timeline.paymentVoided", params: { receipt: "R-200" } }, body: "Authored reason stays as written" } });
+    });
+    const result = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { locale: "ar", idempotencyKey: "arabic-personal-export" })) as { content: string; locale: string };
+    expect(result.locale).toBe("ar");
+    expect(result.content).toContain("بياناتي في RIVET");
+    expect(result.content).not.toContain("Payment voided — R-200");
+    expect(result.content).toContain("Authored reason stays as written");
+    expect(result.content).toContain("الفئة,النادي,الفرع,التاريخ,السجل,التفاصيل,المبلغ,العملة,الحالة");
+    expect(result.content).toContain("جنى حداد");
+    expect(result.content).toContain("All access");
+    expect(result.content).toContain("Membership balance");
+    expect(result.content).toContain("1 آب 2026");
+    expect(result.content).toContain("وصل دفع R-200");
+    expect(result.content).toContain("40.000,JOD");
+    expect(result.content).not.toContain("Must Not Leak");
+    const english = await customer.mutation(api.domain.mutate, operation("exports.member_personal_data", { locale: "en", idempotencyKey: "english-personal-export" })) as { content: string };
+    expect(english.content).toContain("My RIVET data");
+    expect(english.content).toContain("Payment voided — R-200");
+    const profile = await t.run(async (ctx) => ctx.db.query("customerProfiles").withIndex("by_public_id", (q) => q.eq("publicId", "profile-export")).unique());
+    expect(profile?.preferredLanguage).toBe("ar");
+  });
+
   it("applies from/to date filters on the gym calendar, not the UTC day", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

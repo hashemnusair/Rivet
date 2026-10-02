@@ -68,7 +68,13 @@ describe("CRM offer lifecycle", () => {
       timeline: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect(),
       audits: await ctx.db.query("auditEvents").collect(),
     }));
-    expect(persisted.timeline.map((row) => (row.data as { type?: string }).type)).toEqual(expect.arrayContaining(["offer_drafted", "offer_sent", "offer_accepted"]));
+    const timeline = persisted.timeline.map((row) => row.data as Record<string, unknown>);
+    expect(timeline.map((event) => event.type)).toEqual(expect.arrayContaining(["offer_drafted", "offer_sent", "offer_accepted"]));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      type: "offer_sent",
+      body: "email confirmed · staging-delivery-reference.",
+      bodyMessage: { key: "communicationCompletion.timeline.offerDeliveryConfirmedBodyWithReference", params: { channel: { enum: "channel", value: "email" }, reference: "staging-delivery-reference" } },
+    }));
     expect(persisted.audits.filter((event) => event.action === "offer.accepted")).toHaveLength(1);
   });
 

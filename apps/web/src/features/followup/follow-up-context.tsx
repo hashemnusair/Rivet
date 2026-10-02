@@ -12,6 +12,7 @@ import { useApiQuery } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
+import { presentSystemText, type SystemTextContext } from "@/lib/i18n/system-messages";
 import { followUpDeliveryDetailLabel, followUpDeliveryLabel, followUpOutcomeLabel, followUpStopReasonLabel, followUpSuppressionReasonLabel } from "@/features/followup/follow-up-labels";
 
 /**
@@ -36,8 +37,27 @@ export function evidenceHref(memberId: string, evidenceId: string): string {
   return `/members/${memberId}?tab=timeline#timeline-event-${evidenceId}`;
 }
 
+/** Translate generated evidence before clipping it; authored/unknown text stays its original excerpt. */
+export function presentedFollowUpExcerpt(item: Pick<FollowUpEvidence, "excerpt" | "bodyMessage">, context: SystemTextContext): string | undefined {
+  if (!item.bodyMessage && !item.excerpt) return undefined;
+  const normalized = presentSystemText(item.excerpt, item.bodyMessage, context).replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  if (normalized.length <= 200) return normalized;
+  let prefix = normalized.slice(0, 199);
+  while (true) {
+    const starts = prefix.match(/[\u2066-\u2068]/g)?.length ?? 0;
+    const ends = prefix.match(/\u2069/g)?.length ?? 0;
+    const unclosed = Math.max(0, starts - ends);
+    const overflow = prefix.length + unclosed + 1 - 200;
+    if (overflow <= 0) return `${prefix}${"\u2069".repeat(unclosed)}…`;
+    prefix = prefix.slice(0, Math.max(0, prefix.length - overflow));
+  }
+}
+
 export function EvidenceLine({ item, memberId, lead }: { item: FollowUpEvidence; memberId: string; lead?: string }) {
-  const { t } = useLocale();
+  const { locale, t } = useLocale();
+  const format = useFormat();
+  const excerpt = presentedFollowUpExcerpt(item, { locale, t, format });
   return (
     <li className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12.5px]" data-testid="follow-up-evidence" data-evidence-id={item.id}>
       {lead ? <span className="font-medium text-signal-deep">{lead}</span> : null}
@@ -49,7 +69,7 @@ export function EvidenceLine({ item, memberId, lead }: { item: FollowUpEvidence;
       {item.flags.includes("opened_not_sent") ? <Badge variant="outline">{t("memberProfile.followUp.flagOpenedNotSent")}</Badge> : null}
       {item.flags.includes("not_sent") ? <Badge variant="outline">{t("memberProfile.followUp.flagNotSent")}</Badge> : null}
       {item.flags.includes("provider_accepted_not_confirmed") ? <Badge variant="outline">{t("memberProfile.followUp.flagDeliveryNotConfirmed")}</Badge> : null}
-      {item.excerpt ? <span className="basis-full text-ink-2" dir="auto">“{item.excerpt}”</span> : null}
+      {excerpt ? <span className="basis-full text-ink-2" dir="auto">“{excerpt}”</span> : null}
       <Link href={evidenceHref(memberId, item.id)} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{t("memberProfile.followUp.viewOnTimeline")}</Link>
     </li>
   );

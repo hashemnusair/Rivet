@@ -10,6 +10,7 @@ import {
 import { MESSAGE_TEMPLATE_CATALOGUE, renderMessageTemplate, type CatalogueTemplate } from "./messagingTemplates";
 import { createTranslator } from "../src/lib/i18n/core";
 import { makeFormatters } from "../src/lib/i18n/formatters";
+import { isRenderableSystemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 import { resolveRecipientLanguage, type CommunicationLanguage } from "../src/lib/i18n/communication";
 import { consentForRenewalChannel, isRenewalQuietHours, nextRenewalQuietHoursEnd, renewalMessageSuppressionReason, renewalStopReason, type RenewalConsentStatus } from "./renewalPolicy";
 
@@ -225,6 +226,8 @@ export interface FollowUpEvidence {
   kind: FollowUpEvidenceKind;
   title: string;
   excerpt?: string;
+  /** Valid timeline-body descriptor, so generated evidence can be localized at presentation. */
+  bodyMessage?: SystemMessage;
   occurredAt: string;
   actorName?: string;
   outcome?: string;
@@ -293,6 +296,7 @@ export interface FollowUpTimelineLike {
   type: string;
   title: string;
   body?: string;
+  bodyMessage?: SystemMessage;
   occurredAt: string;
   actorName?: string;
   meta?: Data;
@@ -413,12 +417,15 @@ const EVIDENCE_TYPES = new Set(["call_attempt", "note", "message", "membership_f
 export function classifyFollowUpEvidence(event: FollowUpTimelineLike): FollowUpEvidence | undefined {
   if (!EVIDENCE_TYPES.has(event.type)) return undefined;
   const meta = record(event.meta);
-  const excerpt = followUpExcerpt(event.body);
+  const bodyMessage = isRenderableSystemMessage(event.bodyMessage) ? event.bodyMessage : undefined;
+  // A descriptor needs the complete original body to translate and truncate
+  // after presentation. Authored or unknown text keeps the existing excerpt.
+  const excerpt = bodyMessage ? event.body ?? "" : followUpExcerpt(event.body);
   const topics = followUpTopicsIn(`${event.title} ${event.body ?? ""}`);
   const flags: FollowUpEvidenceFlag[] = [];
   if (topics.includes("travel")) flags.push("mentions_travel");
   if (topics.includes("complaint")) flags.push("mentions_complaint");
-  const base = { id: event.id, type: event.type, title: event.title, excerpt, occurredAt: event.occurredAt, actorName: event.actorName, topics, flags };
+  const base = { id: event.id, type: event.type, title: event.title, excerpt, ...(bodyMessage ? { bodyMessage } : {}), occurredAt: event.occurredAt, actorName: event.actorName, topics, flags };
   if (event.type === "call_attempt") {
     const outcome = optionalText(meta.outcome);
     const known = isContactOutcome(outcome) ? outcome : undefined;
