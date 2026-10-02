@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { SegmentedTabs } from "./segmented-tabs";
 
 function Harness() {
@@ -48,5 +49,15 @@ describe("SegmentedTabs", () => {
     render(<Harness />);
     await user.click(screen.getByRole("tab", { name: "Gamma" }));
     expect(screen.getByRole("tab", { name: "Gamma" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("uses RTL horizontal arrow direction while preserving vertical navigation", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="ar"><Harness /></LocaleProvider>);
+    screen.getByRole("tab", { name: "Alpha" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Gamma" })).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("tab", { name: "Alpha" })).toHaveAttribute("aria-selected", "true");
   });
 });

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import LandingPage from "./page";
 
 const state = vi.hoisted(() => ({
@@ -27,6 +28,11 @@ vi.mock("@/components/marketing/reveal", () => ({ Reveal: ({ children }: { child
 vi.mock("@/components/marketing/scroll-progress", () => ({ ScrollProgress: () => <div aria-hidden /> }));
 vi.mock("@/components/public/experience-data-state", () => ({ ExperienceDataState: () => <div role="status" /> }));
 
+function PublicDirectionBoundary({ children }: { children: ReactNode }) {
+  const { dir } = useLocale();
+  return <div data-testid="public-direction" dir={dir}>{children}</div>;
+}
+
 describe("landing-page pricing", () => {
   beforeEach(() => {
     state.saasPlans = [];
@@ -42,7 +48,7 @@ describe("landing-page pricing", () => {
     expect(within(screen.getByRole("banner")).getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
     // The member section's own "Sign in" leads straight to the member door.
     expect(screen.getAllByRole("link", { name: "Sign in" }).map((link) => link.getAttribute("href"))).toEqual(["/login", "/login/member"]);
-    expect(screen.getByRole("link", { name: "Apply for access" })).toHaveAttribute("href", "/signup");
+    for (const link of screen.getAllByRole("link", { name: "Apply for access" })) expect(link).toHaveAttribute("href", "/signup");
     for (const link of screen.getAllByRole("link", { name: /Send a gym application/ })) expect(link).toHaveAttribute("href", "/signup");
     expect(screen.getByRole("link", { name: /Create a free account/ })).toHaveAttribute("href", "/login/member/create");
     await user.click(screen.getByRole("button", { name: "Menu" }));
@@ -92,6 +98,22 @@ describe("landing-page pricing", () => {
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByText("Enterprise")).toBeInTheDocument();
     expect(screen.getByText("JD 500.000")).toBeInTheDocument();
+  });
+
+  it("renders the public landing in Arabic with RTL navigation and JOD prices", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="ar"><PublicDirectionBoundary><LandingPage /></PublicDirectionBoundary></LocaleProvider>);
+
+    expect(await screen.findByRole("heading", { name: "كل تفاصيل ناديك و مشتركينه في مكان واحد" })).toBeInTheDocument();
+    expect(screen.getByText(/79\.000 د\.أ/)).toBeInTheDocument();
+    expect(screen.getByTestId("public-direction")).toHaveAttribute("dir", "rtl");
+
+    const menuButton = screen.getByRole("button", { name: "القائمة" });
+    await user.click(menuButton);
+    const menu = screen.getByRole("dialog", { name: "التنقل في RIVET" });
+    expect(within(menu).getByRole("link", { name: /الأسعار/ })).toHaveAttribute("href", "#pricing");
+    await user.keyboard("{Escape}");
+    expect(menuButton).toHaveFocus();
   });
 
   it("updates every card accessibly for annual savings and carries the choice into signup", async () => {

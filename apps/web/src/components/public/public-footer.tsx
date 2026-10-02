@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
+import { publicDestinationCopy } from "@/components/public/public-plan-copy";
 
 /**
  * The public site's footer — the site map lives here, so every area is one
@@ -20,6 +21,7 @@ export function PublicFooter() {
   const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
+  const destinationCopy = signedIn ? publicDestinationCopy(signedIn.destination.area, t) : null;
   const [signingOut, setSigningOut] = useState(false);
 
   const signOut = async () => {
@@ -35,17 +37,17 @@ export function PublicFooter() {
   };
 
   const productLinks: Array<[string, string]> = [
-    ["Overview", `${publicHref}#product`],
-    ["For members", `${publicHref}#member`],
-    ["Pricing", `${publicHref}#pricing`],
+    [t("publicCompletion.footer.overview"), `${publicHref}#product`],
+    [t("publicCompletion.footer.forMembers"), `${publicHref}#member`],
+    [t("publicCompletion.header.pricing"), `${publicHref}#pricing`],
   ];
-  if (!signedIn) productLinks.push(["Send gym application", `${publicHref.split("?")[0]}signup`]);
+  if (!signedIn) productLinks.push([t("publicCompletion.footer.apply"), `${publicHref.split("?")[0]}signup`]);
 
-  const memberLinks: Array<[string, string]> = [["Find a gym", "/customer/discover"]];
+  const memberLinks: Array<[string, string]> = [[t("publicCompletion.footer.findGym"), "/customer/discover"]];
   if (signedIn) {
-    if (signedIn.destination.area === "member") memberLinks.push(["My gyms", signedIn.destination.href]);
+    if (signedIn.destination.area === "member") memberLinks.push([t("publicCompletion.footer.myGyms"), signedIn.destination.href]);
   } else {
-    memberLinks.push(["Create a member account", "/login/member/create"]);
+    memberLinks.push([t("publicCompletion.footer.createAccount"), "/login/member/create"]);
   }
 
   return (
@@ -54,18 +56,18 @@ export function PublicFooter() {
         <div>
             <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={140} height={36} />
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
-            RIVET helps gyms sell memberships, collect payments and run the front desk. Members use it to find a gym, join and get in.
+            {t("publicCompletion.footer.intro")}
           </p>
-          <p className="mt-6 text-[12px] font-medium text-night-ink-3">صُنع في عمّان · Made in Amman</p>
+          <p className="mt-6 text-[12px] font-medium text-night-ink-3">{t("publicCompletion.footer.madeIn")}</p>
         </div>
         <FooterColumn title={t("marketing.footer.product")} links={productLinks} />
         <FooterColumn title={t("palette.groups.members")} links={memberLinks} />
         {signedIn ? (
-          <nav aria-label="Your account">
-            <p className="text-[12px] font-medium text-night-ink-3">Your account</p>
+          <nav aria-label={t("publicCompletion.footer.account")}>
+            <p className="text-[12px] font-medium text-night-ink-3">{t("publicCompletion.footer.account")}</p>
             <div className="mt-4 grid gap-3">
               <Link href={signedIn.destination.href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
-                {signedIn.destination.verb}
+                {destinationCopy?.action}
               </Link>
               <button
                 type="button"
@@ -73,20 +75,20 @@ export function PublicFooter() {
                 disabled={signingOut}
                 className="w-fit cursor-pointer text-start text-[13px] text-night-ink-2 transition-colors hover:text-night-ink disabled:cursor-default disabled:text-night-ink-3"
               >
-                {signingOut ? "Signing out…" : t("common.action.signOut")}
+                {signingOut ? t("publicCompletion.footer.signingOut") : t("common.action.signOut")}
               </button>
             </div>
           </nav>
         ) : (
-          <FooterColumn title={t("common.action.signIn")} links={[["Sign in to RIVET", "/login"]]} />
+          <FooterColumn title={t("common.action.signIn")} links={[[t("publicCompletion.footer.signInToRivet"), "/login"]]} />
         )}
-        <nav aria-label="Contact RIVET">
-          <p className="text-[12px] font-medium text-night-ink-3">{t("memberProfile.followUp.evidenceKind.contact")}</p>
+        <nav aria-label={t("publicCompletion.footer.contact")}>
+          <p className="text-[12px] font-medium text-night-ink-3">{t("publicCompletion.footer.contact")}</p>
           <div className="mt-4 grid gap-3 text-[13px]">
             <a href={RIVET_CONTACT.phoneHref} className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
-            <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">WhatsApp RIVET</a>
+            <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">{t("publicCompletion.footer.whatsappLink")}</a>
             <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
-            <span className="text-night-ink-3">{RIVET_CONTACT.city}</span>
+            <span className="text-night-ink-3">{t("publicCompletion.header.city")}</span>
           </div>
         </nav>
       </div>
@@ -94,7 +96,7 @@ export function PublicFooter() {
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-[12px] font-medium text-night-ink-3">
           <span>{t("marketing.footer.copyright")}</span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{item.label}</Link>)}
+            {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{t(item.href === "/terms" ? "auth.chrome.terms" : "auth.chrome.privacy")}</Link>)}
           </span>
           <span>{t("common.brand.tagline")}</span>
         </div>

@@ -1,5 +1,5 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -8,15 +8,16 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS } from "@/lib/rivet-contact";
 import { cn } from "@/lib/utils/cn";
+import { publicDestinationCopy } from "@/components/public/public-plan-copy";
 import styles from "./landing-cinematic.module.css";
 
 export const NAV_ITEMS = [
-  { index: "01", label: "Overview", href: "#top" },
-  { index: "02", label: "The stack", href: "#product" },
-  { index: "03", label: "A day", href: "#day" },
-  { index: "04", label: "Accountability", href: "#accountability" },
-  { index: "05", label: "Built for here", href: "#region" },
-  { index: "06", label: "Pricing", href: "#pricing" },
+  { index: "01", labelKey: "publicCompletion.header.overview", href: "#top" },
+  { index: "02", labelKey: "publicCompletion.header.stack", href: "#product" },
+  { index: "03", labelKey: "publicCompletion.header.day", href: "#day" },
+  { index: "04", labelKey: "publicCompletion.header.accountability", href: "#accountability" },
+  { index: "05", labelKey: "publicCompletion.header.region", href: "#region" },
+  { index: "06", labelKey: "publicCompletion.header.pricing", href: "#pricing" },
 ] as const;
 
 const NAV_DELAYS = [
@@ -93,12 +94,13 @@ export function CinematicHeader({
   /** Whose page this is: a gym-facing page leads to the application, a member page to account creation. */
   audience?: "gym" | "member";
 }) {
-  const t = useT();
+  const { t } = useLocale();
   const onLanding = page === "landing";
   const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
   const signedOut = viewer.status === "signed-out";
+  const destinationCopy = signedIn ? publicDestinationCopy(signedIn.destination.area, t) : null;
   const [signingOut, setSigningOut] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeHref, setActiveHref] = useState<string>("#top");
@@ -293,7 +295,7 @@ export function CinematicHeader({
         <Link
           href={onLanding ? "#top" : publicHref}
           className={styles.brand}
-          aria-label={onLanding ? "RIVET, back to top" : "RIVET, home"}
+          aria-label={t(onLanding ? "publicCompletion.header.backToTop" : "publicCompletion.header.home")}
           inert={open}
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
@@ -308,13 +310,13 @@ export function CinematicHeader({
                 <Link href="/login/member/create" className={styles.apply} inert={open}>{t("marketing.actions.createAccount")}</Link>
               ) : (
                 <Link href={`${publicHref.split("?")[0]}signup`} className={styles.apply} inert={open}>
-                  Apply for access
+                  {t("publicCompletion.header.applyAccess")}
                 </Link>
               )}
             </>
           ) : signedIn ? (
             <Link href={signedIn.destination.href} className={styles.apply} inert={open}>
-              {signedIn.destination.label}
+              {destinationCopy?.label}
             </Link>
           ) : null}
           <button
@@ -338,11 +340,11 @@ export function CinematicHeader({
         aria-hidden={!open}
         role="dialog"
         aria-modal="true"
-        aria-label="RIVET navigation"
+            aria-label={t("publicCompletion.header.navigation")}
       >
         <button type="button" className={styles.menuScrim} aria-label={t("nav.chrome.closeNavigation")} onClick={dismiss} />
         <div className={styles.menuPlate}>
-          <nav className={styles.menuPrimary} aria-label={onLanding ? "Landing page sections" : "Home page sections"}>
+          <nav className={styles.menuPrimary} aria-label={t(onLanding ? "publicCompletion.header.landingSections" : "publicCompletion.header.homeSections")}>
             <ol className={styles.menuList}>
               {NAV_ITEMS.map((item, index) => (
                 <li key={item.href} className={cn(styles.menuItem, NAV_DELAYS[index])}>
@@ -354,7 +356,7 @@ export function CinematicHeader({
                   >
                     <span className={styles.menuIndex}>{item.index}</span>
                     <span className={styles.menuMask}>
-                      <span className={styles.menuLabel}>{item.label}</span>
+                    <span className={styles.menuLabel}>{t(item.labelKey)}</span>
                     </span>
                   </Link>
                 </li>
@@ -368,17 +370,17 @@ export function CinematicHeader({
               <a href="mailto:hello@rivet.jo">hello@rivet.jo</a>
             </div>
             <div>
-              <span className={styles.metaKey}>Based in</span>
-              <span>Amman, Jordan</span>
+              <span className={styles.metaKey}>{t("publicCompletion.header.basedIn")}</span>
+              <span>{t("publicCompletion.header.city")}</span>
             </div>
             {onLanding ? (
               <div className={styles.menuInterface}>
-                <span className={styles.metaKey}>Interface</span>
-                <span>English · <span lang="ar">{t("common.language.arabic")}</span></span>
+                <span className={styles.metaKey}>{t("publicCompletion.header.interface")}</span>
+                <span>{t("publicCompletion.header.languages")}</span>
               </div>
             ) : (
               <div className={styles.menuLegal}>
-                <span className={styles.metaKey}>Legal</span>
+                <span className={styles.metaKey}>{t("publicCompletion.header.legal")}</span>
                 <span className={styles.menuLegalLinks}>
                   {LEGAL_LINKS.map((item) => (
                     <Link
@@ -388,7 +390,7 @@ export function CinematicHeader({
                       aria-current={currentPath === item.href ? "page" : undefined}
                       onClick={close}
                     >
-                      {item.label}
+                      {t(item.href === "/terms" ? "auth.chrome.terms" : "auth.chrome.privacy")}
                     </Link>
                   ))}
                 </span>
@@ -398,9 +400,9 @@ export function CinematicHeader({
               {signedIn ? (
                 <>
                   <button type="button" className={styles.menuSignIn} onClick={() => void signOut()} disabled={signingOut}>
-                    {signingOut ? "Signing out…" : t("common.action.signOut")}
+                    {signingOut ? t("marketing.memberShell.signingOut") : t("common.action.signOut")}
                   </button>
-                  <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{signedIn.destination.verb}</Link>
+                  <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{destinationCopy?.action}</Link>
                 </>
               ) : signedOut ? (
                 <Link href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>{t("marketing.actions.applyShort")}</Link>

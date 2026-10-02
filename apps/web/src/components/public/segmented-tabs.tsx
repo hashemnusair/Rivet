@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 
 export interface SegmentedTabItem<T extends string> {
@@ -32,6 +33,7 @@ export function SegmentedTabs<T extends string>({
   className?: string;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
+  const { locale } = useLocale();
 
   useEffect(() => {
     const list = listRef.current;
@@ -47,8 +49,10 @@ export function SegmentedTabs<T extends string>({
     const index = items.findIndex((item) => item.value === value);
     if (index < 0) return;
     let next = index;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % items.length;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + items.length) % items.length;
+    if (event.key === "ArrowDown") next = (index + 1) % items.length;
+    else if (event.key === "ArrowUp") next = (index - 1 + items.length) % items.length;
+    else if (event.key === "ArrowRight") next = (index + (locale === "ar" ? -1 : 1) + items.length) % items.length;
+    else if (event.key === "ArrowLeft") next = (index + (locale === "ar" ? 1 : -1) + items.length) % items.length;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = items.length - 1;
     else return;

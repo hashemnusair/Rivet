@@ -33,10 +33,10 @@ import { MemberPwaManager } from "@/components/pwa/member-pwa";
 // gym's page are public-site pages and wear the site's chrome instead.
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
-  { href: "/customer/my-gyms", label: "Home", shortLabel: "Home", icon: Home, requiresAuth: true },
-  { href: "/customer/finance", label: "Payments", shortLabel: "Payments", icon: ReceiptText, requiresAuth: true },
-  { href: "/customer/discover", label: "Explore gyms", shortLabel: "Explore", icon: Search, requiresAuth: false },
-];
+  { href: "/customer/my-gyms", labelKey: "publicCompletion.memberShell.home", shortLabelKey: "publicCompletion.memberShell.home", icon: Home, requiresAuth: true },
+  { href: "/customer/finance", labelKey: "publicCompletion.memberShell.payments", shortLabelKey: "publicCompletion.memberShell.payments", icon: ReceiptText, requiresAuth: true },
+  { href: "/customer/discover", labelKey: "publicCompletion.memberShell.exploreGyms", shortLabelKey: "publicCompletion.memberShell.explore", icon: Search, requiresAuth: false },
+] as const;
 
 const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", "/customer/profile", "/customer/getting-started"];
 
@@ -66,7 +66,7 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
         <Link href="/customer/getting-started"><GraduationCap />{" "}{t("shell.account.gettingStarted")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile#communication"><MessageSquare /> Offers and news</Link>
+        <Link href="/customer/profile#communication"><MessageSquare />{" "}{t("publicCompletion.memberShell.offersAndNews")}</Link>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem className={itemClass} onClick={onSignOut}>
@@ -127,10 +127,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // A cold preview restores its member from sessionStorage after hydration.
   // Mounting the public layout first would replace the page when that finishes,
   // discarding an early tab selection or input focus along with its subtree.
-  if (!previewSessionReady) return <AuthTransition title="Loading your account" detail="Just a moment…" />;
+  if (!previewSessionReady) return <AuthTransition title={t("publicCompletion.memberShell.loading")} detail={t("publicCompletion.memberShell.justAMoment")} />;
 
-  if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail="Returning to secure sign in…" />;
-  if (elevatedDestination) return <AuthTransition title={t("auth.identity.openingAccount")} detail="Taking you to the right page…" />;
+  if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail={t("publicCompletion.memberShell.returningToSignIn")} />;
+  if (elevatedDestination) return <AuthTransition title={t("publicCompletion.memberShell.openingAccount")} detail={t("publicCompletion.memberShell.openingDetail")} />;
 
   // A visitor who is not signed in as a member is on the public site: the
   // marketplace and a gym's page wear the site's own bar and footer, with the
@@ -170,7 +170,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   aria-current={active ? "page" : undefined}
                 >
                   <item.icon className="size-3.5" aria-hidden />
-                  <span>{item.label}</span>
+                  <span>{t(item.labelKey)}</span>
                 </Link>
               );
             })}
@@ -226,7 +226,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", active && "bg-sunken")}>
                     <item.icon className="size-[18px]" aria-hidden />
                   </span>
-                  <span>{item.shortLabel}</span>
+                  <span>{t(item.shortLabelKey)}</span>
                 </Link>
               );
             })}

@@ -1,5 +1,6 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, Mail, Phone, RefreshCcw } from "lucide-react";
 import Link from "next/link";
@@ -10,24 +11,32 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import type { PlatformSaasPlan, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
 import { getApi } from "@/lib/api/client";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
 import {
   calculatePlanPrice,
-  formatJodMinor,
   isBillingInterval,
   isPublicPricingPlanName,
-  publicPlanFeatures,
   resolvePublicPricingPlans,
   type BillingInterval,
   type PublicPricingPlanName,
 } from "@/lib/public/pricing";
+import { localizedPublicPlanFeatures, formatPublicJod } from "@/components/public/public-plan-copy";
+import { latinDigits } from "@/lib/utils/text";
 import { cn } from "@/lib/utils/cn";
 
-type FormErrors = Partial<Record<"ownerName" | "gymName" | "gymAddress" | "email" | "contactNumber", string>>;
+type FormField = "ownerName" | "gymName" | "gymAddress" | "email" | "contactNumber";
+type SignupValidationKey =
+  | "publicCompletion.signup.validation.ownerName"
+  | "publicCompletion.signup.validation.gymName"
+  | "publicCompletion.signup.validation.gymAddress"
+  | "publicCompletion.signup.validation.email"
+  | "publicCompletion.signup.validation.contactNumber";
+type FormErrors = Partial<Record<FormField, SignupValidationKey>>;
 
 export default function GymApplicationPage() {
-  const t = useT();
+  const { t, locale, isolateLtr } = useLocale();
+  const f = useFormat();
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   // Resolve the same four-tier public catalog used by the landing page. A
   // missing live catalog still leaves the application usable with launch
@@ -66,11 +75,11 @@ export default function GymApplicationPage() {
     const formData = new FormData(event.currentTarget);
     const website = formData.get("website");
     const nextErrors: FormErrors = {};
-    if (ownerName.trim().length < 2) nextErrors.ownerName = "Enter the owner name.";
-    if (gymName.trim().length < 2) nextErrors.gymName = "Enter the gym name.";
-    if (gymAddress.trim().length < 5) nextErrors.gymAddress = "Enter the gym's address.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) nextErrors.email = "Enter a valid email address.";
-    if (contactNumber.replace(/\D/g, "").length < 7) nextErrors.contactNumber = "Enter a phone number we can call.";
+    if (ownerName.trim().length < 2) nextErrors.ownerName = "publicCompletion.signup.validation.ownerName";
+    if (gymName.trim().length < 2) nextErrors.gymName = "publicCompletion.signup.validation.gymName";
+    if (gymAddress.trim().length < 5) nextErrors.gymAddress = "publicCompletion.signup.validation.gymAddress";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) nextErrors.email = "publicCompletion.signup.validation.email";
+    if (latinDigits(contactNumber).replace(/\D/g, "").length < 7) nextErrors.contactNumber = "publicCompletion.signup.validation.contactNumber";
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
@@ -85,16 +94,17 @@ export default function GymApplicationPage() {
         gymName: gymName.trim(),
         gymAddress: gymAddress.trim(),
         email: email.trim().toLowerCase(),
-        contactNumber: contactNumber.trim(),
+        contactNumber: latinDigits(contactNumber.trim()),
         plan: plan as PlatformSaasPlan["name"],
         billingInterval,
+        language: locale,
         idempotencyKey: applicationRequestKeyRef.current ?? (applicationRequestKeyRef.current = crypto.randomUUID()),
         ...(typeof website === "string" && website.trim() ? { website: website.trim() } : {}),
       });
       applicationRequestKeyRef.current = undefined;
       setResult(submitted);
     } catch (error) {
-      setFormError(isApiError(error) ? error.message : "We could not send your application. Please try again.");
+      setFormError(isApiError(error) ? localizeApiError(error, locale).message : t("publicCompletion.signup.validation.submitFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -109,47 +119,47 @@ export default function GymApplicationPage() {
           ) : (
             <>
               <div className="max-w-2xl">
-                <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">Send a gym application.</h1>
+                <h1 className="font-display text-[26px] font-semibold leading-tight tracking-tight">{t("publicCompletion.signup.title")}</h1>
                 <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
-                  Tell us about your gym. We read every application and contact you. If we approve it, we set up RIVET for your gym.
+                  {t("publicCompletion.signup.intro")}
                 </p>
               </div>
 
               <form onSubmit={submit} data-billing-interval={billingInterval} className="mt-6 grid gap-6 rounded-lg border border-line bg-surface p-5 sm:p-8 lg:grid-cols-[1fr_0.9fr] lg:gap-10">
                 <label htmlFor="application-website" className="absolute -start-[9999px] h-px w-px overflow-hidden" aria-hidden="true">
-                  Website
+                  {t("publicCompletion.signup.websiteLabel")}
                   <input id="application-website" name="website" type="text" tabIndex={-1} autoComplete="off" />
                 </label>
                 <section>
-                  <h2 className="text-[15px] font-semibold">Who should we contact?</h2>
+                  <h2 className="text-[15px] font-semibold">{t("publicCompletion.signup.contactHeading")}</h2>
                   <div className="mt-4 grid gap-4">
-                    <Field label="Owner name" htmlFor="application-owner" error={errors.ownerName} required>
-                      <Input id="application-owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" disabled={!hydrated} />
+                    <Field label={t("publicCompletion.signup.ownerName")} htmlFor="application-owner" error={errors.ownerName ? t(errors.ownerName) : undefined} required>
+                      <Input id="application-owner" dir="auto" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} placeholder="Omar Khalil" autoComplete="name" disabled={!hydrated} />
                     </Field>
-                    <Field label={t("auth.signIn.emailLabel")} htmlFor="application-email" error={errors.email} hint="We’ll send your application confirmation here." required>
-                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
+                    <Field label={t("auth.signIn.emailLabel")} htmlFor="application-email" error={errors.email ? t(errors.email) : undefined} hint={t("publicCompletion.signup.emailHint")} required>
+                      <div className="relative"><Mail className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-email" dir="ltr" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com" autoComplete="email" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
-                    <Field label="Contact number" htmlFor="application-phone" error={errors.contactNumber} hint="Use a number where our team can reach you." required>
-                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder="Enter your phone number" autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
+                    <Field label={t("publicCompletion.signup.contactNumber")} htmlFor="application-phone" error={errors.contactNumber ? t(errors.contactNumber) : undefined} hint={t("publicCompletion.signup.phoneHint")} required>
+                      <div className="relative"><Phone className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input id="application-phone" dir="ltr" type="tel" value={contactNumber} onChange={(event) => setContactNumber(event.target.value)} placeholder={t("publicCompletion.signup.phonePlaceholder")} autoComplete="tel" className="ps-9" disabled={!hydrated} /></div>
                     </Field>
                   </div>
 
                   <div className="mt-6 border-t border-line pt-5">
-                    <p className="text-[13px] font-medium text-ink">RIVET sets up your gym&apos;s account after we approve your application.</p>
+                    <p className="text-[13px] font-medium text-ink">{t("publicCompletion.signup.accountSetup")}</p>
                   </div>
                 </section>
 
                 <section className="border-t border-line pt-6 lg:border-s lg:border-t-0 lg:ps-10 lg:pt-0">
-                  <h2 className="text-[15px] font-semibold">Which plan fits?</h2>
-                  <Field label="Gym name" htmlFor="application-gym" error={errors.gymName} className="mt-4" required>
-                    <Input id="application-gym" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
+                  <h2 className="text-[15px] font-semibold">{t("publicCompletion.signup.planHeading")}</h2>
+                  <Field label={t("publicCompletion.signup.gymName")} htmlFor="application-gym" error={errors.gymName ? t(errors.gymName) : undefined} className="mt-4" required>
+                    <Input id="application-gym" dir="auto" value={gymName} onChange={(event) => setGymName(event.target.value)} placeholder="Northstar Fitness" disabled={!hydrated} />
                   </Field>
-                  <Field label="Gym address" htmlFor="application-address" error={errors.gymAddress} hint="Where your gym is." className="mt-4" required>
-                    <Textarea id="application-address" value={gymAddress} onChange={(event) => setGymAddress(event.target.value)} placeholder="Street, area, city" autoComplete="street-address" maxLength={300} disabled={!hydrated} />
+                  <Field label={t("publicCompletion.signup.gymAddress")} htmlFor="application-address" error={errors.gymAddress ? t(errors.gymAddress) : undefined} hint={t("publicCompletion.signup.addressHint")} className="mt-4" required>
+                    <Textarea id="application-address" dir="auto" value={gymAddress} onChange={(event) => setGymAddress(event.target.value)} placeholder={t("publicCompletion.signup.addressPlaceholder")} autoComplete="street-address" maxLength={300} disabled={!hydrated} />
                   </Field>
                   <fieldset className="mt-5">
-                    <legend className="text-[13px] font-medium text-ink-2">How often you pay</legend>
-                    <div role="tablist" aria-label="How often you pay" className="mt-1.5 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
+                    <legend className="text-[13px] font-medium text-ink-2">{t("publicCompletion.signup.billingFrequency")}</legend>
+                    <div role="tablist" aria-label={t("publicCompletion.signup.billingFrequency")} className="mt-1.5 grid grid-cols-2 rounded-md border border-line bg-sunken p-1">
                       {(["monthly", "annual"] as const).map((interval) => {
                         const selected = billingInterval === interval;
                         return (
@@ -162,7 +172,7 @@ export default function GymApplicationPage() {
                             data-touch-target
                             className={cn("rounded-sm px-3 py-2 text-[12.5px] font-medium transition-colors", selected ? "bg-ink text-paper" : "text-ink-2 hover:text-ink")}
                           >
-                            {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
+                            {interval === "monthly" ? t("publicCompletion.landing.pricing.monthly") : t("publicCompletion.landing.pricing.annualSave", { percent: f.number(20) })}
                           </button>
                         );
                       })}
@@ -171,30 +181,30 @@ export default function GymApplicationPage() {
                   {usingFallbackCatalog ? (
                     <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning-bg px-3 py-2.5 text-[12.5px] text-warning-deep" role="status">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                      <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? "We could not load the latest prices.") : "Loading the latest prices. Showing our launch prices for now."}</span>
-                      <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label="Try loading prices again"><RefreshCcw /></Button>
+                      <span className="min-w-0 flex-1">{experienceStatus === "error" ? (experienceError ?? t("publicCompletion.signup.pricingLoadFailed")) : t("publicCompletion.signup.pricingLoadingFallback")}</span>
+                      <Button type="button" variant="ghost" size="sm" onClick={retryExperience} className="-my-1 shrink-0 px-1.5 text-warning-deep" aria-label={t("publicCompletion.signup.retryPrices")}><RefreshCcw /></Button>
                     </div>
                   ) : null}
-                  <div className="mt-3 grid gap-2" role="radiogroup" aria-label="RIVET plan">
+                  <div className="mt-3 grid gap-2" role="radiogroup" aria-label={t("publicCompletion.signup.planPicker")}>
                     {plans.map((item) => {
                       const selected = plan === item.name;
                       const price = calculatePlanPrice(item, billingInterval);
-                      const featureList = publicPlanFeatures(item);
+                      const featureList = localizedPublicPlanFeatures(item, f, t);
                       const capacitySummary = featureList.slice(0, 3).join(" · ");
-                      const capabilitySummary = featureList.slice(3).filter((feature) => feature !== "Member app and marketplace listing" && feature !== "Staff permissions and audit history").join(" · ");
+                      const capabilitySummary = featureList.slice(3, featureList.length - 2).join(" · ");
                       return (
                         <button key={item.name} type="button" role="radio" aria-checked={selected} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 rounded-md border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", selected ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}>
                           <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-ink bg-ink text-paper" : "border-line-3")} aria-hidden>{selected ? <Check className="size-3" /> : null}</span>
-                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold">{item.name}</span><span className="mt-0.5 block text-[12.5px] text-ink-2">JD {formatJodMinor(price.effectiveMonthlyMinor)} a month{billingInterval === "annual" ? ` · JD ${formatJodMinor(price.annualTotalMinor)} billed annually` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">Includes: {capabilitySummary}</span></span>
+                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold"><bdi dir="ltr">{item.name}</bdi></span><span className="mt-0.5 block text-[12.5px] text-ink-2">{t("publicCompletion.signup.monthlyPrice", { amount: isolateLtr(formatPublicJod(price.effectiveMonthlyMinor, f, locale)) })}{billingInterval === "annual" ? ` · ${t("publicCompletion.signup.annualPrice", { amount: isolateLtr(formatPublicJod(price.annualTotalMinor, f, locale)) })}` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.signup.included")} {capabilitySummary}</span></span>
                         </button>
                       );
                     })}
                   </div>
-                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">You do not pay anything now. We will talk about the plan with you.</p>
+                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">{t("publicCompletion.signup.noImmediatePayment")}</p>
                   {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                   <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">{t("marketing.actions.applyShort")}{" "}<ArrowRight /></Button>
-                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">By sending this application you agree to RIVET’s <Link href="/terms" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.terms")}</Link> and <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.privacy")}</Link>. The gym owner signs the subscription agreement later, in RIVET.</p>
-                  <p className="mt-3 text-center text-[12.5px] text-ink-3">Already have RIVET access? <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">{t("common.action.signIn")}</Link>{t("members.bulk.toast.end")}</p>
+                  <p className="mt-3 text-center text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.signup.consent")} <Link href="/terms" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.terms")}</Link> {t("publicCompletion.signup.consentJoiner")} <Link href="/privacy" className="underline underline-offset-4 hover:text-ink">{t("auth.chrome.privacy")}</Link>. {t("publicCompletion.signup.agreementLater")}</p>
+                  <p className="mt-3 text-center text-[12.5px] text-ink-3">{t("publicCompletion.signup.existingAccess")} <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">{t("common.action.signIn")}</Link></p>
                 </section>
               </form>
             </>
@@ -206,25 +216,24 @@ export default function GymApplicationPage() {
 }
 
 function ApplicationReceived({ result, gymName, email }: { result: SubmitGymApplicationResult; gymName: string; email: string }) {
-  const t = useT();
+  const { t, isolate } = useLocale();
   const confirmation = result.notificationStatus === "sent"
-    ? `We sent a confirmation to ${email}.`
+    ? t("publicCompletion.signup.confirmationSent", { email: isolate(email) })
     : result.notificationStatus === "pending"
-      ? `We will send a confirmation to ${email} soon.`
-      : "We could not send a confirmation email yet, but we have your application.";
+      ? t("publicCompletion.signup.confirmationPending", { email: isolate(email) })
+      : t("publicCompletion.signup.confirmationUnavailable");
   return (
     <div className="mx-auto max-w-xl rounded-lg border border-line bg-surface p-6 text-center sm:p-10" role="status">
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep" aria-hidden><CheckCircle2 className="size-6" /></span>
-      <p className="mt-5 text-[12px] font-medium text-ink-3">Application received</p>
-      <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">We’ll be in touch soon.</h1>
-      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">We received the application for <strong className="text-ink">{gymName || "your gym"}</strong>{t("members.bulk.toast.end")}{" "}{result.notificationStatus === "sent" || result.notificationStatus === "pending" ? <>{confirmation} </> : null}Our team will contact you after we review it.</p>
-      {result.notificationStatus !== "sent" && result.notificationStatus !== "pending" ? <p className="mt-3 text-[12.5px] text-ink-3">{confirmation}</p> : null}
-      {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">We already have this application.</p> : null}
+      <p className="mt-5 text-[12px] font-medium text-ink-3">{t("publicCompletion.signup.received")}</p>
+      <h1 className="mt-2 font-display text-[26px] font-semibold leading-tight tracking-tight">{t("publicCompletion.signup.receivedTitle")}</h1>
+      <p className="relative mt-3 text-[14px] leading-relaxed text-ink-2">{t("publicCompletion.signup.receivedFor")} <strong className="text-ink"><bdi dir="auto">{isolate(gymName || t("publicCompletion.signup.gymFallback"))}</bdi></strong>. {confirmation} {t("publicCompletion.signup.reviewedNext")}</p>
+      {result.duplicate ? <p className="mt-3 text-[12.5px] text-ink-3">{t("publicCompletion.signup.duplicate")}</p> : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
         <Button asChild size="lg"><Link href="/login/gym">{t("common.action.signIn")}{" "}<ArrowRight /></Link></Button>
-        <Button asChild variant="secondary" size="lg"><Link href="/">Return home</Link></Button>
+        <Button asChild variant="secondary" size="lg"><Link href="/">{t("publicCompletion.signup.returnHome")}</Link></Button>
       </div>
-      <p className="mt-4 text-[12.5px] text-ink-3">You can sign in after we approve your gym and email you an invitation.</p>
+      <p className="mt-4 text-[12.5px] text-ink-3">{t("publicCompletion.signup.invitation")}</p>
     </div>
   );
 }

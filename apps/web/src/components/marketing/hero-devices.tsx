@@ -1,5 +1,6 @@
 
-import { useT } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 import { Wifi } from "lucide-react";
 import { Iphone16ProFrame, MACBOOK_MENU_BAR_HEIGHT, MacbookProFrame } from "./device-frames";
 import { DASHBOARD_SCREEN, MEMBER_SCREEN, MemberEntryScreen, OwnerDashboardScreen } from "./product-screens";
@@ -13,7 +14,8 @@ import { ScaledScreen } from "./scaled-screen";
  * show is what the dashboard and the member app look like.
  */
 export function HeroDevices() {
-  const t = useT();
+  const { t, locale } = useLocale();
+  const f = useFormat();
   return (
     <>
       <div className="relative mx-auto w-full max-w-[660px] pb-14 sm:pb-16" aria-hidden>
@@ -35,7 +37,7 @@ export function HeroDevices() {
                   <span className="flex items-center gap-1.5">
                     <Wifi className="size-[5px]" strokeWidth={2.4} />
                     <span className="h-[4px] w-[8px] rounded-[1px] border border-ink-3" />
-                    <span>9:41</span>
+                    <span dir="ltr">{f.clock("09:41")}</span>
                   </span>
                 </div>
                 <div className="relative min-h-0 flex-1">
@@ -57,7 +59,7 @@ export function HeroDevices() {
               <div className="absolute inset-0 flex flex-col bg-paper text-ink">
                 {/* status bar — the Dynamic Island is part of the frame above */}
                 <div className="flex h-[7%] shrink-0 items-center justify-between px-3">
-                  <span className="text-[5.5px] font-semibold">9:41</span>
+                  <span className="text-[5.5px] font-semibold" dir="ltr">{f.clock("09:41")}</span>
                   <span className="flex items-center gap-[2px]">
                     <span className="h-[3px] w-[3px] rounded-full bg-ink-3" />
                     <span className="h-[4px] w-[3px] rounded-[1px] bg-ink-3" />
@@ -76,7 +78,7 @@ export function HeroDevices() {
       </div>
 
       <p className="sr-only">
-        Illustration of the RIVET owner dashboard and the member app&rsquo;s entry QR, drawn from the product with demonstration values and no customer data.
+        <span lang={locale}>{t("publicCompletion.preview.alt")}</span>
       </p>
     </>
   );

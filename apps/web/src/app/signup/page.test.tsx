@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import GymApplicationPage from "./page";
 
@@ -23,6 +24,11 @@ vi.mock("@/components/public/public-document-page", () => ({ PublicDocumentPage:
 vi.mock("@/lib/api/client", () => ({
   getApi: () => ({ submitGymApplication: state.submitGymApplication }),
 }));
+
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")}>{locale === "ar" ? "Use English" : "استخدم العربية"}</button>;
+}
 
 describe("gym application pricing selection", () => {
   beforeEach(() => {
@@ -86,7 +92,59 @@ describe("gym application pricing selection", () => {
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
     await user.click(screen.getByRole("button", { name: /Send gym application/ }));
 
-    expect(await screen.findByText("Enter the gym's address.")).toBeInTheDocument();
+    expect(await screen.findByText(/Enter the gym.s address\./)).toBeInTheDocument();
     expect(state.submitGymApplication).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Arabic form, plan query, and draft across a locale switch", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="ar"><LocaleSwitch /><GymApplicationPage /></LocaleProvider>);
+
+    expect(await screen.findByRole("heading", { name: "تقديم طلب للنادي الرياضي." })).toBeInTheDocument();
+    const owner = screen.getByPlaceholderText("Omar Khalil");
+    await user.type(owner, "ليان أحمد");
+    expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("tab", { name: /سنويًا/ })).toHaveAttribute("aria-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: "Use English" }));
+    expect(await screen.findByRole("heading", { name: "Send a gym application." })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Omar Khalil")).toHaveValue("ليان أحمد");
+    expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
+    expect(window.location.search).toBe("?plan=Enterprise&interval=annual");
+  });
+
+  it("validates in Arabic and submits Arabic phone digits with the captured locale", async () => {
+    const user = userEvent.setup();
+    state.submitGymApplication.mockResolvedValue({
+      applicationId: "application-arabic",
+      status: "pending",
+      notificationStatus: "sent",
+      submittedAt: "2026-08-23T00:00:00.000Z",
+      duplicate: false,
+    });
+    render(<LocaleProvider initialLocale="ar"><GymApplicationPage /></LocaleProvider>);
+
+    expect(await screen.findByRole("heading", { name: "تقديم طلب للنادي الرياضي." })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /إرسال طلب/ }));
+    expect(await screen.findByText("أدخل اسم المالك.")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Omar Khalil"), "ليان أحمد");
+    await user.type(screen.getByPlaceholderText("owner@example.com"), "lina@example.test");
+    await user.type(screen.getByPlaceholderText("أدخل رقم هاتفك"), "٠٧٩١٢٣٤٥٦٧");
+    await user.type(screen.getByPlaceholderText("Northstar Fitness"), "نادي النجمة");
+    await user.type(screen.getByPlaceholderText("الشارع، المنطقة، المدينة"), "شارع الملكة رانيا، عمّان");
+    await user.click(screen.getByRole("button", { name: /إرسال طلب/ }));
+
+    expect(state.submitGymApplication).toHaveBeenCalledWith(expect.objectContaining({
+      ownerName: "ليان أحمد",
+      email: "lina@example.test",
+      contactNumber: "0791234567",
+      gymName: "نادي النجمة",
+      gymAddress: "شارع الملكة رانيا، عمّان",
+      plan: "Enterprise",
+      billingInterval: "annual",
+      language: "ar",
+    }));
   });
 });
