@@ -2,6 +2,20 @@
 
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 
+## 3 October 2026 — Arabic implementation candidate, local verification
+
+The complete Arabic pass is integrated on `codex/complete-arabic-support` in the attached isolated worktree. This is an implementation candidate; production remains on the previously released runtime below. No production deployment or real outbound message has been performed for Arabic verification.
+
+- Current source coverage includes all 75 pages plus the offline route, staff/member/public/platform/auth surfaces, shared errors and system events, CRM recipient-language drafts, outgoing communications, Unicode PDFs and human CSV exports. See [the route ledger](docs/arabic/COVERAGE.md) and [execution record](docs/arabic/EXECUTION.md) for evidence and explicit original-content exceptions.
+- UI preference is an account setting separate from communication preference and gym default. First-render locale, cookie/account boundaries, offline retry, language-switch drafts, Arabic/Persian input normalization and tenant-local date/money display have focused tests. Stored amounts, canonical IDs and historical records are retained.
+- English and Arabic agreement versions remain distinct; signed documents keep their recorded version. The shared Unicode renderer supports shaping, bidi, wrapping and embedded fonts. Browser downloads and independent-viewer PDF checks are part of final verification.
+- All 247 locked decisions are mapped to used labels or explicit rules/context evidence. Current absent workflows are documented instead of being invented for a vocabulary label. Original revision 607, both approvals, v1 checksum and the frozen frontend handoff remain unchanged.
+- Live WhatsApp remains gated on current Meta approval and inbound opt-out handling. The unreleased footer asks recipients to contact the gym; stored rendered history stays unchanged. Staff/lead messages use the gym default where no separate preference exists. Auth-provider/cross-host/staging verification and founder rendered review remain release gates.
+
+Local validation: 1,997 unit/component/backend tests in 318 files and 14 CLI/environment guards passed. Web and Convex typechecks, zero-warning lint/secret-output audit, the Arabic-enabled production preview build, decision lock and whitespace checks passed. All 36 Arabic browser checks passed (31 route captures plus five workflow/document invariants). The full credential-free regression run passed 173/175; both failed journeys passed separate focused reruns after restoring baseline English copy and correcting the billing-preview locator. No screenshot baselines or tolerances were changed. Responsive fixes cover the 360px gym record and 390px receipt/invoice email frames.
+
+Recheck with `python3 docs/arabic/verify-lock.py`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, and `pnpm --dir apps/web test --maxWorkers=2`. Exact preview-build/browser commands and artifact locations are in `docs/arabic/EXECUTION.md` and `docs/arabic/parallel/browser-{regression,rtl}.md`. Start with this section, `docs/arabic/COVERAGE.md`, `docs/arabic/decision-coverage.json`, and `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
+
 ## 2 October 2026 — Arabic integration in progress
 
 Integrating `901150a` (approved Arabic history), `7cd509e` (current main) and `9fbd53c` (newer local foundation) in `codex/complete-arabic-support`. The saved revision-607 standard passes checksum and 247-agreement verification. Work packages A–H remain in progress; no deployment or full-support claim is made. The foundation wording below is historical draft evidence and is superseded by `docs/arabic/STANDARD.md`.

@@ -1,6 +1,6 @@
 # Arabic implementation execution record
 
-Work continues on `codex/complete-arabic-support`. This document records progress, not release approval. Production has not been deployed and no real messages have been sent.
+The implementation is integrated on `codex/complete-arabic-support`. This document records implementation and verification, not release approval. Production has not been deployed and no real messages have been sent.
 
 ## Integrated history
 
@@ -14,14 +14,14 @@ Work continues on `codex/complete-arabic-support`. This document records progres
 
 | Package | State | Evidence and remaining work |
 | --- | --- | --- |
-| A integration | In progress | Both histories merged; original regression suite passed after fixing JSX whitespace and catalog audit expectations. Current source inventory: 464 files, 14,099 candidates. Route ledger and final build remain. |
-| B foundation | In progress | Account-scoped UI preference, server-first resolution, cross-host presentation cookies, offline retry, account-race guard, pure translation/formatters, Latin input/search normalization. Browser SSR/auth handoff and complete auth-provider wording remain. |
-| C staff | In progress | Existing namespaces aligned to 82 decisions across 168 keys; matching display labels connected across current UI. Substantial untranslated prose, dynamic labels and dialogs remain. |
-| D other surfaces | In progress | Current public/member/platform business behavior retained; partial catalog reuse. Full translation and metadata/assets remain. |
-| E server/messages | In progress | Domain errors and import/class explanations carry stable descriptors; original evidence remains unchanged. Outgoing templates, notifications and timeline presentation remain. |
-| F documents | In progress | Shared Unicode renderer prototype passes shaping/multipage tests and independent rendering/extraction. Invoice builder now supports explicit locale. Agreement versioning, remaining documents and full attachment/download verification remain. |
-| G RTL/accessibility | Pending | Existing logical layout/font and RTL audit preserved. Full mobile/desktop/zoom/a11y verification remains. |
-| H closure | Pending | Decision coverage includes all 247 with honest pending states. Full ledger, final tests/build/browser/staging and founder rendered review remain. |
+| A integration | Integrated | Current main, Arabic history and local foundation are preserved; final branch is isolated from the original checkout. Frozen historical handoff and v1 review evidence are unchanged. |
+| B foundation | Implemented; external acceptance open | Account-scoped UI preference, server-first locale, scoped cross-host presentation cookies, offline retry, account-race guard, format/input/search and typed plurals have local tests. Real Clerk/cross-host staging checks remain external gates. |
+| C staff | Implemented; local checks passed | Staff routes, dialogs, statuses, permissions, errors, data projections and human exports are covered by catalogs and focused workflow tests. The expanded RTL audit and regression suite provide final local evidence below. |
+| D other surfaces | Implemented; local checks passed | Member, public, platform and auth routes, public metadata/documents and application flows use current catalogs. Original review evidence and production-excluded development samples are explicit exceptions. |
+| E server/messages | Implemented; provider acceptance open | Static/dynamic errors, optional notification/timeline descriptors, recipient-language templates and frozen retries preserve original values. Current Meta approval and inbound opt-out handling remain live-delivery gates. |
+| F documents | Implemented; local checks passed | Shared Unicode shaping/bidi/fonts cover browser and server PDFs, frozen agreement versions, receipts/invoices and legal downloads. Human CSV jobs retain file language and numeric contracts. Independent PDF viewers and browser download evidence are recorded below. |
+| G RTL/accessibility | Local checks passed; user acceptance open | Logical layouts, bidi isolation, portals, keyboard language switching and viewport/reflow checks are exercised locally. A full assistive-technology/user acceptance review is not implied by automated checks. |
+| H closure | Local evidence consolidated; external gates open | All 247 decisions have keys or explicit tested-rule/context evidence; current route inventory is 75 pages plus offline. Root records exact integrated gate results and external limits below. No production release is authorized or claimed. |
 
 ## Locale policy
 
@@ -39,7 +39,7 @@ Font sources, SHA-256 hashes and OFL license are checked in under `apps/web/scri
 
 The prototype generated `/private/tmp/rivet-arabic-pdf/arabic-receipt-agreement.pdf` with 65 table rows, mixed names/references, negative amounts and a signature section over 3 pages. Pages 1 and 3 were visually inspected after Poppler rendering. PDFium extraction preserves the original Arabic strings, mixed references and signs. Poppler's text extractor emits directional control characters and visual-order Arabic; extraction tests use PDFium for logical text. This prototype is evidence for the renderer, not certification of every business document.
 
-## Validation record
+## Early integration validation checkpoint
 
 - Locked v1 verification passed; the export remains catalog `2026-09-30-v1`, revision `607`, with 247 agreed decisions and both approvals.
 - Integrated baseline: typecheck and lint passed; 1,735 regression tests passed plus 15 focused tests after correcting three integration expectations/spacing issues.
@@ -209,3 +209,50 @@ All 59 navigation catalogue entries have Arabic titles/descriptions and Arabic/E
 Distinct timeline anchors restore direct follow-up evidence links. This does not modify event records.
 
 Validation: 23 navigation, real palette, member timeline and backend tests pass, including normalized Arabic queries, unchanged source contracts, explicit module/permission exclusions, tenant isolation, Arabic phone search and per-user recent metadata. Focused lint and the decision lock pass. A mid-edit whole-web typecheck reported only other parallel packets' in-progress errors; those owners received the log and will resolve them before final integration gates.
+
+
+## Parallel integration, communications and human exports — 3 October 2026
+
+Six explicitly requested Luna Max packets and Claude's isolated communication packet are integrated in the same worktree. Their bounded reports live in `docs/arabic/parallel/`; packet test counts overlap and must not be added. The current route ledger covers all 75 page files plus the offline route handler. Original review material, authored text, the development-only design gallery and immutable historical documents have explicit scope treatment.
+
+UI and recipient preferences stay separate. Member summaries carry the stored recipient preference; CRM handoffs use it, then the canonical gym default, then English. Lead records and gym staff have no separate message-language setting, so their existing gym default is used. Switching a staff UI language preserves edited handoff drafts and never silently chooses the recipient language. New system notifications and timeline events carry optional typed descriptors in both Convex and the mock adapter. Original text remains stored alongside descriptors, and unknown or authored history stays verbatim. The presenter validates keys, parameter types, dates and bounded nested messages before displaying them.
+
+Outgoing email and WhatsApp copy resolves recipient language and freezes rendered content on the existing delivery boundary. Email bodies and attachment language are stored together. WhatsApp substitutions are frozen at the first lease, then reused on retries; they are not all resolved at enqueue time. Current catalogue 1.1 is an internal version, not Meta approval. The unreleased opt-out footer asks the recipient to contact the gym directly; it no longer promises that replying STOP works. Previously rendered bodies remain unchanged. Live sending still requires the current Meta-approved templates and an inbound opt-out handler; no such handler was introduced by localization.
+
+Human staff CSV downloads and personal archives accept an explicit presentation locale. All seven staff datasets translate headings, known labels/statuses, dates, scope/filter explanations and booleans; references, names, notes, exact decimal amounts, ISO currency codes and formula escaping remain intact. Staff jobs freeze their file language and bytes across retries and later UI-language changes. Legacy jobs default to English. Personal archives use known descriptors for new generated event text without rewriting original records. Machine import headers and unknown source/audit values remain canonical.
+
+The browser production build exposed a difference between fontkit's Node and browser exports. The shared PDF renderer now uses its default API in both runtimes. Arabic terms/privacy downloads were generated again and visually inspected with both Poppler and PDFium: joined glyphs, RTL layout, mixed Latin references, tables and multipage flow are intact. PDFium extraction finds the exact approved titles and no replacement glyphs. pypdf extraction emits visual-order Arabic and is not used as a logical-text acceptance check. The browser download journey separately exercises the actual generated file.
+
+Final whole-repository and browser gates are recorded below after the parallel source packets stabilize. This checkpoint is implementation evidence, not production rollout or provider acceptance.
+
+
+## Integrated local acceptance — 3 October 2026
+
+Final runtime/source checkpoint: `f9f6f05` (documentation follows separately). The original Arabic, current-main and local-foundation tips are all ancestors of this branch; `FRONTEND_HANDOFF.md` is unchanged from current main.
+
+The final full unit run passed **1,997 tests across 318 files**, plus **14 CLI/environment safety guards**. Both TypeScript targets, zero-warning ESLint/secret-output audit, locked-v1 verification and `git diff --check` passed. The approved mock production build completed with all current routes and the Arabic flag enabled. Later baseline-English corrections passed eight application component tests and 29 gym-directory/detail/billing tests, plus the rebuilt production bundle.
+
+The credential-free browser regression passed **173 of 175** tests on the final production preview. Its two failures were English-copy/locator regressions: the billing preview's composed text and a platform-filter journey whose original Pending label and terminal period had drifted during catalog extraction. Both failed journeys passed separate focused reruns after restoring baseline English copy and correcting the billing-preview locator. The narrow gym-detail grid fix passed at 360px; settings passed at all six tested widths. Original screenshot baselines and tolerances are unchanged, including the CRM phone screenshot.
+
+The separate Arabic run passed **36 of 36**: 31 staff route captures and five real browser invariants covering server-first locale, keyboard language switching, an unsent draft, persistence/reload, member and receipt screens at 390px, platform desktop/tablet, and the actual Arabic terms PDF download. Captures were inspected for joining, bidi and wrapping. The 720px viewport is a 200%-equivalent reflow test, not an actual OS/browser zoom or screen-reader certification. Reports: `parallel/browser-rtl.md`, `parallel/browser-regression.md`, `parallel/browser-platform.md`, and `parallel/browser-workflows.md`.
+
+The final browser-downloaded terms file has four pages. Poppler and PDFium renderings were inspected. PDFium extraction finds the exact Arabic body heading `شروط الاستخدام`, the PDF metadata title is exactly `RIVET شروط الاستخدام`, and there are no replacement characters. The earlier receipt, invoice, privacy and signed-agreement renderer/attachment tests remain part of the passing full suite and recorded independent-viewer evidence. Fresh Arabic and English receipt/invoice HTML previews fit 390px and retain the 600px desktop frame. All external requests were blocked; this is local HTML evidence, not inbox-client delivery certification (`parallel/email-preview.md`).
+
+All 247 approved IDs have real catalog mappings or explicit rule/context evidence. The map retains its evidence limits: 233 implemented source mappings await rendered release acceptance; 14 are verified rules/context checks, including 12 absent-workflow contexts and two style rules. There are no fabricated keys, founder votes or approval changes. The route inventory is 75 page files plus the offline handler. The known residual accounting-reason and breadcrumb findings have been resolved; original authored data, signed history, unknown diagnostics and the bilingual review room stay intact.
+
+Reproduction from the integration root:
+
+```sh
+python3 docs/arabic/verify-lock.py
+pnpm --dir apps/web typecheck
+pnpm --dir apps/web exec tsc --noEmit --incremental false -p convex/tsconfig.json
+pnpm lint
+pnpm --dir apps/web test --maxWorkers=2
+NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_PUBLIC_RIVET_ARABIC=1 RIVET_DESIGN_PREVIEW=1 NEXT_DIST_DIR=.next-arabic-final pnpm --dir apps/web build
+PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_DIST_DIR=.next-arabic-final PLAYWRIGHT_PORT=3126 PLAYWRIGHT_WORKERS=1 pnpm --dir apps/web exec playwright test e2e/arabic-browser-verification.spec.ts e2e/rtl-audit.spec.ts
+git diff --check
+```
+
+The 27-spec regression command is recorded in `parallel/browser-regression.md`. Unit/build/typecheck/lint logs use `/private/tmp/rivet-arabic-acceptance-*.log`. Browser evidence is under `/private/tmp/rivet-playwright-results-regression-final`, `/private/tmp/rivet-playwright-results-rtl-final-final` and `/private/tmp/rivet-arabic-rtl-evidence`; fresh email previews are under `/private/tmp/rivet-arabic-email-preview/fresh`.
+
+**External acceptance remains open:** credentialed isolated Clerk/Convex staging, real account and cross-host persistence, provider-owned verification/CAPTCHA language, actual offline installation, assistive-technology/actual-zoom acceptance, and representative founder rendered review. Credential-gated `staging-*`/`convex-*` browser suites and target-dependent Convex code generation were not run. WhatsApp 1.1 still needs Meta re-approval, and the existing inbound opt-out release blocker is not implemented by localization. The footer now requests direct contact with the gym; it does not promise a working STOP handler. Staff and leads still use the gym default where no recipient preference exists. No production rollout or real outbound message was performed. Follow the backend-first and rollback instructions in the release runbook only after release authorization.
