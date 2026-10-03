@@ -143,7 +143,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
               <p className="mt-1 text-[13px] text-ink-2">
                 <bdi dir="ltr">{detail.controls.plan}</bdi>
                 {detail.subscription.billingInterval?.state === "available" ? ` · ${billingIntervalLabel(detail.subscription.billingInterval.value, t)}` : ""}
-                {detail.subscription.currentPeriodEndsAt.state === "available" ? ` · ${t("platformFinance.subscriptions.paidThrough", { date: f.date(detail.subscription.currentPeriodEndsAt.value) })}` : ""}
+                {detail.subscription.currentPeriodEndsAt.state === "available" ? ` · ${t("platformFinance.subscriptions.paidThrough")} ${f.date(detail.subscription.currentPeriodEndsAt.value)}` : ""}
               </p>
               <p className="mt-0.5 text-[12.5px] text-ink-3">{detail.joinedAt.state === "available" ? t("platformFinance.detail.customerSince", { date: f.date(detail.joinedAt.value) }) : t("platformFinance.detail.startDateNotRecorded")}</p>
             </div>

@@ -281,9 +281,22 @@ test("fresh visitors can choose Arabic on public, login and platform surfaces", 
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("كل تفاصيل ناديك و مشتركينه في مكان واحد");
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => Array.from(document.fonts).some(face =>
+    face.family.includes("Plex") && face.family.includes("Arabic") && !face.family.includes("Fallback") && face.status === "loaded",
+  ))).toBe(true);
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await page.goto("/login/admin");
+  await page.evaluate(() => document.fonts.ready);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("DOM.enable");
+  await cdp.send("CSS.enable");
+  const { root } = await cdp.send("DOM.getDocument");
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "h1" });
+  const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+  expect(fonts.some(font => font.familyName.includes("Plex") && font.familyName.includes("Arabic") && font.glyphCount > 0)).toBe(true);
+  await cdp.detach();
   await page.getByTestId("language-switch").click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await page.getByTestId("admin-continue").click();

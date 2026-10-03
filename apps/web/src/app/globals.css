@@ -320,14 +320,16 @@ html.landing-motion-ready [data-experience-notice] {
   /*
     Arabic: keep Manrope for Latin letters and digits (names, phones, amounts,
     receipt numbers) and let IBM Plex Sans Arabic, which has complete shaping,
-    supply every Arabic glyph. Overriding the font variables here reaches
+    supply every Arabic glyph. The primary Latin face must precede Arabic,
+    but its generated Arial fallback must come after it: Arial also contains
+    Arabic and would otherwise prevent Plex from loading. Overriding the font variables here reaches
     every utility that reads --font-sans / --font-display, not just body.
   */
   html.rtl-font {
-    --font-sans: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
-    --font-display: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
-    --font-marketing: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
-    --font-marketing-display: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
+    --font-sans: var(--font-manrope-primary), var(--font-plex-arabic), var(--font-manrope), "Segoe UI", system-ui, sans-serif;
+    --font-display: var(--font-manrope-primary), var(--font-plex-arabic), var(--font-manrope), "Segoe UI", system-ui, sans-serif;
+    --font-marketing: var(--font-manrope-primary), var(--font-plex-arabic), var(--font-manrope), system-ui, sans-serif;
+    --font-marketing-display: var(--font-manrope-primary), var(--font-plex-arabic), var(--font-manrope), system-ui, sans-serif;
   }
 
   .rtl-font body,

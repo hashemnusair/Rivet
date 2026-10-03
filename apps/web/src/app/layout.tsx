@@ -111,7 +111,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const locale = preference.locale;
   const fontClasses = `${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`;
   return (
-    <html lang={locale} dir={dirFor(locale)} data-scroll-behavior="smooth" className={locale === "ar" ? `${fontClasses} rtl-font` : fontClasses}>
+    <html lang={locale} dir={dirFor(locale)} style={{ "--font-manrope-primary": manrope.style.fontFamily.split(",")[0] } as React.CSSProperties} data-scroll-behavior="smooth" className={locale === "ar" ? `${fontClasses} rtl-font` : fontClasses}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         {PRE_PAINT_SIGNED_IN_GUARD ? <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} /> : null}
         <LocaleProvider initialLocale={locale} initialOwner={preference.owner} initialPending={preference.pending}>
