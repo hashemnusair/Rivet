@@ -85,9 +85,9 @@ export function PublicFooter() {
         <nav aria-label={t("publicCompletion.footer.contact")}>
           <p className="text-[12px] font-medium text-night-ink-3">{t("publicCompletion.footer.contact")}</p>
           <div className="mt-4 grid gap-3 text-[13px]">
-            <a href={RIVET_CONTACT.phoneHref} className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
+            <a href={RIVET_CONTACT.phoneHref} className="justify-self-start text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>
             <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink">{t("publicCompletion.footer.whatsappLink")}</a>
-            <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
+            <a href={RIVET_CONTACT.instagramHref} target="_blank" rel="noreferrer" className="justify-self-start text-night-ink-2 transition-colors hover:text-night-ink" dir="ltr">{RIVET_CONTACT.instagramHandle}</a>
             <span className="text-night-ink-3">{t("publicCompletion.header.city")}</span>
           </div>
         </nav>

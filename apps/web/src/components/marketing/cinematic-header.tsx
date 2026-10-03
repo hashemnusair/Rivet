@@ -292,7 +292,7 @@ export function CinematicHeader({
 
   return (
     <>
-      <header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
+      <header data-landing-header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
         <Link
           href={onLanding ? "#top" : publicHref}
           className={styles.brand}

@@ -84,8 +84,9 @@ export default function LandingPage() {
         <section
           id="top"
           data-landing-hero
+          data-landing-snap="start"
           data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer1} ${styles.snapStart} relative overflow-hidden bg-paper lg:min-h-[100svh]`}
+          className={`${styles.coverSheet} ${styles.layer1} relative overflow-hidden bg-paper lg:min-h-[100svh]`}
         >
           {/* Ruled backdrop, faded out at the edges so it never competes with
               the headline. Texture only — no painted colour. */}
@@ -180,7 +181,7 @@ export default function LandingPage() {
         {/* ---------------------------------- Accountability, then where it is built
             The region sheet slides over the pinned accountability sheet; the pair
             shares one wrapper so the pin releases once the region has passed. */}
-        <div className={cn(styles.coverPair, styles.snapStart)}>
+        <div data-landing-snap="start" className={styles.coverPair}>
           <AccountabilityLedger />
           <RegionProof />
         </div>
@@ -188,9 +189,10 @@ export default function LandingPage() {
         {/* ------------------------------------------------------------- Members */}
         <section
           id="member"
+          data-landing-snap="start"
           data-landing-theme="paper"
           aria-labelledby="member-title"
-          className={`${styles.coverSheet} ${styles.layer7} ${styles.memberSection} ${styles.snapStart} bg-paper px-5 sm:px-8 lg:px-12`}
+          className={`${styles.coverSheet} ${styles.layer7} ${styles.memberSection} bg-paper px-5 sm:px-8 lg:px-12`}
         >
           <div className="mx-auto max-w-[1344px]">
             {/* The text and the Entry QR card start on the same line. Centring
@@ -316,9 +318,10 @@ export default function LandingPage() {
         {/* ------------------------------------------------------------- Pricing */}
         <section
           id="pricing"
+          data-landing-snap="start"
           data-landing-theme="paper"
           aria-labelledby="pricing-title"
-          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer8} ${styles.snapStart} bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
+          className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer8} bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
             <StoryMarker label={t("marketing.pricing.eyebrow")} />
@@ -430,9 +433,10 @@ export default function LandingPage() {
         <SheetUnder tone="sunken" />
         <section
           id="contact"
+          data-landing-snap="start"
           data-landing-theme="dark"
           aria-labelledby="contact-title"
-          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer9} ${styles.snapStart} night-surface relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
+          className={`${styles.coverSheet} ${styles.inkSheet} ${styles.layer9} night-surface relative overflow-hidden bg-night px-5 py-20 text-night-ink sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="pointer-events-none absolute inset-0 opacity-[0.06]" aria-hidden>
             <div className="absolute inset-y-0 start-[68%] w-px bg-night-ink" />
@@ -475,7 +479,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <div data-landing-theme="dark" className={styles.snapEnd}>
+      <div data-landing-theme="dark" data-landing-snap="end">
         <PublicFooter />
       </div>
       </div>

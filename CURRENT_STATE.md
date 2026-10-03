@@ -12,6 +12,8 @@ The live Arabic landing page diverged from the English one. Fixed on `fix/arabic
 
 Verified with desktop and 390px captures of every section in both languages and no horizontal overflow; 102 landing and i18n tests pass. The Arabic browser spec could not run locally because the shared `node_modules` predates `@pdf-lib/fontkit`; CI is the gate.
 
+Follow-up: CSS `scroll-snap-type: y proximity` is replaced by a JS settle (`components/marketing/landing-settle.ts`, wired in `landing-motion.tsx`; sections opt in with `data-landing-snap`). After a scroll fully stops, a section top within ~12% of the viewport (40–110px) in the direction of travel, or 28px against it, eases under the bar over 280–560ms; wheel, touch, pointer or key input cancels it, and reduced motion or the open menu skips it. Mobile Arabic footer contact links now align to the reading edge.
+
 ## 3 October 2026 — Arabic audit and founder-testing release
 
 Hashem authorized auditing Elias's completed branch, repairing regressions and merging to main for founder testing. Source `4b104f5` on `codex/complete-arabic-support` preserves main `7cd509e` and both Arabic histories. See [the release audit](docs/arabic/AUDIT_2026-10-03.md) for scope, findings, commands and limits.

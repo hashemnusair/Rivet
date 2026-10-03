@@ -605,18 +605,6 @@
 .sheetUnderSunken { background: #edece5; }
 .sheetUnderStack { background: #1c1b16; }
 
-/* Sections are snap points, not stops: one that comes to rest near the bar
-   is pulled in under it, a fling can pass several, and the viewport may sit
-   between two of them. The snap type itself is set on the document in
-   globals.css (proximity, not mandatory), only while the landing is mounted. */
-.snapStart {
-  scroll-snap-align: start;
-}
-
-.snapEnd {
-  scroll-snap-align: end;
-}
-
 .layer1 { z-index: 1; }
 .layer2 { z-index: 2; }
 .layer3 { z-index: 3; }

@@ -403,7 +403,7 @@ export function StackStory() {
   const ringOuter = pin.ringRadius + pin.ringStroke / 2;
 
   return (
-    <section id="product" data-landing-theme="dark" className={cn(styles.stackStory, styles.snapStart)} aria-labelledby="stack-title">
+    <section id="product" data-landing-theme="dark" data-landing-snap="start" className={styles.stackStory} aria-labelledby="stack-title">
       <div ref={gridRef} className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
         <div className={styles.stackHeader}>
           <StoryMarker label={t("publicCompletion.header.stack")} dark />
@@ -590,7 +590,8 @@ export function OperationalDay() {
       id="day"
       data-landing-theme="paper"
       aria-labelledby="day-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer4, styles.daySection, styles.snapStart)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer4, styles.daySection)}
+      data-landing-snap="start"
     >
       <div className={styles.dayGrid}>
         <aside className={styles.dayAside}>
@@ -690,7 +691,7 @@ export function AccountabilityLedger() {
                   <p>
                     {id === "corrected" ? (
                       <>
-                        {rows.corrected.reason} <s>{rows.corrected.before}</s> {locale === "ar" ? "←" : "→"} <strong>{rows.corrected.after}</strong>
+                        {rows.corrected.reason} <s className="whitespace-nowrap">{rows.corrected.before}</s> {locale === "ar" ? "←" : "→"} <strong className="whitespace-nowrap">{rows.corrected.after}</strong>
                       </>
                     ) : id === "recorded" ? rows.recorded.body : rows.reviewed.body}
                     <span className={styles.trailMeta}>{row.meta}</span>
@@ -720,7 +721,8 @@ export function RegionProof() {
       id="region"
       data-landing-theme="paper"
       aria-labelledby="region-title"
-      className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection, styles.snapStart)}
+      className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection)}
+      data-landing-snap="start"
     >
       <div className={styles.regionInner}>
         <StoryMarker label={t("publicCompletion.story.region.eyebrow")} />
