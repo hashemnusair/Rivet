@@ -33,8 +33,14 @@ async function changeSubscriptionFromBilling(page: Page, plan: SubscriptionPlan,
   }
   await dialog.getByRole("button", { name: /Review/ }).click();
   if (options.assertBillingPreview) {
-    await expect(dialog.getByText("What happens when you save", { exact: true })).toBeVisible();
-    await expect(dialog.getByText(/An invoice for JOD .* is issued today\./)).toBeVisible();
+    const preview = dialog.getByRole("note", { name: "Billing preview" });
+    await expect(preview.getByText("What happens when you save", { exact: true })).toBeVisible();
+    const invoiceLine = preview.getByRole("list").getByRole("listitem").first();
+    await expect(invoiceLine).toBeVisible();
+    await expect(invoiceLine).toContainText("An invoice for");
+    await expect(invoiceLine).toContainText("JOD");
+    await expect(invoiceLine).toContainText(plan);
+    await expect(invoiceLine).toContainText("is issued today.");
   }
   await dialog.getByLabel("Reason for this change").fill(reason);
   await dialog.getByRole("button", { name: /Confirm & bill/ }).click();

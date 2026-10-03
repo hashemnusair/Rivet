@@ -121,7 +121,7 @@ export default function PlatformGymsPage() {
       </PlatformPanel>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-3" aria-live="polite">
-        <p>{t("platformFinance.gyms.filterResults", { count: gyms.length })}{hasFilters ? t("platformFinance.gyms.withCurrentFilters") : ""}</p>
+        <p>{t("platformFinance.gyms.filterResults", { count: gyms.length })}{hasFilters ? t("platformFinance.gyms.withCurrentFilters") : ""}.</p>
         {hasFilters ? <Button variant="link" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button> : null}
       </div>
 

@@ -245,6 +245,7 @@ test("platform search reaches a gym record by keyboard and billing opens on that
   await expect(page.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=forge-fitness");
 
   // Reason-gated listing and archive controls stay disabled until a reason is typed.
+  await page.getByRole("tab", { name: "Settings" }).click();
   await page.getByRole("switch", { name: "Public directory listing" }).click();
   const saveListing = page.getByRole("button", { name: "Save listing" });
   await expect(saveListing).toBeDisabled();

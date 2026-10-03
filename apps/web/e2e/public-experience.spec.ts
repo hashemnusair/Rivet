@@ -340,6 +340,7 @@ test.describe("RIVET platform administration", () => {
     // flips to suspended.
     await forgeRow.getByRole("link", { name: "Forge Fitness Club", exact: true }).click();
     await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
+    await page.getByRole("tab", { name: "Settings" }).click();
     await expect(page.getByText(/Updated Forge Fitness Club subscription: active → suspended/i)).toBeVisible();
     await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toBeVisible();
 

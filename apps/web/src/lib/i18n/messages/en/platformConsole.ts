@@ -43,7 +43,7 @@ export const platformConsole = {
       cancelled: "Cancelled",
     },
     application: {
-      pending: "Awaiting review",
+      pending: "Pending",
       underReview: "Under review",
       approved: "Approved",
       rejected: "Rejected",

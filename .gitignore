@@ -4,6 +4,9 @@ node_modules/
 
 # Next.js build output
 .next/
+# Isolated verification output (custom Next distDir).
+.next-arabic-build/
+.next-arabic-final/
 out/
 build/
 
@@ -36,3 +39,4 @@ Thumbs.db
 # output directories. Keep stable framework references in next-types.d.ts and
 # ignore the generated file so normal verification never dirties the worktree.
 apps/web/next-env.d.ts
+.next-playwright-staff*/

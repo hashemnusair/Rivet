@@ -59,7 +59,10 @@ test("Arabic review supports keyboard choices, filtering, saved states and mobil
   expect(download.suggestedFilename()).toMatch(/rivet-arabic-review.*json/);
   const prompt = await page.request.get("/arabic-implementation-prompt.txt");
   expect(prompt.status()).toBe(200);
-  expect(await prompt.text()).toContain("readyForImplementation");
+  const promptText = await prompt.text();
+  expect(promptText).toContain("docs/arabic/approved-decisions.v1.json");
+  expect(promptText).toContain("revision 607");
+  expect(promptText).toContain("all 247 decisions agreed");
   await page.getByRole("button", { name: "Switch name" }).click();
   await page.getByRole("button", { name: "Elias", exact: true }).click();
   await expect(page.getByText("Reviewing as Elias")).toBeVisible();

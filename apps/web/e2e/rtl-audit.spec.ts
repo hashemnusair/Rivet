@@ -17,9 +17,29 @@ const SCREENS: Array<{ name: string; path: string; persona: Persona }> = [
   { name: "members", path: "/members", persona: "Owner" },
   { name: "payments", path: "/payments", persona: "Owner" },
   { name: "shifts", path: "/payments/shifts", persona: "Owner" },
+  { name: "classes", path: "/classes", persona: "Owner" },
+  { name: "memberships", path: "/memberships", persona: "Owner" },
+  { name: "plans", path: "/plans", persona: "Owner" },
+  { name: "checkout", path: "/checkout", persona: "Owner" },
+  { name: "operations", path: "/operations", persona: "Owner" },
+  { name: "operations-payables", path: "/operations/payables", persona: "Owner" },
+  { name: "maintenance", path: "/maintenance", persona: "Owner" },
+  { name: "finance-ledger", path: "/finance", persona: "Owner" },
+  { name: "finance-controls", path: "/finance/controls", persona: "Owner" },
+  { name: "finance-balance-sheet", path: "/finance/balance-sheet", persona: "Owner" },
+  { name: "finance-cash-flow", path: "/finance/cash-flow", persona: "Owner" },
+  { name: "finance-income-statement", path: "/finance/income-statement", persona: "Owner" },
+  { name: "reports", path: "/reports", persona: "Owner" },
+  { name: "reports-statements", path: "/reports/statements", persona: "Owner" },
+  { name: "members-import", path: "/members/import", persona: "Owner" },
+  { name: "members-duplicates", path: "/members/duplicates", persona: "Owner" },
   { name: "crm-pipeline", path: "/crm/pipeline", persona: "Sales" },
   { name: "crm-queues", path: "/crm/queues", persona: "Sales" },
   { name: "audit", path: "/audit", persona: "Owner" },
+  { name: "checklists", path: "/checklists", persona: "Owner" },
+  { name: "automations", path: "/automations", persona: "Owner" },
+  { name: "support", path: "/support", persona: "Owner" },
+  { name: "exports", path: "/exports", persona: "Owner" },
   { name: "settings", path: "/settings", persona: "Owner" },
   { name: "pt", path: "/pt", persona: "Owner" },
   { name: "reception", path: "/reception", persona: "Reception" },
@@ -29,18 +49,25 @@ const SCREENS: Array<{ name: string; path: string; persona: Persona }> = [
 type Persona = "Owner" | "Manager" | "Sales" | "Reception";
 
 async function signIn(page: Page, persona: Persona) {
-  await page.goto("/login/gym");
-  await page.getByRole("radio", { name: new RegExp(persona, "i") }).click();
-  await page.getByRole("button", { name: /^Open .+ workspace$/i }).click();
+  // Clerk's demo browser script may keep the `load` event open while the
+  // mock persona chooser is already usable, so wait for the DOM commit and
+  // then for the actual control we interact with.
+  await page.goto("/login/gym", { waitUntil: "commit" });
+  await expect(page.getByRole("radio").first()).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  const roleIndex: Record<Persona, number> = { Owner: 0, Manager: 1, Sales: 2, Reception: 3 };
+  await page.getByRole("radio").nth(roleIndex[persona]).click();
+  await page.getByTestId("sign-in-button").click();
   await expect(page).not.toHaveURL(/\/login/);
 }
 
-/** Set the language the same way the switcher does, before the app paints. */
+/** Seed a pending user choice before navigation so the server renders RTL on first paint. */
 async function useArabic(page: Page) {
-  await page.addInitScript(() => {
-    window.localStorage.setItem("rivet.locale", "ar");
-    document.cookie = "rivet_locale=ar; path=/; max-age=31536000; samesite=lax";
-  });
+  const preference = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "rtl-audit-ar" }));
+  await page.context().addCookies([
+    { name: "rivet_locale", value: "ar", domain: "localhost", path: "/" },
+    { name: "rivet_ui_locale_v1", value: preference, domain: "localhost", path: "/" },
+  ]);
 }
 
 test.describe("Arabic layout audit", () => {
