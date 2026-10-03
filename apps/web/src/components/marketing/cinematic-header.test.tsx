@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { CinematicHeader, homeHref } from "./cinematic-header";
 
 const state = vi.hoisted(() => ({ viewer: { status: "signed-out" } as Record<string, unknown> }));
@@ -24,6 +25,25 @@ describe("CinematicHeader", () => {
     expect(within(menu).getByRole("link", { name: /Pricing/ })).toHaveAttribute("href", "#pricing");
     expect(within(menu).getByRole("link", { name: /Overview/ })).toHaveAttribute("aria-current", "true");
     expect(within(menu).queryByText("Legal")).not.toBeInTheDocument();
+  });
+
+  it("puts the language switch in the bar beside sign in, not in the menu", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider><CinematicHeader /></LocaleProvider>);
+
+    const bar = screen.getByRole("banner");
+    const toArabic = within(bar).getByRole("button", { name: "Switch to Arabic" });
+    expect(toArabic).toHaveTextContent("العربية");
+    expect(toArabic).toHaveAttribute("lang", "ar");
+    expect(toArabic.nextElementSibling).toHaveTextContent("Sign in");
+
+    await user.click(screen.getByRole("button", { name: "Menu" }));
+    const menu = screen.getByRole("dialog", { name: "RIVET navigation" });
+    expect(within(menu).queryByRole("button", { name: /Switch to/ })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(toArabic);
+    expect(await within(bar).findByRole("button", { name: "التبديل إلى English" })).toHaveTextContent("English");
   });
 
   it("links a document page to the home page's sections and names the document that is open", async () => {

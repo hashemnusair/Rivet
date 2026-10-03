@@ -2,7 +2,7 @@
 import { useLocale } from "@/lib/i18n/provider";
 
 import Image from "next/image";
-import { LanguageToggle } from "@/components/shared/language-toggle";
+import { LOCALE_LABELS } from "@/lib/i18n/config";
 import Link from "next/link";
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
@@ -304,6 +304,7 @@ export function CinematicHeader({
         </Link>
 
         <div className={styles.headerActions}>
+          <HeaderLanguageSwitch inert={open} />
           {signedOut ? (
             <>
               <Link href="/login" className={styles.memberLink} inert={open}>{t("common.action.signIn")}</Link>
@@ -398,7 +399,6 @@ export function CinematicHeader({
               </div>
             )}
             <div className={styles.menuAuth}>
-              <LanguageToggle variant="night" />
               {signedIn ? (
                 <>
                   <button type="button" className={styles.menuSignIn} onClick={() => void signOut()} disabled={signingOut}>
@@ -414,5 +414,28 @@ export function CinematicHeader({
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The language switch, set beside "Sign in" in that link's own style. Like the
+ * product's other switches it names the language you would get, in that
+ * language's script, so a reader who cannot read the page can still find it.
+ */
+function HeaderLanguageSwitch({ inert }: { inert: boolean }) {
+  const { locale, setLocale, switchEnabled, t } = useLocale();
+  if (!switchEnabled) return null;
+  const next = locale === "ar" ? "en" : "ar";
+  return (
+    <button
+      type="button"
+      className={cn(styles.memberLink, styles.languageLink)}
+      onClick={() => setLocale(next)}
+      aria-label={t("common.language.switchTo", { language: LOCALE_LABELS[next].english })}
+      lang={next}
+      inert={inert}
+    >
+      {LOCALE_LABELS[next].native}
+    </button>
   );
 }

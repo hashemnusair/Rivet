@@ -42,6 +42,8 @@
   height: calc(4.5rem + env(safe-area-inset-top, 0px));
   align-items: center;
   justify-content: space-between;
+  /* The logo and the links never touch, even in Arabic on a narrow phone. */
+  gap: 1rem;
   padding-top: env(safe-area-inset-top, 0px);
   padding-inline: clamp(1.25rem, 3.35vw, 3.5rem);
   border-bottom: 1px solid rgb(27 26 21 / 0.08);
@@ -70,6 +72,7 @@
 
 .brand {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
 }
 
@@ -125,6 +128,7 @@
 /* Sign-in beside the gym application: quieter, but there without opening the menu. */
 .memberLink {
   position: relative;
+  white-space: nowrap;
   padding-block: 0.35rem;
   font-size: 0.86rem;
   font-weight: 600;
@@ -152,6 +156,20 @@
 .memberLink:hover::after,
 .memberLink:focus-visible::after {
   transform: scaleX(1);
+}
+
+/* The language switch is a button wearing the sign-in link's style. */
+.languageLink {
+  border: 0;
+  padding-inline: 0;
+  background: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.languageLink:lang(ar) {
+  font-family: var(--font-plex-arabic), sans-serif;
 }
 
 .headerOpen .memberLink {
@@ -1461,6 +1479,7 @@
   .progress { top: calc(4.25rem + env(safe-area-inset-top, 0px) - 2px); }
   .apply { display: none; }
   .headerActions { gap: 1.1rem; }
+  .menuToggle { gap: 0.55rem; white-space: nowrap; }
   .brand img { width: 7rem; }
   .menuPlate {
     width: 100%;
@@ -1576,6 +1595,23 @@
     position: relative;
     top: auto;
   }
+}
+
+/* Narrow phones carry the language switch, sign in and the menu beside the logo. */
+@media (max-width: 400px) {
+  .headerActions { gap: 0.85rem; }
+  .brand img { width: 6rem; }
+  .memberLink,
+  .menuToggle { font-size: 0.8rem; }
+}
+
+@media (max-width: 350px) {
+  .header { gap: 0.75rem; padding-inline: 1rem; }
+  .headerActions { gap: 0.7rem; }
+  .brand img { width: 5.25rem; }
+  .memberLink,
+  .menuToggle { font-size: 0.76rem; }
+  .menuToggle { gap: 0.4rem; }
 }
 
 /* ---------------------------------------------------------------- Arabic

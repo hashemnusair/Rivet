@@ -276,10 +276,9 @@ test("downloads the real Arabic terms PDF with searchable title and embedded Uni
 test("fresh visitors can choose Arabic on public, login and platform surfaces", async ({ page }) => {
   // No seeded locale: exercise the controls that actual visitors must discover.
   await page.goto("/");
-  await page.getByRole("button", { name: "Menu", exact: true }).click();
-  await page.getByRole("button", { name: "Switch to Arabic" }).click();
+  // The switch sits in the bar beside "Sign in", not inside the menu.
+  await page.getByRole("banner").getByRole("button", { name: "Switch to Arabic" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
-  await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("كل تفاصيل ناديك و مشتركينه في مكان واحد");
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => Array.from(document.fonts).some(face =>
