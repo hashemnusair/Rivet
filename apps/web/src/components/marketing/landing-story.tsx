@@ -1,6 +1,7 @@
 "use client";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
+import * as messages from "@/lib/i18n/messages";
 
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import { Reveal } from "@/components/marketing/reveal";
@@ -58,7 +59,7 @@ export function StoryMarker({ label, dark = false, drawn = false }: { label: str
   }
   return (
     <div className={`group flex items-center gap-3 border-t pt-4 ${dark ? "border-night-line" : "border-ink/10"}`}>
-      <span className="h-[3px] w-7 origin-left rounded-sm bg-signal transition-transform duration-500 group-hover:scale-x-150" aria-hidden />
+      <span className="h-[3px] w-7 origin-left rounded-sm rtl:origin-right bg-signal transition-transform duration-500 group-hover:scale-x-150" aria-hidden />
       <span className={`text-[13.5px] font-semibold tracking-[-0.01em] ${dark ? "text-night-ink" : "text-ink"}`}>{label}</span>
     </div>
   );
@@ -491,7 +492,9 @@ export function StackStory() {
                     <rect className={styles.rigPlateSide} x={plate.left} y={top + RIG.plateDepth} width={width} height={plate.height} rx={7} />
                     <rect className={styles.rigPlate} x={plate.left} y={top} width={width} height={plate.height} rx={7} />
                     <rect className={styles.rigPlateEdge} x={plate.left + 7} y={top + 1} width={width - 14} height={1.5} rx={0.75} />
-                    <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central">
+                    {/* The rig keeps the mark's orientation in Arabic, so the label still
+                        sits at the plate's open left end; RTL flips "start" to the right. */}
+                    <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central" textAnchor={locale === "ar" ? "end" : "start"}>
                       {item.label}
                     </text>
                     <circle className={styles.rigHole} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
@@ -579,6 +582,7 @@ export function OperationalDay() {
   }, []);
 
   const current = DAY_EVENTS[active] ?? DAY_EVENTS[0];
+  const [clockDigits, clockPeriod] = f.clock(current.time).split(" ");
 
   return (
     <section
@@ -596,7 +600,11 @@ export function OperationalDay() {
             <p className={styles.dayLead}>{t("publicCompletion.story.day.lead")}</p>
             <p className={styles.dayClock} aria-hidden>
               <span className={styles.dayTimeMask}>
-                <span key={`${current.time}-${landed}`} className={styles.dayTime} dir="ltr">{f.clock(current.time)}</span>
+                {/* Arabic's 12-hour clock carries ص/م; it rides beside the digits at
+                    caption size instead of wrapping under them at display size. */}
+                <span key={`${current.time}-${landed}`} className={styles.dayTime}>
+                  {clockDigits}{clockPeriod ? <span className={styles.dayPeriod}>{clockPeriod}</span> : null}
+                </span>
               </span>
               <span key={`${current.key}-${landed}`} className={styles.dayWhere}>{t(`publicCompletion.story.day.events.${current.key}.where`)}</span>
             </p>
@@ -612,7 +620,7 @@ export function OperationalDay() {
               className={cn(styles.dayMoment, active === index && styles.dayMomentActive)}
               onMouseEnter={() => { if (inPlaceRef.current) setActive(index); }}
             >
-              <time className={styles.dayMomentTime} dateTime={event.time} dir="ltr">{f.clock(event.time)}</time>
+              <time className={styles.dayMomentTime} dateTime={event.time}>{f.clock(event.time)}</time>
               <h3>{t(`publicCompletion.story.day.events.${event.key}.title`)}</h3>
               <p>{t(`publicCompletion.story.day.events.${event.key}.copy`)}</p>
             </li>
@@ -628,7 +636,7 @@ export function OperationalDay() {
 // ---------------------------------------------------------------------------
 
 export function AccountabilityLedger() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const f = useFormat();
   const rows = {
     recorded: {
@@ -682,7 +690,7 @@ export function AccountabilityLedger() {
                   <p>
                     {id === "corrected" ? (
                       <>
-                        {rows.corrected.reason} <s>{rows.corrected.before}</s> → <strong>{rows.corrected.after}</strong>
+                        {rows.corrected.reason} <s>{rows.corrected.before}</s> {locale === "ar" ? "←" : "→"} <strong>{rows.corrected.after}</strong>
                       </>
                     ) : id === "recorded" ? rows.recorded.body : rows.reviewed.body}
                     <span className={styles.trailMeta}>{row.meta}</span>
@@ -704,6 +712,9 @@ export function AccountabilityLedger() {
 
 export function RegionProof() {
   const { t, locale } = useLocale();
+  const echo = locale === "ar"
+    ? { lang: "en", dir: "ltr", text: messages.en.publicCompletion.story.region.title } as const
+    : { lang: "ar", dir: "rtl", text: messages.ar.publicCompletion.story.region.title } as const;
   return (
     <section
       id="region"
@@ -718,7 +729,8 @@ export function RegionProof() {
             <h2 id="region-title" className={styles.regionEnglish}>{t("publicCompletion.story.region.title")}</h2>
           </Reveal>
           <Reveal delay={120}>
-            <p lang={locale === "ar" ? "en" : "ar"} dir={locale === "ar" ? "ltr" : "rtl"} className={styles.regionArabic}>{t(locale === "ar" ? "publicCompletion.story.region.titleArabic" : "publicCompletion.story.region.inAmmanArabic")}</p>
+            {/* The same title in the other language, so each page shows both. */}
+            <p lang={echo.lang} dir={echo.dir} className={styles.regionArabic}>{echo.text}</p>
           </Reveal>
         </div>
         <div className={styles.regionBody}>

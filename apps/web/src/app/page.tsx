@@ -95,16 +95,16 @@ export default function LandingPage() {
 
           <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
             <div>
-              <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
-                {locale === "ar" ? <span className="block animate-rise-in leading-[1.25]">{t("publicCompletion.hero.promise")}</span> : <>
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>
+              <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] rtl:leading-[1.3] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
+                {/* Arabic uses the same three-line rhythm; its lines join to the approved
+                    promise exactly (docs/arabic/STANDARD.md, marketing-promise). */}
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>{" "}
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>{" "}
                 <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
                   {/* The rule is measured off the words, not a guessed width. */}
                   <span className="relative inline-block">{t("marketing.hero.line3")}<span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
                   </span>
                 </span>
-                </>}
               </h1>
 
               <p
@@ -155,7 +155,7 @@ export default function LandingPage() {
                   [t("publicCompletion.hero.facts.entry"), t("publicCompletion.hero.facts.entryDetail")],
                 ].map(([term, detail]) => (
                   <div key={term} className="group relative">
-                    <span className="absolute -top-7 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
+                    <span className="absolute -top-7 start-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
                     <dt className="text-[13px] font-semibold tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-signal">
                       {term}
                     </dt>

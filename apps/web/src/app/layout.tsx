@@ -37,7 +37,8 @@ const plexMono = IBM_Plex_Mono({
 
 const plexArabic = IBM_Plex_Sans_Arabic({
   subsets: ["arabic"],
-  weight: ["400", "500", "600"],
+  // 700 carries the landing's display headings; without it they are synthesised.
+  weight: ["400", "500", "600", "700"],
   variable: "--font-plex-arabic",
   display: "swap",
 });

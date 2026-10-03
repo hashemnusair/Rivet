@@ -188,9 +188,7 @@ export const publicCompletion: typeof EnPublicCompletion = {
     region: {
       eyebrow: "مصمم للمنطقة",
       title: "صُنع في عمّان.",
-      titleArabic: "للأندية في الأردن.",
       lead: "يلائم طريقة عمل الأندية هنا، مع إظهار التفاصيل المهمة في الأردن.",
-      inAmmanArabic: "صُنع في عمّان.",
     },
   },
   preview: {

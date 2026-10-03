@@ -118,7 +118,7 @@ export function OwnerDashboardScreen() {
     { label: t("publicCompletion.preview.dashboard.checkIns"), value: f.number(41), context: t("publicCompletion.preview.dashboard.openLeads", { count: 9, formatted: f.number(9) }) },
   ];
   return (
-    <div className="relative h-full w-full overflow-hidden bg-paper text-ink [font-family:var(--font-manrope),system-ui,sans-serif]">
+    <div className="relative h-full w-full overflow-hidden bg-paper text-ink [font-family:var(--font-sans)]">
       {/* sidebar */}
       <aside className="night-surface absolute inset-y-0 start-0 flex w-[228px] flex-col bg-night text-night-ink">
         <div className="flex h-16 items-center border-b border-night-line px-4">
@@ -306,7 +306,7 @@ export function MemberEntryScreen() {
   const { t, isolate } = useLocale();
   const f = useFormat();
   return (
-    <div className="relative h-full w-full overflow-hidden bg-paper text-ink [font-family:var(--font-manrope),system-ui,sans-serif]">
+    <div className="relative h-full w-full overflow-hidden bg-paper text-ink [font-family:var(--font-sans)]">
       {/* The page under the dialog is blurred in place rather than through a
           backdrop filter, which mirrors content at the screen's edges. */}
       <div className="absolute inset-0 blur-[3px]">

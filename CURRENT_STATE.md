@@ -2,6 +2,16 @@
 
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 
+## 3 October 2026 — Arabic landing page parity
+
+The live Arabic landing page diverged from the English one. Fixed on `fix/arabic-landing` without changing approved wording:
+
+- Hero laptop and phone screens rendered blank in RTL (the scaled product surface hung off the right edge). The headline now uses the English three-line rhythm; its lines join to the exact approved promise.
+- Stack plate labels drew off the plates; Archivo-only headings fell back to a system Arabic face and now use the marketing display stack (Plex Arabic 700 added for display weight). The big day clock keeps ص/م beside the digits instead of wrapping.
+- The "Built in Amman" echo showed the page's own language; each page now echoes the other language's approved title. The menu panel, sheet push, marker draws and underline origins mirror in Arabic.
+
+Verified with desktop and 390px captures of every section in both languages and no horizontal overflow; 102 landing and i18n tests pass. The Arabic browser spec could not run locally because the shared `node_modules` predates `@pdf-lib/fontkit`; CI is the gate.
+
 ## 3 October 2026 — Arabic audit and founder-testing release
 
 Hashem authorized auditing Elias's completed branch, repairing regressions and merging to main for founder testing. Source `4b104f5` on `codex/complete-arabic-support` preserves main `7cd509e` and both Arabic histories. See [the release audit](docs/arabic/AUDIT_2026-10-03.md) for scope, findings, commands and limits.

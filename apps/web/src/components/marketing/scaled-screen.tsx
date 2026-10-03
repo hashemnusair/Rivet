@@ -36,8 +36,10 @@ export function ScaledScreen({
 
   return (
     <div ref={boxRef} className="absolute inset-0 overflow-hidden" style={{ "--screen-scale": String(defaultScale) } as CSSProperties}>
+      {/* Pinned to the physical top-left: in RTL a block wider than its box
+          would otherwise hang off the right edge and scale out of view. */}
       <div
-        className="origin-top-left"
+        className="absolute left-0 top-0 origin-top-left"
         style={{ width, height, transform: "scale(var(--screen-scale))" }}
       >
         {children}

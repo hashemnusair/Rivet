@@ -187,9 +187,7 @@ export const publicCompletion = {
     region: {
       eyebrow: "Built for here",
       title: "Built in Amman.",
-      titleArabic: "Built for gyms in Jordan.",
       lead: "For the way gyms run here, with the details that matter in Jordan already in view.",
-      inAmmanArabic: "Built in Amman.",
     },
   },
   preview: {
