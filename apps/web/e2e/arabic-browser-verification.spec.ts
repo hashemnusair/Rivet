@@ -1,8 +1,10 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
-const OUT = process.env.RTL_SHOTS ?? "/private/tmp/rivet-arabic-rtl-evidence";
+const OUT = process.env.RTL_SHOTS ?? join(tmpdir(), "rivet-arabic-rtl-evidence");
 
 test.use({ colorScheme: "light", locale: "ar-JO", reducedMotion: "reduce", timezoneId: "Asia/Amman" });
 test.beforeAll(() => mkdirSync(OUT, { recursive: true }));
