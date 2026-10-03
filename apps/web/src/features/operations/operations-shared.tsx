@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Archive, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -17,7 +18,11 @@ import type {
 } from "@/lib/domain/types";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
-import { fromMajor, money } from "@/lib/utils/money";
+import { money, readMoneyInput } from "@/lib/utils/money";
+import { latinDigits } from "@/lib/utils/text";
+import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
+import { createTranslator, type TFunction } from "@/lib/i18n/core";
+import type { TKey } from "@/lib/i18n/core";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -33,9 +38,8 @@ export function newKey(prefix: string): string {
 }
 
 export function minorValue(value: string, currency: string): ReturnType<typeof money> | undefined {
-  if (!value.trim()) return undefined;
-  const major = Number(value);
-  return Number.isFinite(major) && major >= 0 ? fromMajor(major, currency) : undefined;
+  const result = readMoneyInput(value, currency);
+  return result.ok ? result.money : undefined;
 }
 
 export function statusVariant(status: string): "neutral" | "success" | "warning" | "danger" {
@@ -46,62 +50,64 @@ export function statusVariant(status: string): "neutral" | "success" | "warning"
 }
 
 /** Plain words for the stored status codes shown on orders, suppliers, machines, problems and repair jobs. */
-const STATUS_LABELS: Record<string, string> = {
-  draft: "Draft",
-  approved: "Approved",
-  partially_received: "Partially received",
-  received: "Received",
-  cancelled: "Cancelled",
-  active: "Active",
-  archived: "Archived",
-  maintenance: "In maintenance",
-  retired: "Retired",
-  replaced: "Replaced",
-  open: "Open",
-  in_progress: "In progress",
-  resolved: "Fixed",
-  completed: "Done",
-  blocked: "On hold",
-  unknown: "Not checked yet",
-  safe_to_operate: "Safe to use",
-  out_of_service: "Do not use",
+const STATUS_LABELS: Record<string, TKey> = {
+  draft: "operationsWorkspace.draft",
+  approved: "operationsWorkspace.approved",
+  partially_received: "operationsWorkspace.partiallyReceived",
+  received: "operationsWorkspace.received",
+  cancelled: "operationsWorkspace.cancelled",
+  active: "operationsWorkspace.active",
+  archived: "operationsWorkspace.archived",
+  maintenance: "operationsWorkspace.inMaintenance",
+  retired: "operationsWorkspace.retired",
+  replaced: "operationsWorkspace.replaced",
+  open: "operationsWorkspace.open",
+  in_progress: "operationsWorkspace.inProgress",
+  resolved: "operationsWorkspace.fixed",
+  completed: "operationsWorkspace.done",
+  blocked: "operationsWorkspace.blocked",
+  unknown: "operationsWorkspace.notChecked",
+  safe_to_operate: "operationsWorkspace.safe",
+  out_of_service: "operationsWorkspace.unsafe",
 };
 
-export function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? status.replaceAll("_", " ");
+export function statusLabel(status: string, t: TFunction = createTranslator("en")): string {
+  return t(STATUS_LABELS[status] ?? "operationsWorkspace.unknownStatus");
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={statusVariant(status)} dot>{statusLabel(status)}</Badge>;
+  const t = useT();
+  return <Badge variant={statusVariant(status)} dot>{statusLabel(status, t)}</Badge>;
 }
 
-export const SEVERITY_LABELS: Record<EquipmentIssue["severity"], string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
+export const SEVERITY_LABELS: Record<EquipmentIssue["severity"], TKey> = {
+  low: "operationsWorkspace.low",
+  medium: "operationsWorkspace.medium",
+  high: "operationsWorkspace.high",
+  critical: "operationsWorkspace.critical",
 };
 
-export function severityLabel(severity: string): string {
-  return (SEVERITY_LABELS as Record<string, string>)[severity] ?? severity;
+export function severityLabel(severity: string, t: TFunction = createTranslator("en")): string {
+  return t((SEVERITY_LABELS as Record<string, TKey>)[severity] ?? "operationsWorkspace.unknownSeverity");
 }
 
-export const ASSET_STATUS_LABELS: Record<EquipmentAsset["status"], string> = {
-  active: "Active",
-  maintenance: "In maintenance",
-  retired: "Retired",
-  replaced: "Replaced",
+export const ASSET_STATUS_LABELS: Record<EquipmentAsset["status"], TKey> = {
+  active: "operationsWorkspace.active",
+  maintenance: "operationsWorkspace.inMaintenance",
+  retired: "operationsWorkspace.retired",
+  replaced: "operationsWorkspace.replaced",
 };
 
-export const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], string> = {
-  draft: "Draft",
-  approved: "Approved",
-  in_progress: "In progress",
-  completed: "Done",
-  cancelled: "Cancelled",
+export const WORK_ORDER_STATUS_LABELS: Record<EquipmentWorkOrder["status"], TKey> = {
+  draft: "operationsWorkspace.draft",
+  approved: "operationsWorkspace.approved",
+  in_progress: "operationsWorkspace.inProgress",
+  completed: "operationsWorkspace.done",
+  cancelled: "operationsWorkspace.cancelled",
 };
 
 export function FormPanel({ title, description, onCancel, children, submitAction }: { title: string; description?: string; onCancel: () => void; children: React.ReactNode; submitAction?: React.ReactNode }) {
+  const t = useT();
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-2xl">
@@ -111,7 +117,7 @@ export function FormPanel({ title, description, onCancel, children, submitAction
         </DialogHeader>
         <DialogBody>{children}</DialogBody>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="secondary" onClick={onCancel}>{t("common.action.cancel")}</Button>
           {submitAction}
         </DialogFooter>
       </DialogContent>
@@ -120,6 +126,7 @@ export function FormPanel({ title, description, onCancel, children, submitAction
 }
 
 export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenChange, onConfirm }: { kind?: "product" | "supplier"; label: string; open: boolean; pending: boolean; onOpenChange: (open: boolean) => void; onConfirm: (reason: string, confirmation?: string) => void }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const isProduct = kind === "product";
@@ -128,21 +135,21 @@ export function DeleteDialog({ kind = "supplier", label, open, pending, onOpenCh
     <Dialog open={open} onOpenChange={(next) => { if (!next) { setReason(""); setConfirmation(""); } onOpenChange(next); }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isProduct ? "Delete " + label + " permanently?" : "Archive " + label + "?"}</DialogTitle>
+          <DialogTitle>{isProduct ? t("operationsWorkspace.deleteTitle", { name: label }) : t("operationsWorkspace.archiveTitle", { name: label })}</DialogTitle>
           <DialogDescription>
             {isProduct
-              ? "This removes the item for good, and its item code (SKU) can be used again. Past receipts, stock changes and orders are kept. This cannot be undone."
-              : "Past orders stay as they are. You cannot choose this supplier for new orders or payments."}
+              ? t("operationsWorkspace.permanentDeleteHint")
+              : t("operationsWorkspace.archiveSupplierHint")}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-3">
-          {isProduct ? <Field label={"Type " + label + " to confirm"} required><Input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={label} /></Field> : null}
-          <Field label="Reason" required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? "No longer sold, or added by mistake" : "No longer used, or added by mistake"} /></Field>
+          {isProduct ? <Field label={t("operationsWorkspace.confirmName", { name: label })} required><Input autoFocus value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={label} /></Field> : null}
+          <Field label={t("common.label.reason")} required><Textarea autoFocus={!isProduct} value={reason} onChange={(event) => setReason(event.target.value)} placeholder={isProduct ? t("operationsWorkspace.productDeleteReason") : t("operationsWorkspace.supplierArchiveReason")} /></Field>
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={pending}>{t("common.action.cancel")}</Button>
           <Button variant="danger" loading={pending} disabled={!confirmed || reason.trim().length < 3} onClick={() => onConfirm(reason.trim(), confirmation.trim() || undefined)}>
-            {isProduct ? <Trash2 /> : <Archive />} {isProduct ? "Delete permanently" : "Archive"}
+            {isProduct ? <Trash2 /> : <Archive />} {isProduct ? t("operationsWorkspace.deletePermanently") : t("operationsWorkspace.archive")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -155,7 +162,8 @@ export function SectionHeader({ icon: Icon, title, description, actions }: { ico
 }
 
 export function ReadOnlyNotice() {
-  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">You can only view this page. Ask a manager to add or change items, suppliers, orders or machines.</div>;
+  const t = useT();
+  return <div className="rounded-md border border-line bg-sunken/50 px-3 py-2 text-[12px] text-ink-2" role="status">{t("operationsWorkspace.readOnlyOperations")}</div>;
 }
 
 export type OperationsMutations = {
@@ -174,22 +182,42 @@ export type OperationsMutations = {
 };
 
 export function useOperationsMutations(invalidate: ReturnType<typeof useInvalidate>): OperationsMutations {
+  const t = useT();
   const options = { onSuccess: async () => { await invalidate([qk.operations()]); } };
-  const product = useApiMutation((api, input: UpsertProductInput) => api.upsertProduct(input), { ...options, successMessage: "Stock item saved." });
-  const deleteProduct = useApiMutation((api, input: DeleteProductInput) => api.deleteProduct(input), { ...options, successMessage: "Stock item deleted." });
-  const supplier = useApiMutation((api, input: UpsertSupplierInput) => api.upsertSupplier(input), { ...options, successMessage: "Supplier saved." });
-  const archiveSupplier = useApiMutation((api, input: { id: string; reason: string }) => api.archiveSupplier(input.id, input.reason), { ...options, successMessage: "Supplier archived." });
-  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: "Purchase order saved as a draft." });
-  const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: "Purchase order approved." });
-  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: "Order received. Stock updated." });
-  const transfer = useApiMutation((api, input: InventoryTransferInput) => api.transferInventory(input), { ...options, successMessage: "Stock moved to the other branch." });
-  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: "Machine saved." });
-  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: "Machine problem reported." });
-  const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: "Machine problem updated." });
-  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: "Repair job saved." });
+  const product = useApiMutation((api, input: UpsertProductInput) => api.upsertProduct(input), { ...options, successMessage: t("operationsWorkspace.productSaved") });
+  const deleteProduct = useApiMutation((api, input: DeleteProductInput) => api.deleteProduct(input), { ...options, successMessage: t("operationsWorkspace.productDeleted") });
+  const supplier = useApiMutation((api, input: UpsertSupplierInput) => api.upsertSupplier(input), { ...options, successMessage: t("operationsWorkspace.supplierSaved") });
+  const archiveSupplier = useApiMutation((api, input: { id: string; reason: string }) => api.archiveSupplier(input.id, input.reason), { ...options, successMessage: t("operationsWorkspace.supplierArchived") });
+  const purchaseOrder = useApiMutation((api, input: Parameters<typeof api.createPurchaseOrder>[0]) => api.createPurchaseOrder(input), { ...options, successMessage: t("operationsWorkspace.orderDraftSaved") });
+  const approveOrder = useApiMutation((api, input: { id: string; reason?: string }) => api.approvePurchaseOrder(input.id, input.reason), { ...options, successMessage: t("operationsWorkspace.orderApproved") });
+  const receiveOrder = useApiMutation((api, input: Parameters<typeof api.receivePurchaseOrder>[0]) => api.receivePurchaseOrder(input), { ...options, successMessage: t("operationsWorkspace.orderReceived") });
+  const transfer = useApiMutation((api, input: InventoryTransferInput) => api.transferInventory(input), { ...options, successMessage: t("operationsWorkspace.stockMoved") });
+  const asset = useApiMutation((api, input: UpsertEquipmentAssetInput) => api.upsertEquipmentAsset(input), { ...options, successMessage: t("operationsWorkspace.machineSaved") });
+  const issue = useApiMutation((api, input: Parameters<typeof api.reportEquipmentIssue>[0]) => api.reportEquipmentIssue(input), { ...options, successMessage: t("operationsWorkspace.problemReported") });
+  const issueUpdate = useApiMutation((api, input: { id: string; input: UpdateEquipmentIssueInput }) => api.updateEquipmentIssue(input.id, input.input), { ...options, successMessage: t("operationsWorkspace.problemUpdated") });
+  const workOrder = useApiMutation((api, input: UpsertEquipmentWorkOrderInput) => api.upsertEquipmentWorkOrder(input), { ...options, successMessage: t("operationsWorkspace.repairSaved") });
   return { product, deleteProduct, supplier, archiveSupplier, purchaseOrder, approveOrder, receiveOrder, transfer, asset, issue, issueUpdate, workOrder } as OperationsMutations;
 }
 
 export function LoadingGrid() {
   return <div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>;
+}
+
+/** Shared field validation keeps Arabic digits out of native number-input coercion. */
+export function useOperationsNumberProblems() {
+  const t = useT();
+  const moneyProblem = useMoneyProblemText();
+  return {
+    amount(value: string, currency: string): string | undefined {
+      if (!value.trim()) return undefined;
+      const result = readMoneyInput(value, currency);
+      return result.ok ? undefined : moneyProblem(result, currency);
+    },
+    integer(value: string, minimum: number, maximum?: number): string | undefined {
+      if (!value.trim()) return undefined;
+      const normalized = latinDigits(value);
+      return /^\d+$/.test(normalized) && Number.isSafeInteger(Number(normalized)) && Number(normalized) >= minimum && (maximum === undefined || Number(normalized) <= maximum)
+        ? undefined : maximum === undefined ? t("operationsWorkspace.integerMinimum", { min: minimum }) : t("operationsWorkspace.integerRange", { min: minimum, max: maximum });
+    },
+  };
 }

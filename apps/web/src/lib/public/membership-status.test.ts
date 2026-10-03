@@ -27,3 +27,12 @@ describe("membershipDisplayStatus", () => {
     expect(membershipDisplayStatus({ status: "frozen", endDate: "2026-11-01" }, now)).toMatchObject({ key: "frozen", label: "Frozen", tone: "neutral", ended: false });
   });
 });
+
+
+it("uses Arabic plural rules and the gym's calendar boundary without changing expiry facts", () => {
+  const status = membershipDisplayStatus({ status: "active", endDate: "2026-09-07" }, now, { locale: "ar", timeZone: "Asia/Amman" });
+  expect(status).toMatchObject({ label: "ينتهي قريبًا", daysLeft: 2, summary: "ينتهي خلال يومين · 7 أيلول 2026" });
+  const boundary = new Date("2026-09-05T22:30:00Z");
+  expect(membershipDisplayStatus({ status: "active", endDate: "2026-09-05" }, boundary, { locale: "ar", timeZone: "Asia/Amman" }).ended).toBe(true);
+  expect(membershipDisplayStatus({ status: "active", endDate: "2026-09-05" }, boundary, { locale: "ar", timeZone: "America/New_York" }).ended).toBe(false);
+});

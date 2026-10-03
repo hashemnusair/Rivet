@@ -1,4 +1,5 @@
 "use client";
+import { useLocale } from "@/lib/i18n/provider";
 
 import { RefreshCcw } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -6,7 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getApi } from "@/lib/api/client";
-import { formatTime } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
+import { localizeApiError } from "@/lib/api/errors";
 
 /**
  * The member's highest-frequency task: a server-signed, short-lived entry pass.
@@ -20,17 +22,21 @@ export function EntryPassDialog({
   membershipId,
   memberNumber,
   gymName,
+  timeZone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   membershipId: string;
   memberNumber: string;
   gymName: string;
+  timeZone?: string;
 }) {
+  const { t, locale } = useLocale();
+  const fmt = useFormat(timeZone);
   const [token, setToken] = useState("");
   const [expiresAt, setExpiresAt] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<Error>();
   const [expired, setExpired] = useState(false);
 
   const load = useCallback(async () => {
@@ -44,7 +50,7 @@ export function EntryPassDialog({
       setToken(pass.token);
       setExpiresAt(pass.expiresAt);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "We could not get your entry code.");
+      setError(caught instanceof Error ? caught : new Error("Entry pass unavailable"));
     } finally {
       setLoading(false);
     }
@@ -68,33 +74,33 @@ export function EntryPassDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Entry code</DialogTitle>
+          <DialogTitle>{t("memberExperience.entryCode")}</DialogTitle>
           <p className="mt-1 text-[13px] text-ink-2">{gymName}</p>
         </DialogHeader>
         <DialogBody className="text-center">
           {loading ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-[13px] text-ink-3" role="status">
               <span className="h-1 w-32 overflow-hidden rounded-full bg-sunken-2"><span className="block h-full w-1/2 animate-pulse rounded-full bg-ink" /></span>
-              Getting your entry code…
+              {t("memberExperience.entryLoading")}
             </div>
           ) : error ? (
             <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-start text-[13px] text-danger">
-              <p>{error}</p>
-              <Button className="mt-3" size="sm" variant="secondary" onClick={() => void load()}>Try again</Button>
+              <p>{localizeApiError(error, locale).message}</p>
+              <Button className="mt-3" size="sm" variant="secondary" onClick={() => void load()}>{t("common.action.retry")}</Button>
             </div>
           ) : token ? (
             <>
               <div className={expired ? "relative mx-auto w-fit rounded-lg border border-line bg-white p-4 opacity-30" : "mx-auto w-fit rounded-lg border border-line bg-white p-4"} aria-hidden={expired || undefined}>
-                <QRCodeSVG value={token} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label="Membership entry QR code" className="block h-auto w-full max-w-[232px]" />
+                <QRCodeSVG value={token} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label={t("memberExperience.entryQr")} className="block h-auto w-full max-w-[232px]" />
               </div>
-              <p className="mt-4 font-mono text-[18px] tracking-wide text-ink">{memberNumber}</p>
+              <p className="mt-4 font-mono text-[18px] tracking-wide text-ink"><bdi dir="ltr">{memberNumber}</bdi></p>
               {expired ? (
-                <p className="mt-2 text-[13px] font-medium text-warning-deep" role="status">This code has expired. Get a new code to check in.</p>
+                <p className="mt-2 text-[13px] font-medium text-warning-deep" role="status">{t("memberExperience.entryExpired")}</p>
               ) : (
-                <p className="mt-2 text-[13px] text-ink-2" role="status">{expiresAt ? `Expires at ${formatTime(expiresAt)}.` : "Expires soon."} Show it at reception.</p>
+                <p className="mt-2 text-[13px] text-ink-2" role="status">{expiresAt ? t("memberExperience.entryExpiry", { time: fmt.time(expiresAt) }) : t("memberExperience.entrySoon")}</p>
               )}
               <Button className="mt-4" size="sm" variant={expired ? "primary" : "secondary"} onClick={() => void load()}>
-                <RefreshCcw /> Get a new code
+                <RefreshCcw /> {t("memberExperience.entryRefresh")}
               </Button>
             </>
           ) : null}

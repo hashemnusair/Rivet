@@ -317,14 +317,37 @@ html.landing-motion-ready [data-experience-notice] {
     color: #fff;
   }
 
-  /* RTL: switch the stack so Arabic renders in Plex Sans Arabic */
+  /*
+    Arabic: keep Manrope for Latin letters and digits (names, phones, amounts,
+    receipt numbers) and let IBM Plex Sans Arabic, which has complete shaping,
+    supply every Arabic glyph. Overriding the font variables here reaches
+    every utility that reads --font-sans / --font-display, not just body.
+  */
+  html.rtl-font {
+    --font-sans: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
+    --font-display: var(--font-manrope), var(--font-plex-arabic), "Segoe UI", system-ui, sans-serif;
+    --font-marketing: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
+    --font-marketing-display: var(--font-manrope), var(--font-plex-arabic), system-ui, sans-serif;
+  }
+
   .rtl-font body,
   .rtl-font input,
   .rtl-font textarea,
   .rtl-font select,
   .rtl-font button {
-    font-family: var(--font-plex-arabic), var(--font-manrope), system-ui, sans-serif;
+    font-family: var(--font-sans);
+  }
+
+  /* Arabic letters join; any letter-spacing breaks the joins. */
+  .rtl-font *,
+  .rtl-font *::before,
+  .rtl-font *::after {
     letter-spacing: 0 !important;
+  }
+
+  /* Arabic needs a little more line height than the Latin scale. */
+  .rtl-font body {
+    line-height: 1.6;
   }
 
   /*

@@ -47,7 +47,7 @@ function todayIn(timezone: string): string {
 function requireLocalDate(value: unknown, field: string, actor: ActorContext): string {
   const date = str(value);
   const timestamp = Date.parse(`${date}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date) domainError("VALIDATION_ERROR", `${field} must be a calendar date.`, { correlationId: actor.correlationId });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date) domainError("VALIDATION_ERROR", `${field} must be a calendar date.`, { message: { key: "apiErrors.calendarField", params: { field: String(field) } }, correlationId: actor.correlationId });
   return date;
 }
 
@@ -289,6 +289,6 @@ export async function analyticsQuery(ctx: ReadContext, actor: ActorContext, oper
     }
 
     default:
-      domainError("VALIDATION_ERROR", `Unknown analytics operation: ${operation}`, { correlationId: actor.correlationId });
+      domainError("VALIDATION_ERROR", `Unknown analytics operation: ${operation}`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

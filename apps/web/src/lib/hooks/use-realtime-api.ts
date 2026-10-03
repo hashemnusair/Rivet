@@ -2,6 +2,8 @@
 
 import { keepPreviousData, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocale } from "@/lib/i18n/provider";
+import { localizeApiError } from "@/lib/api/errors";
 import { getApi } from "@/lib/api/client";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApiScopeEpoch } from "@/lib/api/scope";
@@ -23,6 +25,7 @@ export function useRealtimeApiQuery<T>(options: {
   enabled?: boolean;
   fallbackIntervalMs?: number;
 }) {
+  const { locale } = useLocale();
   const enabled = options.enabled ?? true;
   const fallbackIntervalMs = options.fallbackIntervalMs ?? 15_000;
   const convexMode = isConvexMode();
@@ -136,10 +139,12 @@ export function useRealtimeApiQuery<T>(options: {
   // As in useApiQuery: a refusal after the watch or its fallback fetch is
   // re-checked by the server withdraws the snapshot instead of leaving stale
   // data behind a "could not refresh" notice.
+  const presentedError = useMemo(() => query.error ? localizeApiError(query.error, locale) : null, [query.error, locale]);
   const hasRenderedData = query.data !== undefined;
   const denied = query.isError && isAccessDenied(query.error);
   return {
     ...query,
+    error: presentedError,
     data: denied ? undefined : query.data,
     streamState,
     isError: query.isError && (!hasRenderedData || denied),

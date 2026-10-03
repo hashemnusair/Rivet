@@ -1,8 +1,11 @@
+"use client";
+
 import { AlertTriangle, Inbox, Lock, SearchX, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ERR, isApiError } from "@/lib/api/errors";
+import { ERR, isApiError, localizeApiError } from "@/lib/api/errors";
 import { cn } from "@/lib/utils/cn";
+import { useT, useLocale } from "@/lib/i18n/provider";
 import { Button } from "./button";
 
 /**
@@ -73,8 +76,8 @@ export function EmptyState(props: {
 }
 
 export function ErrorState({
-  title = "Something went wrong",
-  description = "Please try again. If this keeps happening, check your internet connection.",
+  title,
+  description,
   onRetry,
   className,
   layout,
@@ -85,18 +88,19 @@ export function ErrorState({
   className?: string;
   layout?: "inline" | "section" | "page";
 }) {
+  const t = useT();
   return (
     <StatePanel
       icon={AlertTriangle}
-      title={title}
-      description={description}
+      title={title ?? t("common.states.errorTitle")}
+      description={description ?? t("common.states.errorDescription")}
       className={className}
       layout={layout}
       role="alert"
       action={
         onRetry ? (
           <Button variant="secondary" size="sm" onClick={onRetry}>
-            Try again
+            {t("common.action.retry")}
           </Button>
         ) : undefined
       }
@@ -105,7 +109,7 @@ export function ErrorState({
 }
 
 export function ForbiddenState({
-  description = "Your role cannot open this page. Ask the owner or a manager if you need it.",
+  description,
   className,
   layout,
 }: {
@@ -113,16 +117,17 @@ export function ForbiddenState({
   className?: string;
   layout?: "inline" | "section" | "page";
 }) {
+  const t = useT();
   return (
     <StatePanel
       icon={Lock}
-      title="You don't have access"
-      description={description}
+      title={t("common.states.forbiddenTitle")}
+      description={description ?? t("common.states.forbiddenDescription")}
       className={className}
       layout={layout}
       action={
         <Button asChild variant="secondary" size="sm">
-          <Link href="/dashboard">Back to dashboard</Link>
+          <Link href="/dashboard">{t("common.states.backToDashboard")}</Link>
         </Button>
       }
     />
@@ -149,21 +154,23 @@ export function QueryErrorState({
   className?: string;
   layout?: "inline" | "section" | "page";
 }) {
+  const { t, locale } = useLocale();
+  const presented = localizeApiError(error, locale);
   if (isApiError(error)) {
     if (error.code === ERR.FORBIDDEN) {
-      return <ForbiddenState description={forbiddenDescription ?? error.message} className={className} layout={layout} />;
+      return <ForbiddenState description={forbiddenDescription ?? presented.message} className={className} layout={layout} />;
     }
     if (error.code === ERR.NOT_FOUND) {
-      return <NotFoundState title={notFoundTitle ?? "Not found"} description={error.message} className={className} layout={layout} />;
+      return <NotFoundState title={notFoundTitle ?? t("common.states.notFoundTitle")} description={presented.message} className={className} layout={layout} />;
     }
-    return <ErrorState description={error.message} onRetry={onRetry} className={className} layout={layout} />;
+    return <ErrorState description={presented.message} onRetry={onRetry} className={className} layout={layout} />;
   }
   return <ErrorState onRetry={onRetry} className={className} layout={layout} />;
 }
 
 export function NotFoundState({
-  title = "Not found",
-  description = "We could not find this. It may have been removed, or the link is wrong.",
+  title,
+  description,
   className,
   layout,
 }: {
@@ -172,16 +179,17 @@ export function NotFoundState({
   className?: string;
   layout?: "inline" | "section" | "page";
 }) {
+  const t = useT();
   return (
     <StatePanel
       icon={SearchX}
-      title={title}
-      description={description}
+      title={title ?? t("common.states.notFoundTitle")}
+      description={description ?? t("common.states.notFoundDescription")}
       className={className}
       layout={layout}
       action={
         <Button asChild variant="secondary" size="sm">
-          <Link href="/dashboard">Back to dashboard</Link>
+          <Link href="/dashboard">{t("common.states.backToDashboard")}</Link>
         </Button>
       }
     />

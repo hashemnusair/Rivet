@@ -1,4 +1,5 @@
 "use client";
+import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { ArrowDown, ArrowUp, Send, X } from "lucide-react";
 import { useEffect, useId, useState, type ChangeEvent } from "react";
@@ -18,14 +19,15 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
-import { formatDateTime } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
+import { latinDigits } from "@/lib/utils/text";
+import { publicProfileLabel } from "@/lib/i18n/public-profile";
 import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/settings/settings-layout";
 
 const PROFILE_CATEGORIES = ["Gym", "Strength & conditioning", "Women-only fitness", "Combat sports", "Wellness studio"] as const;
 const PROFILE_AUDIENCES = ["All members", "Women", "Men", "Families", "Students"] as const;
 const AMENITY_CHOICES = ["Free weights", "Cardio", "Showers", "Parking", "Group studio", "Personal training"] as const;
 
-const DESCRIPTION = "The page visitors see in Find gyms. Save a draft first, then publish it.";
 
 const emptyForm: UpdateGymPublicProfileInput = {
   shortName: "",
@@ -103,13 +105,18 @@ function splitAmenities(value: string): string[] {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
-const PROFILE_STATUS: Record<string, { label: string; variant: "success" | "warning" | "neutral" }> = {
-  published: { label: "Published", variant: "success" },
-  draft: { label: "Draft", variant: "warning" },
-  unpublished: { label: "Unpublished", variant: "neutral" },
-};
 
 export function GymPublicProfileSection() {
+  const { t, locale } = useLocale();
+  const f = useFormat();
+  const PROFILE_STATUS: Record<string, { label: string; variant: "success" | "warning" | "neutral" }> = {
+  published: { label: t("settingsPublic.text002"), variant: "success" },
+  draft: { label: t("settingsDetails.text125"), variant: "warning" },
+  unpublished: { label: t("settingsPublic.text003"), variant: "neutral" },
+};
+
+  const DESCRIPTION = t("settingsPublic.text001");
+
   const invalidate = useInvalidate();
   const { session } = useApp();
   const profile = useRealtimeApiQuery({ queryKey: qk.gymProfile, query: (api) => api.getGymPublicProfile(), subscribe: (api, onValue, onError) => api.subscribeGymPublicProfile(onValue, onError) });
@@ -170,21 +177,21 @@ export function GymPublicProfileSection() {
     [saved.logo, saved.cover, ...saved.gallery].forEach((asset) => { if (asset) nextUploadedAssets[asset.id] = asset; });
     setUploadedAssets(nextUploadedAssets);
     setBaseline(profileSnapshot(nextForm, amenities));
-    toast.success("Draft saved.");
+    toast.success(t("settingsPublic.text004"));
     await invalidate([qk.gymProfile]);
   } });
-  const publish = useApiMutation((api) => api.publishGymPublicProfile(), { onSuccess: async () => { toast.success("Your public page is live. RIVET checks later changes before they go live."); await invalidate([qk.gymProfile]); } });
+  const publish = useApiMutation((api) => api.publishGymPublicProfile(), { onSuccess: async () => { toast.success(t("settingsPublic.text005")); await invalidate([qk.gymProfile]); } });
   const requestReview = useApiMutation((api) => api.createSupportCase({
     email: session?.user.email ?? "",
-    subject: `Public page update — review draft v${profile.data?.version ?? ""}`,
-    body: `${reviewMessage.trim() ? `${reviewMessage.trim()}\n\n` : ""}The gym saved public page draft v${profile.data?.version ?? "?"} and asks RIVET to review and publish it.`,
+    subject: t("settingsPublic.reviewSubject", { version: profile.data?.version ?? "" }),
+    body: `${reviewMessage.trim() ? `${reviewMessage.trim()}\n\n` : ""}${t("settingsPublic.reviewBody", { version: profile.data?.version ?? "?" })}`,
     priority: "normal",
     requestType: "general",
   }), {
     onSuccess: async () => {
       setReviewOpen(false);
       setReviewMessage("");
-      toast.success("Sent to RIVET. The team reviews your draft and publishes it for you.");
+      toast.success(t("settingsPublic.text006"));
     },
   });
   const prepareMedia = (kind: MediaDraftKind, file: File, altText: string) => {
@@ -233,11 +240,11 @@ export function GymPublicProfileSection() {
     setAmenities(nextAmenities);
     setUploadedAssets({});
     setBaseline(profileSnapshot(nextForm, nextAmenities));
-    toast.success("Your unsaved changes were discarded.");
+    toast.success(t("settingsPublic.text007"));
   };
 
-  if (profile.isLoading) return <SettingsSection title="Public profile" description={DESCRIPTION}><Skeleton className="h-[620px] w-full" /></SettingsSection>;
-  if (profile.isError) return <SettingsSection title="Public profile" description={DESCRIPTION}><ErrorState layout="section" title="Public profile could not load" onRetry={() => profile.refetch()} /></SettingsSection>;
+  if (profile.isLoading) return <SettingsSection title={t("settingsCore.text181")} description={DESCRIPTION}><Skeleton className="h-[620px] w-full" /></SettingsSection>;
+  if (profile.isError) return <SettingsSection title={t("settingsCore.text181")} description={DESCRIPTION}><ErrorState layout="section" title={t("settingsPublic.text008")} onRetry={() => profile.refetch()} /></SettingsSection>;
   const value = profile.data!;
   const status = PROFILE_STATUS[value.status] ?? { label: value.status, variant: "neutral" as const };
   const currentLogo = form.logoAssetId ? uploadedAssets[form.logoAssetId] ?? value.logo : undefined;
@@ -245,45 +252,45 @@ export function GymPublicProfileSection() {
   const logoPreviewUrl = pendingMedia.logo ? pendingMedia.logo.previewUrl : currentLogo?.url;
   const coverPreviewUrl = pendingMedia.cover ? pendingMedia.cover.previewUrl : currentCover?.url;
   const selectedAmenities = splitAmenities(amenities);
-  const missingRequired = !form.shortName.trim() ? "Add a short name before saving." : !form.taglineEn.trim() ? "Add an English tagline before saving." : !form.descriptionEn.trim() ? "Add an English description before saving." : undefined;
-  const saveDisabledReason = !pendingMediaReady ? "Describe each image you picked before saving." : missingRequired;
-  const publishBlocked = dirty ? "Save or discard your changes first." : value.status !== "draft" ? "Save a draft first. Your live page has no changes waiting." : undefined;
+  const missingRequired = !form.shortName.trim() ? t("settingsPublic.text009") : !form.taglineEn.trim() ? t("settingsPublic.text010") : !form.descriptionEn.trim() ? t("settingsPublic.text011") : undefined;
+  const saveDisabledReason = !pendingMediaReady ? t("settingsPublic.text012") : missingRequired;
+  const publishBlocked = dirty ? t("settingsPublic.text013") : value.status !== "draft" ? t("settingsPublic.text014") : undefined;
   const publishAction = value.publishLocked
-    ? <Button disabled={Boolean(publishBlocked) || save.isPending} title={publishBlocked} onClick={() => setReviewOpen(true)}><Send /> Send to RIVET for review</Button>
-    : <Button loading={publish.isPending} disabled={Boolean(publishBlocked) || save.isPending} title={publishBlocked} onClick={() => publish.mutate()}><Send /> Publish draft</Button>;
+    ? <Button disabled={Boolean(publishBlocked) || save.isPending} title={publishBlocked} onClick={() => setReviewOpen(true)}><Send /> {" "}{t("settingsPublic.text015")}</Button>
+    : <Button loading={publish.isPending} disabled={Boolean(publishBlocked) || save.isPending} title={publishBlocked} onClick={() => publish.mutate()}><Send /> {" "}{t("settingsPublic.text016")}</Button>;
 
   return (
     <SettingsSection
-      title="Public profile"
+      title={t("settingsCore.text181")}
       description={DESCRIPTION}
-      actions={<><Badge variant={status.variant} dot>{status.label} · version {value.version}</Badge>{publishAction}</>}
+      actions={<><Badge variant={status.variant} dot>{status.label} {" "}{t("settingsPublic.text017")}{" "}{value.version}</Badge>{publishAction}</>}
     >
       {value.publishLocked ? (
-        <p className="text-[12.5px] leading-5 text-ink-2">Your page is live. Save your changes as a draft, then send them to RIVET. The team checks and publishes them for you.</p>
+        <p className="text-[12.5px] leading-5 text-ink-2">{t("settingsPublic.text018")}</p>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)] xl:items-start">
         <div className="space-y-4">
-          <SettingsPanel title="Page content" description="Owners and managers edit this content. RIVET decides if your gym can appear in Find gyms.">
+          <SettingsPanel title={t("settingsPublic.text019")} description={t("settingsPublic.text020")}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Short name" required hint="Up to 24 characters. Shown on gym cards."><Input value={form.shortName} maxLength={24} onChange={(event) => setForm((current) => ({ ...current, shortName: event.target.value }))} /></Field>
-              <Field label="Category">
+              <Field label={t("settingsPublic.text021")} required hint={t("settingsPublic.text022")}><Input value={form.shortName} maxLength={24} onChange={(event) => setForm((current) => ({ ...current, shortName: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text023")}>
                 <Select value={form.category} onValueChange={(category) => setForm((current) => ({ ...current, category }))}>
-                  <SelectTrigger aria-label="Category"><SelectValue /></SelectTrigger>
-                  <SelectContent>{PROFILE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
+                  <SelectTrigger aria-label={t("settingsPublic.text023")}><SelectValue /></SelectTrigger>
+                  <SelectContent>{PROFILE_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{publicProfileLabel(t, category)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="English tagline" required><Input data-profile-field="taglineEn" value={form.taglineEn} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineEn: event.target.value }))} /></Field>
-              <Field label="Arabic tagline"><Input data-profile-field="taglineAr" dir="rtl" lang="ar" value={form.taglineAr} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineAr: event.target.value }))} /></Field>
-              <Field label="English description" required><Textarea data-profile-field="descriptionEn" className="min-h-32" maxLength={2000} value={form.descriptionEn} onChange={(event) => setForm((current) => ({ ...current, descriptionEn: event.target.value }))} /></Field>
-              <Field label="Arabic description"><Textarea data-profile-field="descriptionAr" dir="rtl" lang="ar" className="min-h-32" maxLength={2000} value={form.descriptionAr} onChange={(event) => setForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></Field>
-              <Field label="Audience">
+              <Field label={t("settingsPublic.text024")} required><Input data-profile-field="taglineEn" dir="ltr" lang="en" value={form.taglineEn} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineEn: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text025")}><Input data-profile-field="taglineAr" dir="rtl" lang="ar" value={form.taglineAr} maxLength={180} onChange={(event) => setForm((current) => ({ ...current, taglineAr: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text026")} required><Textarea data-profile-field="descriptionEn" dir="ltr" lang="en" className="min-h-32" maxLength={2000} value={form.descriptionEn} onChange={(event) => setForm((current) => ({ ...current, descriptionEn: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text027")}><Textarea data-profile-field="descriptionAr" dir="rtl" lang="ar" className="min-h-32" maxLength={2000} value={form.descriptionAr} onChange={(event) => setForm((current) => ({ ...current, descriptionAr: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text028")}>
                 <Select value={form.audience} onValueChange={(audience) => setForm((current) => ({ ...current, audience }))}>
-                  <SelectTrigger aria-label="Audience"><SelectValue /></SelectTrigger>
-                  <SelectContent>{PROFILE_AUDIENCES.map((audience) => <SelectItem key={audience} value={audience}>{audience}</SelectItem>)}</SelectContent>
+                  <SelectTrigger aria-label={t("settingsPublic.text028")}><SelectValue /></SelectTrigger>
+                  <SelectContent>{PROFILE_AUDIENCES.map((audience) => <SelectItem key={audience} value={audience}>{publicProfileLabel(t, audience)}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
-              <Field label="Amenities" hint="Choose the facilities members can expect.">
-                <div className="flex flex-wrap gap-2" role="group" aria-label="Amenities">
+              <Field label={t("settingsPublic.text029")} hint={t("settingsPublic.text030")}>
+                <div className="flex flex-wrap gap-2" role="group" aria-label={t("settingsPublic.text029")}>
                   {AMENITY_CHOICES.map((amenity) => {
                     const selected = selectedAmenities.includes(amenity);
                     return (
@@ -296,93 +303,93 @@ export function GymPublicProfileSection() {
                         data-touch-target
                         onClick={() => setAmenities((current) => { const choices = new Set(splitAmenities(current)); if (choices.has(amenity)) choices.delete(amenity); else choices.add(amenity); return [...choices].join(", "); })}
                       >
-                        {amenity}
+                        {publicProfileLabel(t, amenity)}
                       </Button>
                     );
                   })}
                 </div>
               </Field>
-              <Field label="Contact email"><Input type="email" inputMode="email" dir="ltr" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></Field>
-              <Field label="Contact phone"><Input dir="ltr" type="tel" inputMode="tel" value={form.contactPhone} onChange={(event) => setForm((current) => ({ ...current, contactPhone: event.target.value }))} /></Field>
-              <Field label="Website"><Input type="url" inputMode="url" dir="ltr" value={form.websiteUrl} onChange={(event) => setForm((current) => ({ ...current, websiteUrl: event.target.value }))} placeholder="https://" /></Field>
-              <Field label="Instagram"><Input type="url" inputMode="url" dir="ltr" value={form.instagramUrl} onChange={(event) => setForm((current) => ({ ...current, instagramUrl: event.target.value }))} placeholder="https://instagram.com/" /></Field>
-              <Field label="Accent color" hint="Used on the public page only. Your staff screens use the colors in Brand kit."><div className="flex gap-2"><Input type="color" aria-label="Accent color picker" className="w-14 shrink-0 p-1" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /><Input aria-label="Accent color code" dir="ltr" className="font-mono" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></div></Field>
+              <Field label={t("settingsPublic.text031")}><Input type="email" inputMode="email" dir="ltr" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} /></Field>
+              <Field label={t("settingsPublic.text032")}><Input dir="ltr" type="tel" inputMode="tel" value={form.contactPhone} onChange={(event) => setForm((current) => ({ ...current, contactPhone: latinDigits(event.target.value) }))} /></Field>
+              <Field label={t("settingsPublic.text033")}><Input type="url" inputMode="url" dir="ltr" value={form.websiteUrl} onChange={(event) => setForm((current) => ({ ...current, websiteUrl: event.target.value }))} placeholder="https://" /></Field>
+              <Field label={t("domain.leadSource.instagram")}><Input type="url" inputMode="url" dir="ltr" value={form.instagramUrl} onChange={(event) => setForm((current) => ({ ...current, instagramUrl: event.target.value }))} placeholder="https://instagram.com/" /></Field>
+              <Field label={t("settingsPublic.text034")} hint={t("settingsPublic.text035")}><div className="flex gap-2"><Input type="color" aria-label={t("settingsPublic.text036")} className="w-14 shrink-0 p-1" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /><Input aria-label={t("settingsPublic.text037")} dir="ltr" className="font-mono" value={form.accentColor} onChange={(event) => setForm((current) => ({ ...current, accentColor: event.target.value }))} /></div></Field>
             </div>
           </SettingsPanel>
 
-          <SettingsPanel title="Images" description="JPEG, PNG or WebP, up to 5 MB each. Images upload when you save the draft.">
+          <SettingsPanel title={t("settingsPublic.text038")} description={t("settingsPublic.text039")}>
             <div className="grid gap-4 sm:grid-cols-2">
-              <MediaUploadField label="Logo" current={currentLogo} draft={pendingMedia.logo} loading={save.isPending} onRemove={currentLogo || pendingMedia.logo ? () => removeAsset("logo", form.logoAssetId) : undefined} onSelect={(file, altText) => prepareMedia("logo", file, altText)} onAltTextChange={(altText) => updatePendingAltText("logo", altText)} />
-              <MediaUploadField label="Cover image" current={currentCover} draft={pendingMedia.cover} loading={save.isPending} onRemove={currentCover || pendingMedia.cover ? () => removeAsset("cover", form.coverAssetId) : undefined} onSelect={(file, altText) => prepareMedia("cover", file, altText)} onAltTextChange={(altText) => updatePendingAltText("cover", altText)} />
+              <MediaUploadField label={t("settingsDetails.text247")} current={currentLogo} draft={pendingMedia.logo} loading={save.isPending} onRemove={currentLogo || pendingMedia.logo ? () => removeAsset("logo", form.logoAssetId) : undefined} onSelect={(file, altText) => prepareMedia("logo", file, altText)} onAltTextChange={(altText) => updatePendingAltText("logo", altText)} />
+              <MediaUploadField label={t("settingsPublic.text040")} current={currentCover} draft={pendingMedia.cover} loading={save.isPending} onRemove={currentCover || pendingMedia.cover ? () => removeAsset("cover", form.coverAssetId) : undefined} onSelect={(file, altText) => prepareMedia("cover", file, altText)} onAltTextChange={(altText) => updatePendingAltText("cover", altText)} />
             </div>
             <div className="mt-5 border-t border-line pt-4">
-              <p className="text-[13.5px] font-medium text-ink">Gallery</p>
-              <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Photos show in this order. Use the arrows to move them.</p>
+              <p className="text-[13.5px] font-medium text-ink">{t("settingsPublic.text041")}</p>
+              <p className="mt-0.5 text-[12px] leading-5 text-ink-3">{t("settingsPublic.text042")}</p>
               {form.galleryAssetIds.length || pendingMedia.gallery.length ? (
                 <ol className="mt-3 divide-y divide-line">
                   {form.galleryAssetIds.map((assetId, index) => {
                     const asset = uploadedAssets[assetId] ?? value.gallery.find((item) => item.id === assetId);
                     return (
                       <li key={assetId} className="flex items-center gap-3 py-2">
-                        <span className="size-12 shrink-0 rounded-sm bg-sunken bg-cover bg-center" role="img" aria-label={asset?.altText ?? `Gallery image ${index + 1}`} style={{ backgroundImage: asset?.url ? `url(${asset.url})` : undefined }} />
-                        <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">Image {index + 1}</span><span className="block truncate text-[12px] text-ink-3">{asset?.altText ?? "Saved image"}</span></span>
-                        <Button type="button" size="icon" variant="ghost" aria-label={`Move image ${index + 1} earlier`} disabled={index === 0} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!]; return { ...current, galleryAssetIds: ids }; })}><ArrowUp /></Button>
-                        <Button type="button" size="icon" variant="ghost" aria-label={`Move image ${index + 1} later`} disabled={index === form.galleryAssetIds.length - 1} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index], ids[index + 1]] = [ids[index + 1]!, ids[index]!]; return { ...current, galleryAssetIds: ids }; })}><ArrowDown /></Button>
-                        <Button type="button" size="icon" variant="ghost" aria-label={`Remove image ${index + 1}`} onClick={() => removeAsset("gallery", assetId)}><X /></Button>
+                        <span className="size-12 shrink-0 rounded-sm bg-sunken bg-cover bg-center" role="img" aria-label={asset?.altText ?? t("settingsPublic.galleryImage", { number: index + 1 })} style={{ backgroundImage: asset?.url ? `url(${asset.url})` : undefined }} />
+                        <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{t("settingsPublic.imageNumber", { number: index + 1 })}</span><span className="block truncate text-[12px] text-ink-3">{asset?.altText ?? t("settingsPublic.text043")}</span></span>
+                        <Button type="button" size="icon" variant="ghost" aria-label={t("settingsPublic.imageUp", { number: index + 1 })} disabled={index === 0} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index - 1], ids[index]] = [ids[index]!, ids[index - 1]!]; return { ...current, galleryAssetIds: ids }; })}><ArrowUp /></Button>
+                        <Button type="button" size="icon" variant="ghost" aria-label={t("settingsPublic.imageDown", { number: index + 1 })} disabled={index === form.galleryAssetIds.length - 1} onClick={() => setForm((current) => { const ids = [...current.galleryAssetIds]; [ids[index], ids[index + 1]] = [ids[index + 1]!, ids[index]!]; return { ...current, galleryAssetIds: ids }; })}><ArrowDown /></Button>
+                        <Button type="button" size="icon" variant="ghost" aria-label={t("settingsPublic.imageRemove", { number: index + 1 })} onClick={() => removeAsset("gallery", assetId)}><X /></Button>
                       </li>
                     );
                   })}
                   {pendingMedia.gallery.map((draft, index) => (
                     <li key={`${draft.file.name}-${index}`} className="flex items-center gap-3 py-2">
-                      <span className="size-12 shrink-0 rounded-sm border border-dashed border-line-2 bg-sunken bg-cover bg-center" role="img" aria-label={draft.altText || `New gallery image ${index + 1}`} style={{ backgroundImage: draft.previewUrl ? `url(${draft.previewUrl})` : undefined }} />
-                      <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">New image {index + 1}</span><span className={cn("block truncate text-[12px]", draft.altText.trim().length >= 3 ? "text-ink-3" : "text-danger")}>{draft.altText.trim().length >= 3 ? "Ready. Save the draft to upload it." : "Describe this image"}</span></span>
-                      <Button type="button" size="icon" variant="ghost" aria-label={`Remove new image ${index + 1}`} onClick={() => removePendingGallery(index)}><X /></Button>
+                      <span className="size-12 shrink-0 rounded-sm border border-dashed border-line-2 bg-sunken bg-cover bg-center" role="img" aria-label={draft.altText || t("settingsPublic.newGalleryImage", { number: index + 1 })} style={{ backgroundImage: draft.previewUrl ? `url(${draft.previewUrl})` : undefined }} />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium">{t("settingsPublic.newImageNumber", { number: index + 1 })}</span><span className={cn("block truncate text-[12px]", draft.altText.trim().length >= 3 ? "text-ink-3" : "text-danger")}>{draft.altText.trim().length >= 3 ? t("settingsPublic.text044") : t("settingsPublic.text045")}</span></span>
+                      <Button type="button" size="icon" variant="ghost" aria-label={t("settingsPublic.newImageRemove", { number: index + 1 })} onClick={() => removePendingGallery(index)}><X /></Button>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="mt-3 text-[12.5px] text-ink-3">No gallery images yet.</p>
+                <p className="mt-3 text-[12.5px] text-ink-3">{t("settingsPublic.text046")}</p>
               )}
               <div className="mt-3">
-                <MediaUploadField label="Add gallery image" draft={pendingMedia.gallery.at(-1)} loading={save.isPending} onSelect={(file, altText) => prepareMedia("gallery", file, altText)} onAltTextChange={(altText) => updatePendingAltText("gallery", altText)} onRemove={pendingMedia.gallery.length ? () => removePendingGallery(pendingMedia.gallery.length - 1) : undefined} />
+                <MediaUploadField label={t("settingsPublic.text047")} draft={pendingMedia.gallery.at(-1)} loading={save.isPending} onSelect={(file, altText) => prepareMedia("gallery", file, altText)} onAltTextChange={(altText) => updatePendingAltText("gallery", altText)} onRemove={pendingMedia.gallery.length ? () => removePendingGallery(pendingMedia.gallery.length - 1) : undefined} />
               </div>
             </div>
           </SettingsPanel>
         </div>
 
         <div className="space-y-4">
-          <SettingsPanel title="Preview" description="How your page looks with your changes. RIVET must also allow your gym to appear in Find gyms." bodyClassName="p-0">
+          <SettingsPanel title={t("settingsDetails.text254")} description={t("settingsPublic.text048")} bodyClassName="p-0">
             <div className="h-28 bg-cover bg-center" style={{ backgroundColor: form.accentColor, backgroundImage: coverPreviewUrl ? `url(${coverPreviewUrl})` : undefined }} />
             <div className="p-4 sm:p-5">
               <div className="flex items-center gap-3">
-                <span className="size-12 shrink-0 rounded-full border border-line bg-cover bg-center" role="img" aria-label={pendingMedia.logo || form.logoAssetId ? "Gym logo preview" : "Gym logo placeholder"} style={{ backgroundColor: form.accentColor, backgroundImage: logoPreviewUrl ? `url(${logoPreviewUrl})` : undefined }} />
+                <span className="size-12 shrink-0 rounded-full border border-line bg-cover bg-center" role="img" aria-label={pendingMedia.logo || form.logoAssetId ? t("settingsPublic.text049") : t("settingsPublic.text050")} style={{ backgroundColor: form.accentColor, backgroundImage: logoPreviewUrl ? `url(${logoPreviewUrl})` : undefined }} />
                 <div className="min-w-0">
-                  <p className="text-[12px] font-medium text-ink-3">{form.category || "Gym"} · {form.audience || "All members"}</p>
-                  <p className="mt-0.5 truncate font-display text-[22px] font-semibold leading-tight tracking-tight">{form.shortName || "Gym name"}</p>
+                  <p className="text-[12px] font-medium text-ink-3">{publicProfileLabel(t, form.category || "Gym")} · {publicProfileLabel(t, form.audience || "All members")}</p>
+                  <p className="mt-0.5 truncate font-display text-[22px] font-semibold leading-tight tracking-tight">{form.shortName || t("settingsCore.text009")}</p>
                 </div>
               </div>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-2">{form.taglineEn || "Add the gym's public tagline."}</p>
-              {selectedAmenities.length ? <div className="mt-3 flex flex-wrap gap-1.5">{selectedAmenities.map((item) => <Badge key={item} variant="outline">{item}</Badge>)}</div> : null}
-              <p className="mt-4 border-t border-line pt-3 text-[12px] text-ink-3">{pendingMedia.logo || pendingMedia.cover ? "Image preview. Save the draft to upload it." : `${value.trainers.length} published trainer${value.trainers.length === 1 ? "" : "s"} · ${value.ptPackages.length} active PT package${value.ptPackages.length === 1 ? "" : "s"}`}</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-2">{(locale === "ar" && form.taglineAr ? form.taglineAr : form.taglineEn) || t("settingsPublic.text051")}</p>
+              {selectedAmenities.length ? <div className="mt-3 flex flex-wrap gap-1.5">{selectedAmenities.map((item) => <Badge key={item} variant="outline">{publicProfileLabel(t, item)}</Badge>)}</div> : null}
+              <p className="mt-4 border-t border-line pt-3 text-[12px] text-ink-3">{pendingMedia.logo || pendingMedia.cover ? t("settingsPublic.text052") : `${t("settingsPublic.trainerCount", { count: value.trainers.length })} · ${t("settingsPublic.packageCount", { count: value.ptPackages.length })}`}</p>
             </div>
           </SettingsPanel>
 
-          <SettingsPanel title="Version history" description="Earlier versions of your page." bodyClassName="p-0">
+          <SettingsPanel title={t("settingsPublic.text053")} description={t("settingsPublic.text054")} bodyClassName="p-0">
             {versions.isLoading ? <Skeleton className="m-4 h-24" /> : versions.data?.length ? (
               <ul className="divide-y divide-line">
                 {versions.data.map((item) => {
                   const itemStatus = PROFILE_STATUS[item.status] ?? { label: item.status, variant: "neutral" as const };
                   return (
                     <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-                      <div><p className="text-[13px] font-medium">Version {item.version}</p><p className="mt-0.5 text-[12px] text-ink-3">{formatDateTime(item.publishedAt ?? item.updatedAt)}</p></div>
+                      <div><p className="text-[13px] font-medium">{t("settingsDetails.text101")}{" "}{item.version}</p><p className="mt-0.5 text-[12px] text-ink-3">{f.dateTime(item.publishedAt ?? item.updatedAt)}</p></div>
                       <Badge variant={itemStatus.variant}>{itemStatus.label}</Badge>
                     </li>
                   );
                 })}
               </ul>
-            ) : <p className="p-4 text-[12.5px] text-ink-3 sm:p-5">You have not published a version yet.</p>}
+            ) : <p className="p-4 text-[12.5px] text-ink-3 sm:p-5">{t("settingsPublic.text055")}</p>}
           </SettingsPanel>
-          <p className="text-[12px] leading-5 text-ink-3">Trainers and PT packages on this page come from your gym’s own records. Your page can still be missing from Find gyms if RIVET has not allowed it yet.</p>
+          <p className="text-[12px] leading-5 text-ink-3">{t("settingsPublic.text056")}</p>
         </div>
       </div>
 
@@ -391,30 +398,31 @@ export function GymPublicProfileSection() {
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? (isApiError(save.error) ? save.error.message : "The draft was not saved. Try again.") : undefined}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : t("settingsPublic.text057")) : undefined}
         onSave={async () => { await save.mutateAsync(); }}
         onDiscard={discardChanges}
-        saveLabel="Save draft"
-        guardTitle="Unsaved public profile changes"
-        guardDescription="Save the draft, discard your changes, or stay on this page."
+        saveLabel={t("settingsPublic.text058")}
+        guardTitle={t("settingsDetails.text263")}
+        guardDescription={t("settingsPublic.text059")}
       />
 
-      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>Send version {value.version} to RIVET?</DialogTitle><DialogDescription>The RIVET team checks your saved draft and publishes it for you. You can add a note.</DialogDescription></DialogHeader><DialogBody><Field label="Note for RIVET (optional)"><Textarea value={reviewMessage} onChange={(event) => setReviewMessage(event.target.value)} placeholder="What changed and why?" /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setReviewOpen(false)}>Cancel</Button><Button loading={requestReview.isPending} onClick={() => requestReview.mutate()}><Send /> Send to RIVET</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}><DialogContent><DialogHeader><DialogTitle>{t("settingsPublic.sendVersion", { version: value.version })}</DialogTitle><DialogDescription>{t("settingsPublic.text060")}</DialogDescription></DialogHeader><DialogBody><Field label={t("settingsPublic.text061")}><Textarea value={reviewMessage} onChange={(event) => setReviewMessage(event.target.value)} placeholder={t("settingsPublic.text062")} /></Field></DialogBody><DialogFooter><Button variant="secondary" onClick={() => setReviewOpen(false)}>{t("common.action.cancel")}</Button><Button loading={requestReview.isPending} onClick={() => requestReview.mutate()}><Send /> {" "}{t("settingsPublic.text063")}</Button></DialogFooter></DialogContent></Dialog>
     </SettingsSection>
   );
 }
 
 function MediaUploadField({ label, current, draft, loading, onSelect, onAltTextChange, onRemove }: { label: string; current?: MediaAsset; draft?: PendingMedia; loading: boolean; onSelect: (file: File, altText: string) => void; onAltTextChange?: (altText: string) => void; onRemove?: () => void }) {
+  const t = useT();
   const [altText, setAltText] = useState(draft?.altText ?? current?.altText ?? "");
   const fieldId = useId();
   useEffect(() => { setAltText(draft?.altText ?? current?.altText ?? ""); }, [draft?.file, draft?.altText, current?.id, current?.altText]);
   const previewUrl = draft ? draft.previewUrl : current?.url;
-  const previewLabel = draft ? draft.altText || `${label} preview` : current?.altText ?? "Saved profile image";
+  const previewLabel = draft ? draft.altText || t("settingsPublic.labelPreview", { label }) : current?.altText ?? t("settingsPublic.text064");
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(file.type) || file.size > 5 * 1024 * 1024) {
-      toast.error("Choose a JPEG, PNG, or WebP image up to 5 MB.");
+      toast.error(t("settingsDetails.text231"));
       event.currentTarget.value = "";
       return;
     }
@@ -429,17 +437,17 @@ function MediaUploadField({ label, current, draft, loading, onSelect, onAltTextC
     <div className="min-w-0">
       <label htmlFor={`${fieldId}-file`} className="mb-1.5 block text-[13px] font-medium text-ink-2">{label}</label>
       {previewUrl ? (
-        <div className="relative mb-2"><div role="img" aria-label={previewLabel} className="h-24 w-full rounded-md bg-sunken bg-cover bg-center" style={{ backgroundImage: `url(${previewUrl})` }} />{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>Remove</Button> : null}</div>
+        <div className="relative mb-2"><div role="img" aria-label={previewLabel} className="h-24 w-full rounded-md bg-sunken bg-cover bg-center" style={{ backgroundImage: `url(${previewUrl})` }} />{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>{t("common.action.remove")}</Button> : null}</div>
       ) : draft ? (
-        <div className="relative mb-2 flex h-24 items-center justify-center rounded-md border border-dashed border-line-2 bg-sunken px-3 text-center text-[12px] text-ink-2"><span className="truncate">Ready to upload: {draft.file.name}</span>{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>Remove</Button> : null}</div>
+        <div className="relative mb-2 flex h-24 items-center justify-center rounded-md border border-dashed border-line-2 bg-sunken px-3 text-center text-[12px] text-ink-2"><span className="truncate">{t("settingsPublic.text065")}{" "}{draft.file.name}</span>{onRemove ? <Button type="button" size="xs" variant="secondary" className="absolute end-2 top-2" onClick={onRemove}>{t("common.action.remove")}</Button> : null}</div>
       ) : null}
       <input id={`${fieldId}-file`} className="block h-9 w-full rounded-md border border-line-2 bg-surface px-3 py-1.5 text-[12.5px] text-ink-2 file:me-2 file:rounded-sm file:border file:border-line file:bg-surface file:px-2 file:py-0.5 file:text-[12px] file:text-ink disabled:cursor-not-allowed disabled:opacity-50" type="file" accept="image/jpeg,image/png,image/webp" disabled={loading} onChange={handleFileChange} />
-      <label htmlFor={`${fieldId}-alt`} className="mt-3 block text-[13px] font-medium text-ink-2">Image description</label>
-      <Input id={`${fieldId}-alt`} className="mt-1.5" value={altText} maxLength={180} disabled={loading} aria-invalid={!altReady || undefined} onChange={(event) => handleAltTextChange(event.target.value)} placeholder="What the image shows, in a few words" />
+      <label htmlFor={`${fieldId}-alt`} className="mt-3 block text-[13px] font-medium text-ink-2">{t("settingsPublic.text066")}</label>
+      <Input id={`${fieldId}-alt`} className="mt-1.5" value={altText} maxLength={180} disabled={loading} aria-invalid={!altReady || undefined} onChange={(event) => handleAltTextChange(event.target.value)} placeholder={t("settingsPublic.text067")} />
       <p className={cn("mt-1.5 text-[12px] leading-5", altReady ? "text-ink-3" : "text-danger")}>
         {draft
-          ? altReady ? "Preview only. Save the draft to upload this image." : "Describe the image before saving."
-          : "Needed for every image. It helps people who cannot see it."}
+          ? altReady ? t("settingsPublic.text068") : t("settingsPublic.text069")
+          : t("settingsPublic.text070")}
       </p>
     </div>
   );

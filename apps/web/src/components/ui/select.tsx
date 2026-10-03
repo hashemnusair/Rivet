@@ -4,8 +4,12 @@ import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
-const Select = SelectPrimitive.Root;
+function Select(props: ComponentPropsWithoutRef<typeof SelectPrimitive.Root>) {
+  const { dir } = useLocale();
+  return <SelectPrimitive.Root dir={dir} {...props} />;
+}
 const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 

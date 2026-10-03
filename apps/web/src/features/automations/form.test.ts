@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationTriggerKey } from "@/lib/domain/types";
-import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams } from "./form";
+import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams, normalizeAutomationNumbers, parseAutomationInteger, parseAutomationNumbers } from "./form";
 
 describe("automation rule form parameters", () => {
   it("keeps expired-membership thresholds as days when a rule is edited", () => {
@@ -19,5 +19,16 @@ describe("automation rule form parameters", () => {
   it("allows a membership that expired today to use a zero-day threshold", () => {
     expect(hasValidAutomationTriggerParams("membership_expired", "0")).toBe(true);
     expect(automationTriggerParams("membership_expired", "0")).toEqual({ daysAfter: 0 });
+  });
+
+  it("accepts Arabic and Persian digits without changing the visible draft", () => {
+    const arabicDraft = "١٤، ٣";
+    expect(normalizeAutomationNumbers(arabicDraft)).toBe("14, 3");
+    expect(parseAutomationNumbers(arabicDraft)).toEqual([14, 3]);
+    expect(parseAutomationNumbers("۱۴, ۳, ۱۴")).toEqual([14, 3]);
+    expect(parseAutomationInteger("٧٢")).toBe(72);
+    expect(parseAutomationInteger("٠", true)).toBe(0);
+    expect(parseAutomationInteger("٧٢٫٥")).toBeUndefined();
+    expect(arabicDraft).toBe("١٤، ٣");
   });
 });

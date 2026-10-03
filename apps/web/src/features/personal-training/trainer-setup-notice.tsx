@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { CalendarClock, UserRound } from "lucide-react";
 import Link from "next/link";
@@ -18,16 +19,17 @@ export function TrainerSetupNotice({ state, onSetAvailability, availabilityHref 
   availabilityHref?: string;
   className?: string;
 }) {
+  const t = useT();
   if (state.kind === "ready") return null;
   const availabilityAction = state.kind === "no_profile" ? null : onSetAvailability
-    ? <Button size="sm" variant="secondary" onClick={() => onSetAvailability(state)}><CalendarClock /> Set availability</Button>
-    : <Button asChild size="sm" variant="secondary"><Link href={availabilityHref}><CalendarClock /> Set availability</Link></Button>;
+    ? <Button size="sm" variant="secondary" onClick={() => onSetAvailability(state)}><CalendarClock /> {" "}{t("ptWorkspace.setAvailability")}</Button>
+    : <Button asChild size="sm" variant="secondary"><Link href={availabilityHref}><CalendarClock /> {" "}{t("ptWorkspace.setAvailability")}</Link></Button>;
   if (state.kind === "no_profile") {
-    return <div data-testid="trainer-setup-notice"><StatePanel icon={UserRound} layout="section" className={className} title="Your trainer profile is not set up yet" description="An owner or manager links a profile to your account in Personal training. Until then, nobody can book sessions with you." /></div>;
+    return <div data-testid="trainer-setup-notice"><StatePanel icon={UserRound} layout="section" className={className} title={t("ptWorkspace.profileNotReady")} description={t("ptWorkspace.profileNotReadyHint")} /></div>;
   }
   if (state.kind === "unpublished") {
     const archived = state.profile.status === "archived";
-    return <div data-testid="trainer-setup-notice"><StatePanel icon={UserRound} layout="section" className={className} title={archived ? "Your trainer profile is archived" : "Your trainer profile is still a draft"} description={`${archived ? "Members cannot book you while your profile is archived." : "Members cannot book you until an owner or manager publishes your profile."} You can set your weekly hours and time off now. Bookings open as soon as your profile is published.`} action={availabilityAction} /></div>;
+    return <div data-testid="trainer-setup-notice"><StatePanel icon={UserRound} layout="section" className={className} title={archived ? t("ptWorkspace.profileArchived") : t("ptWorkspace.profileDraft")} description={t("ptWorkspace.setupHoursHint", { status: archived ? t("ptWorkspace.archivedBookingHint") : t("ptWorkspace.draftBookingHint") })} action={availabilityAction} /></div>;
   }
-  return <div data-testid="trainer-setup-notice"><StatePanel icon={CalendarClock} layout="section" className={className} title="Add your weekly hours" description="Nobody can book you until you save the days and times you work at your branch." action={availabilityAction} /></div>;
+  return <div data-testid="trainer-setup-notice"><StatePanel icon={CalendarClock} layout="section" className={className} title={t("ptWorkspace.addHours")} description={t("ptWorkspace.addHoursHint")} action={availabilityAction} /></div>;
 }

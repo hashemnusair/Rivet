@@ -104,8 +104,8 @@ export function fromMajor(major: number, currency = "JOD"): Money {
 
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
-function formatterFor(currency: string, locale: string): Intl.NumberFormat {
-  const key = `${locale}:${currency}`;
+function formatterFor(currency: string, locale: string, signDisplay?: Intl.NumberFormatOptions["signDisplay"]): Intl.NumberFormat {
+  const key = `${locale}:${currency}:${signDisplay ?? "auto"}`;
   let f = formatterCache.get(key);
   if (!f) {
     const exp = exponentFor(currency);
@@ -115,6 +115,7 @@ function formatterFor(currency: string, locale: string): Intl.NumberFormat {
       minimumFractionDigits: exp,
       maximumFractionDigits: exp,
       currencyDisplay: "code",
+      signDisplay,
     });
     formatterCache.set(key, f);
   }
@@ -127,26 +128,51 @@ export interface FormatMoneyOptions {
   hideCurrency?: boolean;
   /** Render as compact thousands, e.g. JOD 12.5K — dashboards only. */
   compact?: boolean;
+  /**
+   * Let Intl place the sign. It belongs to the formatter because the position
+   * differs by locale and the bidi marks around it have to match: Arabic emits
+   * "\u200F\u200E-7.000 JOD", which a hand-prepended "−" cannot reproduce.
+   */
+  signDisplay?: Intl.NumberFormatOptions["signDisplay"];
 }
 
 export function formatMoney(m: Money, opts: FormatMoneyOptions = {}): string {
   const locale = opts.locale ?? "en-JO";
   const exp = exponentFor(m.currency);
   const major = m.amount / 10 ** exp;
+  if (locale.startsWith("ar")) {
+    const amount = new Intl.NumberFormat("en-US-u-nu-latn", {
+      minimumFractionDigits: opts.compact && Math.abs(major) >= 1000 ? 0 : exp,
+      maximumFractionDigits: opts.compact && Math.abs(major) >= 1000 ? 1 : exp,
+      signDisplay: opts.signDisplay,
+    }).format(opts.compact && Math.abs(major) >= 1000 ? major / (Math.abs(major) >= 1_000_000 ? 1_000_000 : 1000) : major);
+    const scale = opts.compact && Math.abs(major) >= 1000 ? (Math.abs(major) >= 1_000_000 ? " مليون" : " ألف") : "";
+    return `${amount}${scale}${opts.hideCurrency ? "" : ` ${m.currency.toUpperCase() === "JOD" ? "د.أ" : m.currency.toUpperCase()}`}`;
+  }
   if (opts.compact && Math.abs(major) >= 1000) {
-    const compacted = new Intl.NumberFormat(locale, {
+    if (opts.hideCurrency) {
+      return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(major);
+    }
+    // One formatter call rather than currency + number concatenated: in Arabic
+    // the compact suffix is a word ("ألف"), and gluing it to a code by hand
+    // leaves bidi free to reorder the result.
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: m.currency,
+      currencyDisplay: "code",
       notation: "compact",
       maximumFractionDigits: 1,
+      signDisplay: opts.signDisplay,
     }).format(major);
-    return opts.hideCurrency ? compacted : `${m.currency} ${compacted}`;
   }
   if (opts.hideCurrency) {
     return new Intl.NumberFormat(locale, {
       minimumFractionDigits: exp,
       maximumFractionDigits: exp,
+      signDisplay: opts.signDisplay,
     }).format(major);
   }
-  return formatterFor(m.currency, locale).format(major);
+  return formatterFor(m.currency, locale, opts.signDisplay).format(major);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +202,7 @@ export type MoneyInputResult =
  * currency is stripped; any other currency's text is a mismatch, never a hint.
  */
 const CURRENCY_ALIASES: Record<string, string[]> = {
-  JOD: ["JD", "JDS", "DINAR", "DINARS", "د.ا", "دينار", "دنانير"],
+  JOD: ["JD", "JDS", "DINAR", "DINARS", "د.أ", "د.ا", "دينار", "دنانير"],
   USD: ["$", "US$", "DOLLAR", "DOLLARS"],
   EUR: ["€", "EURO", "EUROS"],
   SAR: ["SR", "RIYAL", "RIYALS", "ر.س", "ريال"],
@@ -227,7 +253,7 @@ export function readMoneyInput(raw: string, currency = "JOD"): MoneyInputResult 
   const example = toMajorString(money(40 * 10 ** exp, code));
   const fail = (problem: MoneyInputProblem, message: string): MoneyInputResult => ({ ok: false, problem, message });
 
-  let text = toWesternDigits(raw).replace(/[\u00a0\u202f\u2009]/g, " ").trim();
+  let text = toWesternDigits(raw).replace(/[\u061c\u200e\u200f\u2066-\u2069]/g, "").replace(/[\u00a0\u202f\u2009]/g, " ").trim();
   if (!text) return fail("empty", "Enter an amount.");
 
   let mismatch: string | undefined;

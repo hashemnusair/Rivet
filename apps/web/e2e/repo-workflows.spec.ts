@@ -13,8 +13,8 @@ test("changes a promised delivery date and clears the overdue filter", async ({ 
   await page.getByRole("option", { name: "Forge — Abdoun" }).click();
   await page.getByRole("tab", { name: "Purchase orders" }).click();
   await page.getByRole("button", { name: "New purchase order" }).click();
-  await page.getByRole("spinbutton", { name: "Quantity", exact: true }).fill("2");
-  await page.getByRole("spinbutton", { name: "Unit cost (JOD)", exact: true }).fill("1");
+  await page.getByRole("textbox", { name: "Quantity", exact: true }).fill("2");
+  await page.getByRole("textbox", { name: "Unit cost (JOD)", exact: true }).fill("1");
   await page.getByLabel("Expected delivery date", { exact: true }).fill("2020-01-01");
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   const row = page.getByTestId("purchase-order-row").filter({ has: page.getByRole("button", { name: "Approve", exact: true }) }).first();

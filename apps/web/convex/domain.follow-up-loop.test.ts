@@ -76,8 +76,20 @@ describe("member contact resolves the follow-up it fulfils", () => {
     expect(completed.items).toEqual([expect.objectContaining({ id: "loop-renewal-call", outcome: "Contact logged — Not interested" })]);
     const member = await sales.query(api.domain.query, operation("members.get", { memberId: "loop-member" })) as { id: string };
     expect(member.id).toBe("loop-member");
-    const timeline = await sales.query(api.domain.query, operation("members.timeline", { memberId: "loop-member", pageSize: 20 })) as { items: Array<{ type: string; body?: string }> };
-    expect(timeline.items).toContainEqual(expect.objectContaining({ type: "task_completed", body: "Contact logged — Not interested" }));
+    const timeline = await sales.query(api.domain.query, operation("members.timeline", { memberId: "loop-member", pageSize: 20 })) as { items: Array<{ type: string; title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; body?: string }> };
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "task_completed",
+      title: "Task completed: Call Rania Odeh about membership renewal",
+      titleMessage: { key: "communicationCompletion.timeline.taskCompleted", params: { title: "Call Rania Odeh about membership renewal" } },
+      body: "Contact logged — Not interested",
+      bodyMessage: { key: "communicationCompletion.timeline.taskContactCompleted", params: { outcome: { enum: "contactOutcome", value: "answered_not_interested" } } },
+    }));
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "call_attempt",
+      title: "Contact — answered not interested",
+      titleMessage: { key: "communicationCompletion.timeline.contactAttempt", params: { outcome: { enum: "contactOutcome", value: "answered_not_interested" } } },
+      body: "Moving abroad",
+    }));
   });
 
   it("lets a manager resolve any owner's follow-up and creates one only when none exists", async () => {
@@ -106,6 +118,35 @@ describe("member contact resolves the follow-up it fulfils", () => {
     await expect(desk.mutation(api.domain.mutate, operation("members.contact", { memberId: "loop-member", outcome: "no_answer" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
     const sales = t.withIdentity({ subject: "clerk-loop-sales" });
     await expect(sales.mutation(api.domain.mutate, operation("members.contact", { memberId: "loop-member", outcome: "no_answer" }))).resolves.toMatchObject({ type: "call_attempt" });
+  });
+
+  it("translates task wrappers while preserving authored task titles and custom outcomes", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sales = t.withIdentity({ subject: "clerk-loop-sales" });
+    const originalTitle = "Call after the member's evening class";
+    const task = await sales.mutation(api.domain.mutate, operation("tasks.create", { memberId: "loop-member", ownerId: "loop-sales", title: originalTitle, type: "follow_up", dueAt: inDays(3) })) as { id: string; title: string };
+    await sales.mutation(api.domain.mutate, operation("tasks.create", { memberId: "loop-member", ownerId: "loop-sales", title: "Confirm interest", type: "follow_up", dueAt: inDays(4), relatedTaskId: task.id }));
+    await sales.mutation(api.domain.mutate, operation("tasks.complete", { taskId: task.id, outcome: "Member requested a call after 7 PM." }));
+    const timeline = await sales.query(api.domain.query, operation("members.timeline", { memberId: "loop-member", pageSize: 20 })) as { items: Array<{ type: string; title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; body?: string; bodyMessage?: { key: string; params?: Record<string, unknown> } }> };
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "task_created",
+      title: `Task: ${originalTitle}`,
+      titleMessage: { key: "communicationCompletion.timeline.taskCreated", params: { title: originalTitle } },
+    }));
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "task_created",
+      title: "Task: Confirm interest",
+      titleMessage: { key: "communicationCompletion.timeline.taskCreated", params: { title: "Confirm interest" } },
+      body: `Follow-on to: ${originalTitle}`,
+      bodyMessage: { key: "communicationCompletion.timeline.taskFollowOn", params: { title: originalTitle } },
+    }));
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "task_completed",
+      title: `Task completed: ${originalTitle}`,
+      titleMessage: { key: "communicationCompletion.timeline.taskCompleted", params: { title: originalTitle } },
+      body: "Member requested a call after 7 PM.",
+    }));
   });
 });
 

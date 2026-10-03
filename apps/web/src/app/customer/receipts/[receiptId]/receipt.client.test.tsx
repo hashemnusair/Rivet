@@ -68,3 +68,17 @@ describe("CustomerReceiptClient", () => {
     expect(screen.queryByRole("link", { name: /dashboard/i })).not.toBeInTheDocument();
   });
 });
+
+it("formats the Arabic download in the issuing timezone without modifying source records", () => {
+  const arabic = { ...receipt, organization: { ...receipt.organization, timezone: "America/New_York" }, member: { fullName: "لينا Haddad", memberNumber: "ABD-2214" }, payment: { ...receipt.payment, externalReference: "CliQ-007/42", refundReason: "سبب أصلي / original" } };
+  const before = JSON.stringify(arabic);
+  const text = receiptTextLines(arabic, "ar").join("\n").replace(/[\u2066-\u2069]/g, "");
+  expect(text).toContain("رقم وصل الدفع: RV-001042");
+  expect(text).toContain("3 أيلول 2026 · 9:42 ص");
+  expect(text).toContain("لينا Haddad");
+  expect(text).toContain("85.000 د.أ");
+  expect(text).toContain("كاش");
+  expect(text).toContain("CliQ-007/42");
+  expect(text).toContain("سبب أصلي / original");
+  expect(JSON.stringify(arabic)).toBe(before);
+});

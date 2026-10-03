@@ -1,3 +1,4 @@
+import { WorkspaceModuleError } from "./workspace-module-error";
 import type {
   OrganizationEntitlements,
   WorkspaceAccess,
@@ -77,7 +78,7 @@ export function allWorkspaceModuleKeys(): WorkspaceModuleKey[] {
 
 export function catalogEntry(key: WorkspaceModuleKey): WorkspaceModuleCatalogEntry {
   const entry = WORKSPACE_MODULE_CATALOG.find((catalogEntry) => catalogEntry.key === key);
-  if (!entry) throw new Error(`Unknown workspace module: ${key}`);
+  if (!entry) throw new WorkspaceModuleError(`Unknown workspace module: ${key}`, { key: "apiErrors.workspaceUnknown" });
   return entry;
 }
 
@@ -126,17 +127,17 @@ export function validateWorkspaceModuleSelection(
     .filter((value): value is string => typeof value === "string" && value.length > 0);
   const unique = [...new Set(values)];
   const unknown = unique.filter((key) => !CATALOG_KEYS.has(key as WorkspaceModuleKey));
-  if (unknown.length > 0) throw new Error(`Unknown workspace module: ${unknown.join(", ")}`);
+  if (unknown.length > 0) throw new WorkspaceModuleError(`Unknown workspace module: ${unknown.join(", ")}`, { key: "apiErrors.workspaceUnknown" });
 
   const notEntitled = unique.filter((key) => !entitledModules.includes(key as WorkspaceModuleKey));
-  if (notEntitled.length > 0) throw new Error(`Workspace module is not included in this plan: ${notEntitled.join(", ")}`);
+  if (notEntitled.length > 0) throw new WorkspaceModuleError(`Workspace module is not included in this plan: ${notEntitled.join(", ")}`, { key: "apiErrors.workspaceNotEntitled", params: { modules: notEntitled.join(", ") } });
 
   const selected = new Set(unique as WorkspaceModuleKey[]);
   for (const entry of WORKSPACE_MODULE_CATALOG) {
-    if (entry.required && !selected.has(entry.key)) throw new Error(`Required workspace module is disabled: ${entry.key}`);
+    if (entry.required && !selected.has(entry.key)) throw new WorkspaceModuleError(`Required workspace module is disabled: ${entry.key}`, { key: "apiErrors.workspaceRequired", params: { module: entry.key } });
     if (!selected.has(entry.key)) continue;
     const missing = entry.dependencies.filter((dependency) => !selected.has(dependency));
-    if (missing.length > 0) throw new Error(`${entry.key} requires ${missing.join(", ")}`);
+    if (missing.length > 0) throw new WorkspaceModuleError(`${entry.key} requires ${missing.join(", ")}`, { key: "apiErrors.workspaceDependencies", params: { module: entry.key, modules: missing.join(", ") } });
   }
 
   return WORKSPACE_MODULE_CATALOG

@@ -1,4 +1,6 @@
 "use client";
+import { useLocale, useT } from "@/lib/i18n/provider";
+
 
 import {
   AlertTriangle,
@@ -24,8 +26,8 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
-import { formatDate, formatTime, todayISODate } from "@/lib/utils/dates";
-import { formatMoney } from "@/lib/utils/money";
+import { todayISODate } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { Button } from "@/components/ui/button";
@@ -33,13 +35,16 @@ import { Kbd, Monogram } from "@/components/ui/misc";
 import { ForbiddenState, StatePanel } from "@/components/ui/states";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
-import { REASON_CODE_LABELS } from "@/features/reception/reason-codes";
+import { checkInMessage, lookupMessage } from "@/features/reception/checkin-copy";
+import { checkInReasonLabel } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
 import { ContextLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
   const { session, setBranch } = useApp();
+  const { t, isolate, isolateLtr } = useLocale();
+  const f = useFormat(session?.organization.timezone);
   const { can } = usePermissions();
   const invalidate = useInvalidate();
 
@@ -117,11 +122,11 @@ export default function ReceptionPage() {
     try {
       await setBranch(nextBranchId);
     } catch {
-      setBranchSelectionError("That branch could not be opened. Check your connection and try again.");
+      setBranchSelectionError(t("deskCompletion.reception.branch.openFailed"));
     } finally {
       setBranchSelecting(null);
     }
-  }, [setBranch]);
+  }, [setBranch, t]);
 
   // A sole accessible branch is unambiguous. This also makes branch-assigned
   // reception accounts land directly at their desk without an unnecessary
@@ -221,7 +226,7 @@ export default function ReceptionPage() {
   };
 
   if (!can("members.read")) {
-    return <ForbiddenState description="The front desk needs access to look up members. Ask the owner or a manager." />;
+    return <ForbiddenState description={t("deskCompletion.reception.access.denied")} />;
   }
 
   if (!branchId || !branch) {
@@ -255,7 +260,6 @@ export default function ReceptionPage() {
         loading={shiftQuery.isLoading && shift === undefined}
         error={shiftQuery.isError}
         stale={shiftQuery.isBackgroundError || shiftQuery.streamState === "fallback"}
-        currency={currency}
         canOpen={can("reconciliation.open_shift")}
         canClose={can("reconciliation.close_shift")}
         onOpen={() => setDialog("openShift")}
@@ -270,13 +274,13 @@ export default function ReceptionPage() {
         <div className="flex min-w-0 flex-col bg-night px-5 py-5 lg:px-8 lg:py-7">
           <div className="flex items-baseline justify-between gap-3">
             <div>
-              <ContextLabel tone="night">Front desk · {branch.name}</ContextLabel>
+              <ContextLabel tone="night">{t("deskCompletion.reception.branch.frontDesk")} · {isolate(branch.name)}</ContextLabel>
               <h1 className="mt-1 font-display text-[22px] font-semibold tracking-tight text-night-ink">
-                Check in
+                {t("deskCompletion.reception.lookup.checkInTitle")}
               </h1>
             </div>
             <ContextLabel tone="night" className="flex items-center gap-1.5">
-              <ScanLine className="size-3.5" aria-hidden /> Scanner ready
+              <ScanLine className="size-3.5" aria-hidden /> {t("deskCompletion.reception.lookup.scannerReady")}
             </ContextLabel>
           </div>
 
@@ -291,8 +295,9 @@ export default function ReceptionPage() {
                 setResult(null);
                 setQuery(e.target.value);
               }}
-              placeholder="Scan, or type a name, phone or member number"
-              aria-label="Find a member"
+              dir="auto"
+              placeholder={t("deskCompletion.reception.lookup.placeholder")}
+              aria-label={t("deskCompletion.reception.lookup.label")}
               autoComplete="off"
               spellCheck={false}
               data-testid="reception-search"
@@ -303,14 +308,14 @@ export default function ReceptionPage() {
                 <button
                   type="button"
                   onClick={resetLane}
-                  aria-label="Clear"
+                  aria-label={t("reception.lookup.clear")}
                   className="rounded-sm p-1 text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink cursor-pointer"
                 >
                   <X className="size-4" />
                 </button>
               ) : null}
               <span className="hidden items-center gap-1 text-[12px] text-night-ink-3 sm:flex">
-                <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> clear
+                <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd> {t("deskCompletion.reception.lookup.clearHint")}
               </span>
             </div>
           </div>
@@ -320,7 +325,7 @@ export default function ReceptionPage() {
             {!lookupActive && !result ? (
               <IdleState />
             ) : previewQuery.isLoading && !result && !preview ? (
-              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label="Finding member">
+              <div className="rounded-lg border border-night-line bg-night-2 p-6" role="status" aria-label={t("deskCompletion.reception.lookup.searching")}>
                 <div className="h-4 w-40 animate-pulse rounded-sm bg-night-3" />
                 <div className="mt-3 h-10 w-64 animate-pulse rounded-sm bg-night-3" />
               </div>
@@ -330,9 +335,9 @@ export default function ReceptionPage() {
               <IdleState />
             ) : !member ? (
               preview?.candidates && preview.candidates.length > 1 ? (
-                <CandidatesState message={preview.message} candidates={preview.candidates} branches={session?.branches ?? []} onChoose={chooseCandidate} />
+                <CandidatesState message={preview.message} query={debounced} candidates={preview.candidates} branches={session?.branches ?? []} onChoose={chooseCandidate} />
               ) : (
-                <NoMatchState message={preview?.message ?? "No match."} query={debounced} canCreate={can("members.write")} />
+                <NoMatchState message={preview?.message ?? ""} query={debounced} canCreate={can("members.write")} />
               )
             ) : (
               <VerdictPanel
@@ -343,6 +348,8 @@ export default function ReceptionPage() {
                 member={member}
                 membership={membership}
                 occurredAt={result?.occurredAt}
+                today={today}
+                actorName={session?.user.name}
                 committed={committed}
                 busy={checkIn.isPending}
                 canOverride={can("checkins.override")}
@@ -366,57 +373,56 @@ export default function ReceptionPage() {
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">
                 <CornerDownLeft className="size-2.5" />
               </Kbd>
-              Check in
+              {t("deskCompletion.reception.lookup.checkInAction")}
             </span>
             <span className="flex items-center gap-1.5">
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd> Next member
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd> {t("deskCompletion.reception.lookup.nextMember")}
             </span>
             <span className="flex items-center gap-1.5">
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">⌘</Kbd>
-              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd> Search
-            </span>
+              <Kbd className="border-night-line bg-night-3 text-night-ink-2">K</Kbd>{" "}{t("common.action.search")}</span>
           </ContextLabel>
         </div>
 
         {/* ---------------------------------------------------------------- */}
         {/* Right rail: today's attendance log */}
         {/* ---------------------------------------------------------------- */}
-        <aside className="flex min-w-0 flex-col bg-night-2" aria-label="Branch activity">
+        <aside className="flex min-w-0 flex-col bg-night-2" aria-label={t("reception.activity.label")}>
           <section className="border-b border-night-line px-5 py-5">
-            <ContextLabel tone="night">Check-ins today</ContextLabel>
+            <ContextLabel tone="night">{t("reception.activity.checkInsToday")}</ContextLabel>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[38px] font-medium leading-none tabular text-night-ink">
-                {recentQuery.data?.totalItems ?? "—"}
+                {recentQuery.data ? f.number(recentQuery.data.totalItems) : "—"}
               </span>
-              <span className="text-[13px] text-night-ink-3">visits</span>
+              <span className="text-[13px] text-night-ink-3">{t("deskCompletion.reception.activity.visits", { count: recentQuery.data?.totalItems ?? 0 })}</span>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3">
               <div>
-                <ContextLabel as="dt" tone="night">Branch</ContextLabel>
-                <dd className="mt-0.5 truncate text-[13px] text-night-ink">{branch.name}</dd>
+                <ContextLabel as="dt" tone="night">{t("reception.activity.branch")}</ContextLabel>
+                <dd className="mt-0.5 truncate text-[13px] text-night-ink"><bdi>{branch.name}</bdi></dd>
               </div>
               <div>
-                <ContextLabel as="dt" tone="night">Busiest hour</ContextLabel>
-                <dd className="mt-0.5 text-[15px] tabular text-night-ink">{occupancyQuery.data?.peakHour ?? "—"}</dd>
+                <ContextLabel as="dt" tone="night">{t("deskCompletion.reception.activity.busiestHour")}</ContextLabel>
+                <dd className="mt-0.5 text-[15px] tabular text-night-ink">{f.clock(occupancyQuery.data?.peakHour)}</dd>
               </div>
             </dl>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">Who checked in today</ContextLabel>
+            <ContextLabel tone="night" className="border-b border-night-line px-5 py-3">{t("deskCompletion.reception.activity.logTitle")}</ContextLabel>
             <ul className="flex-1 divide-y divide-night-line/70 overflow-y-auto">
               {(recentQuery.data?.items ?? []).length === 0 ? (
-                <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">No check-ins yet today.</li>
+                <li className="px-5 py-8 text-center text-[12.5px] text-night-ink-3">{t("reception.activity.noCheckIns")}</li>
               ) : (
                 (recentQuery.data?.items ?? []).map((c) => (
                   <li key={c.id} className="flex items-start gap-2.5 px-5 py-2.5">
-                    <span className="mt-0.5 text-[12px] tabular text-night-ink-3">{formatTime(c.occurredAt)}</span>
+                    <time dateTime={c.occurredAt} className="mt-0.5 text-[12px] tabular text-night-ink-3">{f.time(c.occurredAt)}</time>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12.5px] text-night-ink">{c.memberName}</p>
+                      <p className="truncate text-[12.5px] text-night-ink"><bdi>{c.memberName}</bdi></p>
                       <p className="truncate font-mono text-[10.5px] text-night-ink-3">{c.memberNumber}</p>
                       {c.overrideReason ? (
                         <p className="truncate text-[12px] text-night-ink-3" title={c.overrideReason}>
-                          Let in anyway · {c.overrideReason}
+                          {t("deskCompletion.reception.activity.overrideLabel", { reason: isolate(c.overrideReason) })}
                         </p>
                       ) : null}
                     </div>
@@ -427,17 +433,15 @@ export default function ReceptionPage() {
             </ul>
             {recentQuery.data && recentQuery.data.totalPages > 1 ? (
               <div className="flex items-center justify-between gap-2 border-t border-night-line px-4 py-2.5 text-[12px] text-night-ink-3">
-                <span className="tabular" dir="ltr">
-                  {(recentQuery.data.page - 1) * recentQuery.data.pageSize + 1}–{Math.min(recentQuery.data.totalItems, recentQuery.data.page * recentQuery.data.pageSize)} of {recentQuery.data.totalItems}
+                <span className="tabular">
+                  {t("deskCompletion.reception.activity.rangeOfTotal", { from: isolateLtr(f.number((recentQuery.data.page - 1) * recentQuery.data.pageSize + 1)), to: isolateLtr(f.number(Math.min(recentQuery.data.totalItems, recentQuery.data.page * recentQuery.data.pageSize))), total: isolateLtr(f.number(recentQuery.data.totalItems)) })}
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page <= 1} onClick={() => setRecentPage((page) => Math.max(1, page - 1))} aria-label="Previous check-in page">
-                    Previous
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page <= 1} onClick={() => setRecentPage((page) => Math.max(1, page - 1))} aria-label={t("deskCompletion.reception.activity.previousPageAria")}>
+                    {t("deskCompletion.reception.activity.previousPage")}
                   </Button>
-                  <span className="min-w-10 text-center tabular" dir="ltr">{recentQuery.data.page}/{recentQuery.data.totalPages}</span>
-                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page >= recentQuery.data.totalPages} onClick={() => setRecentPage((page) => page + 1)} aria-label="Next check-in page">
-                    Next
-                  </Button>
+                  <span className="min-w-10 text-center tabular" dir="ltr">{f.number(recentQuery.data.page)}/{f.number(recentQuery.data.totalPages)}</span>
+                  <Button size="xs" variant="night-ghost" disabled={recentQuery.data.page >= recentQuery.data.totalPages} onClick={() => setRecentPage((page) => page + 1)} aria-label={t("deskCompletion.reception.activity.nextPageAria")}>{t("deskCompletion.reception.activity.nextPage")}</Button>
                 </div>
               </div>
             ) : null}
@@ -520,12 +524,13 @@ function ReceptionBranchState({
   error: string | null;
   onSelect: (branchId: string) => void;
 }) {
+  const { t, isolate } = useLocale();
   if (branches.length === 0) {
     return (
       <StatePanel
         icon={Building2}
-        title="No branch to open"
-        description="Ask the gym owner to turn on a branch or add you to one."
+        title={t("deskCompletion.reception.branch.none")}
+        description={t("deskCompletion.reception.branch.noneDescription")}
       />
     );
   }
@@ -534,10 +539,10 @@ function ReceptionBranchState({
   return (
     <StatePanel
       icon={Building2}
-      title={openingOnlyBranch ? "Opening Reception…" : "Choose a branch to open Reception"}
+      title={t(openingOnlyBranch ? "deskCompletion.reception.branch.opening" : "deskCompletion.reception.branch.choose")}
       description={openingOnlyBranch
-        ? `Setting this desk to ${branches[0]!.name}.`
-        : "Choose the branch this desk is in."}
+        ? t("deskCompletion.reception.branch.openingDescription", { branch: isolate(branches[0]!.name) })
+        : t("deskCompletion.reception.branch.chooseDescription")}
       action={
         openingOnlyBranch ? (
           error ? (
@@ -548,13 +553,11 @@ function ReceptionBranchState({
                 variant="secondary"
                 loading={selectingBranchId === branches[0]!.id}
                 onClick={() => onSelect(branches[0]!.id)}
-              >
-                Try again
-              </Button>
+              >{t("common.action.retry")}</Button>
             </div>
           ) : null
         ) : (
-          <div className="flex max-w-xl flex-wrap justify-center gap-2" aria-label="Reception branch">
+          <div className="flex max-w-xl flex-wrap justify-center gap-2" aria-label={t("deskCompletion.reception.branch.aria")}>
             {branches.map((candidate) => (
               <Button
                 key={candidate.id}
@@ -566,7 +569,7 @@ function ReceptionBranchState({
                 onClick={() => onSelect(candidate.id)}
               >
                 <Building2 aria-hidden />
-                {candidate.name}
+                <bdi>{candidate.name}</bdi>
               </Button>
             ))}
             {error ? <p className="basis-full pt-1 text-[12px] text-danger" role="alert">{error}</p> : null}
@@ -588,7 +591,6 @@ function ShiftStrip({
   loading,
   error,
   stale,
-  currency,
   canOpen,
   canClose,
   onOpen,
@@ -601,18 +603,19 @@ function ShiftStrip({
   loading: boolean;
   error: boolean;
   stale: boolean;
-  currency: string;
   canOpen: boolean;
   canClose: boolean;
   onOpen: () => void;
   onClose: () => void;
   onRetry: () => void;
 }) {
+  const { t, isolate } = useLocale();
+  const f = useFormat();
   if (loading) {
     return (
       <div className="flex min-h-11 items-center gap-3 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8" role="status">
         <span className="size-2 animate-pulse rounded-full bg-night-ink-3" aria-hidden />
-        <p className="text-[12.5px] text-night-ink-2">Checking the cash drawer…</p>
+        <p className="text-[12.5px] text-night-ink-2">{t("deskCompletion.reception.strip.checking")}</p>
       </div>
     );
   }
@@ -620,8 +623,8 @@ function ShiftStrip({
     return (
       <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning/30 bg-warning/10 px-5 py-2.5 lg:px-8" role="alert">
         <AlertTriangle className="size-3.5 text-warning" aria-hidden />
-        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">Could not check the cash drawer.</span> You can&apos;t take cash until this works again.</p>
-        <Button size="xs" variant="night-outline" onClick={onRetry}><RefreshCw /> Try again</Button>
+        <p className="min-w-0 flex-1 text-[12.5px] text-night-ink-2"><span className="font-medium text-night-ink">{t("deskCompletion.reception.strip.checkFailed")}</span> {t("deskCompletion.reception.strip.cashUnavailable")}</p>
+        <Button size="xs" variant="night-outline" onClick={onRetry}><RefreshCw />{" "}{t("common.action.retry")}</Button>
       </div>
     );
   }
@@ -630,12 +633,10 @@ function ShiftStrip({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
         <Lock className="size-3.5 text-warning" aria-hidden />
         <p className="text-[12.5px] text-night-ink-2">
-          <span className="font-medium text-night-ink">No shift open.</span> Check-ins work. To take cash, open a shift first.
+          <span className="font-medium text-night-ink">{t("reception.shift.none")}</span> {t("deskCompletion.reception.strip.openPrompt")}
         </p>
         {canOpen ? (
-          <Button size="xs" variant="night" className="ms-auto" onClick={onOpen} data-testid="open-shift">
-            Open shift
-          </Button>
+          <Button size="xs" variant="night" className="ms-auto" onClick={onOpen} data-testid="open-shift">{t("dashboard.reception.openShift")}</Button>
         ) : null}
       </div>
     );
@@ -644,29 +645,29 @@ function ShiftStrip({
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8">
       <span className="flex items-center gap-2 text-[12.5px] text-night-ink-2">
         <span className="size-1.5 rounded-full bg-success" aria-hidden />
-        Shift open · {shift.openedByName}
+        {t("deskCompletion.reception.strip.openBy", { actor: isolate(shift.openedByName) })}
       </span>
       <span className="text-[12px] tabular text-night-ink-3">
-        since {formatTime(shift.openedAt)} · starting cash {formatMoney(shift.openingFloat, { hideCurrency: true })}
+        {t("deskCompletion.reception.strip.sinceAndStart", { time: isolate(f.time(shift.openedAt)), amount: isolate(f.money(shift.openingFloat)) })}
       </span>
       {cashTaken ? (
         <span className="text-[12px] tabular text-night-ink-3">
-          cash taken {formatMoney(cashTaken, { hideCurrency: true })}
+          {t("deskCompletion.reception.strip.cashTaken", { amount: isolate(f.money(cashTaken)) })}
         </span>
       ) : null}
       {expected ? (
         <span className="text-[12px] tabular text-night-ink-2">
-          expected in drawer {formatMoney(expected, { hideCurrency: true })} {currency}
+          {t("deskCompletion.reception.strip.expected", { amount: isolate(f.money(expected)) })}
         </span>
       ) : null}
       <div className="ms-auto flex items-center gap-2">
-        {stale ? <span className="text-[12px] text-warning">Reconnecting…</span> : null}
+        {stale ? <span className="text-[12px] text-warning">{t("deskCompletion.reception.strip.reconnecting")}</span> : null}
         <Button asChild size="xs" variant="night-ghost">
-          <Link href="/payments/shifts">Shift history</Link>
+          <Link href="/payments/shifts">{t("reception.shift.history")}</Link>
         </Button>
         {canClose ? (
           <Button size="xs" variant="night-outline" onClick={onClose} data-testid="close-shift">
-            Close shift
+            {t("deskCompletion.reception.strip.close")}
           </Button>
         ) : null}
       </div>
@@ -679,29 +680,33 @@ function ShiftStrip({
 // ---------------------------------------------------------------------------
 
 function IdleState() {
+  const t = useT();
   return (
     <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-night-line px-6 py-10 text-center">
       <ScanLine className="size-6 text-night-ink-3" aria-hidden />
-      <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">Ready for the next member</p>
+      <p className="mt-3 font-display text-[15px] font-medium text-night-ink-2">{t("reception.lookup.ready")}</p>
       <p className="mt-1 max-w-sm text-[12.5px] text-night-ink-3">
-        Scan their code or start typing. Type at least 3 letters or numbers.
+        {t("deskCompletion.reception.lookup.idleDescription", { count: "3" })}
       </p>
     </div>
   );
 }
 
 function LookupErrorState({ onRetry }: { onRetry: () => void }) {
+  const t = useT();
   return (
     <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center" role="alert">
       <AlertTriangle className="mx-auto size-5 text-warning" aria-hidden />
-      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">Could not search for members</p>
-      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">Nobody was checked in. Check the internet connection and try again.</p>
-      <Button type="button" size="sm" variant="night-outline" className="mt-4" onClick={onRetry}><RefreshCw /> Try again</Button>
+      <p className="mt-3 font-display text-[16px] font-medium text-night-ink">{t("deskCompletion.reception.lookup.lookupFailedTitle")}</p>
+      <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">{t("deskCompletion.reception.lookup.lookupFailedDescription")}</p>
+      <Button type="button" size="sm" variant="night-outline" className="mt-4" onClick={onRetry}><RefreshCw />{" "}{t("common.action.retry")}</Button>
     </div>
   );
 }
 
 function NoMatchState({ message, query, canCreate }: { message: string; query: string; canCreate: boolean }) {
+  const { t, locale, isolate } = useLocale();
+  const localizedMessage = lookupMessage({ message, query, locale, t, isolate });
   // A number typed at the desk is the new member's phone, not their name.
   const looksLikePhone = /^\+?[\d\s()-]{6,}$/.test(query.trim());
   const registerHref = looksLikePhone
@@ -709,12 +714,12 @@ function NoMatchState({ message, query, canCreate }: { message: string; query: s
     : `/members/new?name=${encodeURIComponent(query.trim())}`;
   return (
     <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center">
-      <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
-      <p className="mt-1 text-[12.5px] text-night-ink-3">Check the spelling, or try the phone number instead.</p>
+      <p className="font-display text-[16px] font-medium text-night-ink">{localizedMessage}</p>
+      <p className="mt-1 text-[12.5px] text-night-ink-3">{t("reception.lookup.checkSpelling")}</p>
       {canCreate ? (
         <Button asChild size="sm" variant="night-outline" className="mt-4">
           <Link href={registerHref}>
-            <UserPlus /> Add as a new member
+            <UserPlus /> {t("deskCompletion.reception.lookup.addMember")}
           </Link>
         </Button>
       ) : null}
@@ -728,25 +733,30 @@ function NoMatchState({ message, query, canCreate }: { message: string; query: s
  */
 function CandidatesState({
   message,
+  query,
   candidates,
   branches,
   onChoose,
 }: {
   message: string;
+  query: string;
   candidates: MemberSummary[];
   branches: Session["branches"];
   onChoose: (candidate: MemberSummary) => void;
 }) {
+  const { t, locale, isolate } = useLocale();
+  const f = useFormat();
+  const localizedMessage = lookupMessage({ message, query, candidateCount: candidates.length, locale, t, isolate });
   return (
-    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label="Choose the member">
+    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label={t("deskCompletion.reception.lookup.chooseMember")}>
       <div className="border-b border-night-line px-5 py-3">
-        <p className="font-display text-[16px] font-medium text-night-ink">{message}</p>
-        <p className="mt-0.5 text-[12.5px] text-night-ink-3">Scan their code or type their member number to skip this list.</p>
+        <p className="font-display text-[16px] font-medium text-night-ink">{localizedMessage}</p>
+        <p className="mt-0.5 text-[12.5px] text-night-ink-3">{t("deskCompletion.reception.lookup.skipCandidates")}</p>
       </div>
       <ul className="divide-y divide-night-line/70">
         {candidates.map((candidate) => {
           // A branch outside this account's scope still needs a truthful label.
-          const branchName = branches.find((b) => b.id === candidate.homeBranchId)?.name ?? "Another branch";
+          const branchName = branches.find((b) => b.id === candidate.homeBranchId)?.name ?? t("deskCompletion.reception.lookup.anotherBranch");
           return (
             <li key={candidate.id}>
               <button
@@ -758,7 +768,7 @@ function CandidatesState({
                 <Monogram name={candidate.fullName} size="sm" className="shrink-0" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium text-night-ink" dir="auto">
-                    {candidate.fullName}
+                <bdi>{candidate.fullName}</bdi>
                     {candidate.fullNameAr ? (
                       <>
                         {/* A logical start margin on an RTL span lands on its right, so separate with a dot instead. */}
@@ -772,10 +782,10 @@ function CandidatesState({
                   </span>
                 </span>
                 <span className="hidden shrink-0 text-end text-[12px] text-night-ink-2 sm:block">
-                  <span className="block">{candidate.status === "archived" ? "Archived" : candidate.currentPlanName ?? "No membership"}</span>
+                  <span className="block">{candidate.status === "archived" ? t("members.list.archived") : candidate.currentPlanName ?? t("deskCompletion.reception.lookup.noMembership")}</span>
                   <span className="block text-night-ink-3">
-                    {branchName}
-                    {candidate.outstanding.amount > 0 ? ` · owes ${formatMoney(candidate.outstanding, { hideCurrency: true })}` : ""}
+                    <bdi>{branchName}</bdi>
+                    {candidate.outstanding.amount > 0 ? " · " + t("deskCompletion.reception.lookup.amountOwed", { amount: f.money(candidate.outstanding) }) : ""}
                   </span>
                 </span>
               </button>
@@ -791,16 +801,12 @@ function CandidatesState({
 // Verdict panel — the one thing the receptionist reads
 // ---------------------------------------------------------------------------
 
-const VERDICT: Record<
-  string,
-  { band: string; label: string; icon: typeof CheckCircle2 }
-> = {
-  allowed: { band: "bg-success text-white", label: "Allowed", icon: CheckCircle2 },
-  warning: { band: "bg-warning text-white", label: "Allowed, with a warning", icon: AlertTriangle },
-  blocked: { band: "bg-signal text-white", label: "Entry refused", icon: Ban },
-  overridden: { band: "bg-ink text-paper", label: "Let in anyway", icon: ShieldAlert },
-  // A repeat scan is not a denial: the person is already inside.
-  duplicate: { band: "bg-night-3 text-night-ink", label: "Already checked in", icon: CheckCircle2 },
+const VERDICT: Record<string, { band: string; key: import("@/lib/i18n/core").TKey; icon: typeof CheckCircle2 }> = {
+  allowed: { band: "bg-success text-white", key: "deskCompletion.reception.verdict.allowed", icon: CheckCircle2 },
+  warning: { band: "bg-warning text-white", key: "deskCompletion.reception.verdict.warning", icon: AlertTriangle },
+  blocked: { band: "bg-signal text-white", key: "deskCompletion.reception.verdict.blocked", icon: Ban },
+  overridden: { band: "bg-ink text-paper", key: "deskCompletion.reception.verdict.overridden", icon: ShieldAlert },
+  duplicate: { band: "bg-night-3 text-night-ink", key: "deskCompletion.reception.verdict.duplicate", icon: CheckCircle2 },
 };
 
 function VerdictPanel({
@@ -811,6 +817,8 @@ function VerdictPanel({
   member,
   membership,
   occurredAt,
+  today,
+  actorName,
   committed,
   busy,
   canOverride,
@@ -832,6 +840,8 @@ function VerdictPanel({
   member: { id: string; fullName: string; fullNameAr?: string; memberNumber: string; phone: string; currentPlanName?: string; membershipEndDate?: string; outstanding: { amount: number; currency: string } };
   membership?: MembershipSummary;
   occurredAt?: string;
+  today: string;
+  actorName?: string;
   committed: boolean;
   busy: boolean;
   canOverride: boolean;
@@ -846,6 +856,8 @@ function VerdictPanel({
   onRenew: () => void;
   onNext: () => void;
 }) {
+  const { t, locale, isolate } = useLocale();
+  const f = useFormat();
   const duplicateScan = decision === "blocked" && reasonCodes.includes("DUPLICATE_SCAN");
   const verdict = duplicateScan ? VERDICT.duplicate! : (VERDICT[decision] ?? VERDICT.blocked!);
   const Icon = verdict.icon;
@@ -853,11 +865,16 @@ function VerdictPanel({
   const hasBalance = outstanding.amount > 0;
   const meaningfulCodes = reasonCodes.filter((c) => c !== "OK" && !(duplicateScan && c === "DUPLICATE_SCAN"));
   const shownMessage = duplicateScan && lastAcceptedCheckIn
-    ? `Already checked in at ${formatTime(lastAcceptedCheckIn.occurredAt)}${lastAcceptedCheckIn.actorName ? ` by ${lastAcceptedCheckIn.actorName}` : ""}. No second visit was recorded.`
-    : message;
+    ? t("deskCompletion.reception.message.duplicateAt", {
+        time: f.time(lastAcceptedCheckIn.occurredAt),
+        actor: lastAcceptedCheckIn.actorName
+          ? t("deskCompletion.reception.message.duplicateByActor", { actor: isolate(lastAcceptedCheckIn.actorName) })
+          : "",
+      })
+    : checkInMessage({ message, reasonCodes, decision, locale, t, isolate, today, formatDate: f.date, membership, actorName });
   // A future term has a start, not an expiry; a past one has already ended.
-  const termLabel = membership?.status === "scheduled" ? "Starts" : membership?.status === "expired" ? "Ended" : "Ends";
-  const termValue = formatDate(membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate);
+  const termLabel = membership?.status === "scheduled" ? t("renewFlow.adjust.planChange.starts") : membership?.status === "expired" ? t("deskCompletion.reception.verdict.termEnded") : t("crm.queues.ends");
+  const termValue = f.date(membership?.status === "scheduled" ? membership.startDate : member.membershipEndDate);
 
   return (
     <div
@@ -871,7 +888,7 @@ function VerdictPanel({
       <div className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3", verdict.band)}>
         <Icon className="size-5 shrink-0" aria-hidden />
         <span className="font-display text-[17px] font-semibold tracking-tight">
-          {committed && decision !== "blocked" ? `Checked in · ${formatTime(occurredAt ?? new Date().toISOString())}` : verdict.label}
+          {committed && decision !== "blocked" ? t("deskCompletion.reception.verdict.checkedInAt", { time: f.time(occurredAt ?? new Date().toISOString()) }) : t(verdict.key)}
         </span>
         <span className="min-w-0 break-words text-[13px] opacity-90">{shownMessage}</span>
       </div>
@@ -892,17 +909,17 @@ function VerdictPanel({
         </div>
 
         <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
-          <Cell label="Plan" value={member.currentPlanName ?? "No plan"} muted={!member.currentPlanName} />
+          <Cell label={t("reception.member.plan")} value={member.currentPlanName ?? t("deskCompletion.reception.verdict.noPlan")} muted={!member.currentPlanName} />
           <Cell label={termLabel} value={termValue} mono />
           <Cell
-            label="Visits left"
-            value={membership?.remainingVisits != null ? `${membership.remainingVisits}` : "—"}
+            label={t("reception.member.visitsLeft")}
+            value={membership?.remainingVisits != null ? f.number(membership.remainingVisits) : "—"}
             mono
             muted={membership?.remainingVisits == null}
           />
           <Cell
-            label="Owes"
-            value={formatMoney(outstanding, { hideCurrency: true })}
+            label={t("members.list.columns.balance")}
+            value={f.money(outstanding)}
             mono
             tone={hasBalance ? "warn" : undefined}
           />
@@ -915,7 +932,7 @@ function VerdictPanel({
           {meaningfulCodes.map((code) => (
             <li key={code} className="flex min-w-0 items-center gap-1.5 break-words text-[12.5px] text-night-ink-2">
               <span className="size-1 shrink-0 rounded-full bg-night-ink-3" aria-hidden />
-              {REASON_CODE_LABELS[code as keyof typeof REASON_CODE_LABELS] ?? code}
+              {checkInReasonLabel(code, t)}
             </li>
           ))}
         </ul>
@@ -923,15 +940,15 @@ function VerdictPanel({
 
       {criticalNotes ? (
         <div className="border-t border-night-line bg-signal/10 px-5 py-2.5">
-          <ContextLabel tone="night" className="text-signal">Important note</ContextLabel>
-          <p className="mt-0.5 break-words text-[13px] text-night-ink">{criticalNotes}</p>
+          <ContextLabel tone="night" className="text-signal">{t("deskCompletion.reception.verdict.importantNote")}</ContextLabel>
+            <p className="mt-0.5 break-words text-[13px] text-night-ink"><bdi>{criticalNotes}</bdi></p>
         </div>
       ) : null}
 
       {/* Actions */}
       <div className="flex flex-col gap-3 border-t border-night-line bg-night px-5 py-3.5 sm:flex-row sm:flex-wrap sm:items-center">
         <Button asChild size="sm" variant="night-ghost">
-          <Link href={`/members/${member.id}`}>Open profile</Link>
+          <Link href={`/members/${member.id}`}>{t("deskCompletion.reception.verdict.profile")}</Link>
         </Button>
 
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ms-auto">
@@ -940,16 +957,16 @@ function VerdictPanel({
               size="sm"
               variant="night-outline"
               onClick={onCollect}
-              title={cashBlocked ? "No shift is open. Take card, bank transfer or CliQ, not cash." : undefined}
+              title={cashBlocked ? t("deskCompletion.reception.verdict.tipNoCash") : undefined}
               data-testid="quick-collect"
             >
-              <Banknote /> Collect {formatMoney(outstanding, { hideCurrency: true })}
+              <Banknote />{" "}{t("memberProfile.header.collect")}{" "}{f.money(outstanding)}
             </Button>
           ) : null}
 
           {canSell && (decision === "blocked" || member.membershipEndDate) ? (
             <Button size="sm" variant="night-outline" onClick={onRenew} data-testid="quick-renew">
-              <RotateCcw /> {renewable ? "Renew" : "Sell membership"}
+              <RotateCcw /> {renewable ? t("memberProfile.header.renew") : t("renewFlow.sale.titleSell")}
             </Button>
           ) : null}
 
@@ -957,24 +974,23 @@ function VerdictPanel({
             <>
               {duplicateScan && !committed && canOverride ? (
                 <Button size="sm" variant="night-ghost" onClick={onOverride} data-testid="override-checkin">
-                  <ShieldAlert /> Check in again
+                  <ShieldAlert /> {t("deskCompletion.reception.verdict.checkInAgain")}
                 </Button>
               ) : null}
               <Button size="sm" variant="night" onClick={onNext} data-testid="next-member">
-                Next member <Kbd className="border-night-line bg-night-3 text-night-ink-2">Esc</Kbd>
+                {t("deskCompletion.reception.lookup.nextMember")} <Kbd className="border-night-line bg-night-3 text-night-ink-2">{t("reception.lookup.esc")}</Kbd>
               </Button>
             </>
           ) : decision === "blocked" ? (
             canOverride ? (
               <Button size="sm" variant="signal" onClick={onOverride} data-testid="override-checkin">
-                <ShieldAlert /> Let in anyway
-              </Button>
+                <ShieldAlert />{" "}{t("domain.checkInDecision.overridden")}</Button>
             ) : (
-              <span className="text-[12px] text-night-ink-3">Only a manager can let them in.</span>
+              <span className="text-[12px] text-night-ink-3">{t("deskCompletion.reception.verdict.onlyManager")}</span>
             )
           ) : (
             <Button size="sm" variant="night" loading={busy} onClick={onCheckIn} data-testid="confirm-checkin">
-              Check in
+              {t("deskCompletion.reception.verdict.checkIn")}
               <Kbd className="border-night-line bg-night-3 text-night-ink-2">
                 <CornerDownLeft className="size-2.5" />
               </Kbd>
@@ -1009,13 +1025,14 @@ function Cell({
           tone === "warn" ? "text-warning" : muted ? "text-night-ink-3" : "text-night-ink",
         )}
       >
-        {value}
+        <bdi>{value}</bdi>
       </dd>
     </div>
   );
 }
 
 function DecisionDot({ decision }: { decision: string }) {
+  const t = useT();
   const tone =
     decision === "allowed"
       ? "bg-success"
@@ -1025,6 +1042,6 @@ function DecisionDot({ decision }: { decision: string }) {
           ? "bg-night-ink-2"
           : "bg-signal";
   // Name the dot in desk words, never the stored decision key.
-  const label = VERDICT[decision]?.label ?? VERDICT.blocked!.label;
+  const label = t(VERDICT[decision]?.key ?? VERDICT.blocked!.key);
   return <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", tone)} title={label} aria-label={label} />;
 }

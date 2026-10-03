@@ -155,12 +155,33 @@ describe("CRM lead identity and assignment integrity", () => {
       outcome: "answered_not_interested",
       stage: "lost",
       notes: "Chose another gym closer to home",
-    })) as { stage: string; lostReason?: string; activities: Array<{ type: string; body?: string }> };
+    })) as { stage: string; lostReason?: string; activities: Array<{ type: string; title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; body?: string }> };
 
     expect(closed).toMatchObject({ stage: "lost", lostReason: "Chose another gym closer to home" });
-    expect(closed.activities).toContainEqual(expect.objectContaining({ type: "call_attempt", body: "Chose another gym closer to home" }));
+    expect(closed.activities).toContainEqual(expect.objectContaining({
+      type: "call_attempt",
+      title: "Call — answered not interested",
+      titleMessage: { key: "communicationCompletion.timeline.callAttempt", params: { outcome: { enum: "contactOutcome", value: "answered_not_interested" } } },
+      body: "Chose another gym closer to home",
+    }));
     const audit = await owner.query(api.domain.query, operation("audit.list", { category: "crm", entityId: "crm-integrity-lead", pageSize: 20 })) as { items: Array<{ action: string; reason?: string }> };
     expect(audit.items).toContainEqual(expect.objectContaining({ action: "lead.lost", reason: "Chose another gym closer to home" }));
+  });
+
+  it("attaches the existing body descriptor only to a real marketing preference flip", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-crm-integrity-owner" });
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Marketing Member", phone: "+962790008888", gender: "female", homeBranchId: "crm-integrity-branch-a", marketingOptIn: false })) as { member: { id: string } };
+    await owner.mutation(api.domain.mutate, operation("members.update", { memberId: created.member.id, marketingOptIn: true, marketingPreferenceSource: "staff_selected" }));
+    const timeline = await owner.query(api.domain.query, operation("members.timeline", { memberId: created.member.id, pageSize: 20 })) as { items: Array<{ type: string; title: string; titleMessage?: { key: string }; body?: string; bodyMessage?: { key: string } }> };
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      type: "marketing_preference_changed",
+      title: "Marketing messages enabled",
+      titleMessage: { key: "communicationCompletion.timeline.marketingEnabled" },
+      body: "Preference changed from opted out to opted in.",
+      bodyMessage: { key: "communicationCompletion.timeline.marketingNowIn" },
+    }));
   });
 
   it("projects persisted CRM events into summaries and the dashboard funnel", async () => {
@@ -241,6 +262,11 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(replay.id).toBe(first.id);
     const member = await owner.query(api.domain.query, operation("members.get", { memberId: created.member.id })) as { tags: string[] };
     expect(member.tags).toContain("priority");
+    const taggedTimeline = await owner.query(api.domain.query, operation("members.timeline", { memberId: created.member.id, pageSize: 20 })) as { items: Array<{ title: string; titleMessage?: { key: string; params?: Record<string, unknown> } }> };
+    expect(taggedTimeline.items).toContainEqual(expect.objectContaining({
+      title: "Tags added: priority",
+      titleMessage: { key: "communicationCompletion.timeline.tagsAdded", params: { tags: "priority" } },
+    }));
     expect(await owner.query(api.domain.query, operation("bulk.jobs"))).toEqual([expect.objectContaining({ id: first.id, requestedCount: 1 })]);
     await expectCode(owner.mutation(api.domain.mutate, operation("bulk.run", { ...request, recordIds: Array.from({ length: 101 }, (_, index) => `member-${index}`), idempotencyKey: "too-many" })), "VALIDATION_ERROR");
 
@@ -264,8 +290,13 @@ describe("CRM lead identity and assignment integrity", () => {
     expect(listed.items.map((item) => item.id)).toEqual([first.member.id]);
     const redirected = await owner.query(api.domain.query, operation("members.get", { memberId: second.member.id })) as { id: string };
     expect(redirected.id).toBe(first.member.id);
-    const timeline = await owner.query(api.domain.query, operation("members.timeline", { memberId: first.member.id, pageSize: 100 })) as { items: Array<{ title: string }> };
+    const timeline = await owner.query(api.domain.query, operation("members.timeline", { memberId: first.member.id, pageSize: 100 })) as { items: Array<{ title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; body?: string }> };
     expect(timeline.items.map((item) => item.title)).toEqual(expect.arrayContaining(["Note added", expect.stringContaining("Merged duplicate record")]));
+    expect(timeline.items).toContainEqual(expect.objectContaining({
+      title: expect.stringContaining("Merged duplicate record "),
+      titleMessage: { key: "communicationCompletion.timeline.memberMerged", params: { memberNumber: expect.any(String) } },
+      body: "Verified as the same member at reception",
+    }));
     expect(await owner.query(api.domain.query, operation("duplicates.list", { status: "merged" }))).toMatchObject({ items: [expect.objectContaining({ id: duplicate!.id, survivingMemberId: first.member.id })] });
   });
 

@@ -1,8 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { BillGymWizard } from "./bill-gym-wizard";
 
 const state = vi.hoisted(() => ({
@@ -66,6 +67,11 @@ function renderWizard() {
   return render(<BillGymWizard open onOpenChange={vi.fn()} gyms={gyms} plans={plans} />);
 }
 
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" data-testid="locale-switch" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>toggle-locale</button>;
+}
+
 describe("Bill a gym wizard", () => {
   beforeEach(() => {
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
@@ -101,8 +107,8 @@ describe("Bill a gym wizard", () => {
     await user.click(screen.getByRole("radio", { name: /Annual · saves 20%/ }));
     await user.click(screen.getByRole("button", { name: /Review/ }));
 
-    expect(screen.getByText(/An invoice for JOD 2390\.400 \(Pro · annual, saves 20%\) is issued today\./)).toBeInTheDocument();
-    expect(screen.getByText(/16 unused paid days of the current term are credited: JOD \d+\.\d{3} off, leaving JOD \d+\.\d{3} to pay\./)).toBeInTheDocument();
+    expect(screen.getByText(/An invoice for JOD.2,390\.400 \(Pro · annual, saves 20%\) is issued today\./)).toBeInTheDocument();
+    expect(screen.getByText(/A credit of JOD.132\.800 for 16 days remaining in the current paid term will reduce the invoice, leaving JOD.2,257\.600 to pay\./)).toBeInTheDocument();
     expect(screen.getByText(/no need to wait for the current term to end/)).toBeInTheDocument();
 
     const confirm = screen.getByRole("button", { name: /Confirm & bill/ });
@@ -119,6 +125,26 @@ describe("Bill a gym wizard", () => {
     });
   });
 
+  it("retains the selected billing terms and audit reason when the locale changes at review", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillGymWizard open onOpenChange={vi.fn()} gyms={gyms} plans={plans} /></LocaleProvider>);
+
+    await user.click(screen.getByRole("option", { name: /Forge Fitness/ }));
+    await user.click(screen.getByRole("radio", { name: /Annual · saves 20%/ }));
+    await user.click(screen.getByRole("button", { name: /Review/ }));
+    await user.type(screen.getByLabelText("Reason for this change"), "Owner approved annual billing.");
+
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByText(/فاتورة بقيمة/)).toHaveTextContent("سنوي مع توفير 20٪");
+    expect(screen.getByLabelText("سبب التغيير")).toHaveValue("Owner approved annual billing.");
+    expect(screen.getByRole("button", { name: "تأكيد الفاتورة" })).toBeEnabled();
+    expect(screen.queryByText(/An invoice for JOD/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "تأكيد الفاتورة" }));
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-active", plan: "Pro", billingInterval: "annual", reason: "Owner approved annual billing." });
+  });
+
   it("reactivates a suspended gym with an explicit active status and no credit line", async () => {
     const user = userEvent.setup();
     renderWizard();
@@ -127,7 +153,7 @@ describe("Bill a gym wizard", () => {
     await user.click(screen.getByRole("button", { name: /Review/ }));
 
     expect(screen.getByText(/reactivates Iron Temple/)).toBeInTheDocument();
-    expect(screen.getByText(/An invoice for JOD 149\.000 \(Growth · monthly\) is issued today\./)).toBeInTheDocument();
+    expect(screen.getByText(/An invoice for JOD.149\.000 \(Growth · monthly\) is issued today\./)).toBeInTheDocument();
     expect(screen.queryByText(/are credited/)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Reason for this change"), "Reactivate after payment plan agreed.");

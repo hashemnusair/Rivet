@@ -1,5 +1,8 @@
 "use client";
 
+import { FormattingProvider } from "@/lib/i18n/format";
+import { useLocale } from "@/lib/i18n/provider";
+
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -67,7 +70,6 @@ const AppContext = createContext<AppContextValue | null>(null);
 const STORAGE_KEYS = {
   persona: "rivet.demo.persona",
   branch: "rivet.demo.branch",
-  dir: "rivet.demo.dir",
   sidebar: "rivet.demo.sidebar",
 } as const;
 
@@ -159,7 +161,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [signedIn, setSignedIn] = useState(false);
   const [behavior, setBehaviorState] = useState<MockBehavior>({ ...DEFAULT_BEHAVIOR });
-  const [dir, setDirState] = useState<"ltr" | "rtl">("ltr");
+  const { dir, setLocale } = useLocale();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [session, setSession] = useState<Session | undefined>(undefined);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -173,12 +175,6 @@ function SessionProvider({ children }: { children: ReactNode }) {
   // workspace sessions are deliberately not restored from browser storage in
   // Convex mode.
   useEffect(() => {
-    const storedDir = window.sessionStorage.getItem(STORAGE_KEYS.dir);
-    if (storedDir === "ltr" || storedDir === "rtl") {
-      setDirState(storedDir);
-      document.documentElement.dir = storedDir;
-      document.documentElement.classList.toggle("rtl-font", storedDir === "rtl");
-    }
     const collapsed = window.localStorage.getItem(STORAGE_KEYS.sidebar);
     if (collapsed === "1") setSidebarCollapsed(true);
   }, []);
@@ -384,22 +380,10 @@ function SessionProvider({ children }: { children: ReactNode }) {
     queryClient.invalidateQueries({ queryKey: qk.session });
   }, [convexMode, queryClient]);
 
-  const setDir = useCallback((next: "ltr" | "rtl") => {
-    setDirState(next);
-    document.documentElement.dir = next;
-    document.documentElement.classList.toggle("rtl-font", next === "rtl");
-    window.sessionStorage.setItem(STORAGE_KEYS.dir, next);
-  }, []);
-
-  const toggleDir = useCallback(() => {
-    setDirState((prev) => {
-      const next = prev === "ltr" ? "rtl" : "ltr";
-      document.documentElement.dir = next;
-      document.documentElement.classList.toggle("rtl-font", next === "rtl");
-      window.sessionStorage.setItem(STORAGE_KEYS.dir, next);
-      return next;
-    });
-  }, []);
+  // Compatibility for existing preview controls: direction always follows the
+  // single UI locale and must never overwrite the server's first-paint choice.
+  const setDir = useCallback((next: "ltr" | "rtl") => setLocale(next === "rtl" ? "ar" : "en"), [setLocale]);
+  const toggleDir = useCallback(() => setLocale(dir === "rtl" ? "en" : "ar"), [dir, setLocale]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => {
@@ -435,7 +419,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={value}>
-      {children}
+      <FormattingProvider timeZone={session?.organization.timezone}>{children}</FormattingProvider>
     </AppContext.Provider>
   );
 }

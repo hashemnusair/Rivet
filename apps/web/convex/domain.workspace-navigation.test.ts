@@ -18,7 +18,7 @@ async function seed(t: TestConvex<typeof schema>) {
     const trainer = await ctx.db.insert("users", { publicId: "trainer-nav", authSubject: "clerk-trainer-nav", email: "trainer@nav.test", fullName: "Trainer Nav", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: org, userId: owner, role: "owner", branchIds: [branch], active: true, branchScope: "all", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: org, userId: trainer, role: "trainer", branchIds: [branch], active: true, branchScope: "selected", createdAt: now, updatedAt: now });
-    await ctx.db.insert("domainRecords", { organizationId: org, entityType: "member", publicId: "member-nav", branchId: branch, memberPublicId: "member-nav", createdAt: now, updatedAt: now, data: { id: "member-nav", fullName: "Lina Haddad", memberNumber: "M-1042", phone: "+962 79 551 2042", homeBranchId: "branch-nav" } });
+    await ctx.db.insert("domainRecords", { organizationId: org, entityType: "member", publicId: "member-nav", branchId: branch, memberPublicId: "member-nav", createdAt: now, updatedAt: now, data: { id: "member-nav", fullName: "Lina Haddad", fullNameAr: "أحْمَد حَسَن", memberNumber: "M-1042", phone: "+962 79 551 2042", homeBranchId: "branch-nav" } });
     await ctx.db.insert("domainRecords", { organizationId: org, entityType: "payment", publicId: "payment-nav", branchId: branch, memberPublicId: "member-nav", createdAt: now, updatedAt: now, data: { id: "payment-nav", memberId: "member-nav", memberName: "Lina Haddad", receiptId: "receipt-nav", receiptNumber: "RCP-7782", externalReference: "CLIQ-AX91", status: "completed", occurredAt: new Date(now).toISOString() } });
     await ctx.db.insert("domainRecords", { organizationId: otherOrg, entityType: "member", publicId: "member-secret", createdAt: now, updatedAt: now, data: { id: "member-secret", fullName: "Other Tenant Secret", memberNumber: "SECRET-1", phone: "+962 79 999 9999" } });
   });
@@ -31,8 +31,12 @@ describe("workspace navigation helpers", () => {
     const owner = t.withIdentity({ subject: "clerk-owner-nav" });
     const phone = await owner.query(api.domain.query, operation("workspace.search", { search: "551 2042" })) as Array<{ kind: string; title: string }>;
     expect(phone).toEqual([expect.objectContaining({ kind: "member", title: "Lina Haddad" })]);
+    const arabicName = await owner.query(api.domain.query, operation("workspace.search", { search: "احمد حسن" })) as Array<{ kind: string; title: string }>;
+    expect(arabicName).toEqual([expect.objectContaining({ kind: "member", title: "Lina Haddad" })]);
+    const arabicPhone = await owner.query(api.domain.query, operation("workspace.search", { search: "۵۵١ ۲۰۴۲" })) as Array<{ kind: string; title: string }>;
+    expect(arabicPhone).toEqual(phone);
     const reference = await owner.query(api.domain.query, operation("workspace.search", { search: "AX91" })) as Array<{ kind: string; title: string }>;
-    expect(reference).toEqual([expect.objectContaining({ kind: "receipt", title: "RCP-7782" })]);
+    expect(reference).toEqual([expect.objectContaining({ kind: "receipt", title: "RCP-7782", subtitle: "Lina Haddad · completed", subtitleParts: { kind: "receipt", memberName: "Lina Haddad", status: "completed" } })]);
     const create = await owner.query(api.domain.query, operation("workspace.search", { search: "collect payment" })) as Array<{ kind: string; id: string }>;
     expect(create).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "action", id: "collect-payment" })]));
     const noLeak = await owner.query(api.domain.query, operation("workspace.search", { search: "Tenant Secret" })) as unknown[];
@@ -46,6 +50,8 @@ describe("workspace navigation helpers", () => {
     await owner.mutation(api.domain.mutate, operation("workspace.recent.record", { kind: "member", id: "member-nav", title: "Lina Haddad", subtitle: "M-1042", href: "/members/member-nav" }));
     const recent = await owner.query(api.domain.query, operation("workspace.recents")) as Array<{ id: string; viewedAt: string }>;
     expect(recent).toEqual([expect.objectContaining({ id: "member-nav", viewedAt: expect.any(String) })]);
+    await owner.mutation(api.domain.mutate, operation("workspace.recent.record", { kind: "lead", id: "lead-history", title: "Lina — لينا", subtitle: "Original stored subtitle", subtitleParts: { kind: "lead", stage: "offer_sent", phone: "+962790001234" }, href: "/crm/leads/lead-history" }));
+    expect(await owner.query(api.domain.query, operation("workspace.recents"))).toEqual(expect.arrayContaining([expect.objectContaining({ id: "lead-history", title: "Lina — لينا", subtitle: "Original stored subtitle", subtitleParts: { kind: "lead", stage: "offer_sent", phone: "+962790001234" } })]));
     const pinned = await owner.mutation(api.domain.mutate, operation("workspace.pin.upsert", { targetKey: "collect-payment", kind: "action", label: "Collect payment", href: "/payments?collect=1" })) as { id: string };
     expect(await owner.query(api.domain.query, operation("workspace.pins"))).toEqual([expect.objectContaining({ id: pinned.id, targetKey: "collect-payment" })]);
     const trainer = t.withIdentity({ subject: "clerk-trainer-nav" });

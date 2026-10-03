@@ -92,8 +92,8 @@ describe("OperationsCommandCenter", () => {
     expect(dialog).toBeInTheDocument();
     await user.click(within(dialog).getByRole("combobox", { name: "Move to" }));
     await user.click(await screen.findByRole("option", { name: "Forge — Sweifieh" }));
-    await user.clear(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }));
-    await user.type(within(dialog).getByRole("spinbutton", { name: "Quantity to move" }), "2");
+    await user.clear(within(dialog).getByRole("textbox", { name: "Quantity to move" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Quantity to move" }), "2");
     await user.type(within(dialog).getByRole("textbox", { name: "Reason for moving" }), "Balance the Abdoun branch");
     await user.click(within(dialog).getByRole("button", { name: "Move stock" }));
 
@@ -184,8 +184,8 @@ describe("OperationsCommandCenter", () => {
     await user.click(screen.getByRole("tab", { name: /Stock/ }));
     await user.click(await screen.findByRole("button", { name: "Add item" }));
     expect(screen.getByRole("dialog", { name: "Add stock item" })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Available quantity" })).toHaveValue(0);
-    expect(screen.getByRole("spinbutton", { name: /Selling price/ })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Available quantity" })).toHaveValue("0");
+    expect(screen.getByRole("textbox", { name: /Selling price/ })).toBeInTheDocument();
     expect(screen.queryByText(/Refill to|Delivery time|Supplier unit cost|Preferred supplier/i)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -238,7 +238,7 @@ describe("OperationsCommandCenter", () => {
     await selectBranch(user);
     const upsertProduct = vi.spyOn(api, "upsertProduct");
     await user.click(await screen.findByRole("button", { name: "Edit Creatine monohydrate" }));
-    const available = screen.getByRole("spinbutton", { name: "Available quantity" });
+    const available = screen.getByRole("textbox", { name: "Available quantity" });
     await user.clear(available);
     await user.type(available, "24");
     await user.click(screen.getByRole("button", { name: "Save changes" }));

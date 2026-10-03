@@ -20,11 +20,13 @@ import type {
   UUID,
 } from "@/lib/domain/types";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { addDays, formatDate, isCalendarDate, todayISODate } from "@/lib/utils/dates";
+import { addDays, todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
-import { money, moneyInputError, parseMoneyInput, toMajorString } from "@/lib/utils/money";
+import { money, parseMoneyInput, toMajorString } from "@/lib/utils/money";
+import { useFormat } from "@/lib/i18n/format";
+import { paymentMethodLabel } from "@/lib/i18n/labels";
+import { useLocale, type TFunction } from "@/lib/i18n/provider";
 import { MoneyText } from "@/components/shared/data-display";
-import { PAYMENT_METHOD_LABELS } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -39,13 +41,11 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useAmountText, useMoneyInputError, useReadableDate } from "./renew-flow-format";
 
-/** A date people can read at a glance ("18 Nov 2026"). Half-typed input stays as typed. */
-const readableDate = (value: string | undefined) => (value && isCalendarDate(value) ? formatDate(value) : value || "—");
-
-const schema = z.object({
-  planId: z.string().min(1, "Choose a plan"),
-  startDate: z.string().min(1, "Choose a start date"),
+const makeSchema = (t: TFunction) => z.object({
+  planId: z.string().min(1, t("renewFlow.sale.errors.choosePlan")),
+  startDate: z.string().min(1, t("renewFlow.sale.errors.chooseStartDate")),
   priceOverride: z.string().optional(),
   overrideReason: z.string().optional(),
   discount: z.string().optional(),
@@ -56,7 +56,7 @@ const schema = z.object({
   paymentReference: z.string().optional(),
 });
 
-type FormValues = z.infer<typeof schema>;
+type FormValues = z.infer<ReturnType<typeof makeSchema>>;
 
 /**
  * New membership sale OR renewal — one deliberate commercial surface.
@@ -82,6 +82,12 @@ export function MembershipSaleDialog({
   onCompleted?: (result: MembershipSaleResult) => void;
 }) {
   const isRenewal = Boolean(renewalOf);
+  const { t, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
+  const readableDate = useReadableDate();
+  const amountText = useAmountText();
+  const moneyInputError = useMoneyInputError();
+  const schema = useMemo(() => makeSchema(t), [t]);
   const invalidate = useInvalidate();
   const { can, role } = usePermissions();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -204,7 +210,7 @@ export function MembershipSaleDialog({
         void invalidate();
       },
       onError: (e) => {
-        setServerError(isApiError(e) ? e.message : "The sale was not saved. Try again.");
+        setServerError(isApiError(e) ? e.message : t("renewFlow.sale.errors.saveFailed"));
       },
     },
   );
@@ -224,28 +230,28 @@ export function MembershipSaleDialog({
       return;
     }
     if (values.payNow && rawPayAmount && payingNow.amount <= 0) {
-      form.setError("payAmount", { message: "Enter an amount greater than zero, or leave it empty to collect the full total" });
+      form.setError("payAmount", { message: t("renewFlow.sale.errors.payAmountPositive") });
       return;
     }
     if (values.payNow && payingNow.amount > total.amount) {
-      form.setError("payAmount", { message: `Can't be more than the ${toMajorString(total)} ${currency} total` });
+      form.setError("payAmount", { message: t("renewFlow.sale.errors.payAmountOverTotal", { amount: amountText(total) }) });
       return;
     }
     if (discount.amount > 0 && !values.discountReason?.trim()) {
-      form.setError("discountReason", { message: "Add a reason for the discount" });
+      form.setError("discountReason", { message: t("renewFlow.sale.errors.discountReasonRequired") });
       return;
     }
     if (needsOverrideReason && !values.overrideReason?.trim()) {
-      form.setError("overrideReason", { message: "Add a reason for the price or date change" });
+      form.setError("overrideReason", { message: t("renewFlow.sale.errors.overrideReasonRequired") });
       return;
     }
     if (values.payNow && payingNow.amount > 0 && paymentReferenceRequired && !values.paymentReference?.trim()) {
-      form.setError("paymentReference", { message: "Type the reference number for this payment" });
+      form.setError("paymentReference", { message: t("renewFlow.shared.referenceRequired") });
       return;
     }
     const chosenMethod = methods.find((m) => m.key === values.payMethod);
     if (values.payNow && payingNow.amount > 0 && chosenMethod && methodUnavailable(chosenMethod)) {
-      form.setError("payMethod", { message: "Open a cash shift before taking cash at this desk" });
+      form.setError("payMethod", { message: t("renewFlow.shared.openShiftFirst") });
       return;
     }
     const payment =
@@ -287,13 +293,13 @@ export function MembershipSaleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{isRenewal ? "Renew membership" : "Sell membership"}</DialogTitle>
+          <DialogTitle>{isRenewal ? t("renewFlow.sale.titleRenew") : t("renewFlow.sale.titleSell")}</DialogTitle>
           <DialogDescription>
-            {member.fullName} · <span className="font-mono">{member.memberNumber}</span>
+            <bdi>{member.fullName}</bdi> · <span className="font-mono" dir="ltr">{member.memberNumber}</span>
             {isRenewal && renewalOf ? (
               <>
                 {" "}
-                — current membership ends <span className="tabular">{readableDate(renewalOf.endDate)}</span>
+                — {t("renewFlow.sale.currentEnds")} <span className="tabular" dir="auto">{readableDate(renewalOf.endDate)}</span>
               </>
             ) : null}
           </DialogDescription>
@@ -301,20 +307,25 @@ export function MembershipSaleDialog({
         <form onSubmit={submit}>
           <DialogBody className="grid gap-5 sm:grid-cols-[1fr_240px]">
             <div className="space-y-4">
-              <Field label="Plan" required>
+              <Field label={t("renewFlow.sale.planLabel")} required>
                 <Controller
                   control={form.control}
                   name="planId"
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Plan">
-                        <SelectValue placeholder="Choose a plan…" />
+                      <SelectTrigger aria-label={t("renewFlow.sale.planLabel")}>
+                        <SelectValue placeholder={t("renewFlow.sale.planPlaceholder")} />
                       </SelectTrigger>
                       <SelectContent>
                         {plans.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {p.name} — {p.basePrice.currency} {toMajorString(p.basePrice)}
-                            {p.kind === "visits" ? ` · ${p.visitAllowance} visits` : ` · ${p.durationDays} days`}
+                            {t("renewFlow.sale.planOption", {
+                              name: isolate(p.name),
+                              price: isolateLtr(format.money(p.basePrice)),
+                              detail: p.kind === "visits"
+                                ? t("renewFlow.sale.planVisits", { count: p.visitAllowance ?? 0 })
+                                : t("renewFlow.sale.planDays", { count: p.durationDays ?? 0 }),
+                            })}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -327,13 +338,13 @@ export function MembershipSaleDialog({
               </Field>
 
               <FieldGrid alignFrom="base" className="grid-cols-2">
-                <Field label="Start date" required>
+                <Field label={t("renewFlow.sale.startDate")} required>
                   <Input type="date" {...form.register("startDate")} />
                 </Field>
                 <Field
-                  label={`Special price (${currency})`}
+                  label={t("renewFlow.sale.specialPrice", { currency: isolateLtr(currency) })}
                   error={form.formState.errors.priceOverride?.message ?? (showProblem("priceOverride") ? priceProblem : undefined)}
-                  hint={canOverridePrice ? undefined : "Only a manager can change the price"}
+                  hint={canOverridePrice ? undefined : t("renewFlow.sale.specialPriceHint")}
                 >
                   <Input
                     inputMode="decimal"
@@ -346,55 +357,55 @@ export function MembershipSaleDialog({
               </FieldGrid>
 
               {needsOverrideReason ? (
-                <Field label="Reason for the change" required error={form.formState.errors.overrideReason?.message}>
-                  <Input placeholder="Why is the price or date different?" {...form.register("overrideReason")} />
+                <Field label={t("renewFlow.sale.changeReason")} required error={form.formState.errors.overrideReason?.message}>
+                  <Input dir="auto" placeholder={t("renewFlow.sale.changeReasonPlaceholder")} {...form.register("overrideReason")} />
                 </Field>
               ) : null}
 
               <FieldGrid alignFrom="base" className="grid-cols-2">
-                <Field label={`Discount (${currency})`} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : "You can't give discounts"}>
+                <Field label={t("renewFlow.sale.discount", { currency: isolateLtr(currency) })} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : t("renewFlow.sale.discountHint")}>
                   <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} disabled={!canDiscount} {...form.register("discount")} />
                 </Field>
-                <Field label="Discount reason" error={form.formState.errors.discountReason?.message}>
-                  <Input placeholder="For example: Corporate rate" disabled={!canDiscount} {...form.register("discountReason")} />
+                <Field label={t("renewFlow.sale.discountReason")} error={form.formState.errors.discountReason?.message}>
+                  <Input dir="auto" placeholder={t("renewFlow.sale.discountReasonPlaceholder")} disabled={!canDiscount} {...form.register("discountReason")} />
                 </Field>
               </FieldGrid>
 
               {needsApproval ? (
                 <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  This discount is over your limit. A manager will need to approve it.
+                  {t("renewFlow.sale.needsApproval")}
                 </div>
               ) : null}
 
               <div className="rounded-md border border-line p-3">
                 <label className="flex items-center justify-between gap-3 cursor-pointer">
-                  <span className="text-[13px] font-medium">Collect payment now</span>
+                  <span className="text-[13px] font-medium">{t("renewFlow.sale.collectNow")}</span>
                   <Controller
                     control={form.control}
                     name="payNow"
-                    render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} disabled={renewalStartsInFuture} aria-label="Collect payment now" />}
+                    render={({ field }) => <Switch checked={field.value} onCheckedChange={field.onChange} disabled={renewalStartsInFuture} aria-label={t("renewFlow.sale.collectNow")} />}
                   />
                 </label>
                 {watchPayNow ? (
                   <FieldGrid alignFrom="base" className="mt-3 grid-cols-2">
-                    <Field label={`Amount (${currency})`} error={form.formState.errors.payAmount?.message ?? (showProblem("payAmount") ? payAmountProblem : undefined)} hint="Leave empty to collect the full total.">
+                    <Field label={t("renewFlow.shared.amountWithCurrency", { currency: isolateLtr(currency) })} error={form.formState.errors.payAmount?.message ?? (showProblem("payAmount") ? payAmountProblem : undefined)} hint={t("renewFlow.sale.payAmountHint")}>
                       <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(total)} {...form.register("payAmount")} />
                     </Field>
-                    <Field label="Method" error={form.formState.errors.payMethod?.message} hint={cashUnavailable ? "No cash shift is open at this desk, so cash cannot be taken here." : undefined}>
+                    <Field label={t("renewFlow.shared.method")} error={form.formState.errors.payMethod?.message} hint={cashUnavailable ? t("renewFlow.shared.noCashShiftHint") : undefined}>
                       <Controller
                         control={form.control}
                         name="payMethod"
                         render={({ field }) => (
                           <Select value={field.value} onValueChange={field.onChange}>
-                            <SelectTrigger aria-label="Payment method">
+                            <SelectTrigger aria-label={t("renewFlow.shared.paymentMethodAria")}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               {methods.map((m) => (
                                 <SelectItem key={m.key} value={m.key} disabled={methodUnavailable(m)}>
-                                  {PAYMENT_METHOD_LABELS[m.key] ?? m.label}
-                                  {methodUnavailable(m) ? " · needs an open shift" : ""}
+                                  {paymentMethodLabel(t, m.key)}
+                                  {methodUnavailable(m) ? t("renewFlow.shared.needsOpenShift") : ""}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -403,52 +414,55 @@ export function MembershipSaleDialog({
                       />
                     </Field>
                     {paymentReferenceRequired ? (
-                      <Field className="col-span-2" label="Reference number" required error={form.formState.errors.paymentReference?.message} hint="Type the number from the card machine slip or bank app.">
-                        <Input {...form.register("paymentReference")} placeholder="For example: POS-88213" />
+                      <Field className="col-span-2" label={t("renewFlow.shared.referenceNumber")} required error={form.formState.errors.paymentReference?.message} hint={t("renewFlow.shared.referenceHint")}>
+                        <Input dir="ltr" {...form.register("paymentReference")} placeholder={t("renewFlow.shared.referencePlaceholder")} />
                       </Field>
                     ) : null}
                   </FieldGrid>
                 ) : renewalStartsInFuture ? (
                   <p className="mt-2 text-[12px] text-ink-3">
-                    You can take this payment once the new membership starts.
+                    {t("renewFlow.sale.paymentLaterFuture")}
                   </p>
                 ) : (
                   <p className="mt-2 text-[12px] text-ink-3">
-                    The member will owe the full amount.
+                    {t("renewFlow.sale.paymentLaterOwes")}
                   </p>
                 )}
               </div>
             </div>
 
             {/* Money story */}
-            <aside className="rounded-md border border-line bg-sunken/50 p-4 self-start" aria-label="Sale summary">
-              <p className="context-label">Summary</p>
+            <aside className="rounded-md border border-line bg-sunken/50 p-4 self-start" aria-label={t("renewFlow.sale.summaryAria")}>
+              <p className="context-label">{t("renewFlow.sale.summary")}</p>
               <dl className="mt-3 space-y-2 text-[13px]">
-                <Row label="Plan">{plan?.name ?? "—"}</Row>
-                <Row label="Dates">
+                <Row label={t("renewFlow.sale.rowPlan")}>{plan ? <bdi>{plan.name}</bdi> : "—"}</Row>
+                <Row label={t("renewFlow.sale.rowDates")}>
                   {plan ? (
                     <span className="font-mono text-[12px]">
-                      {readableDate(form.watch("startDate"))} to {readableDate(plan.kind === "visits" ? addDays(form.watch("startDate"), plan.visitValidityDays ?? 90) : addDays(form.watch("startDate"), plan.durationDays ?? 30))}
+                      {t("renewFlow.sale.dateRange", {
+                        start: isolate(readableDate(form.watch("startDate"))),
+                        end: isolate(readableDate(plan.kind === "visits" ? addDays(form.watch("startDate"), plan.visitValidityDays ?? 90) : addDays(form.watch("startDate"), plan.durationDays ?? 30))),
+                      })}
                     </span>
                   ) : (
                     "—"
                   )}
                 </Row>
-                <Row label="Price">
+                <Row label={t("renewFlow.sale.rowPrice")}>
                   <MoneyText money={basePrice} />
                 </Row>
-                <Row label="Discount">
+                <Row label={t("renewFlow.sale.rowDiscount")}>
                   <MoneyText money={money(-discount.amount)} signed={discount.amount > 0} />
                 </Row>
                 <li className="border-t border-line-2 pt-2">
-                  <Row label="Total" strong>
+                  <Row label={t("renewFlow.sale.rowTotal")} strong>
                     <MoneyText money={total} />
                   </Row>
                 </li>
-                <Row label="Paying now">
+                <Row label={t("renewFlow.sale.rowPayingNow")}>
                   <MoneyText money={payingNow} />
                 </Row>
-                <Row label="Still owed" tone={remaining.amount > 0 ? "warn" : undefined}>
+                <Row label={t("renewFlow.sale.rowStillOwed")} tone={remaining.amount > 0 ? "warn" : undefined}>
                   <MoneyText money={remaining} />
                 </Row>
               </dl>
@@ -457,11 +471,12 @@ export function MembershipSaleDialog({
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.action.cancel")}
             </Button>
             <Button type="submit" loading={mutation.isPending} disabled={!plan} data-testid="confirm-sale">
-              {isRenewal ? "Confirm renewal" : "Confirm sale"}
-              {total.amount > 0 ? ` — ${toMajorString(total)} ${currency}` : ""}
+              {isRenewal
+                ? total.amount > 0 ? t("renewFlow.sale.confirmRenewalAmount", { amount: amountText(total) }) : t("renewFlow.sale.confirmRenewal")
+                : total.amount > 0 ? t("renewFlow.sale.confirmSaleAmount", { amount: amountText(total) }) : t("renewFlow.sale.confirmSale")}
             </Button>
           </DialogFooter>
         </form>

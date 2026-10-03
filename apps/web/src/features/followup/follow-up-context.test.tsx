@@ -1,10 +1,13 @@
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
+import { FollowUpContextPanel, presentedFollowUpExcerpt } from "@/features/followup/follow-up-context";
 import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import type { MemberSummary } from "@/lib/domain/types";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
+import { createTranslator } from "@/lib/i18n/core";
+import { makeFormatters } from "@/lib/i18n/formatters";
+import { systemMessage } from "@/lib/i18n/system-messages";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }), usePathname: () => "/crm/queues", useParams: () => ({}), useSearchParams: () => new URLSearchParams() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
@@ -24,6 +27,21 @@ function Probe() {
 }
 
 describe("follow-up context for a renewal conversation", () => {
+  it("localizes generated excerpts before truncating while keeping diagnostics and authored text", () => {
+    const reason = `provider_${"diagnostic".repeat(30)}`;
+    const body = `Failed after 1 attempt (${reason}). Managers were notified; follow up by phone.`;
+    const excerpt = presentedFollowUpExcerpt({
+      excerpt: body,
+      bodyMessage: systemMessage("communicationCompletion.timeline.messageFailedAfterReason", { count: 1, reason }),
+    }, { locale: "ar", t: createTranslator("ar"), format: makeFormatters("ar", "الآن", "Asia/Amman") });
+    expect(excerpt).toMatch(/^فشل الإرسال بعد محاولة واحدة \(⁨provider_diagnostic/);
+    expect(excerpt).toContain("⁩…");
+    expect(excerpt).toHaveLength(200);
+
+    const authored = presentedFollowUpExcerpt({ excerpt: "Call me next week" }, { locale: "ar", t: createTranslator("ar"), format: makeFormatters("ar", "الآن", "Asia/Amman") });
+    expect(authored).toBe("Call me next week");
+  });
+
   it("names an explicit opt-out and offers no message at all", async () => {
     await renderWithApp(<Probe />, {
       prepare: async (api) => {

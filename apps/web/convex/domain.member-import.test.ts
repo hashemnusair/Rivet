@@ -62,10 +62,41 @@ describe("member migration batches", () => {
     expect(records.find((record) => record.memberPublicId === memberId && record.entityType === "charge")?.data).toMatchObject({ total: { amount: 12_500 }, migration: { kind: "opening_receivable", accountingPostingEligible: false } });
     expect(records.find((record) => record.memberPublicId === memberId && record.entityType === "migrationPaymentEvidence")?.data).toMatchObject({ amount: { amount: 80_000 }, sourceReference: "OLD-44", readOnly: true, accountingPostingEligible: false });
     expect(records.filter((record) => record.memberPublicId === memberId && ["payment", "receipt", "shift"].includes(record.entityType))).toHaveLength(0);
+    const timeline = records.filter((record) => record.memberPublicId === memberId && record.entityType === "timeline").map((record) => record.data as Record<string, unknown>);
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Opening balance imported — JOD 12.500",
+      titleMessage: { key: "communicationCompletion.timeline.openingBalanceImported", params: { amount: { amountMinor: 12_500, currency: "JOD" } } },
+      bodyMessage: { key: "communicationCompletion.timeline.openingBalanceImportedBody", params: { cutoff: { date: "2026-08-30" } } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Historical payment evidence imported — JOD 80.000",
+      titleMessage: { key: "communicationCompletion.timeline.historicalPaymentEvidenceImported", params: { amount: { amountMinor: 80_000, currency: "JOD" } } },
+      body: "Read-only evidence through 2026-08-20 · OLD-44. No RIVET payment or receipt was created.",
+      bodyMessage: { key: "communicationCompletion.timeline.historicalPaymentEvidenceImportedBodyWithReference", params: { date: { date: "2026-08-20" }, reference: "OLD-44" } },
+    }));
+    expect(timeline).toContainEqual(expect.objectContaining({
+      title: "Monthly membership history imported",
+      titleMessage: { key: "communicationCompletion.timeline.membershipHistoryImported", params: { plan: "Monthly" } },
+      bodyMessage: { key: "communicationCompletion.timeline.membershipHistoryImportedBody", params: { startDate: { date: "2026-08-01" }, endDate: { date: "2026-10-07" }, cutoffDate: { date: "2026-08-30" } } },
+    }));
 
     const undone = await owner.mutation(api.domain.mutate, operation("members.import.undo", { importId: preview.id, cursor: 0, chunkSize: 25, idempotencyKey: "import-membership-undo-0001", reason: "Incorrect migration cutoff" })) as { archivedCount: number; skippedCount: number };
     expect(undone).toMatchObject({ archivedCount: 1, skippedCount: 0 });
     const afterUndo = await t.run(async (ctx) => await ctx.db.query("domainRecords").collect());
     expect(afterUndo.filter((record) => record.memberPublicId === memberId && ["membership", "charge", "migrationPaymentEvidence"].includes(record.entityType))).toHaveLength(0);
   });
+});
+
+
+it("projects Arabic row descriptors without rewriting legacy saved errors", async () => {
+  const t = convexTest(schema, modules);
+  await seed(t);
+  const owner = t.withIdentity({ subject: "clerk-import-owner" });
+  const preview = await owner.mutation(api.domain.mutate, operation("members.import.preview", { branchId: "import-branch", csv: "full_name,phone,gender\nأحمد Saleh,bad,unknown" })) as { id: string; rows: Array<{ errors: string[]; errorMessages: Array<{ key: string }> }> };
+  expect(preview.rows[0]).toMatchObject({ errors: ["Enter a valid phone number", "Gender must be male or female"], errorMessages: [{ key: "memberMigration.errorPhone" }, { key: "memberMigration.errorGender" }] });
+  const storedId = await t.run(async ctx => { const record = (await ctx.db.query("domainRecords").collect()).find(record => record.publicId === preview.id)!; const data = record.data as Record<string, unknown>; const rows = data.rows as Array<Record<string, unknown>>; const legacy = rows.map(({ errorMessages: _ignored, ...row }) => row); await ctx.db.patch(record._id, { data: { ...data, rows: legacy } }); return record._id; });
+  const before = await t.run(ctx => ctx.db.get(storedId));
+  const read = await owner.query(api.domain.query, operation("members.import.get", { importId: preview.id }));
+  expect(read).toMatchObject({ rows: [{ errorMessages: [{ key: "memberMigration.errorPhone" }, { key: "memberMigration.errorGender" }] }] });
+  expect(await t.run(ctx => ctx.db.get(storedId))).toEqual(before);
 });

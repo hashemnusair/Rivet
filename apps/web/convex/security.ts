@@ -1,3 +1,4 @@
+import { legacyErrorDescriptor, fieldErrorDescriptors, type ErrorMessageDescriptor } from "../src/lib/i18n/error-messages";
 import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -47,6 +48,7 @@ type MaybeUser = {
   email: string;
   fullName: string;
   profileNameUpdatedAt?: number;
+  uiLocale?: "en" | "ar";
   phone?: string;
   platformAdmin: boolean;
   status?: AccountStatus;
@@ -119,9 +121,12 @@ type MaybeBranch = {
 export function domainError(
   code: string,
   message: string,
-  extra?: { details?: Record<string, unknown>; fieldErrors?: Record<string, string[]>; correlationId?: string },
+  extra?: { details?: Record<string, unknown>; fieldErrors?: Record<string, string[]>; correlationId?: string; message?: ErrorMessageDescriptor },
 ): never {
+  const descriptor = extra?.message ?? legacyErrorDescriptor(message);
   const payload = {
+    ...(descriptor ? { messageKey: descriptor.key, ...(descriptor.params ? { messageParams: descriptor.params } : {}) } : {}),
+    ...(extra?.fieldErrors ? { fieldMessages: fieldErrorDescriptors(extra.fieldErrors, descriptor ? { message, descriptor } : undefined) } : {}),
     code,
     message,
     requestId: extra?.correlationId ?? newCorrelationId(),
@@ -352,7 +357,7 @@ export function publicUserId(user: MaybeUser): string {
 
 export function assertNonEmptyString(value: unknown, field: string, correlationId?: string): asserts value is string {
   if (typeof value !== "string" || !value.trim()) {
-    domainError("VALIDATION_ERROR", `${field} is required.`, { fieldErrors: { [field]: ["Required"] }, correlationId });
+    domainError("VALIDATION_ERROR", `${field} is required.`, { message: { key: "apiErrors.fieldRequired", params: { field: String(field) } }, fieldErrors: { [field]: ["Required"] }, correlationId });
   }
 }
 

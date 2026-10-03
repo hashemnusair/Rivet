@@ -4,7 +4,13 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
-import { attachmentSizeLabel, renderBrandedEmail, type BrandedEmail, type EmailAudience } from "./emailTemplate";
+import { attachmentSizeLabel, renderBrandedEmail, type EmailAudience, type EmailRow, type EmailStatusTone } from "./emailTemplate";
+import { createTranslator, type TKey } from "../src/lib/i18n/core";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { resolveRecipientLanguage, type CommunicationLanguageSource } from "../src/lib/i18n/communication";
+import { systemMessage } from "../src/lib/i18n/system-messages";
+import { communicationCompletion as enCommunication } from "../src/lib/i18n/messages/en/communicationCompletion";
+import { domain as enDomain } from "../src/lib/i18n/messages/en/domain";
 import { resolveBrandColor } from "./brand";
 import { BRAND_CONTACT } from "./brandTokens";
 
@@ -15,6 +21,13 @@ const LEASE_MS = 2 * 60 * 1000;
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
 type Delivery = Doc<"operationalEmailDeliveries">;
+/**
+ * The copy catalogue that rendered a stored message. Stored bytes are what a
+ * retry sends, so a later catalogue edit never reaches a queued message; this
+ * records which wording it carries.
+ */
+export const OPERATIONAL_EMAIL_COPY_VERSION = "communication-2026-10-03";
+
 const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"]);
 
 function providerConfigured(): boolean {
@@ -31,7 +44,9 @@ export interface QueueOperationalEmailInput {
   branchId?: Id<"branches">;
   kind: string;
   templateVersion: string;
+  /** The recipient's language, resolved by the caller from the recipient's own record. */
   language?: Language;
+  languageSource?: CommunicationLanguageSource;
   recipientReference: string;
   recipientEmail?: string;
   relatedEntityType?: string;
@@ -43,6 +58,7 @@ export interface QueueOperationalEmailInput {
   html?: string;
   text?: string;
   attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
+  facts?: OperationalEmailFacts;
 }
 
 function utcIso(value: number): string {
@@ -54,155 +70,104 @@ function cleanEmail(value: string | undefined): string | undefined {
   return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
 }
 
-const SERVICE_COPY: Readonly<Record<string, { en: { subject: string; body: string }; ar: { subject: string; body: string } }>> = {
-  subscription_agreement_signed: {
-    en: { subject: "Your signed RIVET subscription agreement", body: "Thank you for signing your RIVET subscription agreement. Your copy, with your ID number masked, is available in RIVET under Settings → Agreement. RIVET will countersign and confirm the completed agreement." },
-    ar: { subject: "اتفاقية اشتراك RIVET الموقّعة", body: "شكرًا لتوقيع اتفاقية اشتراك RIVET. نسختك، مع إخفاء رقم الهوية، متاحة داخل RIVET ضمن الإعدادات ← الاتفاقية. ستوقّع RIVET بدورها وتؤكد الاتفاقية النهائية." },
-  },
-  subscription_agreement_copy: {
-    en: { subject: "A gym signed its RIVET subscription agreement", body: "A gym owner signed the RIVET subscription agreement. The full record, with the signature, is in the platform console under Agreements." },
-    ar: { subject: "وقّع نادٍ اتفاقية اشتراك RIVET", body: "وقّع مالك نادٍ اتفاقية اشتراك RIVET. السجل الكامل مع التوقيع متاح في لوحة المنصة ضمن الاتفاقيات." },
-  },
-  subscription_agreement_countersigned: {
-    en: { subject: "RIVET countersigned your subscription agreement", body: "RIVET has countersigned your subscription agreement. The completed agreement, with both signatures, is available in RIVET under Settings → Agreement." },
-    ar: { subject: "وقّعت RIVET اتفاقية اشتراككم", body: "وقّعت RIVET اتفاقية الاشتراك الخاصة بكم. الاتفاقية المكتملة بالتوقيعين متاحة داخل RIVET ضمن الإعدادات ← الاتفاقية." },
-  },
-  trial_request_confirmation: {
-    en: { subject: "Your RIVET trial request", body: "Your trial request was received. Sign in to RIVET to see its current status and the gym's response." },
-    ar: { subject: "طلب التجربة في RIVET", body: "تم استلام طلب التجربة. سجّل الدخول إلى RIVET للاطلاع على حالته الحالية ورد النادي." },
-  },
-  trial_status: {
-    en: { subject: "Your RIVET trial request was updated", body: "Your gym updated the status of your trial request. Sign in to RIVET to view the current outcome and any follow-up." },
-    ar: { subject: "تم تحديث طلب التجربة في RIVET", body: "قام النادي بتحديث حالة طلب التجربة. سجّل الدخول إلى RIVET لعرض النتيجة الحالية وأي متابعة." },
-  },
-  payment_receipt: {
-    en: { subject: "Your RIVET payment receipt", body: "A payment was recorded on your gym account. Sign in to RIVET to view the authoritative receipt and remaining balance." },
-    ar: { subject: "إيصال دفع من RIVET", body: "تم تسجيل دفعة في حساب النادي. سجّل الدخول إلى RIVET لعرض الإيصال المعتمد والرصيد المتبقي." },
-  },
-  renewal_reminder: {
-    en: { subject: "Your gym membership is approaching renewal", body: "Your current membership term is approaching its renewal date. Sign in to RIVET to review the current term, upcoming invoice, and gym contact details." },
-    ar: { subject: "موعد تجديد عضوية النادي يقترب", body: "تقترب عضويتك الحالية من تاريخ التجديد. سجّل الدخول إلى RIVET لمراجعة المدة الحالية والفاتورة القادمة وبيانات التواصل مع النادي." },
-  },
-  membership_expiry: {
-    en: { subject: "Your gym membership is approaching expiry", body: "Your current membership term is approaching expiry. Sign in to RIVET to review the authoritative membership status and contact the gym." },
-    ar: { subject: "عضوية النادي تقترب من الانتهاء", body: "تقترب عضويتك الحالية من الانتهاء. سجّل الدخول إلى RIVET لمراجعة حالة العضوية المعتمدة والتواصل مع النادي." },
-  },
-  support_acknowledgement: {
-    en: { subject: "RIVET received your support request", body: "Your support case was received. You can follow its current status and conversation in RIVET." },
-    ar: { subject: "استلمت RIVET طلب الدعم", body: "تم استلام طلب الدعم. يمكنك متابعة الحالة الحالية والمحادثة داخل RIVET." },
-  },
-  support_reply: {
-    en: { subject: "RIVET replied to your support case", body: "There is a new reply on your support case. Sign in to RIVET to read the persisted conversation." },
-    ar: { subject: "رد جديد على طلب الدعم", body: "يوجد رد جديد على طلب الدعم. سجّل الدخول إلى RIVET لقراءة المحادثة المحفوظة." },
-  },
-  support_resolved: {
-    en: { subject: "Your RIVET support case was resolved", body: "Your support case was marked resolved. Sign in to RIVET to view the resolution or reopen the case." },
-    ar: { subject: "تم حل طلب الدعم في RIVET", body: "تم وضع طلب الدعم بحالة محلول. سجّل الدخول إلى RIVET لعرض الحل أو إعادة فتح الطلب." },
-  },
-  platform_invoice_issued: {
-    en: { subject: "A RIVET invoice was issued", body: "A platform invoice was issued for your gym. Sign in to RIVET to view the amount, billing period, and due date." },
-    ar: { subject: "تم إصدار فاتورة RIVET", body: "تم إصدار فاتورة منصة للنادي. سجّل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق." },
-  },
-  platform_invoice_reminder: {
-    en: { subject: "Your RIVET invoice is ready", body: "Your next RIVET platform invoice has been issued. Sign in to review the amount, billing period, and due date. Payment is due on the date shown." },
-    ar: { subject: "فاتورة RIVET جاهزة", body: "تم إصدار فاتورة منصة RIVET القادمة. سجّل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق. يستحق الدفع في التاريخ الموضح." },
-  },
-  platform_invoice_paid: {
-    en: { subject: "Your RIVET invoice was marked paid", body: "An offline payment was recorded against your platform invoice. Sign in to RIVET to view the reference and status." },
-    ar: { subject: "تم تسجيل فاتورة RIVET كمدفوعة", body: "تم تسجيل دفعة يدوية على فاتورة المنصة. سجّل الدخول إلى RIVET لعرض المرجع والحالة." },
-  },
-  platform_invoice_past_due: {
-    en: { subject: "Your RIVET invoice is past due", body: "A platform invoice was marked past due. Sign in to RIVET to review the authoritative invoice and contact support if needed." },
-    ar: { subject: "فاتورة RIVET متأخرة", body: "تم وضع فاتورة المنصة بحالة متأخرة. سجّل الدخول إلى RIVET لمراجعة الفاتورة المعتمدة والتواصل مع الدعم عند الحاجة." },
-  },
-  platform_subscription_suspended: {
-    en: { subject: "Your RIVET subscription was suspended", body: "Your gym's RIVET subscription was suspended. Sign in to review the current status or contact RIVET support." },
-    ar: { subject: "تم تعليق اشتراك RIVET", body: "تم تعليق اشتراك النادي في RIVET. سجّل الدخول لمراجعة الحالة الحالية أو التواصل مع دعم RIVET." },
-  },
-  platform_subscription_cancelled: {
-    en: { subject: "Your RIVET subscription was cancelled", body: "Your gym's RIVET subscription was cancelled. Sign in to review the current status or contact RIVET support." },
-    ar: { subject: "تم إلغاء اشتراك RIVET", body: "تم إلغاء اشتراك النادي في RIVET. سجّل الدخول لمراجعة الحالة الحالية أو التواصل مع دعم RIVET." },
-  },
-  pt_package_paid: {
-    en: { subject: "Your PT sessions are available", body: "Your PT package is fully paid and its sessions are now available. Sign in to RIVET to view the balance and book." },
-    ar: { subject: "جلسات التدريب الشخصي متاحة", body: "تم دفع باقة التدريب الشخصي بالكامل وأصبحت الجلسات متاحة. سجّل الدخول إلى RIVET لعرض الرصيد والحجز." },
-  },
-  pt_booking_confirmation: {
-    en: { subject: "Your PT session is booked", body: "A PT credit was reserved for your booking. Sign in to RIVET to view the trainer, branch, time, and cancellation cutoff." },
-    ar: { subject: "تم حجز جلسة التدريب الشخصي", body: "تم حجز رصيد لجلسة التدريب الشخصي. سجّل الدخول إلى RIVET لعرض المدرب والفرع والوقت وموعد الإلغاء." },
-  },
-  pt_booking_update: {
-    en: { subject: "Your PT booking was updated", body: "Your PT booking changed. Sign in to RIVET to see the current time, status, and credit outcome." },
-    ar: { subject: "تم تحديث حجز التدريب الشخصي", body: "تم تغيير حجز التدريب الشخصي. سجّل الدخول إلى RIVET لعرض الوقت والحالة ونتيجة الرصيد." },
-  },
-  pt_booking_reminder: {
-    en: { subject: "Your PT session is tomorrow", body: "Your PT session starts in about 24 hours. Sign in to RIVET to review the booking and cancellation policy." },
-    ar: { subject: "جلسة التدريب الشخصي غداً", body: "تبدأ جلسة التدريب الشخصي خلال نحو 24 ساعة. سجّل الدخول إلى RIVET لمراجعة الحجز وسياسة الإلغاء." },
-  },
-  pt_low_balance: {
-    en: { subject: "Your PT session balance is low", body: "Your available PT session balance is low. Sign in to RIVET to review the balance and available gym packages." },
-    ar: { subject: "رصيد جلسات التدريب الشخصي منخفض", body: "رصيد جلسات التدريب الشخصي المتاح منخفض. سجّل الدخول إلى RIVET لمراجعة الرصيد وباقات النادي المتاحة." },
-  },
-};
+type ServiceKind = keyof typeof enCommunication.email.kinds;
+
+function isServiceKind(kind: string): kind is ServiceKind {
+  return Object.hasOwn(enCommunication.email.kinds, kind);
+}
 
 /**
  * Who each message is written for, and where its one action goes. A member
  * reads about their own gym, so the gym leads and its accent colours the
  * button; a gym owner reads about their RIVET account.
  */
-const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: string; action?: string; actionAr?: string; status?: BrandedEmail["status"] }>> = {
-  subscription_agreement_signed: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
-  subscription_agreement_copy: { audience: "gym", path: "/platform/agreements", action: "Open in the console", actionAr: "فتح في اللوحة" },
-  subscription_agreement_countersigned: { audience: "gym", path: "/settings?section=agreement", action: "View the agreement", actionAr: "عرض الاتفاقية" },
-  platform_invoice_issued: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
-  platform_invoice_reminder: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
-  platform_invoice_paid: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة" },
-  platform_invoice_past_due: { audience: "gym", path: "/settings?section=subscription", action: "View invoice", actionAr: "عرض الفاتورة", status: { label: "Past due", tone: "danger" } },
-  platform_subscription_suspended: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب", status: { label: "Suspended", tone: "danger" } },
-  platform_subscription_cancelled: { audience: "gym", path: "/settings?section=subscription", action: "View the account", actionAr: "عرض الحساب" },
-  support_acknowledgement: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
-  support_reply: { audience: "gym", path: "/support", action: "Read the reply", actionAr: "قراءة الرد" },
-  support_resolved: { audience: "gym", path: "/support", action: "View the case", actionAr: "عرض الطلب" },
-  trial_request_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
-  trial_status: { audience: "member", path: "/customer/my-gyms", action: "View in RIVET", actionAr: "عرض في RIVET" },
-  payment_receipt: { audience: "member", path: "/customer/receipts", action: "View the receipt", actionAr: "عرض الإيصال" },
-  renewal_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
-  membership_expiry: { audience: "member", path: "/customer/my-gyms", action: "View the membership", actionAr: "عرض العضوية" },
-  pt_package_paid: { audience: "member", path: "/customer/my-gyms", action: "View the sessions", actionAr: "عرض الجلسات" },
-  pt_booking_confirmation: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
-  pt_booking_update: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
-  pt_booking_reminder: { audience: "member", path: "/customer/my-gyms", action: "View the booking", actionAr: "عرض الحجز" },
-  pt_low_balance: { audience: "member", path: "/customer/my-gyms", action: "View the balance", actionAr: "عرض الرصيد" },
+const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: string; status?: { key: "pastDue" | "suspended"; tone: EmailStatusTone } }>> = {
+  subscription_agreement_signed: { audience: "gym", path: "/settings?section=agreement" },
+  subscription_agreement_copy: { audience: "gym", path: "/platform/agreements" },
+  subscription_agreement_countersigned: { audience: "gym", path: "/settings?section=agreement" },
+  platform_invoice_issued: { audience: "gym", path: "/settings?section=subscription" },
+  platform_invoice_reminder: { audience: "gym", path: "/settings?section=subscription" },
+  platform_invoice_paid: { audience: "gym", path: "/settings?section=subscription" },
+  platform_invoice_past_due: { audience: "gym", path: "/settings?section=subscription", status: { key: "pastDue", tone: "danger" } },
+  platform_subscription_suspended: { audience: "gym", path: "/settings?section=subscription", status: { key: "suspended", tone: "danger" } },
+  platform_subscription_cancelled: { audience: "gym", path: "/settings?section=subscription" },
+  support_acknowledgement: { audience: "gym", path: "/support" },
+  support_reply: { audience: "gym", path: "/support" },
+  support_resolved: { audience: "gym", path: "/support" },
+  trial_request_confirmation: { audience: "member", path: "/customer/my-gyms" },
+  trial_status: { audience: "member", path: "/customer/my-gyms" },
+  payment_receipt: { audience: "member", path: "/customer/receipts" },
+  renewal_reminder: { audience: "member", path: "/customer/my-gyms" },
+  membership_expiry: { audience: "member", path: "/customer/my-gyms" },
+  pt_package_paid: { audience: "member", path: "/customer/my-gyms" },
+  pt_booking_confirmation: { audience: "member", path: "/customer/my-gyms" },
+  pt_booking_update: { audience: "member", path: "/customer/my-gyms" },
+  pt_booking_reminder: { audience: "member", path: "/customer/my-gyms" },
+  pt_low_balance: { audience: "member", path: "/customer/my-gyms" },
 };
+
+/** The exact figures a receipt or invoice notice repeats from the authoritative record. */
+export type OperationalEmailFacts =
+  | { type: "receipt"; receiptNumber: string; amountMinor: number; currency: string; method: string; paidAt: number; outstandingMinor?: number }
+  /** Dates are YYYY-MM-DD calendar dates or ISO instants; instants render on the gym's calendar day. */
+  | { type: "invoice"; invoiceNumber: string; amountMinor: number; currency: string; periodStart?: string; periodEnd?: string; dueAt?: string };
 
 interface BrandContext {
   gymName?: string;
   accent?: string;
   siteUrl?: string;
+  timeZone?: string;
+}
+
+function factRows(facts: OperationalEmailFacts | undefined, language: Language, timeZone: string): EmailRow[] | undefined {
+  if (!facts) return undefined;
+  const t = createTranslator(language);
+  const format = makeFormatters(language, "", timeZone);
+  const money = (amount: number) => format.money({ amount, currency: facts.currency });
+  if (facts.type === "receipt") {
+    const methodKey = `domain.paymentMethod.${facts.method}`;
+    const method = Object.hasOwn(enDomain.paymentMethod, facts.method) ? t(methodKey as TKey) : facts.method;
+    return [
+      { label: t("communicationCompletion.email.rows.receiptNumber"), value: facts.receiptNumber, mono: true },
+      { label: t("communicationCompletion.email.rows.amountPaid"), value: money(facts.amountMinor), strong: true },
+      { label: t("communicationCompletion.email.rows.method"), value: method },
+      { label: t("communicationCompletion.email.rows.paidAt"), value: t("communicationCompletion.email.dateTime", { date: format.date(new Date(facts.paidAt).toISOString()), time: format.time(new Date(facts.paidAt).toISOString()) }) },
+      ...(facts.outstandingMinor !== undefined ? [{ label: t("communicationCompletion.email.rows.remaining"), value: money(facts.outstandingMinor), strong: true }] : []),
+    ];
+  }
+  const rows: EmailRow[] = [
+    { label: t("communicationCompletion.email.rows.invoiceNumber"), value: facts.invoiceNumber, mono: true },
+    { label: t("communicationCompletion.email.rows.invoiceAmount"), value: money(facts.amountMinor), strong: true },
+  ];
+  if (facts.periodStart && facts.periodEnd) rows.push({ label: t("communicationCompletion.email.rows.period"), value: t("communicationCompletion.email.period", { start: format.date(facts.periodStart), end: format.date(facts.periodEnd) }) });
+  if (facts.dueAt) rows.push({ label: t("communicationCompletion.email.rows.dueDate"), value: format.date(facts.dueAt) });
+  return rows;
 }
 
 /**
- * The branded body for a kind that does not supply its own. The subject is
- * also the headline: one sentence that says what happened.
+ * The branded body for a kind that does not supply its own, in the
+ * recipient's language. The subject is also the headline: one sentence that
+ * says what happened. Rendered once, when the message is queued.
  */
-function fallbackContent(kind: string, language: Language, context: BrandContext = {}, attachments?: QueueOperationalEmailInput["attachments"]) {
-  const localized = SERVICE_COPY[kind]?.[language];
-  const label = kind.replaceAll("_", " ");
-  const subject = localized?.subject ?? (language === "ar" ? "تحديث خدمة من RIVET" : "A service update from RIVET");
-  const body = localized?.body ?? (language === "ar" ? `لديك تحديث جديد بخصوص ${label}. سجّل الدخول إلى RIVET للاطلاع على التفاصيل.` : `There is a new update about ${label}. Sign in to RIVET to view the authoritative details.`);
+export function operationalEmailContent(kind: string, language: Language, context: BrandContext = {}, attachments?: QueueOperationalEmailInput["attachments"], facts?: OperationalEmailFacts) {
+  const t = createTranslator(language);
+  const copy = isServiceKind(kind)
+    ? { subject: t(`communicationCompletion.email.kinds.${kind}.subject`), body: t(`communicationCompletion.email.kinds.${kind}.body`), action: t(`communicationCompletion.email.kinds.${kind}.action`) }
+    : { subject: t("communicationCompletion.email.fallback.subject"), body: t("communicationCompletion.email.fallback.body"), action: t("communicationCompletion.email.fallback.action") };
   const meta = KIND_AUDIENCE[kind] ?? { audience: "gym" as EmailAudience, path: "/dashboard" };
   const siteUrl = (context.siteUrl ?? process.env.RIVET_SITE_URL ?? "https://www.rivetjo.com").replace(/\/$/, "");
   const attachment = attachments?.[0];
-  return renderBrandedEmail(subject, {
+  return renderBrandedEmail(copy.subject, {
     language,
     audience: meta.audience,
-    headline: subject,
-    paragraphs: [body],
+    headline: copy.subject,
+    paragraphs: [copy.body],
+    rows: factRows(facts, language, context.timeZone || "UTC"),
     gymName: meta.audience === "member" ? context.gymName : undefined,
     accent: context.accent,
     siteUrl,
-    status: meta.status,
-    button: { label: (language === "ar" ? meta.actionAr : meta.action) ?? (language === "ar" ? "عرض في RIVET" : "View in RIVET"), href: `${siteUrl}${meta.path}` },
+    status: meta.status ? { label: t(`communicationCompletion.email.status.${meta.status.key}`), tone: meta.status.tone } : undefined,
+    button: { label: copy.action, href: `${siteUrl}${meta.path}` },
     attachment: attachment ? { filename: attachment.filename, sizeLabel: attachmentSizeLabel(attachment.contentBase64.length) } : undefined,
   });
 }
@@ -218,6 +183,8 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
     messageClass: delivery.messageClass,
     templateVersion: delivery.templateVersion,
     language: delivery.language,
+    languageSource: delivery.languageSource,
+    copyVersion: delivery.copyVersion,
     recipientReference: delivery.recipientReference,
     recipientEmail: delivery.recipientEmail,
     relatedEntityType: delivery.relatedEntityType,
@@ -259,9 +226,13 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const organization = input.organizationId ? await ctx.db.get(input.organizationId) : null;
   // Member-facing mail names the member's language explicitly; anything
   // else addressed to a gym follows the language the gym chose in settings.
-  const language: Language = input.language ?? (organization?.defaultLanguage === "ar" ? "ar" : "en");
+  // The operator who triggered the message is never consulted.
+  const resolved = input.language
+    ? { language: input.language, source: input.languageSource ?? "explicit" as const }
+    : resolveRecipientLanguage(undefined, organization?.defaultLanguage);
+  const language: Language = resolved.language;
   const brand = organization ? resolveBrandColor(organization.brandPaletteKey, organization.brandPrimaryColor) : undefined;
-  const content = fallbackContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL }, input.attachments);
+  const content = operationalEmailContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL, timeZone: organization?.timezone }, input.attachments, input.facts);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
   if (!suppressionReason) {
@@ -283,6 +254,8 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
     messageClass: input.messageClass ?? "service",
     templateVersion: input.templateVersion,
     language,
+    languageSource: resolved.source,
+    copyVersion: input.subject || input.html || input.text ? undefined : OPERATIONAL_EMAIL_COPY_VERSION,
     recipientReference: input.recipientReference,
     recipientEmail,
     relatedEntityType: input.relatedEntityType,
@@ -467,6 +440,8 @@ export const recordAttempt = internalMutation({
         kind: "operational_email_failed",
         title: "A gym email could not be delivered",
         body: `An email could not be delivered after ${attempts.length} attempts. Check email settings.`,
+        titleMessage: systemMessage("communicationCompletion.notifications.emailFailed"),
+        bodyMessage: systemMessage("communicationCompletion.notifications.emailFailedAttempts", { count: attempts.length }),
         // The automation workspace is intentionally deferred. Email delivery
         // failures belong with the authoritative activation/provider controls.
         href: "/settings?section=email",
@@ -506,6 +481,8 @@ export const recordWebhook = internalMutation({
         kind: "operational_email_failed",
         title: "A gym email could not be delivered",
         body: `The email service could not deliver an email. Check email settings.`,
+        titleMessage: systemMessage("communicationCompletion.notifications.emailFailed"),
+        bodyMessage: systemMessage("communicationCompletion.notifications.emailFailedProvider"),
         href: "/settings?section=email",
         dedupeKey: `operational-email-failed:${delivery.publicId}`,
       });

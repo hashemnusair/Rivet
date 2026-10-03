@@ -2,14 +2,14 @@
 
 import type { PlatformBillingInvoice } from "@/lib/api/GymOSApi";
 import { invoicePdfFilename, renderInvoicePdf } from "../../../convex/platformInvoicePdf";
-import { invoicePdfInput, type InvoiceCustomer } from "../../../convex/platformInvoiceDocument";
+import { invoicePdfInput, type InvoiceCustomer, type InvoiceDocumentContext } from "../../../convex/platformInvoiceDocument";
 
 /**
  * The invoice as a PDF, built in the browser from the same record and the
  * same renderer the server uses for the emailed attachment, so what a
  * person opens here is the file the gym received.
  */
-export function invoicePdfBytes(invoice: PlatformBillingInvoice, customer: InvoiceCustomer): Uint8Array {
+export function invoicePdfBytes(invoice: PlatformBillingInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = {}): Uint8Array {
   return renderInvoicePdf(invoicePdfInput(invoice.id, {
     amountMinor: invoice.amountMinor,
     currency: invoice.currency,
@@ -24,12 +24,12 @@ export function invoicePdfBytes(invoice: PlatformBillingInvoice, customer: Invoi
     paidAt: invoice.paidAt,
     paymentReference: invoice.paymentReference,
     createdAt: invoice.issuedAt ?? invoice.date,
-  }, customer));
+  }, customer, context));
 }
 
 /** Open the invoice in a new tab as a PDF; the viewer offers save and print. */
-export function openInvoicePdf(invoice: PlatformBillingInvoice, customer: InvoiceCustomer): void {
-  const bytes = invoicePdfBytes(invoice, customer);
+export function openInvoicePdf(invoice: PlatformBillingInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = { locale: document.documentElement.lang === "ar" ? "ar" : "en" }): void {
+  const bytes = invoicePdfBytes(invoice, customer, context);
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const opened = window.open(url, "_blank", "noopener");

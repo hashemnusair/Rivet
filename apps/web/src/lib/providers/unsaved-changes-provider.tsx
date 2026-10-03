@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { useRouter } from "next/navigation";
 import { createContext, startTransition, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -32,6 +33,7 @@ function internalHref(anchor: HTMLAnchorElement): string | null {
 }
 
 export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
+  const t = useT();
   const router = useRouter();
   const [guard, setGuard] = useState<UnsavedChangesGuard | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
@@ -104,16 +106,16 @@ export function UnsavedChangesProvider({ children }: { children: ReactNode }) {
       <Dialog open={pendingNavigation !== null} onOpenChange={(open) => { if (!open && !resolving) setPendingNavigation(null); }}>
         <DialogContent hideClose onEscapeKeyDown={(event) => { if (resolving) event.preventDefault(); }} onPointerDownOutside={(event) => event.preventDefault()}>
           <DialogHeader>
-            <DialogTitle>{guard?.title ?? "Unsaved public profile changes"}</DialogTitle>
-            <DialogDescription>{guard?.description ?? "Save the draft before leaving, discard the local edits and unreferenced uploads, or stay on this page."}</DialogDescription>
+            <DialogTitle>{guard?.title ?? t("settingsDetails.text263")}</DialogTitle>
+            <DialogDescription>{guard?.description ?? t("settingsDetails.text264")}</DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <p className="text-[12.5px] text-ink-2">{guard?.detail ?? "Publishing remains unavailable until these edits are saved."}</p>
+            <p className="text-[12.5px] text-ink-2">{guard?.detail ?? t("settingsDetails.text265")}</p>
           </DialogBody>
           <DialogFooter className="flex-wrap">
-            <Button type="button" variant="ghost" disabled={Boolean(resolving)} onClick={() => setPendingNavigation(null)}>Stay</Button>
-            <Button type="button" variant="secondary" loading={resolving === "discard"} disabled={Boolean(resolving)} onClick={() => void resolve("discard")}>Discard and leave</Button>
-            <Button type="button" loading={resolving === "save"} disabled={Boolean(resolving) || Boolean(guard?.saveDisabledReason)} title={guard?.saveDisabledReason} onClick={() => void resolve("save")}>Save and leave</Button>
+            <Button type="button" variant="ghost" disabled={Boolean(resolving)} onClick={() => setPendingNavigation(null)}>{t("settingsDetails.text266")}</Button>
+            <Button type="button" variant="secondary" loading={resolving === "discard"} disabled={Boolean(resolving)} onClick={() => void resolve("discard")}>{t("settingsDetails.text267")}</Button>
+            <Button type="button" loading={resolving === "save"} disabled={Boolean(resolving) || Boolean(guard?.saveDisabledReason)} title={guard?.saveDisabledReason} onClick={() => void resolve("save")}>{t("settingsDetails.text268")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

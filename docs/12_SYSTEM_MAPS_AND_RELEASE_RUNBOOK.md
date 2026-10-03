@@ -1,5 +1,25 @@
 # 12 — System Maps and Release Runbook
 
+## Arabic audit rollout — 3 October 2026
+
+Hashem authorized the main-branch release for founder testing. Read `docs/arabic/AUDIT_2026-10-03.md` and the newest `CURRENT_STATE.md` section first. The candidate-only authorization/status below is historical.
+
+The additive Convex production deployment to `descriptive-meerkat-589` succeeded after a guarded dry run. It retains the existing `domainRecords.by_organization_branch_type_created` index; no indexes were deleted. Schema validation, generated bindings and the post-deploy health query passed (`1791042936518`). The matching frontend is being published with `NEXT_PUBLIC_RIVET_ARABIC=1`.
+
+Language selection is available in the public menu, sign-in header, platform header, staff account menu and member profile. A disabled flag now overrides saved Arabic for presentation without erasing the saved preference. Disable the flag and rebuild to hide the feature; retain additive data and signed documents. Local release evidence is 1,999 tests, 14 CLI guards, 211 baseline browser passes and 39 affected browser passes after repairs. The 14 credential-dependent tests remain unrun. No customer messages were sent. Real account/provider acceptance and messaging delivery gates remain as described below.
+
+## Arabic implementation candidate — 3 October 2026 (not deployed)
+
+The integrated candidate is on `codex/complete-arabic-support`. Arabic history, current main behavior and the approved revision-607 evidence are preserved. See `CURRENT_STATE.md`, `docs/arabic/EXECUTION.md`, the 75-page/offline ledger, and the decision map for the final local evidence. Earlier release SHAs below remain historical production evidence; they do not describe this candidate.
+
+The language switch is exposed outside mocks/previews only by `NEXT_PUBLIC_RIVET_ARABIC=1`. Keep the current production gate unchanged until release acceptance and explicit deployment authorization. UI locale is stored on the current authenticated user; presentation cookies are shared only across recognized RIVET hosts and never authorize access. Communication language follows recipient preference and then gym default, independently of the viewer's UI. New descriptor and locale fields are additive; old clients/records retain original English and legacy export behavior.
+
+For an authorized rollout, deploy the additive Convex schema/functions first using the guarded `pnpm convex:deploy` workflow, then the exact matching frontend. Check generated bindings through the configured isolated non-production workflow before rollout; this local pass validates their TypeScript shape but does not upload code to an unidentified deployment. Preserve signed agreement versions, original event/audit text, queued language/template versions and stored rendered delivery bodies. Do not re-render historical content as a migration. Roll back by disabling the frontend Arabic flag/reverting the runtime while retaining additive data and frozen documents.
+
+Required external acceptance: an isolated Clerk/Convex staging account for real account/host transitions and persistence; provider-controlled verification/CAPTCHA language; rendered founder review; and the messaging provider gates in `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`. WhatsApp catalogue 1.1 is not Meta approval. Inbound opt-out is still absent; use mock/sandbox evidence for localization and do not enable live sending until that separate gate is met. Never send real messages merely to test translation. Staff and lead recipients still use the gym default where no independent language preference exists.
+
+Recheck locally with `python3 docs/arabic/verify-lock.py`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, the approved mock preview build, and Playwright. Use an isolated `NEXT_DIST_DIR`/port for browser runs; keep generated output out of source. Local results: 1,997 tests in 318 files plus 14 CLI guards, both typechecks, lint/secret audit, Arabic-enabled production preview build, decision lock, and 36 Arabic browser checks passed. The full regression run was 173/175; both failed journeys passed separate focused reruns after restoring baseline English copy and correcting the billing-preview locator. Exact commands, evidence and remaining acceptance are in the final section of `docs/arabic/EXECUTION.md`.
+
 ## Public Arabic review — 1 October 2026
 
 - Hashem explicitly requested a standalone, unauthenticated room with an Elias/Hashem picker. Canonical route is now `https://www.rivetjo.com/arabic-room`; old `/platform/arabic-room` links redirect before the platform shell mounts and preserve the question parameter. The name picker appears on opening/reload; a Switch name action is available after saving drafts.

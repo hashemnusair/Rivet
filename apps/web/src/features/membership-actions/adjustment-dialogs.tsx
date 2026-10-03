@@ -1,9 +1,7 @@
 "use client";
 
-import { toMajorString } from "@/lib/utils/money";
-
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
@@ -11,8 +9,9 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { MembershipSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
-import { MEMBERSHIP_STATUS_LABELS } from "@/lib/domain/status";
-import { addDays, diffDays, formatDate, isCalendarDate, todayISODate } from "@/lib/utils/dates";
+import { useFormat } from "@/lib/i18n/format";
+import { useLocale, type TFunction } from "@/lib/i18n/provider";
+import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,15 +25,13 @@ import {
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { emphasize, useReadableDate } from "./renew-flow-format";
 
-/** A date people can read at a glance ("18 Nov 2026"). Half-typed input stays as typed. */
-const readableDate = (value: string | undefined) => (value && isCalendarDate(value) ? formatDate(value) : value || "—");
-
-const transferSchema = z.object({
-  branchId: z.string().min(1, "Choose the new branch"),
-  reason: z.string().min(3, "Add a reason"),
+const makeTransferSchema = (t: TFunction) => z.object({
+  branchId: z.string().min(1, t("renewFlow.adjust.transfer.chooseNewBranch")),
+  reason: z.string().min(3, t("renewFlow.adjust.transfer.reasonRequired")),
 });
-type TransferValues = z.infer<typeof transferSchema>;
+type TransferValues = z.infer<ReturnType<typeof makeTransferSchema>>;
 
 export function TransferMembershipDialog({
   open,
@@ -49,6 +46,8 @@ export function TransferMembershipDialog({
   branches: Array<{ id: string; name: string; code: string }>;
   onDone?: () => void;
 }) {
+  const { t } = useLocale();
+  const transferSchema = useMemo(() => makeTransferSchema(t), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const destinations = branches.filter((branch) => branch.id !== membership.homeBranchId);
@@ -68,32 +67,32 @@ export function TransferMembershipDialog({
       onOpenChange(false);
       onDone?.();
     },
-    onError: (error) => setServerError(isApiError(error) ? error.message : "The move was not saved. Try again."),
+    onError: (error) => setServerError(isApiError(error) ? error.message : t("renewFlow.adjust.transfer.saveFailed")),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Move membership to another branch</DialogTitle>
-          <DialogDescription>The member and their membership move to the new branch.</DialogDescription>
+          <DialogTitle>{t("renewFlow.adjust.transfer.title")}</DialogTitle>
+          <DialogDescription>{t("renewFlow.adjust.transfer.description")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
           <DialogBody className="space-y-4">
-            <Field label="New branch" required error={form.formState.errors.branchId?.message}>
+            <Field label={t("renewFlow.adjust.transfer.newBranch")} required error={form.formState.errors.branchId?.message}>
               <Select value={form.watch("branchId") || "none"} onValueChange={(value) => form.setValue("branchId", value === "none" ? "" : value, { shouldValidate: true })}>
-                <SelectTrigger aria-label="New branch"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
-                <SelectContent><SelectItem value="none">Choose a branch</SelectItem>{destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger aria-label={t("renewFlow.adjust.transfer.newBranch")}><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
+                <SelectContent><SelectItem value="none">{t("renewFlow.adjust.transfer.chooseBranch")}</SelectItem>{destinations.map((branch) => <SelectItem key={branch.id} value={branch.id}><bdi>{branch.name}</bdi></SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            {destinations.length === 0 ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">There is no other branch you can move them to.</p> : null}
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Member relocated; confirmed by branch manager" {...form.register("reason")} />
+            {destinations.length === 0 ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">{t("renewFlow.adjust.transfer.noOtherBranch")}</p> : null}
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.transfer.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} disabled={destinations.length === 0}>Move membership</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={destinations.length === 0}>{t("renewFlow.adjust.transfer.submit")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -101,12 +100,12 @@ export function TransferMembershipDialog({
   );
 }
 
-const freezeSchema = z.object({
-  startDate: z.string().min(1, "Choose a date"),
-  endDate: z.string().min(1, "Choose a date"),
-  reason: z.string().min(3, "Add a reason (at least 3 characters)"),
+const makeFreezeSchema = (t: TFunction) => z.object({
+  startDate: z.string().min(1, t("renewFlow.adjust.freeze.chooseDate")),
+  endDate: z.string().min(1, t("renewFlow.adjust.freeze.chooseDate")),
+  reason: z.string().min(3, t("renewFlow.adjust.freeze.reasonRequired")),
 });
-type FreezeValues = z.infer<typeof freezeSchema>;
+type FreezeValues = z.infer<ReturnType<typeof makeFreezeSchema>>;
 
 export function FreezeDialog({
   open,
@@ -121,6 +120,10 @@ export function FreezeDialog({
   allowanceRemaining: number;
   onDone?: () => void;
 }) {
+  const { t, isolate } = useLocale();
+  const readableDate = useReadableDate();
+  const freezeSchema = useMemo(() => makeFreezeSchema(t), [t]);
+  const statusLabel = (status: MembershipSummary["status"]) => t(`renewFlow.adjust.membershipStatus.${status}`);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
@@ -150,17 +153,17 @@ export function FreezeDialog({
   const problem = !start || !end
     ? null
     : days <= 0
-      ? "The end date can't be before the start date."
+      ? t("renewFlow.adjust.freeze.problems.endBeforeStart")
       : start < today
-        ? "A freeze can't start before today."
+        ? t("renewFlow.adjust.freeze.problems.startInPast")
         : start > membership.endDate
-          ? `A freeze must start on or before ${readableDate(membership.endDate)}, when the membership ends.`
+          ? t("renewFlow.adjust.freeze.problems.startAfterEnd", { date: isolate(readableDate(membership.endDate)) })
           : days < minimumDays
-            ? `A freeze must be at least ${minimumDays} day${minimumDays === 1 ? "" : "s"}.`
+            ? t("renewFlow.adjust.freeze.problems.tooShort", { count: minimumDays })
             : days > allowanceRemaining
               ? allowanceRemaining <= 0
-                ? "This plan has no freeze days left."
-                : `This plan allows ${allowanceRemaining} more freeze day${allowanceRemaining === 1 ? "" : "s"}.`
+                ? t("renewFlow.adjust.freeze.problems.noDaysLeft")
+                : t("renewFlow.adjust.freeze.problems.tooLong", { count: allowanceRemaining })
               : null;
 
   const mutation = useApiMutation(
@@ -171,7 +174,7 @@ export function FreezeDialog({
         onOpenChange(false);
         onDone?.();
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "The freeze was not saved. Try again."),
+      onError: (e) => setServerError(isApiError(e) ? e.message : t("renewFlow.adjust.freeze.saveFailed")),
     },
   );
 
@@ -179,38 +182,38 @@ export function FreezeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Freeze membership</DialogTitle>
+          <DialogTitle>{t("renewFlow.adjust.freeze.title")}</DialogTitle>
           <DialogDescription>
-            {membership.memberName} · {membership.planName}. The end date moves later by the days frozen.{" "}
-            <strong>{allowanceRemaining}</strong> freeze day{allowanceRemaining === 1 ? "" : "s"} left on this plan.
+            <bdi>{membership.memberName}</bdi> · <bdi>{membership.planName}</bdi>{t("members.bulk.toast.end")}{" "}{t("renewFlow.adjust.freeze.descriptionIntro")}{" "}
+            {emphasize(t("renewFlow.adjust.freeze.daysLeft", { count: allowanceRemaining }), String(allowanceRemaining))}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <FieldGrid alignFrom="base" className="grid-cols-2">
-              <Field label="Freeze from" required error={form.formState.errors.startDate?.message}>
+              <Field label={t("renewFlow.adjust.freeze.from")} required error={form.formState.errors.startDate?.message}>
                 <Input type="date" {...form.register("startDate")} />
               </Field>
-              <Field label="Freeze until" required error={form.formState.errors.endDate?.message}>
+              <Field label={t("renewFlow.adjust.freeze.until")} required error={form.formState.errors.endDate?.message}>
                 <Input type="date" {...form.register("endDate")} />
               </Field>
             </FieldGrid>
             <BeforeAfter
               rows={[
-                { label: "Days frozen", before: "—", after: `${days} day${days === 1 ? "" : "s"}` },
-                { label: "End date", before: readableDate(membership.endDate), after: readableDate(days > 0 ? addDays(membership.endDate, days) : membership.endDate) },
-                { label: "Status", before: MEMBERSHIP_STATUS_LABELS[membership.status], after: days > 0 && start ? (start <= today ? `Frozen until ${readableDate(end)}` : `${MEMBERSHIP_STATUS_LABELS[membership.status]} · frozen from ${readableDate(start)}`) : MEMBERSHIP_STATUS_LABELS[membership.status] },
+                { label: t("renewFlow.adjust.freeze.daysFrozen"), before: "—", after: t("renewFlow.adjust.freeze.days", { count: days }) },
+                { label: t("renewFlow.adjust.freeze.endDate"), before: readableDate(membership.endDate), after: readableDate(days > 0 ? addDays(membership.endDate, days) : membership.endDate) },
+                { label: t("renewFlow.adjust.freeze.status"), before: statusLabel(membership.status), after: days > 0 && start ? (start <= today ? t("renewFlow.adjust.freeze.frozenUntil", { date: isolate(readableDate(end)) }) : t("renewFlow.adjust.freeze.frozenFrom", { status: statusLabel(membership.status), date: isolate(readableDate(start)) })) : statusLabel(membership.status) },
               ]}
             />
             {problem ? <p role="alert" className="text-[12.5px] text-danger" data-testid="freeze-problem">{problem}</p> : null}
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Travel for work, back on the 20th" {...form.register("reason")} />
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.freeze.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} disabled={days <= 0 || Boolean(problem)} data-testid="confirm-freeze">Freeze for {days > 0 ? days : "—"} day{days === 1 ? "" : "s"}</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={days <= 0 || Boolean(problem)} data-testid="confirm-freeze">{days > 0 ? t("renewFlow.adjust.freeze.submit", { count: days }) : t("renewFlow.adjust.freeze.submitNone")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -218,11 +221,11 @@ export function FreezeDialog({
   );
 }
 
-const extendSchema = z.object({
-  days: z.coerce.number().int().min(1, "At least 1 day").max(365, "At most 365 days"),
-  reason: z.string().min(3, "Add a reason"),
+const makeExtendSchema = (t: TFunction) => z.object({
+  days: z.coerce.number().int().min(1, t("renewFlow.adjust.extend.atLeast")).max(365, t("renewFlow.adjust.extend.atMost")),
+  reason: z.string().min(3, t("renewFlow.adjust.extend.reasonRequired")),
 });
-type ExtendValues = z.infer<typeof extendSchema>;
+type ExtendValues = z.infer<ReturnType<typeof makeExtendSchema>>;
 
 export function ExtendDialog({
   open,
@@ -235,6 +238,9 @@ export function ExtendDialog({
   membership: MembershipSummary;
   onDone?: () => void;
 }) {
+  const { t } = useLocale();
+  const readableDate = useReadableDate();
+  const extendSchema = useMemo(() => makeExtendSchema(t), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<ExtendValues>({
@@ -260,34 +266,34 @@ export function ExtendDialog({
       onOpenChange(false);
       onDone?.();
     },
-    onError: (e) => setServerError(isApiError(e) ? e.message : "The extension was not saved. Try again."),
+    onError: (e) => setServerError(isApiError(e) ? e.message : t("renewFlow.adjust.extend.saveFailed")),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Extend membership</DialogTitle>
+          <DialogTitle>{t("renewFlow.adjust.extend.title")}</DialogTitle>
           <DialogDescription>
-            {membership.memberName} · {membership.planName}
+            <bdi>{membership.memberName}</bdi> · <bdi>{membership.planName}</bdi>
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
-            <Field label="Extra days" required error={form.formState.errors.days?.message}>
-              <Input type="number" min={1} max={365} {...form.register("days", { valueAsNumber: true })} />
+            <Field label={t("renewFlow.adjust.extend.extraDays")} required error={form.formState.errors.days?.message}>
+              <Input type="number" dir="ltr" min={1} max={365} {...form.register("days", { valueAsNumber: true })} />
             </Field>
             <BeforeAfter
-              rows={[{ label: "End date", before: readableDate(membership.endDate), after: readableDate(days > 0 ? addDays(membership.endDate, days) : membership.endDate) }]}
+              rows={[{ label: t("renewFlow.adjust.extend.endDate"), before: readableDate(membership.endDate), after: readableDate(days > 0 ? addDays(membership.endDate, days) : membership.endDate) }]}
             />
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Goodwill for the equipment outage last week" {...form.register("reason")} />
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.extend.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending}>Extend by {days > 0 ? days : "—"} days</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending}>{days > 0 ? t("renewFlow.adjust.extend.submit", { count: days }) : t("renewFlow.adjust.extend.submitNone")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -295,8 +301,8 @@ export function ExtendDialog({
   );
 }
 
-const reasonSchema = z.object({ reason: z.string().min(3, "Add a reason") });
-type ReasonValues = z.infer<typeof reasonSchema>;
+const makeReasonSchema = (message: string) => z.object({ reason: z.string().min(3, message) });
+type ReasonValues = z.infer<ReturnType<typeof makeReasonSchema>>;
 
 export function CancelMembershipDialog({
   open,
@@ -309,6 +315,9 @@ export function CancelMembershipDialog({
   membership: MembershipSummary;
   onDone?: () => void;
 }) {
+  const { t, isolate } = useLocale();
+  const readableDate = useReadableDate();
+  const reasonSchema = useMemo(() => makeReasonSchema(t("renewFlow.adjust.cancel.reasonRequired")), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<ReasonValues>({ resolver: zodResolver(reasonSchema), defaultValues: { reason: "" } });
@@ -326,32 +335,31 @@ export function CancelMembershipDialog({
       onOpenChange(false);
       onDone?.();
     },
-    onError: (e) => setServerError(isApiError(e) ? e.message : "The cancellation was not saved. Try again."),
+    onError: (e) => setServerError(isApiError(e) ? e.message : t("renewFlow.adjust.cancel.saveFailed")),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Cancel membership</DialogTitle>
+          <DialogTitle>{t("renewFlow.adjust.cancel.title")}</DialogTitle>
           <DialogDescription>
-            {membership.memberName} · {membership.planName} · {readableDate(membership.startDate)} to {readableDate(membership.endDate)}
+            <bdi>{membership.memberName}</bdi> · <bdi>{membership.planName}</bdi> · {t("renewFlow.sale.dateRange", { start: isolate(readableDate(membership.startDate)), end: isolate(readableDate(membership.endDate)) })}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <div className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger">
-              The member loses access right away. This cannot be undone. Any unpaid amount is still owed.
-              Cancelling does not give money back. To do that, make a refund.
+              {t("renewFlow.adjust.cancel.warning")}
             </div>
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Member relocated; confirmed by phone" {...form.register("reason")} />
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.cancel.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Keep membership</Button>
-            <Button type="submit" variant="signal" loading={mutation.isPending}>Cancel membership</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("renewFlow.adjust.cancel.keep")}</Button>
+            <Button type="submit" variant="signal" loading={mutation.isPending}>{t("renewFlow.adjust.cancel.submit")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -370,6 +378,9 @@ export function UnfreezeDialog({
   membership: MembershipSummary;
   onDone?: () => void;
 }) {
+  const { t, isolate } = useLocale();
+  const readableDate = useReadableDate();
+  const reasonSchema = useMemo(() => makeReasonSchema(t("renewFlow.adjust.unfreeze.reasonRequired")), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<ReasonValues>({ resolver: zodResolver(reasonSchema), defaultValues: { reason: "" } });
@@ -387,7 +398,7 @@ export function UnfreezeDialog({
       onOpenChange(false);
       onDone?.();
     },
-    onError: (e) => setServerError(isApiError(e) ? e.message : "The freeze was not ended. Try again."),
+    onError: (e) => setServerError(isApiError(e) ? e.message : t("renewFlow.adjust.unfreeze.saveFailed")),
   });
   const today = todayISODate();
   const freeze = membership.activeFreeze;
@@ -399,23 +410,23 @@ export function UnfreezeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>End freeze early</DialogTitle>
+          <DialogTitle>{t("renewFlow.adjust.unfreeze.title")}</DialogTitle>
           <DialogDescription>
             {inProgress
-              ? `${membership.memberName} · frozen since ${readableDate(freeze?.startDate)}. Unused freeze days are given back. The end date moves earlier by the same number of days.`
-              : `${membership.memberName} · this freeze runs from ${readableDate(freeze?.startDate)} to ${readableDate(freeze?.endDate)}. You can only end a freeze early after it has started.`}
+              ? t("renewFlow.adjust.unfreeze.descriptionRunning", { name: isolate(membership.memberName), date: isolate(readableDate(freeze?.startDate)) })
+              : t("renewFlow.adjust.unfreeze.descriptionScheduled", { name: isolate(membership.memberName), start: isolate(readableDate(freeze?.startDate)), end: isolate(readableDate(freeze?.endDate)) })}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody>
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Member returned early, at the desk now" {...form.register("reason")} />
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.unfreeze.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Back</Button>
-            <Button type="submit" loading={mutation.isPending} disabled={!inProgress}>End freeze today</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.back")}</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={!inProgress}>{t("renewFlow.adjust.unfreeze.submit")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -423,12 +434,12 @@ export function UnfreezeDialog({
   );
 }
 
-const planChangeSchema = z.object({
-  planId: z.string().min(1, "Choose a plan"),
+const makePlanChangeSchema = (t: TFunction) => z.object({
+  planId: z.string().min(1, t("renewFlow.sale.errors.choosePlan")),
   effectiveDate: z.enum(["next_renewal", "immediate"]),
-  reason: z.string().min(3, "Add a reason (at least 3 characters)"),
+  reason: z.string().min(3, t("renewFlow.adjust.planChange.reasonRequired")),
 });
-type PlanChangeValues = z.infer<typeof planChangeSchema>;
+type PlanChangeValues = z.infer<ReturnType<typeof makePlanChangeSchema>>;
 
 export function ChangeMembershipPlanDialog({
   open,
@@ -443,6 +454,10 @@ export function ChangeMembershipPlanDialog({
   allowImmediate?: boolean;
   onDone?: () => void;
 }) {
+  const { t, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
+  const readableDate = useReadableDate();
+  const planChangeSchema = useMemo(() => makePlanChangeSchema(t), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
   const plansQuery = useApiQuery(qk.plans({ status: "active" }), (api) => api.listPlans({ status: "active", pageSize: 50 }));
@@ -467,44 +482,44 @@ export function ChangeMembershipPlanDialog({
       onOpenChange(false);
       onDone?.();
     },
-    onError: (error) => setServerError(isApiError(error) ? error.message : "The plan change was not saved. Try again."),
+    onError: (error) => setServerError(isApiError(error) ? error.message : t("renewFlow.adjust.planChange.saveFailed")),
   });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Change membership plan</DialogTitle>
+          <DialogTitle>{t("renewFlow.adjust.planChange.title")}</DialogTitle>
           <DialogDescription>
-            Move {membership.memberName} from {membership.planName} to a new plan. The new plan is charged at full price. Nothing is taken off for unused days.
+            {t("renewFlow.adjust.planChange.description", { member: isolate(membership.memberName), plan: isolate(membership.planName) })}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
           <DialogBody className="space-y-4">
-            <Field label="New plan" required error={form.formState.errors.planId?.message}>
+            <Field label={t("renewFlow.adjust.planChange.newPlan")} required error={form.formState.errors.planId?.message}>
               <Select value={form.watch("planId")} onValueChange={(value) => form.setValue("planId", value, { shouldValidate: true })}>
-                <SelectTrigger aria-label="New membership plan"><SelectValue placeholder={plansQuery.isLoading ? "Loading plans…" : "Choose a plan"} /></SelectTrigger>
-                <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{plan.name} · {plan.basePrice.currency} {toMajorString(plan.basePrice)}</SelectItem>)}</SelectContent>
+                <SelectTrigger aria-label={t("renewFlow.adjust.planChange.newPlanAria")}><SelectValue placeholder={plansQuery.isLoading ? t("renewFlow.adjust.planChange.loadingPlans") : t("renewFlow.shared.chooseAPlan")} /></SelectTrigger>
+                <SelectContent>{plans.map((plan) => <SelectItem key={plan.id} value={plan.id}>{t("renewFlow.adjust.planChange.planOption", { name: isolate(plan.name), price: isolateLtr(format.money(plan.basePrice)) })}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Starts" required error={form.formState.errors.effectiveDate?.message}>
+            <Field label={t("renewFlow.adjust.planChange.starts")} required error={form.formState.errors.effectiveDate?.message}>
               <Select value={effectiveDate} onValueChange={(value) => form.setValue("effectiveDate", value as PlanChangeValues["effectiveDate"], { shouldValidate: true })}>
-                <SelectTrigger aria-label="When the new plan starts"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label={t("renewFlow.adjust.planChange.startsAria")}><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="next_renewal">At next renewal · {readableDate(nextRenewalDate)}</SelectItem>
-                  {allowImmediate ? <SelectItem value="immediate">Today · full price</SelectItem> : null}
+                  <SelectItem value="next_renewal">{t("renewFlow.adjust.planChange.atNextRenewal", { date: isolate(readableDate(nextRenewalDate)) })}</SelectItem>
+                  {allowImmediate ? <SelectItem value="immediate">{t("renewFlow.adjust.planChange.todayFullPrice")}</SelectItem> : null}
                 </SelectContent>
               </Select>
             </Field>
-            {effectiveDate === "immediate" ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">This ends the current membership today and starts the new plan today. The old charge stays as it is. Handle any refund or credit separately.</p> : null}
-            {selectedPlan ? <BeforeAfter rows={[{ label: "Plan", before: membership.planName, after: selectedPlan.name }, { label: "New plan starts", before: "—", after: readableDate(effectiveDate === "immediate" ? todayISODate() : nextRenewalDate) }, { label: "Price", before: "Current membership", after: `${selectedPlan.basePrice.currency} ${toMajorString(selectedPlan.basePrice)} · full price` }]} /> : null}
-            <Field label="Reason" required error={form.formState.errors.reason?.message}>
-              <Textarea placeholder="For example: Member moving to unlimited access at next renewal" {...form.register("reason")} />
+            {effectiveDate === "immediate" ? <p className="rounded-md border border-warning/30 bg-warning-bg p-3 text-[12.5px] text-warning-deep">{t("renewFlow.adjust.planChange.immediateWarning")}</p> : null}
+            {selectedPlan ? <BeforeAfter rows={[{ label: t("renewFlow.adjust.planChange.rowPlan"), before: membership.planName, after: selectedPlan.name }, { label: t("renewFlow.adjust.planChange.rowStarts"), before: "—", after: readableDate(effectiveDate === "immediate" ? todayISODate() : nextRenewalDate) }, { label: t("renewFlow.adjust.planChange.rowPrice"), before: t("renewFlow.adjust.planChange.currentMembership"), after: t("renewFlow.adjust.planChange.fullPrice", { price: isolateLtr(format.money(selectedPlan.basePrice)) }) }]} /> : null}
+            <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
+              <Textarea dir="auto" placeholder={t("renewFlow.adjust.planChange.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
           </DialogBody>
           <DialogFooter>
             {serverError ? <p role="alert" className="me-auto text-[12.5px] text-danger">{serverError}</p> : null}
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} disabled={!selectedPlan}>Change plan</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending} disabled={!selectedPlan}>{t("renewFlow.adjust.planChange.submit")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -513,18 +528,19 @@ export function ChangeMembershipPlanDialog({
 }
 
 function BeforeAfter({ rows }: { rows: Array<{ label: string; before: string; after: string }> }) {
+  const { t } = useLocale();
   return (
     <div className="overflow-hidden rounded-md border border-line">
       <div className="grid grid-cols-[1fr_1fr_1fr] border-b border-line bg-sunken/60 px-3 py-2 text-[12px] font-medium text-ink-3">
         <span />
-        <span>Now</span>
-        <span>After</span>
+        <span>{t("renewFlow.adjust.beforeAfter.now")}</span>
+        <span>{t("renewFlow.adjust.beforeAfter.after")}</span>
       </div>
       {rows.map((row) => (
         <div key={row.label} className="grid grid-cols-[1fr_1fr_1fr] items-center border-b border-line/60 px-3 py-2 text-[12.5px] last:border-0">
           <span className="text-ink-3">{row.label}</span>
-          <span className="tabular">{row.before}</span>
-          <span className="font-medium tabular">{row.after}</span>
+          <span className="tabular" dir="auto">{row.before}</span>
+          <span className="font-medium tabular" dir="auto">{row.after}</span>
         </div>
       ))}
     </div>

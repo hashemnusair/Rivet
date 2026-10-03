@@ -1,4 +1,5 @@
 "use client";
+import { useT, useLocale } from "@/lib/i18n/provider";
 
 import { ChecklistHandover } from "@/features/checklists/checklist-handover";
 
@@ -6,14 +7,17 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import type { CashShift, ShiftTotals, UUID } from "@/lib/domain/types";
-import { formatDateTime } from "@/lib/utils/dates";
+import { createTranslator, type TFunction } from "@/lib/i18n/core";
+import { useFormat } from "@/lib/i18n/format";
+import { isolate } from "@/lib/i18n/bidi";
+import { latinDigits } from "@/lib/utils/text";
+import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { exponentFor, money, parseMoneyInput, readMoneyInput, toMajorString } from "@/lib/utils/money";
-import { MoneyText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -24,16 +28,17 @@ import { ErrorState } from "@/components/ui/states";
 // ---------------------------------------------------------------------------
 // Open shift
 // ---------------------------------------------------------------------------
-export const openShiftSchema = z.object({
+export const makeOpenShiftSchema = (currency = "JOD", t: TFunction = createTranslator("en")) => z.object({
   float: z
     .string()
     .trim()
-    .min(1, "Enter the starting cash")
+    .min(1, t("salesWorkspace.enterFloat"))
     .refine((value) => {
-      const parsed = parseMoneyInput(value);
+      const parsed = parseMoneyInput(value, currency);
       return parsed !== null && parsed.amount >= 0;
-    }, "Enter an amount of zero or more"),
+    }, t("salesWorkspace.nonnegative")),
 });
+export const openShiftSchema = makeOpenShiftSchema();
 type OpenValues = z.infer<typeof openShiftSchema>;
 
 export function OpenShiftDialog({
@@ -47,13 +52,18 @@ export function OpenShiftDialog({
   branchId: UUID;
   onOpened?: (shift: CashShift) => void;
 }) {
-  const [serverError, setServerError] = useState<string | null>(null);
+  const t = useT();
+  const { locale } = useLocale();
+  const f = useFormat();
+  const [serverCause, setServerError] = useState<unknown>();
+  const serverError = serverCause ? (isApiError(serverCause) ? localizeApiError(serverCause, locale).message : t("salesWorkspace.openFailed")) : undefined;
+  const moneyProblemText = useMoneyProblemText();
   const { session } = useApp();
   // The drawer is counted in the gym's currency at its own precision.
   const currency = session?.organization.currency ?? "JOD";
-  const form = useForm<OpenValues>({ resolver: zodResolver(openShiftSchema), defaultValues: { float: "" } });
+  const form = useForm<OpenValues>({ resolver: zodResolver(makeOpenShiftSchema(currency, t)), defaultValues: { float: "" } });
   const floatRead = readMoneyInput(form.watch("float") ?? "", currency);
-  const floatProblem = !floatRead.ok && floatRead.problem !== "empty" && (form.formState.touchedFields.float || form.formState.isSubmitted) ? floatRead.message : undefined;
+  const floatProblem = !floatRead.ok && floatRead.problem !== "empty" && (form.formState.touchedFields.float || form.formState.isSubmitted) ? moneyProblemText(floatRead, currency) : undefined;
   useEffect(() => {
     if (open) {
       form.reset({ float: "" });
@@ -73,7 +83,7 @@ export function OpenShiftDialog({
         onOpenChange(false);
         onOpened?.(shift);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "Could not open the shift."),
+      onError: (e) => setServerError(e),
     },
   );
 
@@ -81,19 +91,19 @@ export function OpenShiftDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Open cash shift</DialogTitle>
-          <DialogDescription>Count the cash in the drawer before the first payment.</DialogDescription>
+          <DialogTitle>{t("salesWorkspace.openCashShift")}</DialogTitle>
+          <DialogDescription>{t("salesWorkspace.openHint")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody>
-            <Field label={`Starting cash (${currency})`} required error={form.formState.errors.float?.message ?? floatProblem}>
-              <Input inputMode="decimal" dir="ltr" autoFocus placeholder={`For example: ${toMajorString(money(50 * 10 ** exponentFor(currency), currency))}`} data-testid="opening-float" aria-invalid={Boolean(form.formState.errors.float || floatProblem) || undefined} {...form.register("float")} />
+            <Field label={t("salesWorkspace.startingCurrency", { currency: locale === "ar" && currency === "JOD" ? "د.أ" : currency })} required error={form.formState.errors.float ? (floatRead.ok ? undefined : floatRead.problem === "empty" ? t("salesWorkspace.enterFloat") : moneyProblemText(floatRead, currency)) : floatProblem}>
+              <Input inputMode="decimal" dir="ltr" autoFocus placeholder={t("salesWorkspace.amountExample", { amount: f.money(money(50 * 10 ** exponentFor(currency), currency), { hideCurrency: true }) })} data-testid="opening-float" aria-invalid={Boolean((form.formState.errors.float && !floatRead.ok) || floatProblem) || undefined} {...form.register("float")} />
             </Field>
             {serverError ? <p role="alert" className="mt-2 text-[12.5px] text-danger">{serverError}</p> : null}
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending} data-testid="confirm-open-shift">Open shift</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending} data-testid="confirm-open-shift">{t("dashboard.reception.openShift")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -135,9 +145,14 @@ export function CloseShiftDialog({
   shift: CashShift;
   onClosed?: (shift: CashShift) => void;
 }) {
+  const t = useT();
   const invalidate = useInvalidate();
   const currency = shift.openingFloat.currency;
-  const [serverError, setServerError] = useState<string | null>(null);
+  const { locale } = useLocale();
+  const f = useFormat();
+  const [serverCause, setServerError] = useState<unknown>();
+  const [validation, setValidation] = useState<"totals" | "variance">();
+  const serverError = validation ? t(validation === "totals" ? "salesWorkspace.waitTotals" : "salesWorkspace.explainVariance") : serverCause ? (isApiError(serverCause) ? localizeApiError(serverCause, locale).message : t("salesWorkspace.closeFailed")) : undefined;
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [explanation, setExplanation] = useState("");
 
@@ -150,6 +165,7 @@ export function CloseShiftDialog({
       setCounts({});
       setExplanation("");
       setServerError(null);
+      setValidation(undefined);
     }
   }, [open]);
 
@@ -172,7 +188,7 @@ export function CloseShiftDialog({
         onOpenChange(false);
         onClosed?.(closed);
       },
-      onError: (e) => setServerError(isApiError(e) ? e.message : "Could not close the shift."),
+      onError: (e) => setServerError(e),
     },
   );
 
@@ -183,46 +199,46 @@ export function CloseShiftDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Close shift</DialogTitle>
+          <DialogTitle>{t("salesWorkspace.closeShift")}</DialogTitle>
           <DialogDescription>
-            Opened {formatDateTime(shift.openedAt)} by {shift.openedByName}. Count the cash in the drawer. If it does not match, explain why.
+            {t("salesWorkspace.closeHint", { date: isolate(f.dateTime(shift.openedAt)), name: isolate(shift.openedByName) })}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
           {open ? <ChecklistHandover branchId={shift.branchId} /> : null}
           {/* Expected story */}
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-5">
-            <ExpectCell currency={currency} label="Starting cash" minor={expected === undefined ? undefined : shift.openingFloat.amount} />
-            <ExpectCell currency={currency} label="Cash taken" minor={totals?.cashPayments.amount} sign="+" />
-            <ExpectCell currency={currency} label="Cash refunds" minor={totals?.cashRefunds.amount} sign="−" />
-            <ExpectCell currency={currency} label="Paid to suppliers" minor={totals === undefined ? undefined : totals.supplierCashPayments.amount - totals.supplierCashReversals.amount} sign="−" />
-            <ExpectCell currency={currency} label="Expected" minor={expected} strong />
+            <ExpectCell currency={currency} label={t("salesWorkspace.startingCash")} minor={expected === undefined ? undefined : shift.openingFloat.amount} />
+            <ExpectCell currency={currency} label={t("salesWorkspace.cashTaken")} minor={totals?.cashPayments.amount} sign="+" />
+            <ExpectCell currency={currency} label={t("salesWorkspace.cashRefunds")} minor={totals?.cashRefunds.amount} sign="−" />
+            <ExpectCell currency={currency} label={t("salesWorkspace.paidSuppliers")} minor={totals === undefined ? undefined : totals.supplierCashPayments.amount - totals.supplierCashReversals.amount} sign="−" />
+            <ExpectCell currency={currency} label={t("salesWorkspace.expected")} minor={expected} strong />
           </div>
-          {totalsQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">Loading the shift totals…</p> : null}
-          {totalsQuery.isError ? <ErrorState title="Could not load the shift totals" description="You can close the shift once they load." onRetry={() => { void totalsQuery.refetch(); }} /> : null}
-          {totalsUnavailable ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5 text-[12.5px] text-warning-deep">This is no longer the open shift at this branch. Close this window and refresh the page.</p> : null}
+          {totalsQuery.isLoading ? <p role="status" className="text-[12px] text-ink-3">{t("salesWorkspace.loadingTotals")}</p> : null}
+          {totalsQuery.isError ? <ErrorState title={t("salesWorkspace.totalsFailed")} description={t("salesWorkspace.totalsRetryHint")} onRetry={() => { void totalsQuery.refetch(); }} /> : null}
+          {totalsUnavailable ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2.5 text-[12.5px] text-warning-deep">{t("salesWorkspace.shiftChanged")}</p> : null}
           {totals ? (
             <p className="text-[12px] text-ink-3 tabular">
-              {totals.paymentCount} payments this shift · card <MoneyText money={totals.cardPayments} hideCurrency /> · transfers{" "}
-              <MoneyText money={totals.transferPayments} hideCurrency /> · {totals.refundCount} refunds
+              {t("salesWorkspace.shiftSummary", { payments: t("salesWorkspace.paymentCount", { count: totals.paymentCount }), card: isolate(f.money(totals.cardPayments, { hideCurrency: true })), transfers: isolate(f.money(totals.transferPayments, { hideCurrency: true })), refunds: t("salesWorkspace.refundCount", { count: totals.refundCount }) })}
             </p>
           ) : null}
 
           {/* Denominations */}
           <div>
-            <p className="context-label mb-2">Count the drawer</p>
+            <p className="context-label mb-2">{t("salesWorkspace.countDrawer")}</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {DENOMS.map((d) => (
                 <label key={d.label} className="block">
                   <span className="mb-1 block text-[12px] text-ink-3 tabular">{d.label}</span>
                   <Input
-                    type="number"
-                    min={0}
+                    type="text"
+                    dir="ltr"
+                    pattern="[0-9]*"
                     inputMode="numeric"
                     placeholder="0"
                     value={counts[d.label] ?? ""}
-                    onChange={(e) => setCounts((c) => ({ ...c, [d.label]: Math.max(0, Number(e.target.value) || 0) }))}
-                    aria-label={`Number of ${d.label} JOD notes or coins`}
+                    onChange={(e) => { const value = latinDigits(e.target.value); if (/^\d{0,8}$/.test(value)) setCounts((c) => ({ ...c, [d.label]: Number(value) })); }}
+                    aria-label={t("salesWorkspace.denomination", { amount: d.label, currency: locale === "ar" && currency === "JOD" ? "د.أ" : currency })}
                     data-testid={`denom-${d.label}`}
                   />
                 </label>
@@ -240,22 +256,21 @@ export function CloseShiftDialog({
           >
             <div>
               <p className="text-[12px] text-ink-2">
-                Counted <MoneyText money={money(counted, currency)} className="font-semibold" /> · expected{" "}
-                {expected === undefined ? <strong className="font-semibold">loading…</strong> : <MoneyText money={money(expected, currency)} className="font-semibold" />}
+                {t("salesWorkspace.countedExpected", { counted: isolate(f.money(money(counted, currency))), expected: expected === undefined ? t("common.state.loading") : isolate(f.money(money(expected, currency))) })}
               </p>
               <p className={cn("mt-0.5 text-[15px] font-semibold tabular", variance === undefined ? "text-ink-3" : variance === 0 ? "text-success-deep" : "text-warning-deep")}>
-                {variance === undefined ? "Waiting for the shift totals" : variance === 0 ? "The cash matches" : `${variance > 0 ? "+" : "−"}${toMajorString(money(Math.abs(variance), currency))} ${currency} ${variance > 0 ? "over" : "short"}`}
+                {variance === undefined ? t("salesWorkspace.waitingTotals") : variance === 0 ? t("salesWorkspace.cashMatches") : t(variance > 0 ? "salesWorkspace.cashOver" : "salesWorkspace.cashShort", { amount: isolate(f.money(money(variance, currency), { signDisplay: "always" })) })}
               </p>
             </div>
           </div>
 
           {variance !== undefined && variance !== 0 ? (
-            <Field label="Why is the cash different?" required hint="A manager will review this.">
+            <Field label={t("salesWorkspace.varianceWhy")} required hint={t("salesWorkspace.managerReview")}>
               <Textarea
                 rows={2}
                 value={explanation}
                 onChange={(e) => setExplanation(e.target.value)}
-                placeholder="For example: Gave JOD 5 extra change at 19:40, member will return it tomorrow"
+                placeholder={t("salesWorkspace.varianceExample")}
                 data-testid="variance-explanation"
               />
             </Field>
@@ -263,18 +278,17 @@ export function CloseShiftDialog({
           {serverError ? <p role="alert" className="text-[12.5px] text-danger">{serverError}</p> : null}
         </DialogBody>
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button
             onClick={() => {
               setServerError(null);
+              setValidation(undefined);
               if (expected === undefined || variance === undefined) {
-                setServerError("Wait for the shift totals to load.");
+                setValidation("totals");
                 return;
               }
               if (variance !== 0 && explanation.trim().length < 5) {
-                setServerError("Explain the cash difference first (at least 5 characters).");
+                setValidation("variance");
                 return;
               }
               mutation.mutate();
@@ -284,7 +298,7 @@ export function CloseShiftDialog({
             variant={variance === 0 ? "primary" : "signal"}
             data-testid="confirm-close-shift"
           >
-            Close shift — counted {toMajorString(money(counted, currency))} {currency}
+            {t("salesWorkspace.closeCounted", { amount: isolate(f.money(money(counted, currency))) })}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -297,7 +311,7 @@ function ExpectCell({ label, minor, sign, strong, currency }: { label: string; m
     <div className="bg-surface px-3 py-2.5">
       <p className="context-label">{label}</p>
       <p className={cn("mt-0.5 text-[14px] tabular", strong && "font-semibold")}>
-        {minor === undefined ? "—" : <>{sign}{toMajorString(money(minor, currency))}</>}
+        {minor === undefined ? "—" : <bdi dir="ltr">{sign}{toMajorString(money(minor, currency))}</bdi>}
       </p>
     </div>
   );

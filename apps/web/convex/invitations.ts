@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 import { action, internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -270,6 +271,8 @@ export const markFailed = internalMutation({
       kind: "staff_invitation_failure",
       title: "Staff invitation needs attention",
       body: `The invitation to ${args.userName} could not be sent. Check their email address and try again.`,
+      titleMessage: systemMessage("communicationCompletion.notifications.invitationFailed"),
+      bodyMessage: systemMessage("communicationCompletion.notifications.invitationFailedBody", { name: args.userName }),
       href: "/settings?section=users",
       dedupeKey: `staff-invitation-failed:${args.userPublicId}:${args.attemptedAt}`,
     });

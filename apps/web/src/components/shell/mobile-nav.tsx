@@ -9,6 +9,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
+import { useT } from "@/lib/i18n/provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
@@ -21,6 +22,7 @@ import { ContextLabel } from "@/components/ui/typography";
  */
 export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const pathname = usePathname();
+  const t = useT();
   const { session, setBranch } = useApp();
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
@@ -43,34 +45,34 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in lg:hidden" />
         <DialogPrimitive.Content
           className="night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none data-[state=open]:animate-fade-in lg:hidden"
-          aria-label="Menu"
+          aria-label={t("nav.drawer.menu")}
         >
           <VisuallyHidden>
-            <DialogPrimitive.Title>Menu</DialogPrimitive.Title>
+            <DialogPrimitive.Title>{t("nav.drawer.menu")}</DialogPrimitive.Title>
           </VisuallyHidden>
 
           {/* Brand + close */}
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
             <div className="flex min-w-0 flex-col">
-              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] text-night-ink-3">Operated by RIVET™</span> : null}
+              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
             </div>
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
-              aria-label="Close menu"
+              aria-label={t("nav.drawer.closeMenu")}
             >
               <X className="size-4" />
             </DialogPrimitive.Close>
           </div>
 
           {/* Nav — same sections and permission filtering as the desktop sidebar */}
-          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Primary navigation">
+          <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t("nav.sidebar.primary")}>
             {NAV_SECTIONS.map((section) => {
               const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
               if (visible.length === 0) return null;
               return (
-                <div key={section.label} className="mb-4">
-                  <ContextLabel tone="night" className="px-2.5 pb-1.5">{section.label}</ContextLabel>
+                <div key={section.labelKey} className="mb-4">
+                  <ContextLabel tone="night" className="px-2.5 pb-1.5">{t(section.labelKey)}</ContextLabel>
                   <ul className="space-y-0.5">
                     {visible.map((item) => {
                       const active = navIsActive(item.href, pathname);
@@ -90,7 +92,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                               className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")}
                               aria-hidden
                             />
-                            <span className="truncate">{item.label}</span>
+                            <span className="truncate">{t(item.labelKey)}</span>
                           </Link>
                         </li>
                       );
@@ -110,14 +112,14 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                   value={session.activeBranchId ?? "all"}
                   onValueChange={(v) => setBranch(v === "all" ? undefined : v)}
                 >
-                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label="Active branch">
+                  <SelectTrigger sizeVariant="sm" className="w-full" aria-label={t("nav.drawer.activeBranch")}>
                     <div className="flex items-center gap-2 truncate">
                       <Building2 className="size-3.5 text-ink-3 shrink-0" aria-hidden />
                       <SelectValue />
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All branches</SelectItem>
+                    <SelectItem value="all">{t("common.label.allBranches")}</SelectItem>
                     {session.branches.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
                         {b.name}
@@ -128,7 +130,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               ) : (
                 <p className="flex items-center gap-2 px-1 text-[12.5px] text-night-ink-2">
                   <Building2 className="size-3.5 text-night-ink-3" aria-hidden />
-                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? "Branch unavailable"}
+                  {session.branches.find((b) => b.id === session.activeBranchId)?.name ?? t("nav.drawer.branchUnavailable")}
                 </p>
               )}
             </div>

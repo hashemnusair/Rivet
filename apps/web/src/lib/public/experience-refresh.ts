@@ -1,5 +1,9 @@
 import type { ExperienceStatus } from "@/lib/providers/experience-provider";
 
+export class ExperienceSnapshotTimeout extends Error {
+  constructor(label: string) { super(`Timed out waiting for the ${label} to respond. Please retry.`); this.name = "ExperienceSnapshotTimeout"; }
+}
+
 export const PUBLIC_EXPERIENCE_FIRST_SNAPSHOT_TIMEOUT_MS = 8_000;
 
 export type ExperienceSubscription<T> = (
@@ -70,7 +74,7 @@ export function startExperienceSubscription<T>({
   };
 
   timer = setTimeout(() => {
-    fail(new Error(`Timed out waiting for the ${label} to respond. Please retry.`));
+    fail(new ExperienceSnapshotTimeout(label));
   }, timeoutMs);
 
   let subscription: Promise<() => void>;

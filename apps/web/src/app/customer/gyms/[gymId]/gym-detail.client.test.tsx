@@ -1,3 +1,4 @@
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -236,4 +237,29 @@ describe("GymDetailClient trial form", () => {
     expect(screen.getByRole("heading", { name: "Gym not found" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send trial request" })).not.toBeInTheDocument();
   });
+});
+
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  return <button onClick={() => setLocale("ar")}>Arabic</button>;
+}
+
+it("keeps a trial draft across language changes and sends normalized phone digits", async () => {
+  window.history.replaceState({}, "", "/customer/gyms/forge-fitness");
+  state.showGym = true; state.experienceStatus = "ready"; state.previewSessionReady = true;
+  state.customer = null; state.convexMode = false;
+  state.bookTrial.mockReset().mockResolvedValue({ id: "ar-trial" });
+  render(<LocaleProvider initialLocale="en"><LocaleSwitch /><GymDetailClient gymId="forge-fitness" /></LocaleProvider>);
+  fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "لينا Haddad" } });
+  fireEvent.change(screen.getByLabelText("Email"), { target: { value: "lina@example.com" } });
+  fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+٩٦٢۷۹۱۲۳٤٥٦٧" } });
+  fireEvent.change(screen.getByLabelText("Branch"), { target: { value: "forge-abdoun" } });
+  fireEvent.change(screen.getByLabelText("What are you looking for?"), { target: { value: "تدريب القوة مع coach" } });
+  fireEvent.click(screen.getByRole("button", { name: "Arabic" }));
+  expect(screen.getByLabelText("الاسم الكامل")).toHaveValue("لينا Haddad");
+  expect(screen.getByLabelText("ما هدفك من التجربة؟")).toHaveValue("تدريب القوة مع coach");
+  expect(screen.getByRole("status")).toHaveTextContent("8:00 ص");
+  fireEvent.click(screen.getByRole("button", { name: "إرسال طلب التجربة" }));
+  await waitFor(() => expect(state.bookTrial).toHaveBeenCalledWith(expect.objectContaining({ fullName: "لينا Haddad", phone: "+962791234567", goal: "تدريب القوة مع coach", branchId: "forge-abdoun" })));
+  expect(await screen.findByRole("heading", { name: "تم تسجيل طلب تجربتك المجانية." })).toBeInTheDocument();
 });

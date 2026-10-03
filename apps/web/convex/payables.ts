@@ -1,3 +1,4 @@
+import { searchKey } from "../src/lib/utils/text";
 import { formatMinorUnits } from "../src/lib/exports/csv";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -414,7 +415,8 @@ async function resolveFilters(ctx: ReadContext, actor: ActorContext, input: Data
   if (requestedSupplier && !supplier) domainError("NOT_FOUND", "Supplier not found.", { correlationId: actor.correlationId });
   const requestedStatus = optionalText(input.status) ?? "open";
   if (requestedStatus !== "open" && requestedStatus !== "all" && !PAYABLE_STATUSES.includes(requestedStatus as PayableStatus)) domainError("VALIDATION_ERROR", "Payable status filter is invalid.", { correlationId: actor.correlationId });
-  const search = optionalText(input.search)?.toLowerCase();
+  const rawSearch = optionalText(input.search);
+  const search = rawSearch ? searchKey(rawSearch) : undefined;
   if (search && search.length > 120) domainError("VALIDATION_ERROR", "Search text is too long.", { correlationId: actor.correlationId });
   return { branch, supplier: supplier ?? undefined, status: requestedStatus as PayableFilters["status"], search };
 }
@@ -423,7 +425,7 @@ function matchesFilters(payable: PayableProjection, filters: PayableFilters): bo
   if (filters.supplier && payable.supplierId !== filters.supplier._id) return false;
   if (filters.status === "open" ? payable.status !== "unpaid" && payable.status !== "partially_paid" : filters.status !== "all" && payable.status !== filters.status) return false;
   if (filters.search) {
-    const haystack = `${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`.toLowerCase();
+    const haystack = searchKey(`${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`);
     if (!haystack.includes(filters.search)) return false;
   }
   return true;
@@ -592,8 +594,8 @@ function requirePositiveMoney(input: unknown, currency: string, field: string, a
   const raw = value(input);
   const amount = integer(raw.amount, Number.NaN);
   const requestedCurrency = text(raw.currency, currency).trim().toUpperCase();
-  if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", `Enter a valid amount greater than zero in ${currency}.`, { correlationId: actor.correlationId, fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
-  if (requestedCurrency !== currency) domainError("VALIDATION_ERROR", `${field} must be in ${currency}.`, { correlationId: actor.correlationId, fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
+  if (!Number.isSafeInteger(amount) || amount <= 0) domainError("VALIDATION_ERROR", `Enter a valid amount greater than zero in ${currency}.`, { message: { key: "apiErrors.positiveCurrencyAmount", params: { currency: String(currency) } }, correlationId: actor.correlationId, fieldErrors: { [field]: ["Enter an amount greater than zero"] } });
+  if (requestedCurrency !== currency) domainError("VALIDATION_ERROR", `${field} must be in ${currency}.`, { message: { key: "apiErrors.fieldCurrency", params: { field: String(field), currency: String(currency) } }, correlationId: actor.correlationId, fieldErrors: { [field]: [`Only ${currency} is accepted`] } });
   return amount;
 }
 
@@ -616,7 +618,7 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
   const notes = optionalText(input.notes);
   if (notes && notes.length > MAX_NOTES_LENGTH) domainError("VALIDATION_ERROR", "Payment notes are too long.", { correlationId: actor.correlationId, fieldErrors: { notes: [`Keep it under ${MAX_NOTES_LENGTH} characters`] } });
   const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
-  if (rawAllocations.length === 0 || rawAllocations.length > MAX_ALLOCATIONS) domainError("VALIDATION_ERROR", `Choose between 1 and ${MAX_ALLOCATIONS} supplier bills for this payment.`, { correlationId: actor.correlationId, fieldErrors: { allocations: ["Choose at least one supplier bill"] } });
+  if (rawAllocations.length === 0 || rawAllocations.length > MAX_ALLOCATIONS) domainError("VALIDATION_ERROR", `Choose between 1 and ${MAX_ALLOCATIONS} supplier bills for this payment.`, { message: { key: "apiErrors.supplierBillLimit", params: { maximum: String(MAX_ALLOCATIONS) } }, correlationId: actor.correlationId, fieldErrors: { allocations: ["Choose at least one supplier bill"] } });
   const allocations = rawAllocations.map((raw) => ({ payableId: optionalText(value(raw).payableId) ?? "", amountMinor: requirePositiveMoney(value(raw).amount, currency, "allocation", actor) })).sort((left, right) => left.payableId.localeCompare(right.payableId));
   if (allocations.some((allocation) => !allocation.payableId)) domainError("VALIDATION_ERROR", "Choose a supplier bill for each payment amount.", { correlationId: actor.correlationId });
   if (new Set(allocations.map((allocation) => allocation.payableId)).size !== allocations.length) domainError("VALIDATION_ERROR", "Choose each supplier bill only once.", { correlationId: actor.correlationId });
@@ -640,17 +642,17 @@ async function recordSupplierPayment(ctx: MutationCtx, actor: ActorContext, inpu
   for (const allocation of allocations) {
     const payable = payablesById.get(allocation.payableId);
     if (!payable) domainError("NOT_FOUND", "This supplier bill is unavailable or no longer unpaid. Refresh the list.", { correlationId: actor.correlationId });
-    if (payable.supplierId !== supplier._id) domainError("VALIDATION_ERROR", `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. Each payment must be for one supplier.`, { correlationId: actor.correlationId });
+    if (payable.supplierId !== supplier._id) domainError("VALIDATION_ERROR", `${payable.sourceLabel} belongs to ${payable.supplierName}, not ${supplier.name}. Each payment must be for one supplier.`, { message: { key: "apiErrors.supplierMismatch", params: { source: String(payable.sourceLabel), supplier: String(payable.supplierName), chosenSupplier: String(supplier.name) } }, correlationId: actor.correlationId });
     if (payable.currency !== currency) domainError("VALIDATION_ERROR", "Bills in another currency cannot be paid here.", { correlationId: actor.correlationId });
-    if (payable.status === "paid" || payable.status === "reversed") domainError("CONFLICT", `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { correlationId: actor.correlationId, details: { payableId: payable.id, status: payable.status } });
-    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remainingMinor, currency)} unpaid. Enter a smaller amount.`, { correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
+    if (payable.status === "paid" || payable.status === "reversed") domainError("CONFLICT", `${payable.sourceLabel} is already ${payable.status === "paid" ? "paid in full" : "reversed"}.`, { message: { key: "apiErrors.payableSettled", params: { source: String(payable.sourceLabel), status: String(payable.status === "paid" ? "paid in full" : "reversed") } }, correlationId: actor.correlationId, details: { payableId: payable.id, status: payable.status } });
+    if (allocation.amountMinor > payable.remainingMinor) domainError("CONFLICT", `${payable.sourceLabel} has only ${currency} ${formatMinorUnits(payable.remainingMinor, currency)} unpaid. Enter a smaller amount.`, { message: { key: "apiErrors.payableRemaining", params: { source: String(payable.sourceLabel), currency: String(currency), amount: String(formatMinorUnits(payable.remainingMinor, currency)) } }, correlationId: actor.correlationId, details: { payableId: payable.id, remainingMinor: payable.remainingMinor, requestedMinor: allocation.amountMinor } });
     payableSourceTypes.set(allocation.payableId, payable.sourceType);
   }
 
   let shiftPublicId: string | undefined;
   if (method === "cash") {
     const shift = await openCashShiftForBranch(ctx, actor, branch);
-    if (!shift) domainError("NO_OPEN_SHIFT", `Open a cash shift at ${branch.name} before paying a supplier in cash.`, { correlationId: actor.correlationId });
+    if (!shift) domainError("NO_OPEN_SHIFT", `Open a cash shift at ${branch.name} before paying a supplier in cash.`, { message: { key: "apiErrors.supplierCashBranch", params: { branch: String(branch.name) } }, correlationId: actor.correlationId });
     shiftPublicId = cashShiftPublicId(shift);
     if (expectedShiftId && expectedShiftId !== shiftPublicId) domainError("CONFLICT", "The open cash shift changed since this screen loaded. Refresh and record the payment again.", { correlationId: actor.correlationId, details: { reason: "SHIFT_STALE", openShiftId: shiftPublicId } });
   }
@@ -717,7 +719,7 @@ async function reverseSupplierPayment(ctx: MutationCtx, actor: ActorContext, inp
   if (row.method === "cash") {
     assertBranchAccess(actor, branch);
     const shift = await openCashShiftForBranch(ctx, actor, branch);
-    if (!shift) domainError("NO_OPEN_SHIFT", `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`, { correlationId: actor.correlationId });
+    if (!shift) domainError("NO_OPEN_SHIFT", `Open a cash shift at ${branch.name} so the returned cash has a drawer to go back into.`, { message: { key: "apiErrors.supplierReturnCash", params: { branch: String(branch.name) } }, correlationId: actor.correlationId });
     reversalShiftPublicId = cashShiftPublicId(shift);
   }
   const now = Date.now();
@@ -755,7 +757,7 @@ export async function payablesQuery(ctx: QueryCtx, actor: ActorContext, operatio
     case "operations.payables.reconciliation": return await listReconciliationItems(ctx, actor, input);
     case "operations.supplier_payments.list": return await listSupplierPayments(ctx, actor, input);
     case "operations.supplier_payment.get": return await getSupplierPayment(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown supplier bills query ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown supplier bills query ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -763,6 +765,6 @@ export async function payablesMutation(ctx: MutationCtx, actor: ActorContext, op
   switch (operation) {
     case "operations.supplier_payment.record": return await recordSupplierPayment(ctx, actor, input);
     case "operations.supplier_payment.reverse": return await reverseSupplierPayment(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown supplier bills mutation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown supplier bills mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

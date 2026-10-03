@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TodayQueueData } from "@/lib/domain/types";
 import { money } from "@/lib/utils/money";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { TodayQueue } from "./today-queue";
 
@@ -28,6 +29,7 @@ const queue: TodayQueueData = {
       priority: "urgent",
       title: "Collect from Ahmad Khalil",
       detail: "Membership balance is overdue",
+      subjectName: "Ahmad Khalil",
       href: "/members/member-1?action=collect",
       action: { kind: "navigate", label: "Collect" },
       amount: money(45_000),
@@ -117,5 +119,26 @@ describe("Today queue", () => {
 
     expect(screen.getByText("Nothing to do right now")).toBeInTheDocument();
     expect(screen.getByText(/shows up here by itself/)).toBeInTheDocument();
+  });
+
+  it("localizes generated queue copy in Arabic while preserving authored text and destinations", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(
+      <LocaleProvider initialLocale="ar"><TodayQueue data={queue} initialVisible={2} /></LocaleProvider>,
+      { role: "owner" },
+    );
+
+    expect(screen.getByRole("heading", { name: "اليوم" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^تحصيل:/ })).toHaveAttribute(
+      "href",
+      "/members/member-1?action=collect",
+    );
+    expect(screen.getByRole("link", { name: /Call Dana about trial/ })).toHaveAttribute("href", "/crm/leads/lead-1");
+    expect(screen.getByRole("button", { name: "عرض مهمة أخرى" })).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.queryByText("٣")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "عرض مهمة أخرى" }));
+    expect(screen.getByRole("link", { name: /^مراجعة:/ })).toHaveAttribute("href", "/approvals");
   });
 });

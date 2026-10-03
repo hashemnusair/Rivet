@@ -8,6 +8,7 @@ import { RIVET_GLYPH_JPEG, RIVET_LOCKUP_JPEG } from "./brandAssets";
 import { BRAND_CONTACT, brandLegalLine } from "./brandTokens";
 
 export interface DocumentPdfOptions {
+  locale?: "en" | "ar";
   /** Uppercase technical label: PRIVACY POLICY, TERMS OF SERVICE. */
   label: string;
   title: string;
@@ -20,18 +21,19 @@ export interface DocumentPdfOptions {
 export function renderDocumentPdf(options: DocumentPdfOptions, body: PdfBlock[]): Uint8Array {
   return renderPdf([{ type: "title", text: options.title, chip: options.chip }, { type: "meta", text: options.meta }, { type: "spacer", height: 4 }, ...body], {
     title: `RIVET ${options.title}`,
+    locale: options.locale,
     author: "RIVET",
     subject: options.meta,
     documentLabel: options.label,
     runningTitle: options.title,
-    footer: `${options.reference} · RIVET, ${BRAND_CONTACT.city}`,
-    footerPlaceholder: brandLegalLine() || undefined,
+    footer: `${options.reference} · RIVET, ${options.locale === "ar" ? BRAND_CONTACT.cityAr : BRAND_CONTACT.city}`,
+    footerPlaceholder: brandLegalLine(options.locale) || undefined,
     lockupJpeg: RIVET_LOCKUP_JPEG,
     glyphJpeg: RIVET_GLYPH_JPEG,
   });
 }
 
 export function documentPdfFilename(title: string, version: string): string {
-  const slug = `${title} ${version.split(" ·")[0] ?? ""}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const slug = `${title} ${version.split(" ·")[0] ?? ""}`.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "");
   return `RIVET-${slug}.pdf`;
 }

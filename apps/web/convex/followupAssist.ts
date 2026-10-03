@@ -8,6 +8,10 @@ import {
   type FollowUpTaskFact,
 } from "../src/lib/crm/contact-outcomes";
 import { MESSAGE_TEMPLATE_CATALOGUE, renderMessageTemplate, type CatalogueTemplate } from "./messagingTemplates";
+import { createTranslator } from "../src/lib/i18n/core";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { isRenderableSystemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
+import { resolveRecipientLanguage, type CommunicationLanguage } from "../src/lib/i18n/communication";
 import { consentForRenewalChannel, isRenewalQuietHours, nextRenewalQuietHoursEnd, renewalMessageSuppressionReason, renewalStopReason, type RenewalConsentStatus } from "./renewalPolicy";
 
 /**
@@ -18,7 +22,7 @@ import { consentForRenewalChannel, isRenewalQuietHours, nextRenewalQuietHoursEnd
  * outcomes exist for a lead or a member, what a chosen outcome does to the
  * stage, the follow-up date and the open tasks, whether renewal reminders are
  * suppressed, opted out, deferred by quiet hours or already queued, which
- * templates are approved for the timing, and which permission each reason
+ * RIVET catalogue templates fit the timing, and which permission each reason
  * check needs.
  *
  * No Convex or path-alias imports: the browser preview adapter shares it.
@@ -222,6 +226,8 @@ export interface FollowUpEvidence {
   kind: FollowUpEvidenceKind;
   title: string;
   excerpt?: string;
+  /** Valid timeline-body descriptor, so generated evidence can be localized at presentation. */
+  bodyMessage?: SystemMessage;
   occurredAt: string;
   actorName?: string;
   outcome?: string;
@@ -290,6 +296,7 @@ export interface FollowUpTimelineLike {
   type: string;
   title: string;
   body?: string;
+  bodyMessage?: SystemMessage;
   occurredAt: string;
   actorName?: string;
   meta?: Data;
@@ -334,6 +341,8 @@ export interface FollowUpContextInput {
   timezone: string;
   today: string;
   now: number;
+  /** The gym's default message language, used when the member has none stored. */
+  organizationDefaultLanguage?: string;
 }
 
 const STOP_REASON_LABELS: Record<string, string> = {
@@ -408,12 +417,15 @@ const EVIDENCE_TYPES = new Set(["call_attempt", "note", "message", "membership_f
 export function classifyFollowUpEvidence(event: FollowUpTimelineLike): FollowUpEvidence | undefined {
   if (!EVIDENCE_TYPES.has(event.type)) return undefined;
   const meta = record(event.meta);
-  const excerpt = followUpExcerpt(event.body);
+  const bodyMessage = isRenderableSystemMessage(event.bodyMessage) ? event.bodyMessage : undefined;
+  // A descriptor needs the complete original body to translate and truncate
+  // after presentation. Authored or unknown text keeps the existing excerpt.
+  const excerpt = bodyMessage ? event.body ?? "" : followUpExcerpt(event.body);
   const topics = followUpTopicsIn(`${event.title} ${event.body ?? ""}`);
   const flags: FollowUpEvidenceFlag[] = [];
   if (topics.includes("travel")) flags.push("mentions_travel");
   if (topics.includes("complaint")) flags.push("mentions_complaint");
-  const base = { id: event.id, type: event.type, title: event.title, excerpt, occurredAt: event.occurredAt, actorName: event.actorName, topics, flags };
+  const base = { id: event.id, type: event.type, title: event.title, excerpt, ...(bodyMessage ? { bodyMessage } : {}), occurredAt: event.occurredAt, actorName: event.actorName, topics, flags };
   if (event.type === "call_attempt") {
     const outcome = optionalText(meta.outcome);
     const known = isContactOutcome(outcome) ? outcome : undefined;
@@ -467,7 +479,8 @@ export function buildMemberFollowUpContext(input: FollowUpContextInput): MemberF
     memberId: input.member.id,
     memberName: input.member.fullName,
     phone: input.member.phone,
-    preferredLanguage: input.member.preferredLanguage === "ar" ? "ar" : "en",
+    // The member's language decides the drafted reminder, never the staff member's screen.
+    preferredLanguage: resolveRecipientLanguage(input.member.preferredLanguage, input.organizationDefaultLanguage).language,
     generatedAt: nowIso,
     renewal: {
       membershipId: membership?.id,
@@ -499,10 +512,10 @@ export function buildMemberFollowUpContext(input: FollowUpContextInput): MemberF
 }
 
 // ---------------------------------------------------------------------------
-// 4. Approved reminder templates, or a staff-written message
+// 4. RIVET catalogue reminder templates, or a staff-written message
 // ---------------------------------------------------------------------------
 
-/** Which approved renewal template fits the term's timing, if any. */
+/** Which RIVET catalogue renewal template fits the term's timing, if any. */
 export function timedRenewalTemplate(daysUntilExpiry: number | undefined, hasSuccessor: boolean): CatalogueTemplate | undefined {
   if (daysUntilExpiry === undefined || hasSuccessor) return undefined;
   const key = daysUntilExpiry >= 4 && daysUntilExpiry <= 14 ? "renewal_7d" : daysUntilExpiry >= 1 && daysUntilExpiry <= 3 ? "renewal_3d" : daysUntilExpiry === 0 ? "renewal_today" : daysUntilExpiry < 0 && daysUntilExpiry >= -45 ? "renewal_expired_3d" : undefined;
@@ -524,19 +537,31 @@ export function eligibleReminderTemplates(context: MemberFollowUpContext): Catal
 /** Why no template may be suggested for this member right now; the page hides the ask and the loader refuses it. */
 export function reminderTemplateUnavailableReason(context: MemberFollowUpContext): string | undefined {
   if (context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut) return "This member opted out of renewal messages. Call instead; no message is suggested.";
-  if (eligibleReminderTemplates(context).length === 0) return "No approved renewal reminder fits this term's timing.";
+  if (eligibleReminderTemplates(context).length === 0) return "No RIVET catalogue renewal reminder fits this term's timing.";
   return undefined;
 }
 
 /** The template filled from the member record, in the member's language; unknown variables stay visible. */
 export function renderReminderForMember(template: CatalogueTemplate, context: MemberFollowUpContext, gymName: string): string {
   const body = context.preferredLanguage === "ar" ? template.bodyAr : template.bodyEn;
+  const endDate = context.renewal.endDate;
   return renderMessageTemplate(body, {
     member_name: context.memberName.trim().split(/\s+/)[0] || context.memberName,
     gym_name: gymName,
-    end_date: context.renewal.endDate,
+    end_date: endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? makeFormatters(context.preferredLanguage, "").date(endDate) : endDate,
     branch_name: context.renewal.branchName ?? gymName,
   });
+}
+
+/**
+ * The default text prefilled into a staff member's own WhatsApp handoff, in
+ * the recipient's language. It is a draft: opening WhatsApp records only
+ * that the handoff was opened, never that anything was sent.
+ */
+export function followUpHandoffDraft(recipient: { fullName: string; preferredLanguage?: unknown }, gymName: string, organizationDefaultLanguage?: unknown): { language: CommunicationLanguage; text: string } {
+  const language = resolveRecipientLanguage(recipient.preferredLanguage, organizationDefaultLanguage).language;
+  const name = recipient.fullName.trim().split(/\s+/)[0] || recipient.fullName.trim();
+  return { language, text: createTranslator(language)("communicationCompletion.whatsapp.defaultDraft", { name, gym: gymName }) };
 }
 
 // ---------------------------------------------------------------------------

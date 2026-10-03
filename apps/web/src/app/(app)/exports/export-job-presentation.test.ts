@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExportJob } from "@/lib/domain/qol";
-import { exportJobPresentation } from "./export-job-presentation";
+import { createTranslator } from "@/lib/i18n/core";
+import { exportBranchScopePresentation, exportFailurePresentation, exportJobPresentation } from "./export-job-presentation";
 
 const NOW = Date.parse("2026-09-05T09:00:00+03:00");
 
@@ -21,5 +22,17 @@ describe("exportJobPresentation", () => {
     expect(exportJobPresentation(job({ status: "partially_completed", content: "a" }), NOW)).toMatchObject({ label: "Partly done", variant: "warning", download: "ready" });
     expect(exportJobPresentation(job({ status: "failed", failureMessage: "Too many rows" }), NOW)).toMatchObject({ label: "Failed", variant: "danger", download: "unavailable" });
     expect(exportJobPresentation(job({ status: "cancelled" }), NOW)).toMatchObject({ label: "Cancelled", download: "unavailable" });
+  });
+
+  it("localizes known export errors and scopes while retaining unknown worker text", () => {
+    const t = createTranslator("ar");
+    const tooLarge = "This export contains 123 rows and exceeds the current safe single-download limit. Narrow the date, branch, or search filters and try again.";
+    expect(exportFailurePresentation(tooLarge, t, (value) => `AR${value}`)).toContain("AR123");
+    expect(exportFailurePresentation(undefined, t, (value) => `AR${value}`, { failureMessageKey: "exports.tooLarge", failureMessageParams: { count: 456 } })).toContain("AR456");
+    expect(exportFailurePresentation("A future worker error", t)).toBe("A future worker error");
+    expect(exportBranchScopePresentation("all accessible branches", [], t)).toBe("كل الفروع المتاحة لك");
+    expect(exportBranchScopePresentation("branch:branch-1", [{ id: "branch-1", name: "Original Abdoun" }], t)).toBe("Original Abdoun");
+    expect(exportBranchScopePresentation("4 assigned branches", [], t, (value) => `AR${value}`)).toBe("AR4 فروع معيّنة");
+    expect(exportBranchScopePresentation("a future scope", [], t)).toBe("a future scope");
   });
 });

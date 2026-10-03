@@ -1,13 +1,17 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformBillingInvoice, PlatformSnapshot } from "@/lib/api/GymOSApi";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import BillingPage from "./page";
 
 const state = vi.hoisted(() => ({
   snapshot: undefined as PlatformSnapshot | undefined,
+  download: vi.fn(),
   mutations: [] as Array<{ isPending: boolean; mutate: ReturnType<typeof vi.fn> }>,
 }));
+
+vi.mock("@/lib/exports/download", () => ({ downloadTextFile: state.download }));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
@@ -74,12 +78,33 @@ function snapshot(invoices: PlatformBillingInvoice[]): PlatformSnapshot {
   };
 }
 
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" data-testid="locale-switch" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>toggle-locale</button>;
+}
+
 describe("BillingPage", () => {
   beforeEach(() => {
     state.snapshot = undefined;
     state.mutations = [];
+    state.download.mockReset();
     window.history.replaceState({}, "", "/platform/billing");
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
+  });
+
+  it("downloads Arabic invoice headings, status and dates with exact numeric amounts", async () => {
+    const user = userEvent.setup();
+    state.snapshot = snapshot([invoice({ gym: "=Authored Gym", status: "past_due", billingInterval: "monthly", periodStart: "2026-10-01T21:00:00Z", periodEnd: "2026-11-01T21:00:00Z", paymentReference: "REF-1" })]);
+    render(<LocaleProvider initialLocale="ar"><BillingPage /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "تصدير السجل المالي" }));
+    const saved = state.download.mock.calls[0]?.[0] as { content: string; fileName: string };
+    expect(saved.fileName).toBe("rivet-platform-invoices.csv");
+    expect(saved.content).toContain("رقم الفاتورة,النادي,نوع الفاتورة");
+    expect(saved.content).toContain("متأخر عن السداد");
+    expect(saved.content).toContain("149.000,JOD");
+    expect(saved.content).toContain("'=Authored Gym");
+    expect(saved.content).toContain("2 تشرين الأول 2026");
+    expect(saved.content).toContain("REF-1");
   });
 
   it("opens the billing wizard on the tenant a gym page deep-links with ?bill=", async () => {
@@ -95,7 +120,7 @@ describe("BillingPage", () => {
     // The subscriptions section is the on-page home for the same actions
     // (aria-hidden while the modal wizard is open, hence hidden queries).
     expect(screen.getByRole("heading", { name: "Gym subscriptions", hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole("row", { name: /Northline Strength/, hidden: true })).toHaveTextContent("Growth · monthly");
+    expect(screen.getByRole("row", { name: /Northline Strength/, hidden: true })).toHaveTextContent("Growth · Monthly");
   });
 
   it("waits for the requested invoice row before focusing it", async () => {
@@ -113,6 +138,47 @@ describe("BillingPage", () => {
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
+  it("preserves Arabic amount and period drafts through a locale change and submits exact minor units", async () => {
+    const user = userEvent.setup();
+    state.snapshot = snapshot([]);
+    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillingPage /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "Create exception invoice" }));
+    await user.selectOptions(screen.getByLabelText("Gym"), "gym-1");
+    fireEvent.change(screen.getByLabelText("Amount (JOD)"), { target: { value: "١٤٩٫٠٠١" } });
+    fireEvent.change(screen.getByLabelText("Period start"), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByLabelText("Period end"), { target: { value: "2026-10-31" } });
+    fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-10-15" } });
+
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByLabelText("المبلغ (د.أ)")).toHaveValue("١٤٩٫٠٠١");
+    expect(screen.getByLabelText("بداية الفترة")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("نهاية الفترة")).toHaveValue("2026-10-31");
+    expect(screen.getByLabelText("تاريخ الاستحقاق")).toHaveValue("2026-10-15");
+    await user.click(screen.getByRole("button", { name: "إنشاء مسودة" }));
+
+    const created = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
+    expect(created?.mutate).toHaveBeenCalledWith({ gymId: "gym-1", amountMinor: 149_001, currency: "JOD", dueAt: "2026-10-15", periodStart: "2026-10-01", periodEnd: "2026-10-31" });
+  });
+
+  it("keeps the payment action identity and typed reference across a locale change", async () => {
+    const user = userEvent.setup();
+    state.snapshot = snapshot([invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000", status: "past_due" })]);
+    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillingPage /></LocaleProvider>);
+    const row = screen.getByRole("row", { name: /AUTO-GRACE/ });
+    await user.click(within(row).getByRole("button", { name: "Reactivate" }));
+    await user.type(screen.getByLabelText("Payment reference"), "حوالة-٧١");
+    await user.type(screen.getByLabelText("Reason"), "تأكيد الحوالة البنكية.");
+
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByLabelText("مرجع الدفعة")).toHaveValue("حوالة-٧١");
+    expect(screen.getByLabelText("السبب")).toHaveValue("تأكيد الحوالة البنكية.");
+    await user.click(screen.getByRole("button", { name: "إعادة تفعيل النادي" }));
+    const payment = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
+    expect(payment?.mutate).toHaveBeenCalledWith({ invoiceId: "AUTO-GRACE", reference: "حوالة-٧١", reason: "تأكيد الحوالة البنكية." });
+  });
+
   it("follows a same-route invoice query change", async () => {
     state.snapshot = snapshot([invoice(), invoice({ id: "INV-2", gym: "Mosaic Women's Fitness" })]);
     window.history.replaceState({}, "", "/platform/billing?invoice=INV-1");
@@ -126,8 +192,8 @@ describe("BillingPage", () => {
 
   it.each([
     ["0", "Amount must be greater than zero"],
-    ["0.0004", "Amount must be greater than zero"],
-    ["1e3", "scientific notation"],
+    ["0.0004", "no more than 3 decimal places"],
+    ["1e3", "valid positive decimal amount"],
     ["9007199254740.992", "too large"],
   ])("rejects unsafe invoice amount %s", async (value, message) => {
     const user = userEvent.setup();

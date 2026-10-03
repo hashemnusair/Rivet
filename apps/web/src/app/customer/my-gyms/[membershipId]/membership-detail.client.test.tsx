@@ -1,7 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { useEffect } from "react";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
+import type { Locale } from "@/lib/i18n/locale";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS, type CustomerMembership } from "@/lib/public/experience-data";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import MembershipDetailClient from "./membership-detail.client";
@@ -11,6 +14,9 @@ const state = vi.hoisted(() => ({
   getCustomerClassExperience: vi.fn(),
   bookCustomerClass: vi.fn(),
   cancelCustomerClass: vi.fn(),
+  listCustomerFreezeRequests: vi.fn(),
+  getCustomerFreezePolicy: vi.fn(),
+  requestMembershipFreeze: vi.fn(),
 }));
 
 vi.mock("@/lib/api/client", () => ({
@@ -18,6 +24,9 @@ vi.mock("@/lib/api/client", () => ({
     getCustomerClassExperience: state.getCustomerClassExperience,
     bookCustomerClass: state.bookCustomerClass,
     cancelCustomerClass: state.cancelCustomerClass,
+    listCustomerFreezeRequests: state.listCustomerFreezeRequests,
+    getCustomerFreezePolicy: state.getCustomerFreezePolicy,
+    requestMembershipFreeze: state.requestMembershipFreeze,
   }),
 }));
 
@@ -43,6 +52,9 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 describe("member visit history", () => {
   beforeEach(() => {
     state.memberships = INITIAL_CUSTOMER_MEMBERSHIPS;
+    state.listCustomerFreezeRequests.mockReset().mockResolvedValue([]);
+    state.getCustomerFreezePolicy.mockReset().mockResolvedValue({ requestsEnabled: true, minimumDays: 1, maximumDays: 30, expectedFeeMinor: 25000, currency: "JOD", freeRequestsRemaining: 0 });
+    state.requestMembershipFreeze.mockReset().mockResolvedValue({ id: "freeze-ar", status: "pending" });
     state.getCustomerClassExperience.mockReset().mockResolvedValue({
       membershipId: INITIAL_CUSTOMER_MEMBERSHIPS[0]!.id,
       gymName: "Forge Fitness",
@@ -213,4 +225,58 @@ describe("member visit history", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel booking" }));
     await waitFor(() => expect(state.cancelCustomerClass).toHaveBeenCalledWith({ membershipId: membership.id, occurrenceId: "occ-strength" }));
   });
+
+  it("explains Arabic late cancellation before the same authorized booking write", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const fixture = await state.getCustomerClassExperience();
+    state.getCustomerClassExperience.mockResolvedValue({ ...fixture, upcoming: [{ ...fixture.upcoming[0], name: "قوة Strength 2", startsAt: new Date(Date.now() + 60 * 60_000).toISOString(), endsAt: new Date(Date.now() + 120 * 60_000).toISOString(), canBook: false, booking: { id: "bk-live", status: "booked", fromWaitlist: false } }] });
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<LocaleProvider initialLocale="ar"><QueryClientProvider client={client}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider></LocaleProvider>);
+    await user.click(screen.getByRole("tab", { name: "الحصص" }));
+    expect(await screen.findByText(/يُحتسب الإلغاء الآن متأخرًا، دون رسوم/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "إلغاء" }));
+    const dialog = await screen.findByRole("dialog", { name: /هل تريد إلغاء حجز.*قوة Strength 2/ });
+    expect(within(dialog).getByRole("status")).toHaveTextContent("لا تُفرض رسوم أو عقوبة على الاشتراك");
+    expect(state.cancelCustomerClass).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "إلغاء الحجز" }));
+    await waitFor(() => expect(state.cancelCustomerClass).toHaveBeenCalledWith({ membershipId: membership.id, occurrenceId: "occ-strength" }));
+  });
+
+  it("preserves the freeze draft and canonical request when language changes", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let changeLocale: (locale: Locale) => void = () => undefined;
+    function LanguageProbe() {
+      const { setLocale } = useLocale();
+      useEffect(() => { changeLocale = setLocale; }, [setLocale]);
+      return null;
+    }
+    render(<LocaleProvider initialLocale="ar"><LanguageProbe /><QueryClientProvider client={client}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider></LocaleProvider>);
+    await user.click(await screen.findByRole("button", { name: "طلب تجميد الاشتراك" }));
+    const dialog = await screen.findByRole("dialog", { name: "طلب تجميد الاشتراك" });
+    expect(dialog).toHaveTextContent("25.000 د.أ");
+    const start = addDays(todayISODate(), 3);
+    fireEvent.change(dialog.querySelector("#freeze-start")!, { target: { value: start } });
+    fireEvent.change(dialog.querySelector("#freeze-days")!, { target: { value: "٣" } });
+    await user.type(dialog.querySelector("#freeze-reason")!, "سفر Travel");
+    await act(async () => changeLocale("en"));
+    expect(await screen.findByRole("dialog", { name: "Request a freeze" })).toBe(dialog);
+    expect(dialog.querySelector("#freeze-days")).toHaveValue("3");
+    expect(dialog.querySelector("#freeze-start")).toHaveValue(start);
+    expect(dialog.querySelector("#freeze-reason")).toHaveValue("سفر Travel");
+    await user.click(within(dialog).getByRole("button", { name: "Send request" }));
+    await waitFor(() => expect(state.requestMembershipFreeze).toHaveBeenCalledWith({ membershipId: membership.id, startDate: start, days: 3, reason: "سفر Travel" }));
+  });
+
+});
+
+afterEach(() => {
+  localStorage.clear();
+  document.cookie = "rivet_locale=; path=/; max-age=0";
+  document.cookie = "rivet_ui_locale_v1=; path=/; max-age=0";
+  document.documentElement.lang = "en";
+  document.documentElement.dir = "ltr";
+  document.documentElement.classList.remove("rtl-font");
 });

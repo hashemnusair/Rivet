@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { SUBSCRIPTION_AGREEMENT_VERSION, canonicalAgreementText, sha256Hex } from "./legalAgreementText";
+import { SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_1_1, SUBSCRIPTION_AGREEMENT_VERSION_AR, canonicalAgreementText, sha256Hex } from "./legalAgreementText";
 import { decodeBase64 } from "./pdfDocument";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -64,7 +64,7 @@ describe("subscription agreement e-signature", () => {
     expect(context.text).toBe(canonicalAgreementText());
     expect(context).toMatchObject({ status: "required", canSign: true, prefill: { legalName: "Iron House Fitness", address: "Mecca Street, Amman", signatoryName: "Omar Haddad", email: "omar@ironhouse.example", plan: "Growth", startDate: "2026-10-01" } });
     // The trimmed form never asks for these, so the server does not prefill them.
-    expect(Object.keys(context.prefill).sort()).toEqual(["address", "email", "feeLabel", "legalName", "plan", "signatoryName", "startDate"]);
+    expect(Object.keys(context.prefill).sort()).toEqual(["address", "billingInterval", "email", "feeLabel", "legalName", "plan", "signatoryName", "startDate"]);
     const session = await owner.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };
     expect(session.legal).toEqual({ agreementStatus: "required" });
     const managerSession = await manager.query(api.domain.query, operation("session")) as { legal: { agreementStatus: string } };
@@ -238,5 +238,62 @@ describe("subscription agreement e-signature", () => {
     expect(pdf).toContain("(Co-founder, RIVET) Tj");
     expect(pdf).toContain("(Countersigned ");
     expect(pdf).toContain("(Signed and countersigned) Tj");
+  });
+});
+
+
+describe("Arabic agreement versions", () => {
+  it("preserves the exact published English hashes", async () => {
+    expect(await sha256Hex(canonicalAgreementText())).toBe("af0a917ebc219e4cda2901b489a6708a1f9e6d23e8ddf6adbbe76294b86a8c9b");
+    expect(await sha256Hex(canonicalAgreementText(SUBSCRIPTION_AGREEMENT_VERSION_1_1))).toBe("a7739cafef818f349f22f586504de9314abf946141f610367be5bd6b64ccadd0");
+  });
+
+  it("signs and replays the chosen Arabic version with frozen terms and independent recipient languages", async () => {
+    const { owner, manager, otherOwner, t } = await seeded();
+    await t.run(async ctx => {
+      const organization = (await ctx.db.query("organizations").collect()).find(row => row.publicId === "legal-org-a")!;
+      await ctx.db.patch(organization._id, { billingInterval: "annual", defaultLanguage: "en" });
+    });
+    const context = await owner.query(api.domain.query, operation("legal.agreement.current", { language: "ar" })) as Context;
+    expect(context.version).toBe(SUBSCRIPTION_AGREEMENT_VERSION_AR);
+    expect(context.text).toContain("اتفاقية الاشتراك");
+    expect(context.sha256).not.toBe(await sha256Hex(canonicalAgreementText()));
+    expect(context.prefill).toMatchObject({ billingInterval: "annual", feeLabel: expect.stringContaining("د.أ") });
+    const input = await signingInput({
+      agreementVersion: context.version,
+      customer: { legalName: "نادي القوة Fitness", address: "شارع مكة، عمّان" },
+      signatory: { name: "عمر حداد", idType: "national", idNumber: "٩٨٧١٢٣٤٥٦٧", email: "omar@ironhouse.example" },
+      signature: { method: "typed", typedName: "عمر حداد" },
+      clientDocumentSha256: context.sha256,
+    });
+    await expectCode(manager.mutation(api.domain.mutate, operation("legal.agreement.sign", input)), "FORBIDDEN");
+    const signed = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", input)) as Agreement;
+    expect(signed).toMatchObject({ version: context.version, hashMatch: true, subscription: { billingInterval: "annual", feeLabel: context.prefill.feeLabel }, signatory: { idNumberMasked: "••••••4567" } });
+    const replay = await owner.mutation(api.domain.mutate, operation("legal.agreement.sign", { ...input, agreementVersion: SUBSCRIPTION_AGREEMENT_VERSION })) as Agreement;
+    expect(replay).toEqual(signed);
+    // Viewing an already signed record in English never selects replacement English clauses.
+    const englishView = await owner.query(api.domain.query, operation("legal.agreement.current", { language: "en" })) as Context;
+    expect(englishView).toMatchObject({ version: context.version, sha256: context.sha256, text: context.text });
+    expect((await otherOwner.query(api.domain.query, operation("legal.agreement.current", { language: "ar" })) as Context).agreement).toBeUndefined();
+    const stored = await t.run(async ctx => (await ctx.db.query("subscriptionAgreements").collect())[0]);
+    expect(stored?.signatory.idNumber).toBe("9871234567");
+    const queued = await t.run(async ctx => (await ctx.db.query("operationalEmailDeliveries").collect()).filter(row => row.relatedEntityPublicId === signed.id));
+    expect(queued).toHaveLength(3);
+    for (const row of queued) {
+      expect(row.language).toBe("en"); // recipient preference, not the owner's screen
+      expect(row.templateVersion).toBe(context.version);
+      const attachment = row.attachments![0]!;
+      const pdf = Array.from(decodeBase64(attachment.contentBase64), byte => String.fromCharCode(byte)).join("");
+      expect(pdf).toContain("/ToUnicode");
+      expect(pdf).toContain("/ActualText");
+      expect(attachment.contentBase64).toBe(queued[0]!.attachments![0]!.contentBase64);
+    }
+  });
+
+  it("rejects an unpublished language/version before any agreement or mail is written", async () => {
+    const { owner, t } = await seeded();
+    await expectCode(owner.mutation(api.domain.mutate, operation("legal.agreement.sign", await signingInput({ agreementVersion: "1.2-ar-draft" }))), "VALIDATION_ERROR");
+    expect(await t.run(async ctx => (await ctx.db.query("subscriptionAgreements").collect()).length)).toBe(0);
+    expect(await t.run(async ctx => (await ctx.db.query("operationalEmailDeliveries").collect()).length)).toBe(0);
   });
 });

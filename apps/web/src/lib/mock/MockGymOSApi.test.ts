@@ -38,6 +38,21 @@ async function freshMemberForSale(): Promise<MemberSummary> {
 }
 
 describe("readable exports", () => {
+  it("renders Arabic downloads and preserves the stored language when a request is replayed", async () => {
+    for (const kind of ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const) {
+      const input = { kind, locale: "ar" as const, idempotencyKey: `mock-arabic-${kind}` };
+      const job = await api.requestExport(input);
+      expect(job.locale).toBe("ar");
+      expect(job.content).toContain("تاريخ إنشاء الملف");
+      expect(job.content).not.toContain("Generated at");
+      expect(await api.requestExport({ ...input, locale: "en" })).toEqual(job);
+    }
+    const personal = await api.requestMemberPersonalDataExport("mock-personal-arabic", "ar");
+    expect(personal.locale).toBe("ar");
+    expect(personal.content).toContain("بياناتي في RIVET");
+    expect(personal.content).toContain("الفئة,النادي,الفرع,التاريخ,السجل,التفاصيل,المبلغ,العملة,الحالة");
+  });
+
   it("keeps every staff dataset flat, labelled, and spreadsheet-safe", async () => {
     for (const kind of ["members", "leads", "payments", "audit", "membership_liabilities", "personal_training", "operations"] as const) {
       const exported = await api.requestExport({ kind, filters: {}, idempotencyKey: `mock-export-${kind}` });
@@ -1818,6 +1833,27 @@ describe("CRM", () => {
     expect(values).toHaveLength(1);
     expect(values[0]).toMatchObject({ items: expect.any(Array), page: 1 });
     expect(() => unsubscribe()).not.toThrow();
+  });
+
+  it("matches Arabic member names and digits in the at-risk queue without rewriting stored text", async () => {
+    const risks = await api.listAtRiskMembers({ pageSize: 100 });
+    const row = risks.items[0];
+    if (!row) throw new Error("seed should contain an at-risk member");
+    const internals = api as unknown as { db: MockDb };
+    const member = internals.db.members.find((candidate) => candidate.id === row.member.id);
+    if (!member) throw new Error("the queued member should exist in the mock store");
+    const originalName = member.fullName;
+
+    try {
+      member.fullName = "آمنة ١٢٣";
+      const matches = await api.listAtRiskMembers({ search: "امنة 123", pageSize: 100 });
+      const matchedMember = matches.items.find((item) => item.member.id === member.id)?.member;
+
+      expect(matchedMember?.fullName).toBe("آمنة ١٢٣");
+      expect(member.fullName).toBe("آمنة ١٢٣");
+    } finally {
+      member.fullName = originalName;
+    }
   });
 
   it("projects persisted CRM activity into lead summaries and the dashboard funnel", async () => {

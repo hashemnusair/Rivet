@@ -1,4 +1,8 @@
 "use client";
+import { useLocale } from "@/lib/i18n/provider";
+import type { TKey } from "@/lib/i18n/core";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
+import { useT } from "@/lib/i18n/provider";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshCcw } from "lucide-react";
@@ -9,7 +13,7 @@ import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { platformTenantDirectoryGyms, publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
-import { refreshFailureState, startExperienceSubscription } from "@/lib/public/experience-refresh";
+import { ExperienceSnapshotTimeout, refreshFailureState, startExperienceSubscription } from "@/lib/public/experience-refresh";
 import {
   CUSTOMER_PERSONAS,
   INITIAL_CUSTOMER_MEMBERSHIPS,
@@ -99,6 +103,8 @@ function initialsOf(fullName: string): string {
 }
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
+  const t = useT();
+  const { locale } = useLocale();
   const convexMode = isConvexMode();
   const identity = useRivetIdentity();
   const [customerId, setCustomerId] = useState<string>();
@@ -109,7 +115,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // a cold Next dev server, while Convex genuinely needs an asynchronous load.
   const [experienceReady, setExperienceReady] = useState(!convexMode);
   const [experienceStatus, setExperienceStatus] = useState<ExperienceStatus>(convexMode ? "loading" : "ready");
-  const [experienceError, setExperienceError] = useState<string>();
+  const [experienceFailure, setExperienceError] = useState<{ cause: unknown; key: TKey }>();
+  const experienceError = experienceFailure ? experienceFailure.cause instanceof ExperienceSnapshotTimeout ? t("customerPortal.subscriptionTimedOut") : isApiError(experienceFailure.cause) ? localizeApiError(experienceFailure.cause, locale).message : t(experienceFailure.key) : undefined;
   const [experienceRefreshing, setExperienceRefreshing] = useState(false);
   const [experienceAttempt, setExperienceAttempt] = useState(0);
   const experienceHydratedRef = useRef(!convexMode);
@@ -207,9 +214,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     const onError = (error: unknown) => {
       if (cancelled) return;
       catalogReadyRef.current = false;
-      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh its live pricing catalog.";
-      const failure = refreshFailureState(experienceHydratedRef.current, message);
-      setExperienceError(failure.message);
+      const failure = refreshFailureState(experienceHydratedRef.current, "");
+      setExperienceError({ cause: error, key: "customerPortal.pricingRefreshFailed" });
       setExperienceRefreshing(failure.showStaleNotice);
       setExperienceStatus(failure.status);
       if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
@@ -243,9 +249,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     const onError = (error: unknown) => {
       if (cancelled) return;
       marketplaceReadyRef.current = false;
-      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh the gym directory.";
-      const failure = refreshFailureState(experienceHydratedRef.current, message);
-      setExperienceError(failure.message);
+      const failure = refreshFailureState(experienceHydratedRef.current, "");
+      setExperienceError({ cause: error, key: "customerPortal.directoryRefreshFailed" });
       setExperienceRefreshing(failure.showStaleNotice);
       setExperienceStatus(failure.status);
       if (!experienceHydratedRef.current && !memberIdentity && !platformIdentity) setExperienceReady(false);
@@ -295,9 +300,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
     const handleSubscriptionError = (error: unknown) => {
       if (cancelled) return;
-      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh member data.";
-      const failure = refreshFailureState(experienceHydratedRef.current, message);
-      setExperienceError(failure.message);
+      const failure = refreshFailureState(experienceHydratedRef.current, "");
+      setExperienceError({ cause: error, key: "customerPortal.memberRefreshFailed" });
       setExperienceRefreshing(false);
       setExperienceStatus(failure.status);
       if (!experienceHydratedRef.current) setExperienceReady(false);
@@ -330,9 +334,8 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     let unsubscribe: (() => void) | undefined;
     const handleError = (error: unknown) => {
       if (cancelled) return;
-      const message = error instanceof Error && error.message ? error.message : "RIVET could not refresh platform operations.";
-      const failure = refreshFailureState(platformSnapshotHydratedRef.current, message);
-      setExperienceError(failure.message);
+      const failure = refreshFailureState(platformSnapshotHydratedRef.current, "");
+      setExperienceError({ cause: error, key: "customerPortal.platformRefreshFailed" });
       setExperienceRefreshing(failure.showStaleNotice);
       setExperienceStatus(failure.status);
       if (!platformSnapshotHydratedRef.current) setExperienceReady(false);
@@ -562,10 +565,9 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
     <ExperienceContext.Provider value={value}>
       {showStaleNotice ? (
         <div data-experience-notice className="sticky top-0 z-[60] flex items-center justify-center gap-2 border-b border-warning/30 bg-warning-bg px-4 py-2 text-center text-[12px] text-warning-deep" role="status" aria-live="polite">
-          <span>Could not connect. Showing your last saved information.</span>
+          <span>{t("customerPortal.staleNotice")}</span>
           <button type="button" onClick={retryExperience} className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:no-underline">
-            <RefreshCcw className="size-3" aria-hidden /> Try again
-          </button>
+            <RefreshCcw className="size-3" aria-hidden />{" "}{t("common.action.retry")}</button>
         </div>
       ) : null}
       {children}

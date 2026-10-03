@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils/cn";
 
 export function AuthProgressBar({ className }: { className?: string }) {
   return (
-    <div className={cn("auth-progress-bar h-1 w-40 overflow-hidden rounded-full bg-sunken-2", className)} aria-hidden>
+    <div className={cn("auth-progress-bar h-1 w-40 overflow-hidden rounded-full bg-sunken-2", className)} dir="ltr" aria-hidden>
       <span className="block h-full w-1/3 rounded-full bg-ink motion-reduce:animate-pulse" />
     </div>
   );

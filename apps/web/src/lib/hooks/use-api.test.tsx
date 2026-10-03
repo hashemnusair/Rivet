@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
+import { createTranslator } from "@/lib/i18n/core";
 import { ApiError, ERR } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery } from "./use-api";
 
@@ -153,5 +155,64 @@ describe("useApiQuery access revocation", () => {
     expect(screen.getByTestId("data")).toHaveTextContent("no data");
     expect(screen.getByTestId("background-error")).toHaveTextContent("false");
     expect(screen.getByTestId("message")).toHaveTextContent("members.read");
+  });
+});
+
+
+describe("pending mutations and UI language", () => {
+  it("presents a delayed refusal in the new language while preserving its envelope and submitting once", async () => {
+    const user = userEvent.setup();
+    let reject: (error: Error) => void = () => undefined;
+    const response = new Promise<never>((_resolve, rejectResponse) => { reject = rejectResponse; });
+    const performWrite = vi.fn(async (_api: unknown, value: { id: string }) => { void value; return response; });
+    let caught: unknown;
+    const error = new ApiError({ code: ERR.FORBIDDEN, message: "Permission denied.", messageKey: "apiErrors.forbidden", requestId: "request-language-42", details: { permission: "settings.manage" } });
+    function Harness() {
+      const { setLocale } = useLocale();
+      const [message, setMessage] = useState("");
+      const mutation = useApiMutation(performWrite);
+      return <>
+        <button onClick={() => void mutation.mutateAsync({ id: "same-write" }).catch(error => { caught = error; setMessage(error.message); })}>Save</button>
+        <button onClick={() => setLocale("ar")}>Arabic</button>
+        <p data-testid="thrown-message">{message}</p>
+        <p data-testid="hook-message">{mutation.error?.message}</p>
+      </>;
+    }
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    toastSpies.error.mockClear();
+    render(<QueryClientProvider client={client}><LocaleProvider initialLocale="en"><Harness /></LocaleProvider></QueryClientProvider>);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Arabic" }));
+    await act(async () => { reject(error); });
+    const message = createTranslator("ar")("apiErrors.forbidden");
+    await waitFor(() => expect(screen.getByTestId("thrown-message")).toHaveTextContent(message));
+    expect(screen.getByTestId("hook-message")).toHaveTextContent(message);
+    expect(toastSpies.error).toHaveBeenCalledWith(message);
+    expect(performWrite).toHaveBeenCalledTimes(1);
+    expect(performWrite.mock.calls[0]?.[1]).toEqual({ id: "same-write" });
+    expect(caught).toMatchObject({ code: ERR.FORBIDDEN, requestId: "request-language-42", details: { permission: "settings.manage" }, sourceMessage: "Permission denied." });
+  });
+
+  it("uses the current language for a delayed refresh failure after a successful write", async () => {
+    const user = userEvent.setup();
+    let rejectRefresh: (error: Error) => void = () => undefined;
+    const refresh = new Promise<void>((_resolve, reject) => { rejectRefresh = reject; });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    function Harness() {
+      const { setLocale } = useLocale();
+      const mutation = useApiMutation(async () => "saved", { onSuccess: () => refresh });
+      return <><button onClick={() => mutation.mutate()}>Save</button><button onClick={() => setLocale("ar")}>Arabic</button><p data-testid="saved">{String(mutation.isSuccess)}</p></>;
+    }
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    toastSpies.warning.mockClear();
+    toastSpies.error.mockClear();
+    render(<QueryClientProvider client={client}><LocaleProvider initialLocale="en"><Harness /></LocaleProvider></QueryClientProvider>);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Arabic" }));
+    await act(async () => { rejectRefresh(new Error("refresh failed")); });
+    await waitFor(() => expect(screen.getByTestId("saved")).toHaveTextContent("true"));
+    expect(toastSpies.warning).toHaveBeenCalledWith(createTranslator("ar")("apiErrors.savedRefresh"));
+    expect(toastSpies.error).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

@@ -10,6 +10,7 @@ import {
   renderReminderForMember,
   type FollowUpContextInput,
 } from "./followupAssist";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 
 const TODAY = "2026-09-21";
 const NOW = Date.UTC(2026, 8, 21, 9, 0); // 12:00 in Amman
@@ -80,6 +81,19 @@ describe("recorded follow-up context", () => {
     expect(classifyFollowUpEvidence({ id: "e3", type: "task_completed", title: "Task completed", occurredAt: iso(-1) })).toBeUndefined();
   });
 
+  it("retains a valid system body descriptor with its untruncated source for localized presentation", () => {
+    const reason = `provider_${"diagnostic".repeat(30)}`;
+    const body = `Failed after 1 attempt (${reason}). Managers were notified; follow up by phone.`;
+    const bodyMessage = systemMessage("communicationCompletion.timeline.messageFailedAfterReason", { count: 1, reason });
+    const generated = classifyFollowUpEvidence({ id: "e4", type: "message", title: "WhatsApp renewal reminder failed", body, bodyMessage, occurredAt: iso(-1) })!;
+    expect(generated).toMatchObject({ excerpt: body, bodyMessage });
+
+    const authoredBody = "Call again next week";
+    const authored = classifyFollowUpEvidence({ id: "e5", type: "message", title: "WhatsApp renewal reminder failed", body: authoredBody, bodyMessage: { key: "communicationCompletion.timeline.not-a-real-key" } as never, occurredAt: iso(-1) })!;
+    expect(authored).toMatchObject({ excerpt: authoredBody });
+    expect(authored).not.toHaveProperty("bodyMessage");
+  });
+
   it("reads consent deterministically, never infers it, and names why reminders are suppressed", () => {
     const optedOut = buildMemberFollowUpContext(contextInput({ member: { ...contextInput().member, consent: { marketingPreference: { optedIn: false, status: "explicit_opt_out", source: "member_selected" } } } }));
     expect(optedOut.messaging).toMatchObject({ consent: "explicit_opt_out", channelOptedOut: true, suppressionReason: "Recipient opted out of renewal messages" });
@@ -121,7 +135,7 @@ describe("recorded follow-up context", () => {
 });
 
 describe("renewal context and reminder suggestions", () => {
-  it("offers approved templates that fit the timing and describes unavailable cases", () => {
+  it("offers RIVET catalogue templates that fit the timing and describes unavailable cases", () => {
     const plain = buildMemberFollowUpContext(contextInput());
     expect(eligibleReminderTemplates(plain).map((template) => template.key)).toEqual(["renewal_7d"]);
     expect(eligibleReminderTemplates(buildMemberFollowUpContext(contextInput({ memberships: [{ ...contextInput().memberships[0]!, endDate: "2026-09-23" }] }))).map((template) => template.key)).toEqual(["renewal_3d"]);
@@ -139,8 +153,8 @@ describe("renewal context and reminder suggestions", () => {
     const arabic = buildMemberFollowUpContext(contextInput({ member: { ...contextInput().member, fullName: "رانيا عودة", preferredLanguage: "ar" } }));
     const template = eligibleReminderTemplates(arabic)[0]!;
     const body = renderReminderForMember(template, arabic, "Forge Gym");
-    expect(body).toContain("مرحباً رانيا");
-    expect(body).toContain("2026-10-01");
+    expect(body).toContain("مرحبًا رانيا");
+    expect(body).toContain("1 تشرين الأول 2026");
     expect(body).toContain("Forge Gym");
     expect(body).not.toContain("{{");
   });

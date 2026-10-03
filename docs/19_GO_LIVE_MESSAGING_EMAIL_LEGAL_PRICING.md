@@ -69,8 +69,10 @@ provider credentials and applicant details out of this file.
   suppression reason. A final failure on either queue notifies the gym's
   owners and managers with a link to the person, not to Settings.
 - Phone numbers are normalised to E.164 with Jordan (+962) as the default.
-- Every message names the gym. Marketing-class messages carry the opt-out
-  line ("Reply STOP to stop these messages" / "أرسل إيقاف لإيقاف هذه الرسائل").
+- Every message names the gym. The current marketing-class footer is request-only:
+  "To request that these messages stop, contact the gym directly." / "لطلب إيقاف
+  هذه الرسائل، يرجى التواصل مع النادي مباشرة." It does not claim that STOP or
+  إيقاف is handled automatically.
 
 ### Template catalogue (code-owned, `convex/messagingTemplates.ts`)
 
@@ -87,9 +89,11 @@ provider credentials and applicant details out of this file.
 | `class_reminder` | Class in 2 hours | WhatsApp | member_name, gym_name, class_name, class_time |
 | `entry_pass` | Entry pass | WhatsApp | member_name, gym_name, pass_link |
 
-All ten are Meta **utility** templates (operational, no marketing consent
-needed) in Arabic and English. The catalogue version is
-`1.0 · 3 September 2026`; the settings page shows the full text.
+The catalogue classifies all ten as Meta **utility** templates (operational, no
+marketing consent needed) in Arabic and English. The current code catalogue is
+`1.1 · 3 October 2026` (Arabic 1.0 bodies remain archived for queued history).
+The utility category and internal catalogue version do not establish Meta
+submission or approval; the current Arabic 1.1 bodies still need approval.
 
 ### Decisions needed
 
@@ -105,9 +109,12 @@ needed) in Arabic and English. The catalogue version is
   first whether Meta's app-and-API coexistence is available to the account;
   without it, API registration moves the number off the WhatsApp Business
   app on the phone. Budget two to three weeks.
-- **[decide] Inbound STOP / إيقاف.** WhatsApp is the only channel, so the
-  inbound webhook that marks the member `whatsappOptedOut` is now required
-  before `live`; it is not built yet. There is no SMS opt-out to configure.
+- **[blocking] Inbound opt-out for WhatsApp.** WhatsApp is the only channel, so
+  an inbound handler for STOP / إيقاف is required before `live`; it is not built
+  yet. The current footer only asks recipients to contact the gym. Staff can
+  record an explicit opt-out on a member, but there is no supported staff lead
+  preference control before conversion; unknown-consent leads remain suppressed.
+  There is no SMS opt-out to configure.
 - **[decide] Who pays message costs** per tier (included, capped, or passed
   through). The Terms say "included or passed through as stated in the
   subscription agreement"; the agreement quote must state it.
@@ -119,7 +126,9 @@ needed) in Arabic and English. The catalogue version is
 - [ ] Twilio production account and the approved WhatsApp sender
   (+962 77 837 8608); credentials in the Convex environment, never in the
   repository
-- [ ] Ten catalogue templates approved by Meta in Arabic and English
+- [ ] Current catalogue templates approved by Meta in Arabic and English; the
+      revised Arabic 1.1 bodies must be submitted (catalogue version is not an
+      approval status)
 - [ ] `sandbox` for one week against RIVET's own numbers, then `allowlist`
   with RIVET staff plus one pilot gym for two weeks with zero unexplained
   failures in the delivery ledger

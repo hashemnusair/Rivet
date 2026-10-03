@@ -1,5 +1,6 @@
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomerSignupClient, resolveCustomerSignupContext } from "./customer-signup.client";
 
 const state = vi.hoisted(() => ({
@@ -183,7 +184,7 @@ describe("CustomerSignupClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("alert").some((node) => node.textContent?.includes("already in use"))).toBe(true);
+      expect(screen.getAllByRole("alert").some((node) => node.textContent?.includes("An account already uses these details. Sign in to continue."))).toBe(true);
     });
     expect(screen.getAllByRole("link", { name: "Sign in" })[0]).toHaveAttribute("href", "/login?next=%2Fcustomer%2Fgyms%2Fforge%3FbranchId%3Dabdoun%26plan%3DPro%26interval%3Dannual");
     expect(state.registerCustomer).not.toHaveBeenCalled();
@@ -257,4 +258,35 @@ describe("CustomerSignupClient", () => {
     expect(signUp.finalize).toHaveBeenCalledOnce();
     expect(state.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun&plan=Pro&interval=annual");
   });
+
+  it("completes Arabic sign-up with normalized phone/code digits and unchanged redirect ownership", async () => {
+    const signUp = state.signUp!;
+    const { container } = render(<LocaleProvider initialLocale="ar"><CustomerSignupClient /></LocaleProvider>);
+    for (const [id, value] of [["name", "ليلى Haddad"], ["email", "lina@example.com"], ["phone", "+٩٦٢٧٩٠٠٠٠٠٠٠"], ["gender", "female"], ["password", "secret-password"], ["confirm", "secret-password"]]) {
+      fireEvent.change(container.querySelector(`#customer-signup-${id}`)!, { target: { value } });
+    }
+    expect(container.querySelector("#customer-signup-name")).toHaveAttribute("dir", "auto");
+    expect(container.querySelector("#customer-signup-phone")).toHaveAttribute("dir", "ltr");
+    fireEvent.click(screen.getByRole("button", { name: "إنشاء حساب" }));
+    expect(await screen.findByRole("heading", { name: "تحقّق من بريدك الإلكتروني" })).toBeVisible();
+    expect(signUp.password).toHaveBeenCalledWith({ emailAddress: "lina@example.com", password: "secret-password", firstName: "ليلى", lastName: "Haddad" });
+    const code = container.querySelector("#customer-signup-code")!;
+    fireEvent.change(code, { target: { value: "١٢٣۴۵۶" } });
+    expect(code).toHaveValue("123456");
+    fireEvent.submit(code.closest("form")!);
+    await waitFor(() => expect(signUp.verifications.verifyEmailCode).toHaveBeenCalledWith({ code: "123456" }));
+    await waitFor(() => expect(state.registerCustomer).toHaveBeenCalledWith({ fullName: "ليلى Haddad", email: "lina@example.com", phone: "+962790000000", gender: "female" }));
+    expect(state.router.replace).toHaveBeenCalledWith("/customer/gyms/forge?branchId=abdoun&plan=Pro&interval=annual");
+  });
+
+});
+
+
+afterEach(() => {
+  localStorage.clear();
+  document.cookie = "rivet_locale=; path=/; max-age=0";
+  document.cookie = "rivet_ui_locale_v1=; path=/; max-age=0";
+  document.documentElement.lang = "en";
+  document.documentElement.dir = "ltr";
+  document.documentElement.classList.remove("rtl-font");
 });

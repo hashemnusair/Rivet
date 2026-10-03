@@ -1,3 +1,4 @@
+import { createTranslator } from "@/lib/i18n/core";
 import type { Metadata, Viewport } from "next";
 import { HostRouteGuard } from "@/components/auth/host-route-guard";
 import { RIVET_HOSTS, RIVET_ORIGINS } from "@/lib/routing/host-routing";
@@ -9,7 +10,10 @@ import { ConvexClientProvider } from "@/lib/providers/convex-client-provider";
 import { ExperienceProvider } from "@/lib/providers/experience-provider";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { clerkFrontendApiOrigin, prePaintSignedInGuardScript } from "@/lib/auth/pre-paint-signed-in-guard";
-import { Toaster } from "sonner";
+import { LocaleProvider } from "@/lib/i18n/provider";
+import { dirFor } from "@/lib/i18n/config";
+import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
+import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import "./globals.css";
 
 /**
@@ -52,14 +56,17 @@ const instrumentSans = Instrument_Sans({
 
 const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://rivet.jo");
 
-export const metadata: Metadata = {
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getRequestLocale();
+  const t = createTranslator(locale);
+  return {
   metadataBase,
   title: {
-    default: "RIVET — Gym revenue & operations",
+    default: t("publicDocuments.siteTitle"),
     template: "%s · RIVET",
   },
   description:
-    "RIVET is the revenue and operations system for gyms: members, memberships, sales pipeline, reception, payments and reconciliation — with full staff accountability.",
+    t("publicDocuments.siteDescription"),
   applicationName: "RIVET",
   appleWebApp: {
     capable: true,
@@ -67,18 +74,21 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   openGraph: {
-    title: "RIVET — Every member. Every dinar. Every shift.",
-    description: "The revenue and operations system for gyms—and one simple membership home for their customers.",
+    locale: locale === "ar" ? "ar_JO" : "en_JO",
+    alternateLocale: locale === "ar" ? "en_JO" : "ar_JO",
+    title: t("publicDocuments.socialTitle"),
+    description: t("publicDocuments.socialDescription"),
     type: "website",
-    images: [{ url: "/brand/rivet-social-preview.png", width: 1200, height: 630, alt: "RIVET gym operations" }],
+    images: [{ url: "/brand/rivet-social-preview.png", width: 1200, height: 630, alt: t("publicDocuments.socialAlt") }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "RIVET — Gym revenue & operations",
-    description: "One operating loop for gym sales, members, entry, payments, and accountability.",
+    title: t("publicDocuments.siteTitle"),
+    description: t("publicDocuments.twitterDescription"),
     images: ["/brand/rivet-social-preview.png"],
   },
-};
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -93,11 +103,18 @@ const PRE_PAINT_SIGNED_IN_GUARD = !DEMO_AUTH_BYPASS && PRE_PAINT_FRONTEND_API
   ? prePaintSignedInGuardScript({ frontendApi: PRE_PAINT_FRONTEND_API, appHosts: [RIVET_HOSTS.gym, RIVET_HOSTS.member, RIVET_HOSTS.platform] })
   : null;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Language and direction are decided on the server from the locale cookie so
+  // the first paint is already correct. Without the Arabic gate this returns
+  // "en" without touching the request, which keeps the layout static.
+  const preference = await getRequestUiPreference();
+  const locale = preference.locale;
+  const fontClasses = `${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`;
   return (
-    <html lang="en" dir="ltr" data-scroll-behavior="smooth" className={`${manrope.variable} ${plexMono.variable} ${plexArabic.variable} ${archivo.variable} ${instrumentSans.variable}`}>
+    <html lang={locale} dir={dirFor(locale)} data-scroll-behavior="smooth" className={locale === "ar" ? `${fontClasses} rtl-font` : fontClasses}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         {PRE_PAINT_SIGNED_IN_GUARD ? <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} /> : null}
+        <LocaleProvider initialLocale={locale} initialOwner={preference.owner} initialPending={preference.pending}>
         <ClerkProvider allowedRedirectOrigins={RIVET_ORIGINS} signInUrl="/login" signUpUrl="/login/member/create" signInFallbackRedirectUrl="/login" signUpFallbackRedirectUrl="/login">
           <HostRouteGuard />
           <ConvexClientProvider>
@@ -106,22 +123,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <ExperienceProvider>
                   {children}
                 </ExperienceProvider>
-                <Toaster
-                  position="bottom-right"
-                  toastOptions={{
-                    style: {
-                      background: "#15140f",
-                      color: "#f2f0e6",
-                      border: "1px solid #2e2c22",
-                      borderRadius: "6px",
-                      fontSize: "13px",
-                    },
-                  }}
-                />
+                <LocalizedToaster />
               </AppProviders>
             </RivetIdentityProvider>
           </ConvexClientProvider>
         </ClerkProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

@@ -121,6 +121,7 @@ export const current = query({
         email: user.email,
         fullName: user.fullName,
         platformAdmin: user.platformAdmin,
+        ...(user.uiLocale ? { uiLocale: user.uiLocale } : {}),
       },
       gymAccessUnavailable,
       invitationClaimEligible,

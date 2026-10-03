@@ -1,3 +1,4 @@
+import { describeEquipmentRationale } from "../src/lib/domain/equipment-rationale";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "../src/lib/domain/purchase-orders";
 import { todayISODate } from "../src/lib/utils/dates";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -15,6 +16,7 @@ import {
 import { requireWorkspaceModule, resolveWorkspaceEntitlements, resolveWorkspacePreferences } from "./workspaceModules";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
 import { formatMinorUnits } from "../src/lib/exports/csv";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -82,7 +84,7 @@ function requireNonNegativeMoney(input: unknown, currency: string, field: string
   const amount = integer(raw.amount, Number.NaN);
   const requestedCurrency = text(raw.currency, currency).trim().toUpperCase();
   if (!Number.isSafeInteger(amount) || amount < 0 || requestedCurrency !== currency) {
-    domainError("VALIDATION_ERROR", `${field} must be a non-negative integer amount in ${currency}.`, { correlationId });
+    domainError("VALIDATION_ERROR", `${field} must be a non-negative integer amount in ${currency}.`, { message: { key: "apiErrors.nonNegativeAmount", params: { field: String(field), currency: String(currency) } }, correlationId });
   }
   return { amount, currency: requestedCurrency };
 }
@@ -104,7 +106,7 @@ async function immutableAccountingStatus(
 }
 
 function rejectImmutableAccountingMutation(actor: ActorContext, entityLabel: string, status: ImmutableAccountingStatus): never {
-  domainError("CONFLICT", `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`, {
+  domainError("CONFLICT", `${entityLabel} is ${status} in accounting and its source facts are immutable. Reverse the posting and create a new version before changing source fields.`, { message: { key: "apiErrors.immutableAccounting", params: { entity: String(entityLabel), status: String(status) } },
     correlationId: actor.correlationId,
     details: { financialPostingStatus: status },
   });
@@ -112,7 +114,7 @@ function rejectImmutableAccountingMutation(actor: ActorContext, entityLabel: str
 
 function assertOneOf<T extends string>(input: unknown, values: readonly T[], label: string, correlationId: string): T {
   const normalized = text(input);
-  if (!values.includes(normalized as T)) domainError("VALIDATION_ERROR", `${label} is invalid.`, { correlationId });
+  if (!values.includes(normalized as T)) domainError("VALIDATION_ERROR", `${label} is invalid.`, { message: { key: "apiErrors.invalidField", params: { field: String(label) } }, correlationId });
   return normalized as T;
 }
 
@@ -956,14 +958,14 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
     if (!Number.isSafeInteger(raw.quantity) || raw.quantity <= 0) domainError("VALIDATION_ERROR", "Product quantities must be positive whole numbers.", { correlationId: actor.correlationId });
     const product = await productByPublicId(ctx, actor, raw.productId);
     if (product.status !== "active") domainError("CONFLICT", "Archived products cannot be sold.", { correlationId: actor.correlationId });
-    if (product.retailPriceMinor === undefined || product.retailPriceMinor <= 0 || product.retailPriceCurrency !== actor.organization.currency) domainError("CONFLICT", `Set a positive retail price for ${product.name} before selling it.`, { correlationId: actor.correlationId, details: { productId: product.publicId } });
+    if (product.retailPriceMinor === undefined || product.retailPriceMinor <= 0 || product.retailPriceCurrency !== actor.organization.currency) domainError("CONFLICT", `Set a positive retail price for ${product.name} before selling it.`, { message: { key: "apiErrors.retailPrice", params: { product: String(product.name) } }, correlationId: actor.correlationId, details: { productId: product.publicId } });
     // Read balances during prevalidation. Creating a missing zero balance here
     // would be a mutation before the rest of the cart had passed validation,
     // which would violate the all-or-nothing checkout contract on a later-line
     // failure.
     const balance = await balanceRow(ctx, actor.organization._id, branch._id, product._id);
     const available = balance ? balance.quantityOnHand - balance.committedQuantity : 0;
-    if (!balance || balance.sellable === false || available < raw.quantity) domainError("CONFLICT", `${product.name} has only ${available} available.`, { correlationId: actor.correlationId, details: { productId: product.publicId, availableQuantity: available, requestedQuantity: raw.quantity } });
+    if (!balance || balance.sellable === false || available < raw.quantity) domainError("CONFLICT", `${product.name} has only ${available} available.`, { message: { key: "apiErrors.stockAvailable", params: { product: String(product.name), available: String(available) } }, correlationId: actor.correlationId, details: { productId: product.publicId, availableQuantity: available, requestedQuantity: raw.quantity } });
     const lineTotalMinor = product.retailPriceMinor * raw.quantity;
     if (!Number.isSafeInteger(lineTotalMinor) || !Number.isSafeInteger(totalMinor + lineTotalMinor)) domainError("VALIDATION_ERROR", "Checkout total is too large.", { correlationId: actor.correlationId });
     totalMinor += lineTotalMinor;
@@ -1082,7 +1084,7 @@ async function retailCheckout(ctx: MutationCtx, actor: ActorContext, input: Data
   }
   if (memberRecord) {
     const timelineId = `timeline-${crypto.randomUUID()}`;
-    await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "timeline", publicId: timelineId, branchId: branch._id, memberPublicId: memberRecord.publicId, createdAt: now, updatedAt: now, data: { id: timelineId, organizationId: publicOrganizationId(actor.organization), memberId: memberRecord.publicId, branchId: publicBranchId(branch), type: "payment_collected", title: `Retail sale — ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: iso(now), meta: { receiptNumber: receipt.number, receiptId: receipt.id, retailSaleId: saleId, saleType: "retail" } } });
+    await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "timeline", publicId: timelineId, branchId: branch._id, memberPublicId: memberRecord.publicId, createdAt: now, updatedAt: now, data: { id: timelineId, organizationId: publicOrganizationId(actor.organization), memberId: memberRecord.publicId, branchId: publicBranchId(branch), type: "payment_collected", title: `Retail sale — ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, titleMessage: systemMessage("communicationCompletion.timeline.retailSale", { amount: { amountMinor: totalMinor, currency: actor.organization.currency } }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: iso(now), meta: { receiptNumber: receipt.number, receiptId: receipt.id, retailSaleId: saleId, saleType: "retail" } } });
   }
   await audit(ctx, actor, { action: "operations.retail_sale.create", entityType: "retail_sale", entityId: saleId, entityLabel: receipt.number, summary: `Retail sale ${receipt.number} · ${actor.organization.currency} ${formatMinorUnits(totalMinor, actor.organization.currency)}`, after: { receiptId: receipt.id, total: totalMinor, method, customer: customer.kind }, branchId: publicBranchId(branch) });
   const storedSale = await ctx.db.get(sale);
@@ -1200,7 +1202,7 @@ async function refundRetailSale(ctx: MutationCtx, actor: ActorContext, input: Da
     const sold = sale.lines.find((candidate) => candidate.productId === line.productId);
     if (!sold || seen.has(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) domainError("VALIDATION_ERROR", "Refund lines must be unique sold products with positive whole quantities.", { correlationId: actor.correlationId });
     seen.add(line.productId);
-    if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) domainError("CONFLICT", `${sold.productName} exceeds the remaining refundable quantity.`, { correlationId: actor.correlationId });
+    if ((returned.get(line.productId) ?? 0) + line.quantity > sold.quantity) domainError("CONFLICT", `${sold.productName} exceeds the remaining refundable quantity.`, { message: { key: "apiErrors.refundableQuantity", params: { product: String(sold.productName) } }, correlationId: actor.correlationId });
     refundMinor += sold.unitPriceMinor * line.quantity;
   }
   const now = Date.now();
@@ -1954,7 +1956,7 @@ async function getEquipmentRecommendation(ctx: QueryCtx, actor: ActorContext, in
     rationale.push(`Repairs cost ${Math.round((repairCostMinor / replacementEstimateMinor) * 100)}% of the estimated replacement cost.`);
     if (!agedOut && !repairRatioHigh && !reliabilityConcern && !safetyIssue) rationale.push("Repair costs are low enough to keep this machine. Few problems have been reported.");
   }
-  return { assetId: asset.publicId, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor > 0 ? { amount: repairCostMinor, currency: actor.organization.currency } : undefined, replacementEstimate: replacementEstimateMinor !== undefined ? { amount: replacementEstimateMinor, currency: actor.organization.currency } : undefined, issueCount, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale };
+  return { assetId: asset.publicId, decision, confidence: "recorded_inputs_only", repairCost: repairCostMinor > 0 ? { amount: repairCostMinor, currency: actor.organization.currency } : undefined, replacementEstimate: replacementEstimateMinor !== undefined ? { amount: replacementEstimateMinor, currency: actor.organization.currency } : undefined, issueCount, downtimeDays, assetAgeMonths: ageMonths, expectedUsefulLifeMonths: asset.expectedUsefulLifeMonths, rationale, rationaleMessages: rationale.map(describeEquipmentRationale) };
 }
 
 export async function operationsQuery(ctx: QueryCtx, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
@@ -1970,7 +1972,7 @@ export async function operationsQuery(ctx: QueryCtx, actor: ActorContext, operat
     case "operations.equipment_issues.list": return await listEquipmentIssues(ctx, actor, input);
     case "operations.equipment_work_orders.list": return await listEquipmentWorkOrders(ctx, actor, input);
     case "operations.equipment.recommendation": return await getEquipmentRecommendation(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown operations query ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown operations query ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -1998,6 +2000,6 @@ export async function operationsMutation(ctx: MutationCtx, actor: ActorContext, 
     case "operations.equipment_issue.report": return await reportEquipmentIssue(ctx, actor, input);
     case "operations.equipment_issue.update": return await updateEquipmentIssue(ctx, actor, input);
     case "operations.equipment_work_order.upsert": return await upsertEquipmentWorkOrder(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown operations mutation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown operations mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

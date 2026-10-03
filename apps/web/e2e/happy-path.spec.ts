@@ -515,7 +515,7 @@ test.describe("sensitive actions are audited", () => {
     const expiredRow = page.getByTestId("member-row").first();
     await expect(expiredRow).toContainText("Expired");
     const memberNumber = await expiredRow.locator("p.font-mono").first().innerText();
-    const phone = await expiredRow.locator('td[dir="ltr"]').first().innerText();
+    const phone = await expiredRow.locator('td bdi[dir="ltr"]').first().innerText();
 
     await page.getByRole("link", { name: "Reception", exact: true }).click();
     await expect(page).toHaveURL(/\/reception/);
@@ -559,29 +559,27 @@ test.describe("sensitive actions are audited", () => {
 });
 
 test.describe("internationalization", () => {
-  test("supports the native manual RTL layout without changing the language", async ({ page }) => {
+  test("switches the product language to Arabic and restores English", async ({ page }) => {
     await signIn(page, "Owner");
     await page.goto("/members");
 
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
-    await page.getByRole("button", { name: "Demo controls" }).click();
-    const directionToggle = page.getByRole("switch", { name: "Manual RTL layout" });
-    await directionToggle.click();
-    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByTestId("language-switch").click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-
-    // The table still renders and the sidebar has moved to the right edge.
+    await expect(page.getByRole("heading", { name: "الأعضاء", exact: true })).toBeVisible();
     await expect(page.getByTestId("member-row").first()).toBeVisible();
-    const sidebar = page.getByRole("navigation").first();
-    const box = await sidebar.boundingBox();
-    const viewport = page.viewportSize()!;
-    expect(box!.x).toBeGreaterThan(viewport.width / 2);
 
-    // And back again.
-    await directionToggle.click();
+    await page.getByRole("button", { name: "قائمة الحساب" }).click();
+    await page.getByTestId("language-switch").click();
     await expect(page.locator("html")).toHaveAttribute("lang", "en");
     await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+    await expect(page.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
+
+    // The directory remains available after switching back to English.
+    await expect(page.getByTestId("member-row").first()).toBeVisible();
   });
 });
 

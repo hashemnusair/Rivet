@@ -1,5 +1,7 @@
 "use client";
+import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
+import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
@@ -18,16 +20,17 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { NotificationCenter } from "@/components/shell/notification-center";
 import { ContextLabel } from "@/components/ui/typography";
+import { applicationStatusLabel, invoiceStatusLabel, subscriptionStatusLabel, supportStatusLabel } from "@/components/platform/platform-status";
 
-const NAVIGATION = [
-  { href: "/platform", label: "Overview", icon: LayoutDashboard, exact: true },
-  { href: "/platform/applications", label: "Applications", icon: ClipboardList },
-  { href: "/platform/gyms", label: "Gyms", icon: Building2 },
-  { href: "/platform/subscriptions", label: "Pricing & entitlements", icon: BadgeDollarSign },
-  { href: "/platform/billing", label: "Billing", icon: CreditCard },
-  { href: "/platform/agreements", label: "Agreements", icon: FileSignature },
-  { href: "/platform/email-log", label: "Email log", icon: Mail },
-  { href: "/platform/support", label: "Support", icon: CircleHelp },
+const NAVIGATION: Array<{ href: string; labelKey: TKey; icon: typeof LayoutDashboard; exact?: boolean }> = [
+  { href: "/platform", labelKey: "platformConsole.navigation.overview", icon: LayoutDashboard, exact: true },
+  { href: "/platform/applications", labelKey: "platformConsole.navigation.applications", icon: ClipboardList },
+  { href: "/platform/gyms", labelKey: "platformConsole.navigation.gyms", icon: Building2 },
+  { href: "/platform/subscriptions", labelKey: "platformConsole.navigation.entitlements", icon: BadgeDollarSign },
+  { href: "/platform/billing", labelKey: "platformConsole.navigation.billing", icon: CreditCard },
+  { href: "/platform/agreements", labelKey: "platformConsole.navigation.agreements", icon: FileSignature },
+  { href: "/platform/email-log", labelKey: "platformConsole.navigation.emailLog", icon: Mail },
+  { href: "/platform/support", labelKey: "platformConsole.navigation.support", icon: CircleHelp },
 ];
 
 function initialsOf(name: string): string {
@@ -38,13 +41,15 @@ function initialsOf(name: string): string {
 }
 
 export function PlatformShell({ children }: { children: ReactNode }) {
+  const t = useT();
+  const { isolate } = useLocale();
   const pathname = usePathname();
   const router = useRouter();
   const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const { signOut: signOutClerk } = useClerk();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const { platformAdminSignedIn, previewSessionReady, experienceReady, experienceError, experienceStatus, retryExperience, signOutPlatformAdmin } = useExperience();
+  const { platformAdminSignedIn, previewSessionReady, experienceReady, experienceStatus, retryExperience, signOutPlatformAdmin } = useExperience();
   const identity = useRivetIdentity();
   const identityReady =
     DEMO_AUTH_BYPASS || (clerkLoaded && identity.status !== "loading" && identity.status !== "pending");
@@ -52,7 +57,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   // Authorization comes from the Convex record, so flipping the local
   // sessionStorage flag by hand does not open the console.
   const authorized = DEMO_AUTH_BYPASS || identity.platformAdmin;
-  const administratorName = identity.fullName?.trim() || identity.email?.trim() || "Platform administrator";
+  const administratorName = identity.fullName?.trim() || identity.email?.trim() || t("platformConsole.shell.administrator");
   const administratorInitials = initialsOf(administratorName);
 
   // The console is reachable only through the hidden administrator sign-in.
@@ -82,19 +87,19 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     }
   };
 
-  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
+  if (signingOut) return <AuthTransition title={t("shell.topbar.signingOut")} detail={t("platformConsole.shell.signingOut")} />;
 
   if (experienceStatus === "error") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper px-5">
-        <ErrorState title="The platform console could not load" description={experienceError} onRetry={retryExperience} className="w-full max-w-md" />
+        <ErrorState title={t("platformConsole.shell.consoleLoadFailed")} description={t("platformConsole.shell.consoleLoadErrorDetail")} onRetry={retryExperience} className="w-full max-w-md" />
       </div>
     );
   }
 
   if (!identityReady || !previewSessionReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label="Checking access">
+      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label={t("platformConsole.shell.checkingAccess")}>
         <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
           <div className="h-full w-1/2 animate-pulse rounded-full bg-ink" />
         </div>
@@ -113,12 +118,12 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="Platform navigation"
+            aria-label={t("platformConsole.navigation.label")}
             className="night-surface flex h-full w-[278px] max-w-[85vw] flex-col bg-night text-night-ink"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex justify-end p-3">
-              <Button variant="night-ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close navigation">
+              <Button variant="night-ghost" size="icon" onClick={() => setOpen(false)} aria-label={t("nav.chrome.closeNavigation")}>
                 <X />
               </Button>
             </div>
@@ -129,23 +134,24 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 
       <div className="lg:col-start-2">
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4 lg:h-16 lg:px-8">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open}>
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label={t("platformConsole.navigation.open")} aria-expanded={open}>
             <Menu />
           </Button>
           <PlatformSearch />
           <div className="ms-auto flex items-center gap-2 sm:gap-3">
+            <LanguageButton className="shrink-0" />
             <NotificationCenter />
             <div className="hidden text-end sm:block">
-              <p className="text-[12.5px] font-semibold leading-tight">{administratorName}</p>
-              <ContextLabel>RIVET staff</ContextLabel>
+              <p className="text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</p>
+              <ContextLabel>{t("platformConsole.shell.staff")}</ContextLabel>
             </div>
             <span
               className="flex size-8 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-paper"
-              aria-label={`${administratorName} avatar`}
+              aria-label={t("platformConsole.shell.avatar", { name: isolate(administratorName) })}
             >
               {administratorInitials}
             </span>
-            <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label="Sign out">
+            <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label={t("common.action.signOut")}>
               <LogOut />
             </Button>
           </div>
@@ -157,16 +163,17 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 }
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const t = useT();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
-        <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label="Platform overview">
-          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt="RIVET" />
-          <span className="border-s border-night-line ps-3 text-[12px] font-medium text-night-ink-3">Platform</span>
+        <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label={t("platformConsole.navigation.overview")}>
+          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt={t("common.brand.name")} />
+          <span className="border-s border-night-line ps-3 text-[12px] font-medium text-night-ink-3">{t("platformConsole.navigation.platformName")}</span>
         </Link>
       </div>
-      <nav className="flex-1 px-3" aria-label="Platform navigation">
-        <ContextLabel tone="night" className="px-3.5 pb-2">Network</ContextLabel>
+      <nav className="flex-1 px-3" aria-label={t("platformConsole.navigation.label")}>
+        <ContextLabel tone="night" className="px-3.5 pb-2">{t("platformConsole.navigation.network")}</ContextLabel>
         <div className="grid gap-0.5">
           {NAVIGATION.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -183,7 +190,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
                 )}
               >
                 <item.icon className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")} aria-hidden />
-                <span className="truncate">{item.label}</span>
+                <span className="truncate">{t(item.labelKey)}</span>
               </Link>
             );
           })}
@@ -196,7 +203,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
           data-touch-target
           className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
         >
-          <Building2 className="size-4" aria-hidden /> Gym workspace
+          <Building2 className="size-4" aria-hidden /> {t("platformConsole.navigation.workspace")}
         </Link>
       </div>
     </>
@@ -221,6 +228,8 @@ function platformSearchOptionId(resultId: string): string {
  * a second search API or claiming results that are not loaded yet.
  */
 function PlatformSearch() {
+  const t = useT();
+  const { isolate } = useLocale();
   const router = useRouter();
   const { platformSnapshot } = useExperience();
   const [query, setQuery] = useState("");
@@ -233,23 +242,24 @@ function PlatformSearch() {
     if (!normalized) return [];
 
     const navigation = NAVIGATION
+      .map((item) => ({ ...item, label: t(item.labelKey) }))
       .filter((item) => `${item.label} ${item.href}`.toLowerCase().includes(normalized))
-      .map((item) => ({ id: `navigation:${item.href}`, label: item.label, detail: "Platform section", href: item.href }));
+      .map((item) => ({ id: `navigation:${item.href}`, label: item.label, detail: t("platformConsole.shell.searchNavigation"), href: item.href }));
     const gyms = (platformSnapshot?.gyms ?? [])
       .filter((gym) => `${gym.name} ${gym.shortName} ${gym.rivetPlan} ${gym.subscriptionStatus}`.toLowerCase().includes(normalized))
-      .map((gym) => ({ id: `gym:${gym.id}`, label: gym.name, detail: `Gym · ${gym.subscriptionStatus.replaceAll("_", " ")}`, href: `/platform/gyms/${gym.id}` }));
+      .map((gym) => ({ id: `gym:${gym.id}`, label: gym.name, detail: t("platformConsole.shell.searchGym", { status: subscriptionStatusLabel(gym.subscriptionStatus, t) }), href: `/platform/gyms/${gym.id}` }));
     const applications = (platformSnapshot?.applications ?? [])
       .filter((application) => `${application.gymName} ${application.ownerName} ${application.email} ${application.plan} ${application.status}`.toLowerCase().includes(normalized))
-      .map((application) => ({ id: `application:${application.id}`, label: application.gymName, detail: `Application · ${application.status.replaceAll("_", " ")}`, href: `/platform/applications?application=${application.id}` }));
+      .map((application) => ({ id: `application:${application.id}`, label: application.gymName, detail: t("platformConsole.shell.searchApplication", { status: applicationStatusLabel(application.status, t) }), href: `/platform/applications?application=${application.id}` }));
     const invoices = (platformSnapshot?.invoices ?? [])
       .filter((invoice) => `${invoice.id} ${invoice.gym} ${invoice.status}`.toLowerCase().includes(normalized))
-      .map((invoice) => ({ id: `invoice:${invoice.id}`, label: invoice.id, detail: `Invoice · ${invoice.gym} · ${invoice.status.replaceAll("_", " ")}`, href: `/platform/billing?invoice=${encodeURIComponent(invoice.id)}` }));
+      .map((invoice) => ({ id: `invoice:${invoice.id}`, label: invoice.id, detail: t("platformConsole.shell.searchInvoice", { gym: isolate(invoice.gym), status: invoiceStatusLabel(invoice.status, t) }), href: `/platform/billing?invoice=${encodeURIComponent(invoice.id)}` }));
     const supportCases = (platformSnapshot?.supportCases ?? [])
       .filter((supportCase) => `${supportCase.id} ${supportCase.gym} ${supportCase.subject} ${supportCase.status}`.toLowerCase().includes(normalized))
-      .map((supportCase) => ({ id: `support:${supportCase.id}`, label: supportCase.subject, detail: `Support · ${supportCase.gym} · ${supportCase.status}`, href: `/platform/support?case=${encodeURIComponent(supportCase.id)}` }));
+      .map((supportCase) => ({ id: `support:${supportCase.id}`, label: supportCase.subject, detail: t("platformConsole.shell.searchSupport", { gym: isolate(supportCase.gym), status: supportStatusLabel(supportCase.status, t) }), href: `/platform/support?case=${encodeURIComponent(supportCase.id)}` }));
 
     return [...navigation, ...gyms, ...applications, ...invoices, ...supportCases].slice(0, 8);
-  }, [normalized, platformSnapshot]);
+  }, [isolate, normalized, platformSnapshot, t]);
 
   useEffect(() => {
     if (!open || results.length === 0) {
@@ -285,7 +295,7 @@ function PlatformSearch() {
       <Search className="pointer-events-none absolute start-3 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
       <Input
         className="h-8 ps-9 text-[13px]"
-        placeholder="Search gyms, invoices, or support cases"
+        placeholder={t("platformConsole.shell.searchPlaceholder")}
         value={query}
         onChange={(event) => { setQuery(event.target.value); setOpen(Boolean(event.target.value.trim())); }}
         onFocus={() => setOpen(Boolean(normalized))}
@@ -323,7 +333,7 @@ function PlatformSearch() {
             navigate(selectedResult.href);
           }
         }}
-        aria-label="Search platform records"
+        aria-label={t("platformConsole.shell.searchLabel")}
         role="combobox"
         aria-expanded={open}
         aria-controls="platform-search-results"
@@ -343,10 +353,10 @@ function PlatformSearch() {
               onClick={() => navigate(result.href)}
               className={cn("w-full rounded-sm px-3 py-2 text-start transition-colors hover:bg-sunken focus-visible:bg-sunken focus-visible:outline-none", index === activeIndex && "bg-sunken")}
             >
-              <span className="block truncate text-[13px] font-medium">{result.label}</span>
-              <span className="mt-0.5 block truncate text-[12px] text-ink-3">{result.detail}</span>
+              <span className="block truncate text-[13px] font-medium" dir="auto">{result.label}</span>
+              <span className="mt-0.5 block truncate text-[12px] text-ink-3" dir="auto">{result.detail}</span>
             </button>
-          )) : <p className="px-3 py-2.5 text-[12.5px] text-ink-3" role="status">No matching platform records.</p> : <p className="px-3 py-2.5 text-[12.5px] text-ink-3" role="status">Loading platform records…</p>}
+          )) : <p className="px-3 py-2.5 text-[12.5px] text-ink-3" role="status">{t("platformConsole.shell.noResults")}</p> : <p className="px-3 py-2.5 text-[12.5px] text-ink-3" role="status">{t("platformConsole.shell.loadingResults")}</p>}
         </div>
       ) : null}
     </div>

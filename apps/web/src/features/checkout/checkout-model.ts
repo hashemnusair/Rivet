@@ -1,3 +1,6 @@
+import { createTranslator, type TFunction } from "@/lib/i18n/core";
+import { isolate } from "@/lib/i18n/bidi";
+import { latinDigits, searchKey } from "@/lib/utils/text";
 import type { InventoryBalance, MemberSummary, Money, Product, RetailCheckoutInput } from "@/lib/domain/types";
 
 export type CheckoutPaymentMethod = RetailCheckoutInput["method"];
@@ -15,7 +18,10 @@ export type CustomerAttachment =
   | { kind: "guest"; fullName: string; phone: string };
 
 export const CHECKOUT_PAYMENT_METHODS: readonly CheckoutPaymentMethod[] = ["cash", "cliq", "card"];
-export const CHECKOUT_PAYMENT_METHOD_LABELS: Record<CheckoutPaymentMethod, string> = { cash: "Cash", cliq: "CliQ", card: "Visa / card" };
+
+export function checkoutPaymentMethodLabel(t: TFunction, method: CheckoutPaymentMethod): string {
+  return method === "card" ? t("salesWorkspace.card") : t(`domain.paymentMethod.${method}`);
+}
 
 export function newSaleIdempotencyKey(): string {
   return `retail-sale-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -47,10 +53,10 @@ export function availableFor(productId: string, balances: InventoryBalance[]): n
 }
 
 /** Why a product cannot go into the sale right now, in plain words. */
-export function unsellableReason(product: SellableProduct, available: number, currency: string): string | undefined {
-  if (product.status !== "active") return "Archived";
-  if (!retailPriceOf(product, currency)) return "No selling price";
-  if (available <= 0) return "Out of stock";
+export function unsellableReason(product: SellableProduct, available: number, currency: string, t: TFunction = createTranslator("en")): string | undefined {
+  if (product.status !== "active") return t("salesWorkspace.archived");
+  if (!retailPriceOf(product, currency)) return t("salesWorkspace.unpriced");
+  if (available <= 0) return t("salesWorkspace.outOfStock");
   return undefined;
 }
 
@@ -60,11 +66,11 @@ export function unsellableReason(product: SellableProduct, available: number, cu
  * it can add that item straight away.
  */
 export function filterSellableProducts(products: SellableProduct[], search: string): { products: SellableProduct[]; exactSkuMatch?: SellableProduct } {
-  const term = search.trim().toLowerCase();
+  const term = searchKey(search);
   const active = products.filter((product) => product.status === "active");
   if (!term) return { products: active };
-  const exactSkuMatch = active.find((product) => product.sku.toLowerCase() === term);
-  const matches = active.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(term));
+  const exactSkuMatch = active.find((product) => searchKey(product.sku) === term);
+  const matches = active.filter((product) => searchKey(`${product.name} ${product.sku}`).includes(term));
   return { products: exactSkuMatch ? [exactSkuMatch, ...matches.filter((product) => product.id !== exactSkuMatch.id)] : matches, exactSkuMatch };
 }
 
@@ -77,16 +83,18 @@ export interface SaleDraft {
 }
 
 /** Client-side pre-checks in the operator's words; the server re-validates everything. */
-export function validateSaleDraft(draft: SaleDraft, inventory: InventoryBalance[], currency: string, options: { cashShiftOpen?: boolean } = {}): string | undefined {
-  if (!draft.branchId) return "Choose the branch you are selling from.";
-  if (draft.lines.length === 0) return "Add at least one item to the sale.";
+export function validateSaleDraft(draft: SaleDraft, inventory: InventoryBalance[], currency: string, options: { cashShiftOpen?: boolean; t?: TFunction } = {}): string | undefined {
+  const t = options.t ?? createTranslator("en");
+  const name = (value: string) => options.t ? isolate(value) : value;
+  if (!draft.branchId) return t("salesWorkspace.chooseBranchHint");
+  if (draft.lines.length === 0) return t("salesWorkspace.addAtLeastOne");
   const unpriced = draft.lines.find((line) => !retailPriceOf(line.product, currency));
-  if (unpriced) return `${unpriced.product.name} has no selling price.`;
+  if (unpriced) return t("salesWorkspace.unpricedProduct", { name: name(unpriced.product.name) });
   const overStock = draft.lines.find((line) => line.quantity > availableFor(line.product.id, inventory));
-  if (overStock) return `Only ${availableFor(overStock.product.id, inventory)} ${overStock.product.name} left in stock.`;
-  if (draft.customer.kind === "guest" && (!draft.customer.fullName.trim() || !draft.customer.phone.trim())) return "Add the name and phone number for the receipt, or remove them.";
-  if ((draft.method === "cliq" || draft.method === "card") && !draft.reference.trim()) return `Type the ${CHECKOUT_PAYMENT_METHOD_LABELS[draft.method]} reference number.`;
-  if (draft.method === "cash" && options.cashShiftOpen === false) return "Open a cash shift at this branch before taking cash.";
+  if (overStock) return t("salesWorkspace.onlyStock", { count: availableFor(overStock.product.id, inventory), name: name(overStock.product.name) });
+  if (draft.customer.kind === "guest" && (!draft.customer.fullName.trim() || !draft.customer.phone.trim())) return t("salesWorkspace.guestRequired");
+  if ((draft.method === "cliq" || draft.method === "card") && !draft.reference.trim()) return t("salesWorkspace.referenceRequired", { method: checkoutPaymentMethodLabel(t, draft.method) });
+  if (draft.method === "cash" && options.cashShiftOpen === false) return t("salesWorkspace.openCashFirst");
   return undefined;
 }
 
@@ -95,7 +103,7 @@ export function buildCheckoutInput(draft: SaleDraft, idempotencyKey: string): Re
   return {
     branchId: draft.branchId,
     ...(draft.customer.kind === "member" ? { memberId: draft.customer.member.id } : {}),
-    ...(draft.customer.kind === "guest" ? { guest: { fullName: draft.customer.fullName.trim(), phone: draft.customer.phone.trim() } } : {}),
+    ...(draft.customer.kind === "guest" ? { guest: { fullName: draft.customer.fullName.trim(), phone: latinDigits(draft.customer.phone.trim()) } } : {}),
     lines: draft.lines.map((line) => ({ productId: line.product.id, quantity: line.quantity })),
     method: draft.method,
     ...(reference ? { externalReference: reference } : {}),

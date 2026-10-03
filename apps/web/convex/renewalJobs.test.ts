@@ -105,6 +105,11 @@ describe("renewal recovery job", () => {
     const deliveries = await t.run(async (ctx) => await ctx.db.query("renewalDeliveries").collect());
     expect(deliveries.find((delivery) => delivery.dedupeKey.includes("quiet-membership"))).toMatchObject({ status: "suppressed", suppressionReason: "Recipient opted out of renewal messages" });
     expect(deliveries.find((delivery) => delivery.dedupeKey.includes("unknown-membership"))).toMatchObject({ status: "suppressed", suppressionReason: "Explicit consent is required for renewal messages" });
+    const suppressedTimeline = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>));
+    expect(suppressedTimeline.find((event) => event.memberId === "unknown-member" && event.type === "renewal_message_suppressed")).toMatchObject({
+      body: "Explicit consent is required for renewal messages",
+      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { enum: "renewalReason", value: "Explicit consent is required for renewal messages" } } },
+    });
   });
 
   it("cancels the old term on an end-date change, creates the new term action, and keeps one call task", async () => {
@@ -121,6 +126,11 @@ describe("renewal recovery job", () => {
     expect(rowsAfterTermChange).toHaveLength(2);
     expect(rowsAfterTermChange.find((row) => row.membershipEndDate === "2026-08-26")).toMatchObject({ status: "cancelled", cancellationReason: "membership_term_changed" });
     expect(rowsAfterTermChange.find((row) => row.membershipEndDate === "2026-08-27")).toMatchObject({ status: "sandboxed" });
+    const cancellation = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>).find((event) => event.type === "renewal_journey_cancelled"));
+    expect(cancellation).toMatchObject({
+      body: "membership term changed",
+      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { enum: "renewalReason", value: "membership_term_changed" } } },
+    });
 
     expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-26") })).toMatchObject({ created: 1, queued: 1 });
     expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-26", 13) })).toMatchObject({ created: 0 });

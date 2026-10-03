@@ -1,5 +1,6 @@
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PasswordSignIn } from "./password-sign-in.client";
 
 const clerk = vi.hoisted(() => ({
@@ -180,4 +181,53 @@ describe("PasswordSignIn", () => {
 
     await waitFor(() => expect(finalize).toHaveBeenCalledOnce());
   });
+
+  it("accepts Arabic and Persian MFA digits in left-to-right boxes and sends Latin digits", async () => {
+    const signIn = {
+      status: "needs_client_trust", password: vi.fn().mockResolvedValue({ error: null }), finalize: vi.fn().mockResolvedValue({ error: null }),
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: { sendEmailCode: vi.fn().mockResolvedValue({ error: null }), verifyEmailCode: vi.fn().mockImplementation(async () => { signIn.status = "complete"; return { error: null }; }) },
+    };
+    clerk.hook = { signIn, errors: { fields: { identifier: null, password: null, code: null } }, fetchStatus: "idle" };
+    const { container } = render(<LocaleProvider initialLocale="ar"><PasswordSignIn /></LocaleProvider>);
+    fireEvent.change(container.querySelector("#login-email")!, { target: { value: "member@example.com" } });
+    fireEvent.change(container.querySelector("#login-password")!, { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "تسجيل الدخول" }));
+    await waitFor(() => expect(signIn.mfa.sendEmailCode).toHaveBeenCalledOnce());
+    const first = container.querySelector("#login-code-0")!;
+    expect(first.parentElement).toHaveAttribute("dir", "ltr");
+    fireEvent.change(first, { target: { value: "١٢٣۴۵۶" } });
+    expect(container.querySelector("#login-code-5")).toHaveValue("6");
+    fireEvent.submit(first.closest("form")!);
+    await waitFor(() => expect(signIn.mfa.verifyEmailCode).toHaveBeenCalledWith({ code: "123456" }));
+    expect(signIn.finalize).toHaveBeenCalledOnce();
+  });
+
+  it("translates a retained provider rejection on switch without repeating the request", async () => {
+    const password = vi.fn().mockResolvedValue({ error: { code: "form_password_incorrect", longMessage: "__clerk_ticket=private" } });
+    clerk.hook = { signIn: { status: "needs_first_factor", password, supportedSecondFactors: [], mfa: {}, finalize: vi.fn() }, errors: { fields: { identifier: null, password: null, code: null } }, fetchStatus: "idle" };
+    function Switch() { const { setLocale } = useLocale(); return <button onClick={() => setLocale("en")}>English</button>; }
+    const { container } = render(<LocaleProvider initialLocale="ar"><Switch /><PasswordSignIn /></LocaleProvider>);
+    fireEvent.change(container.querySelector("#login-email")!, { target: { value: "member@example.com" } });
+    fireEvent.change(container.querySelector("#login-password")!, { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "تسجيل الدخول" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("كلمة المرور غير صحيحة.");
+    fireEvent.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Your password is incorrect.");
+    expect(container.querySelector("#login-email")).toHaveValue("member@example.com");
+    expect(container.querySelector("#login-password")).toHaveValue("wrong-password");
+    expect(password).toHaveBeenCalledOnce();
+    expect(container).not.toHaveTextContent("private");
+  });
+
+});
+
+
+afterEach(() => {
+  localStorage.clear();
+  document.cookie = "rivet_locale=; path=/; max-age=0";
+  document.cookie = "rivet_ui_locale_v1=; path=/; max-age=0";
+  document.documentElement.lang = "en";
+  document.documentElement.dir = "ltr";
+  document.documentElement.classList.remove("rtl-font");
 });

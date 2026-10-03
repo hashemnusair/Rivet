@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSaasPlan, PlatformSnapshot } from "@/lib/api/GymOSApi";
 import { setApiForTests } from "@/lib/api/client";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { workspaceFeatureLabels } from "@/lib/platform/workspace-feature-labels";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import SubscriptionsPage from "./page";
 
 const state = vi.hoisted(() => ({ snapshot: undefined as PlatformSnapshot | undefined }));
@@ -20,9 +21,14 @@ vi.mock("@/lib/providers/experience-provider", () => ({
   }),
 }));
 
-function renderPage() {
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" data-testid="locale-switch" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>toggle-locale</button>;
+}
+
+function renderPage(initialLocale: "en" | "ar" = "en") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><SubscriptionsPage /></QueryClientProvider>);
+  return render(<LocaleProvider initialLocale={initialLocale}><LocaleSwitch /><QueryClientProvider client={client}><SubscriptionsPage /></QueryClientProvider></LocaleProvider>);
 }
 
 describe("pricing and entitlement catalog", () => {
@@ -71,6 +77,33 @@ describe("pricing and entitlement catalog", () => {
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_000 })]));
+  });
+
+  it("keeps an Arabic amount and Persian limit drafts exact while the operator changes language", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
+    const price = screen.getByRole("textbox", { name: "Monthly price (JOD)" });
+    const branches = screen.getByRole("textbox", { name: "Branches" });
+    const staff = screen.getByRole("textbox", { name: "Staff seats" });
+    const members = screen.getByRole("textbox", { name: "Member capacity" });
+    fireEvent.change(price, { target: { value: "٨٠٫٠٠١" } });
+    fireEvent.change(branches, { target: { value: "٢" } });
+    fireEvent.change(staff, { target: { value: "٨" } });
+    fireEvent.change(members, { target: { value: "٥٠٠" } });
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Arabic input review.");
+
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByRole("textbox", { name: "السعر الشهري (د.أ)" })).toHaveValue("٨٠٫٠٠١");
+    expect(screen.getByRole("textbox", { name: "عدد الفروع" })).toHaveValue("٢");
+    expect(screen.getByRole("textbox", { name: "مقاعد فريق العمل" })).toHaveValue("٨");
+    expect(screen.getByRole("textbox", { name: "سعة الأعضاء" })).toHaveValue("٥٠٠");
+    expect(screen.getByRole("textbox", { name: "سبب التغيير" })).toHaveValue("Arabic input review.");
+
+    await user.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_001, branches: 2, staff: 8, members: 500 })]));
   });
 
   it("edits canonical workspace capabilities and persists the selected module keys", async () => {

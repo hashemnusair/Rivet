@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "@/lib/i18n/provider";
+
 
 import {
   ArrowRight,
@@ -30,15 +32,15 @@ import { Button } from "@/components/ui/button";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { cn } from "@/lib/utils/cn";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
+import { useFormat } from "@/lib/i18n/format";
 import {
   ANNUAL_DISCOUNT_PERCENT,
   calculatePlanPrice,
-  formatJodMinor,
   pricingSignupHref,
-  publicPlanFeatures,
   resolvePublicPricingPlans,
   type BillingInterval,
 } from "@/lib/public/pricing";
+import { formatPublicJod, localizedPublicPlanFeatures, publicDestinationCopy } from "@/components/public/public-plan-copy";
 
 /** Hero entrance order, in ms — one cascade from the headline to the fact rail. */
 const HERO_STEP = {
@@ -52,6 +54,8 @@ const HERO_STEP = {
 } as const;
 
 export default function LandingPage() {
+  const { t, locale } = useLocale();
+  const f = useFormat();
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   const marketplaceGyms = useMarketplaceGyms();
   const pricingPlans = resolvePublicPricingPlans(saasPlans);
@@ -64,6 +68,7 @@ export default function LandingPage() {
   // in until it arrives.
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer.destination : null;
+  const signedInCopy = signedIn ? publicDestinationCopy(signedIn.area, t) : null;
   const signedOut = viewer.status === "signed-out";
 
   return (
@@ -91,27 +96,22 @@ export default function LandingPage() {
           <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
             <div>
               <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>
-                  Every member.
-                </span>
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>
-                  Every dinar.
-                </span>
+                {locale === "ar" ? <span className="block animate-rise-in leading-[1.25]">{t("publicCompletion.hero.promise")}</span> : <>
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>
+                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>
                 <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
                   {/* The rule is measured off the words, not a guessed width. */}
-                  <span className="relative inline-block">
-                    Every shift.
-                    <span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
+                  <span className="relative inline-block">{t("marketing.hero.line3")}<span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
                   </span>
                 </span>
+                </>}
               </h1>
 
               <p
                 className="mt-7 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
                 style={{ animationDelay: `${HERO_STEP.copy}ms` }}
               >
-                One record for the sales desk, reception, the cash drawer and the member&rsquo;s phone. Every trial, membership,
-                payment and check-in is logged under the person who handled it.
+                {t("publicCompletion.hero.body")}
               </p>
 
               <div
@@ -121,20 +121,19 @@ export default function LandingPage() {
                 {signedIn ? (
                   <Button asChild variant="signal" size="lg" className="group">
                     <Link href={signedIn.href}>
-                      {signedIn.verb}{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      {signedInCopy?.action}{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                     </Link>
                   </Button>
                 ) : signedOut ? (
                   <Button asChild variant="signal" size="lg" className="group">
-                    <Link href="/signup">
-                      Send a gym application{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                    <Link href="/signup">{t("marketing.actions.apply")}{" "}
+                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                     </Link>
                   </Button>
                 ) : null}
                 <Button asChild variant="secondary" size="lg">
-                  <Link href="#product">See how it works</Link>
+                  <Link href="#product">{t("marketing.actions.seeHow")}</Link>
                 </Button>
               </div>
 
@@ -142,9 +141,7 @@ export default function LandingPage() {
                 <p
                   className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
                   style={{ animationDelay: `${HERO_STEP.note}ms` }}
-                >
-                  Gym access is issued after application review and operator onboarding.
-                </p>
+                >{t("marketing.hero.accessNote")}</p>
               )}
 
               <dl
@@ -152,10 +149,10 @@ export default function LandingPage() {
                 style={{ animationDelay: `${HERO_STEP.facts}ms` }}
               >
                 {[
-                  ["Cash, card, CliQ", "A receipt for every payment"],
-                  ["Multi-branch", "One ledger across every floor"],
-                  ["Arabic and English", "Right-to-left ready"],
-                  ["Member QR", "One scan at the door"],
+                  [t("publicCompletion.hero.facts.payments"), t("publicCompletion.hero.facts.paymentsDetail")],
+                  [t("publicCompletion.hero.facts.branches"), t("publicCompletion.hero.facts.branchesDetail")],
+                  [t("publicCompletion.hero.facts.languages"), t("publicCompletion.hero.facts.languagesDetail")],
+                  [t("publicCompletion.hero.facts.entry"), t("publicCompletion.hero.facts.entryDetail")],
                 ].map(([term, detail]) => (
                   <div key={term} className="group relative">
                     <span className="absolute -top-7 left-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
@@ -202,19 +199,19 @@ export default function LandingPage() {
             <div className="grid gap-10 lg:grid-cols-[1fr_0.85fr] lg:items-start lg:gap-14">
               <div>
                 <Reveal still>
-                  <StoryMarker label="For members" drawn />
+                  <StoryMarker label={t("marketing.nav.forMembers")} drawn />
                 </Reveal>
                 <SectionIntro
                   id="member-title"
                   stacked
-                  title="Their side of the counter."
-                  description="One account finds gyms, books a free trial and holds every membership. At the door the member opens a short-lived entry QR, reception scans it, and the visit is on the record."
+                  title={t("marketing.member.title")}
+                  description={t("publicCompletion.landing.member.description")}
                 />
                 <ul className="mt-7 grid gap-3">
                   {[
-                    "Membership status, expiry, visits and balance at a glance",
-                    "An entry QR that expires on its own and refreshes in one tap",
-                    "Receipts that survive a lost phone, in Arabic or English",
+                    t("publicCompletion.landing.member.benefits.status"),
+                    t("publicCompletion.landing.member.benefits.qr"),
+                    t("publicCompletion.landing.member.benefits.receipts"),
                   ].map((item, index) => (
                     <li key={item}>
                       <Reveal delay={index * 80} className="group flex items-start gap-3 text-[14px] text-ink-2">
@@ -230,30 +227,27 @@ export default function LandingPage() {
                   {signedIn ? (
                     <Button asChild size="lg" className="group">
                       <Link href={signedIn.href}>
-                        {signedIn.verb}{" "}
-                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                        {signedInCopy?.action}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
                     </Button>
                   ) : signedOut ? (
                     <Button asChild size="lg" className="group">
-                      <Link href="/login/member/create">
-                        Create a free account{" "}
-                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      <Link href="/login/member/create">{t("marketing.actions.createFreeAccount")}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
                     </Button>
                   ) : null}
                   {!signedIn || signedIn.area === "member" ? (
                     <Button asChild variant="secondary" size="lg">
-                      <Link href="/customer/discover">Find a gym</Link>
+                      <Link href="/customer/discover">{t("marketing.actions.findGym")}</Link>
                     </Button>
                   ) : null}
                 </div>
                 {signedOut ? (
                   <p className="mt-4 text-[13px] text-ink-3">
-                    Already a member?{" "}
-                    <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
-                      Sign in
-                    </Link>
+                    {t("publicCompletion.landing.member.alreadyMember")}{" "}
+                    <Link href="/login/member" className="font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">{t("marketing.footer.signIn")}</Link>
                   </p>
                 ) : null}
               </div>
@@ -272,9 +266,9 @@ export default function LandingPage() {
                 <span className={cn(styles.gymsCorner, styles.gymsCornerBl)} aria-hidden />
                 <span className={cn(styles.gymsCorner, styles.gymsCornerBr)} aria-hidden />
                 <div className="flex flex-wrap items-end justify-between gap-4">
-                  <h3 className="text-[19px] font-semibold tracking-tight">Gyms on RIVET</h3>
+                  <h3 className="text-[19px] font-semibold tracking-tight">{t("publicCompletion.landing.member.liveGyms")}</h3>
                   <Link href="/customer/discover" className="text-[13.5px] font-medium text-ink-2 underline decoration-line-3 underline-offset-4 transition-colors hover:text-ink hover:decoration-ink">
-                    See every gym
+                    {t("publicCompletion.landing.member.seeEveryGym")}
                   </Link>
                 </div>
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -287,10 +281,9 @@ export default function LandingPage() {
                         <div className="relative h-24 overflow-hidden px-5 py-4 text-white" style={{ backgroundColor: gym.accent }}>
                           <div className="absolute inset-0 opacity-20 marketing-grid" />
                           <span className="relative flex items-center justify-between text-[12.5px] font-semibold tracking-[-0.01em]">
-                            {gym.shortName}
+                            <bdi dir="auto">{gym.shortName}</bdi>
                             <span className="flex items-center gap-1 text-[11.5px] font-medium">
-                              <Dumbbell className="size-3" /> {gym.trainers?.length ?? 0} PT
-                            </span>
+                              <Dumbbell className="size-3" /> {t("publicCompletion.landing.pricing.trainerCount", { count: gym.trainers?.length ?? 0, formatted: f.number(gym.trainers?.length ?? 0) })}</span>
                           </span>
                           <Dumbbell
                             className="absolute bottom-3 end-4 size-8 opacity-30 transition-transform duration-500 ease-out group-hover:-rotate-12 group-hover:scale-110"
@@ -298,15 +291,15 @@ export default function LandingPage() {
                           />
                         </div>
                         <div className="flex flex-1 flex-col p-5">
-                          <p className="text-[12px] font-medium text-ink-3">{gym.category}</p>
-                          <h4 className="mt-1.5 text-[19px] font-semibold tracking-tight">{gym.name}</h4>
-                          <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2">{gym.tagline}</p>
+                          <p className="text-[12px] font-medium text-ink-3" dir="auto">{gym.category}</p>
+                          <h4 className="mt-1.5 text-[19px] font-semibold tracking-tight" dir="auto">{gym.name}</h4>
+                          <p className="mt-2 line-clamp-2 text-[12.5px] leading-relaxed text-ink-2" dir="auto">{gym.tagline}</p>
                           <div className="mt-auto flex items-center justify-between border-t border-line pt-4">
                             <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
                               <MapPin className="size-3.5" /> {gym.areas.join(" · ")}
                             </span>
                             <span className="flex items-center gap-1.5 text-[12px] font-medium">
-                              JD {gym.fromPriceMinor / 1000}+
+                              {t("publicCompletion.landing.pricing.fromPrice", { amount: formatPublicJod(gym.fromPriceMinor, f, locale) })}
                               <ArrowRight className="size-3.5 -translate-x-1 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
                             </span>
                           </div>
@@ -328,25 +321,25 @@ export default function LandingPage() {
           className={`${styles.coverSheet} ${styles.paperSheet} ${styles.layer8} ${styles.snapStart} bg-sunken px-5 py-20 sm:px-8 lg:px-12 lg:py-24`}
         >
           <div className="mx-auto max-w-[1344px]">
-            <StoryMarker label="Pricing" />
+            <StoryMarker label={t("marketing.pricing.eyebrow")} />
             <div className="mt-8">
               <SectionIntro
                 id="pricing-title"
-                title="One branch or every branch. Same system."
-                description="Every plan includes the member app, staff permissions, audit history and the full revenue loop. Pay monthly, or once a year at 20% off."
+                title={t("publicCompletion.landing.pricing.title")}
+                description={t("publicCompletion.landing.pricing.description", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}
               />
             </div>
             {experienceStatus === "error" && saasPlans.length === 0 ? (
               <div className="mt-8">
-                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle="Showing launch pricing" emptyDescription="The live catalog is temporarily unavailable. These prices are the approved launch defaults." />
+                <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("publicCompletion.landing.pricing.launchTitle")} emptyDescription={t("publicCompletion.landing.pricing.launchDescription")} />
               </div>
             ) : null}
             <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">Billing</p>
-                <p className="mt-1 text-[12px] text-ink-3">Same features either way. Annual is paid once and saves {ANNUAL_DISCOUNT_PERCENT}%.</p>
+                <p className="text-[13.5px] font-semibold tracking-[-0.01em]">{t("publicCompletion.landing.pricing.billing")}</p>
+                <p className="mt-1 text-[12px] text-ink-3">{t("publicCompletion.landing.pricing.sameFeatures", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}</p>
               </div>
-              <div role="tablist" aria-label="Billing interval" className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
+              <div role="tablist" aria-label={t("publicCompletion.landing.pricing.billingInterval")} className="inline-flex rounded-md border border-line bg-surface p-1 shadow-sm">
                 {(["monthly", "annual"] as const).map((interval) => {
                   const selected = billingInterval === interval;
                   return (
@@ -359,7 +352,7 @@ export default function LandingPage() {
                       onClick={() => setBillingInterval(interval)}
                       className={`min-h-10 rounded px-4 py-2 text-[12.5px] font-medium transition-colors ${selected ? "bg-ink text-paper" : "text-ink-3 hover:text-ink"}`}
                     >
-                      {interval === "monthly" ? "Monthly" : "Annual · Save 20%"}
+                      {interval === "monthly" ? t("publicCompletion.landing.pricing.monthly") : t("publicCompletion.landing.pricing.annualSave", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}
                     </button>
                   );
                 })}
@@ -368,7 +361,7 @@ export default function LandingPage() {
             <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {pricingPlans.map((plan, index) => {
                   const price = calculatePlanPrice(plan, billingInterval);
-                  const features = publicPlanFeatures(plan);
+                  const features = localizedPublicPlanFeatures(plan, f, t);
                   const isEnterprise = plan.name === "Enterprise";
                   const isNight = plan.tone === "night";
                   const isSignal = plan.tone === "signal";
@@ -386,25 +379,23 @@ export default function LandingPage() {
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-[15px] font-semibold tracking-[-0.01em]">{plan.name}</p>
                         {isSignal ? (
-                          <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">
-                            Most popular
-                          </span>
+                          <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">{t("marketing.pricing.mostPopular")}</span>
                         ) : isEnterprise ? (
                           <span className="rounded-sm border border-night-line px-2 py-1 text-[11px] font-medium leading-none text-night-ink-2">
-                            Multi-site
+                            {t("publicCompletion.landing.pricing.multiSite")}
                           </span>
                         ) : null}
                       </div>
                       <p className="mt-6">
-                        <span className="text-[34px] font-semibold tabular">JD {formatJodMinor(price.effectiveMonthlyMinor)}</span>
-                        <span className={isNight ? "text-night-ink-3" : "text-ink-3"}> / month</span>
+                        <span className="text-[34px] font-semibold tabular">{formatPublicJod(price.effectiveMonthlyMinor, f, locale)}</span>
+                        <span className={isNight ? "text-night-ink-3" : "text-ink-3"}>{" "}{t("marketing.pricing.perMonth")}</span>
                       </p>
                       {billingInterval === "annual" ? (
                         <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
-                          JD {formatJodMinor(price.annualTotalMinor)} billed annually · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>Save {ANNUAL_DISCOUNT_PERCENT}%</strong>
+                          {formatPublicJod(price.annualTotalMinor, f, locale)} {t("publicCompletion.landing.pricing.billedAnnually")} · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>{t("publicCompletion.landing.pricing.savePercent", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}</strong>
                         </div>
                       ) : (
-                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>Billed monthly · cancel before renewal</div>
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>{t("publicCompletion.landing.pricing.billedMonthlyCancel")}</div>
                       )}
                       <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
                         {features.map((line) => (
@@ -422,7 +413,7 @@ export default function LandingPage() {
                             size="lg"
                             className="w-full"
                           >
-                            <Link href={pricingSignupHref(plan.name, billingInterval)}>Send gym application</Link>
+                            <Link href={pricingSignupHref(plan.name, billingInterval)}>{t("marketing.actions.applyShort")}</Link>
                           </Button>
                         </div>
                       )}
@@ -449,15 +440,15 @@ export default function LandingPage() {
             <div className="absolute inset-y-0 start-[76%] w-px bg-night-ink" />
           </div>
           <div className="relative mx-auto max-w-[1344px]">
-            <StoryMarker label="Next step" dark />
+            <StoryMarker label={t("publicCompletion.landing.contact.nextStep")} dark />
             <div className="mt-10 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
               <Reveal>
                 <div>
                   <h2 id="contact-title" className="max-w-xl text-[clamp(2.4rem,4.6vw,4.1rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
-                    Bring RIVET to your gym.
+                    {t("publicCompletion.landing.contact.title")}
                   </h2>
                   <p className="mt-6 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
-                    Send an application with your branches and how you run the desk. We review it, then set up your workspace with you.
+                    {t("publicCompletion.landing.contact.body")}
                   </p>
                 </div>
               </Reveal>
@@ -466,15 +457,14 @@ export default function LandingPage() {
                   {signedIn ? (
                     <Button asChild variant="signal" size="lg" className="group">
                       <Link href={signedIn.href}>
-                        {signedIn.verb}{" "}
-                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                        {signedInCopy?.action}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
                     </Button>
                   ) : (
                     <Button asChild variant="signal" size="lg" className="group">
-                      <Link href="/signup">
-                        Send a gym application{" "}
-                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                      <Link href="/signup">{t("publicCompletion.header.applyAccess")}{" "}
+                        <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
                     </Button>
                   )}

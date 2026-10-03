@@ -61,7 +61,7 @@ describe("branded email", () => {
     expect(arabic.html).toContain("IBM Plex Sans Arabic");
     expect(arabic.html).toContain("/brand/rivet-lockup.png");
     expect(arabic.text).toContain("RIVET · عمّان، الأردن");
-    expect(arabic.text).toContain("الدعم 09:00–21:00 بتوقيت عمّان، من السبت إلى الخميس");
+    expect(arabic.text).toContain("الدعم من 9:00 ص إلى 9:00 م بتوقيت عمّان، من السبت إلى الخميس");
   });
 
   it("is light in every client and never carries a dark palette", () => {
@@ -126,6 +126,9 @@ describe("branded email", () => {
     const { html } = renderBrandedEmail("s", { ...base, rows: [{ label: "Amount", value: "JOD 129.133", strong: true }], button: { label: "View invoice", href: "https://www.rivetjo.com" } });
     expect(html).toContain('<meta name="viewport" content="width=device-width,initial-scale=1">');
     expect(html).toContain("@media only screen and (max-width:480px)");
+    expect(html).toContain('.rv-frame{width:100%!important;max-width:100%!important;border-left:0!important;border-right:0!important}');
+    expect(html).toContain('width="600" class="rv-frame"');
+    expect(html).toContain('style="width:600px;max-width:100%;');
     expect(html).toContain(".rv-card td{display:block!important;width:100%!important");
     expect(html).toContain(".rv-button,.rv-button a{display:block!important;width:100%!important");
     expect(html).toContain('class="rv-muted rv-label"');

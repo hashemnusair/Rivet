@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
+import { useLocale } from "@/lib/i18n/provider";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 import { ContextLabel } from "@/components/ui/typography";
@@ -32,6 +33,7 @@ export function navIsActive(href: string, pathname: string): boolean {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { t, dir } = useLocale();
   const { sidebarCollapsed, toggleSidebar, session } = useApp();
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
@@ -43,7 +45,7 @@ export function Sidebar() {
         "night-surface fixed inset-y-0 start-0 z-40 hidden flex-col bg-night text-night-ink transition-[width] duration-200 ease-out lg:flex",
         sidebarCollapsed ? "w-[60px]" : "w-[228px]",
       )}
-      aria-label="Primary navigation"
+      aria-label={t("nav.sidebar.primary")}
     >
       {/* Brand — the workspace wears the gym's own logo when a brand kit sets
           one, with a quiet "Operated by RIVET" credit underneath. */}
@@ -53,14 +55,14 @@ export function Sidebar() {
         <Link
           href="/dashboard"
           className={cn("flex h-full shrink-0 flex-col justify-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[140px]")}
-          aria-label={`${brandName} home`}
+          aria-label={t("nav.sidebar.home", { name: brandName })}
         >
           {sidebarCollapsed ? (
-            <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+            <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
             <>
-              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : "RIVET"} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">Operated by RIVET™</span> : null}
+              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
             </>
           )}
         </Link>
@@ -73,10 +75,10 @@ export function Sidebar() {
             const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
             if (visible.length === 0) return null;
             return (
-              <div key={section.label} className="mb-4">
+              <div key={section.labelKey} className="mb-4">
                 <div className="relative h-5">
                   {!sidebarCollapsed ? (
-                    <ContextLabel tone="night" className="truncate whitespace-nowrap px-3.5">{section.label}</ContextLabel>
+                    <ContextLabel tone="night" className="truncate whitespace-nowrap px-3.5">{t(section.labelKey)}</ContextLabel>
                   ) : (
                     <div aria-hidden className="absolute inset-x-2 top-2 h-px bg-night-line" />
                   )}
@@ -98,7 +100,7 @@ export function Sidebar() {
                         <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
                           <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />
                         </span>
-                        {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{item.label}</span> : null}
+                        {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span> : null}
                       </Link>
                     );
                     return (
@@ -106,7 +108,7 @@ export function Sidebar() {
                         {sidebarCollapsed ? (
                           <Tooltip>
                             <TooltipTrigger asChild>{link}</TooltipTrigger>
-                            <TooltipContent side="right">{item.label}</TooltipContent>
+                            <TooltipContent side={dir === "rtl" ? "left" : "right"}>{t(item.labelKey)}</TooltipContent>
                           </Tooltip>
                         ) : (
                           link
@@ -126,13 +128,13 @@ export function Sidebar() {
         <button
           type="button"
           onClick={toggleSidebar}
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={sidebarCollapsed ? t("nav.sidebar.expandSidebar") : t("nav.sidebar.collapseSidebar")}
           className="flex h-8 min-w-0 w-full items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
         >
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
             {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
           </span>
-          {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">Collapse</span> : null}
+          {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t("nav.sidebar.collapse")}</span> : null}
         </button>
       </div>
     </aside>

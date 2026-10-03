@@ -1,18 +1,9 @@
-/**
- * A tiny, dependency-free PDF writer.
- *
- * RIVET emails the signed subscription agreement as a real PDF, so the file
- * has to be produced on the server. Convex functions run in a web-standard
- * JavaScript runtime with no npm PDF library available, and this module has
- * no Convex imports either, so the browser builds byte-identical files for
- * the "Download PDF" action.
- *
- * Scope is deliberately small: three embedded TrueType faces (Manrope
- * regular and semibold, IBM Plex Mono), WinAnsi text, and JPEG images. That
- * covers a Latin contract with a signature in the identity's own type. Text
- * outside WinAnsi, Arabic included, is replaced with "?"; the app and the
- * email body still show it correctly.
+/** Shared synchronous PDF renderer for Convex attachments and browser downloads.
+ * Latin documents retain the established fonts and layout. Unicode text uses
+ * embedded IBM Plex Sans Arabic, OpenType shaping and the Unicode bidi algorithm.
+ * Original text is preserved through ToUnicode maps and /ActualText.
  */
+import { isolateWrappedLines, requiresUnicode, shapeUnicode, unicodeObjects, utf16Hex, type PositionedGlyph, type UnicodeFace } from "./pdfUnicode";
 
 /** A4 in PostScript points. */
 export const PDF_PAGE_WIDTH = 595.28;
@@ -63,6 +54,8 @@ export type PdfBlock =
   | { type: "keep"; blocks: PdfBlock[] };
 
 export interface PdfDocumentOptions {
+  /** Presentation only; never changes signed historical bytes or source facts. */
+  locale?: "en" | "ar";
   title: string;
   author: string;
   subject?: string;
@@ -94,6 +87,7 @@ const WIN_ANSI_EXTRAS: Readonly<Record<string, number>> = {
 
 /** Measured from the embedded face, so wrapping is exact for the type used. */
 export function widthOf(text: string, font: PdfFont, size: number): number {
+  if (requiresUnicode(text)) return shapeUnicode(text, font).width * size;
   const face: PdfFontFace = PDF_FACES[FACE_KEYS[font]];
   let total = 0;
   for (const byte of encodeWinAnsi(text)) total += face.widths[byte - 32] ?? face.widths[31] ?? 500;
@@ -116,6 +110,7 @@ function encodeWinAnsi(text: string): number[] {
 
 /** A PDF literal string: escape the delimiters, keep everything else as bytes. */
 function pdfString(text: string): number[] {
+  if (requiresUnicode(text)) return bytes(`<${utf16Hex(text, true)}>`);
   const out: number[] = [40];
   for (const byte of encodeWinAnsi(text)) {
     if (byte === 40 || byte === 41 || byte === 92) out.push(92);
@@ -223,22 +218,24 @@ function rgb(hex: string): string {
 function wrap(text: string, font: PdfFont, size: number, maxWidth: number): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split("\n")) {
+    const paragraphLines: string[] = [];
     let current = "";
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
       const candidate = current ? `${current} ${word}` : word;
       if (widthOf(candidate, font, size) <= maxWidth) { current = candidate; continue; }
-      if (current) lines.push(current);
+      if (current) paragraphLines.push(current);
       // An unbreakable run, such as a 64-character fingerprint, is split by
       // character so it never runs past the margin.
       if (widthOf(word, font, size) <= maxWidth) { current = word; continue; }
       let chunk = "";
       for (const character of word) {
-        if (widthOf(chunk + character, font, size) > maxWidth) { lines.push(chunk); chunk = character; }
+        if (widthOf(chunk + character, font, size) > maxWidth) { paragraphLines.push(chunk); chunk = character; }
         else chunk += character;
       }
       current = chunk;
     }
-    lines.push(current);
+    paragraphLines.push(current);
+    lines.push(...isolateWrappedLines(paragraph, paragraphLines));
   }
   return lines.length > 0 ? lines : [""];
 }
@@ -407,6 +404,8 @@ function bytes(text: string): number[] {
 export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint8Array {
   const pages: number[][] = [];
   const images: DrawnImage[] = [];
+  const usedUnicode = new Map<UnicodeFace, Map<number, PositionedGlyph>>();
+  const reflected = (x: number, width: number) => options.locale === "ar" ? PDF_PAGE_WIDTH - x - width : x;
   // The footer sits 42pt from the foot of the page; content stops above it.
   const FOOTER_RULE = 42;
   const bottom = PDF_MARGIN;
@@ -418,15 +417,31 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
   const stroke = (y: number, colour = HAIRLINE) => push(`${rgb(colour)} RG 0.7 w ${PDF_MARGIN} ${y.toFixed(2)} m ${(PDF_PAGE_WIDTH - PDF_MARGIN).toFixed(2)} ${y.toFixed(2)} l S\n`);
   const text = (value: string, x: number, y: number, font: PdfFont, size: number, colour = INK, tracking = 0) => {
     if (!value) return;
+    x = reflected(x, widthOf(value, font, size));
+    if (requiresUnicode(value)) {
+      const shaped = shapeUnicode(value, font);
+      let used = usedUnicode.get(shaped.face);
+      if (!used) { used = new Map(); usedUnicode.set(shaped.face, used); }
+      const resource = shaped.face === "bold" ? "FU2" : "FU1";
+      push(`/Span << /ActualText <${utf16Hex(value, true)}> >> BDC\n${rgb(colour)} rg\n`);
+      for (const glyph of shaped.glyphs) {
+        used.set(glyph.id, glyph);
+        push(`BT /${resource} ${size} Tf 1 0 0 1 ${(x + glyph.x * size).toFixed(3)} ${(y + glyph.y * size).toFixed(3)} Tm <${glyph.id.toString(16).padStart(4, "0")}> Tj ET\n`);
+      }
+      push("EMC\n");
+      return;
+    }
     push(`${rgb(colour)} rg BT /${FONT_RESOURCE[font]} ${size} Tf ${tracking ? `${tracking.toFixed(2)} Tc ` : ""}1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm `);
     content.push(...pdfString(value));
     push(` Tj ET\n${tracking ? "BT 0 Tc ET\n" : ""}`);
   };
   const box = (x: number, y: number, width: number, height: number, fill?: string, border?: string) => {
+    x = reflected(x, width);
     if (fill) push(`${rgb(fill)} rg ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re f\n`);
     if (border) push(`${rgb(border)} RG 0.7 w ${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re S\n`);
   };
   const image = (drawn: DrawnImage, x: number, y: number) => {
+    x = reflected(x, drawn.drawWidth);
     const index = images.push(drawn) - 1;
     push(`q ${drawn.drawWidth.toFixed(2)} 0 0 ${drawn.drawHeight.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im${index} Do Q\n`);
   };
@@ -520,15 +535,23 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
   const fits = (height: number) => cursor - height >= bottom;
 
   startPage(0);
-  for (const block of blocks) {
+  for (const [blockIndex, block] of blocks.entries()) {
     const items = itemsFor(block);
     if (items.length === 0) continue;
+    const repeatedHeader = block.type === "table" ? itemsFor({ ...block, rows: [] }).slice(0, -1) : [];
+    // A heading travels with the first two body lines; a table heading with its first row.
+    const nextBody = block.type === "heading" && blocks[blockIndex + 1] ? itemsFor(blocks[blockIndex + 1]!).slice(0, 2) : [];
+    const opening = block.type === "heading" ? [...items, ...nextBody] : repeatedHeader.length ? items.slice(0, repeatedHeader.length + 1) : [];
+    if (opening.length && !fits(opening.reduce((sum, item) => sum + item.height, 0))) { pages.push(content); startPage(pages.length); }
     if (block.type === "keep" || block.type === "image" || block.type === "panel" || block.type === "frame") {
       const total = items.reduce((sum, item) => sum + item.height, 0);
       if (!fits(total) && cursor < PDF_PAGE_HEIGHT - PDF_MARGIN * 2) { pages.push(content); startPage(pages.length); }
     }
-    for (const item of items) {
-      if (!fits(item.height)) { pages.push(content); startPage(pages.length); }
+    for (const [itemIndex, item] of items.entries()) {
+      if (!fits(item.height)) {
+        pages.push(content); startPage(pages.length);
+        if (itemIndex >= repeatedHeader.length) for (const header of repeatedHeader) draw(header);
+      }
       draw(item);
     }
   }
@@ -538,7 +561,7 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
     const saved = content;
     content = [];
     stroke(FOOTER_RULE);
-    const page = `PAGE ${index + 1} OF ${total}`;
+    const page = options.locale === "ar" ? `الصفحة ${index + 1} من ${total}` : `PAGE ${index + 1} OF ${total}`;
     text(page, PDF_MARGIN, FOOTER_RULE - 12, "mono", 8, INK_MUTED, 0.48);
     if (options.footer) text(options.footer, PDF_PAGE_WIDTH - PDF_MARGIN - widthOf(options.footer, "mono", 8), FOOTER_RULE - 12, "mono", 8, INK_MUTED);
     if (options.footerPlaceholder) text(options.footerPlaceholder, PDF_MARGIN, FOOTER_RULE - 22, "mono", 8, INK_DISABLED);
@@ -547,13 +570,18 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
     return drawn;
   };
 
+  // Render footers before allocating fonts: the only Arabic on an otherwise
+  // numeric page may be its footer. Resource IDs must include that face.
+  const pageStreams = pages.map((page, index) => [...page, ...footerFor(index, pages.length)]);
+  const unicodeFaces = [...usedUnicode.entries()];
+  const unicodeObjectCount = unicodeFaces.length * 5;
   const objects: number[][] = [];
   const add = (body: number[]) => objects.push(body) - 1;
   // Objects are written in order: catalog, pages, nine font objects (three
   // faces, each with a descriptor and its program), one per image, then a
   // page and its content stream per page. /Kids must name the page objects,
   // so the first page lands right after the last image.
-  const pageObjectIds = pages.map((_, index) => 12 + images.length + index * 2);
+  const pageObjectIds = pages.map((_, index) => 12 + unicodeObjectCount + images.length + index * 2);
   const created = options.createdAt ?? new Date();
   const stamp = `D:${created.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")}`;
 
@@ -568,14 +596,17 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
     const program = decodeBase64(face.base64);
     add([...bytes(`<< /Length ${program.length} /Length1 ${program.length} >>\nstream\n`), ...program, ...bytes("\nendstream")]);
   });
-  const IMAGE_BASE = 3 + faces.length * 3;
+  unicodeFaces.forEach(([face, glyphs], index) => {
+    for (const object of unicodeObjects(face, 12 + index * 5, glyphs)) add(Array.from(object));
+  });
+  const unicodeResources = unicodeFaces.map(([face], index) => `/${face === "bold" ? "FU2" : "FU1"} ${12 + index * 5} 0 R`).join(" ");
+  const IMAGE_BASE = 3 + faces.length * 3 + unicodeObjectCount;
   for (const image of images) {
     const header = bytes(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.data.length} >>\nstream\n`);
     add([...header, ...image.data, ...bytes("\nendstream")]);
   }
-  const resources = `<< /Font << /F1 3 0 R /F2 6 0 R /F3 9 0 R >>${images.length > 0 ? ` /XObject << ${images.map((_, index) => `/Im${index} ${IMAGE_BASE + index} 0 R`).join(" ")} >>` : ""} >>`;
-  pages.forEach((page, index) => {
-    const stream = [...page, ...footerFor(index, pages.length)];
+  const resources = `<< /Font << /F1 3 0 R /F2 6 0 R /F3 9 0 R ${unicodeResources} >>${images.length > 0 ? ` /XObject << ${images.map((_, index) => `/Im${index} ${IMAGE_BASE + index} 0 R`).join(" ")} >>` : ""} >>`;
+  pageStreams.forEach((stream, index) => {
     add(bytes(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources ${resources} /Contents ${pageObjectIds[index]! + 1} 0 R >>`));
     add([...bytes(`<< /Length ${stream.length} >>\nstream\n`), ...stream, ...bytes("\nendstream")]);
   });
@@ -593,7 +624,10 @@ export function renderPdf(blocks: PdfBlock[], options: PdfDocumentOptions): Uint
   const offsets: number[] = [];
   objects.forEach((body, index) => {
     offsets.push(file.length);
-    file.push(...bytes(`${index + 1} 0 obj\n`), ...body, ...bytes("\nendobj\n"));
+    file.push(...bytes(`${index + 1} 0 obj\n`));
+    // Full Unicode fonts exceed JavaScript's function-argument limit.
+    for (const byte of body) file.push(byte);
+    file.push(...bytes("\nendobj\n"));
   });
   const xref = file.length;
   file.push(...bytes(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`));

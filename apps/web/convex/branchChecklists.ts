@@ -29,7 +29,7 @@ function optionalText(input: unknown): string | undefined {
 
 function requiredText(input: unknown, field: string, actor: ActorContext): string {
   const value = optionalText(input);
-  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { correlationId: actor.correlationId });
+  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { message: { key: "apiErrors.fieldRequired", params: { field: String(field) } }, correlationId: actor.correlationId });
   return value;
 }
 
@@ -159,7 +159,7 @@ function runView(run: Run, branchPublic: string, timezone: string): Data {
 
 function validateItems(input: unknown, actor: ActorContext): Template["items"] {
   if (!Array.isArray(input) || input.length === 0) domainError("VALIDATION_ERROR", "A checklist needs at least one item.", { correlationId: actor.correlationId });
-  if (input.length > MAX_ITEMS) domainError("VALIDATION_ERROR", `A checklist holds at most ${MAX_ITEMS} items.`, { correlationId: actor.correlationId });
+  if (input.length > MAX_ITEMS) domainError("VALIDATION_ERROR", `A checklist holds at most ${MAX_ITEMS} items.`, { message: { key: "apiErrors.checklistLimit", params: { maximum: String(MAX_ITEMS) } }, correlationId: actor.correlationId });
   return input.map((raw, index) => {
     const value = (raw ?? {}) as Data;
     return {
@@ -270,7 +270,7 @@ export async function checklistsQuery(ctx: ReadContext, actor: ActorContext, ope
     }
 
     default:
-      domainError("VALIDATION_ERROR", `Unknown checklist operation: ${operation}`, { correlationId: actor.correlationId });
+      domainError("VALIDATION_ERROR", `Unknown checklist operation: ${operation}`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -414,7 +414,7 @@ export async function checklistsMutation(ctx: MutationCtx, actor: ActorContext, 
     }
 
     default:
-      domainError("VALIDATION_ERROR", `Unknown checklist operation: ${operation}`, { correlationId: actor.correlationId });
+      domainError("VALIDATION_ERROR", `Unknown checklist operation: ${operation}`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 

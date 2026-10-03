@@ -1,15 +1,17 @@
 "use client";
+import { useT, useLocale } from "@/lib/i18n/provider";
 
+import { useFormat } from "@/lib/i18n/format";
+import { isolate } from "@/lib/i18n/bidi";
 import { Boxes } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
-import { isApiError } from "@/lib/api/errors";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import type { InventoryBalance, OrganizationSettings, WorkspaceAccess } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { usePermissions } from "@/lib/providers/app-providers";
-import { toMajorString } from "@/lib/utils/money";
 import { PageHeader } from "@/components/shared/chrome";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +32,9 @@ import { useIsDesktop } from "./use-is-desktop";
  * sale and records stock, receipt, shift, audit and accounting facts together.
  */
 export function CheckoutWorkspace() {
+  const t = useT();
+  const { locale } = useLocale();
+  const f = useFormat();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const searchParams = useSearchParams();
@@ -39,12 +44,13 @@ export function CheckoutWorkspace() {
   const [method, setMethod] = useState<CheckoutPaymentMethod>("cash");
   const [reference, setReference] = useState("");
   const [productSearch, setProductSearch] = useState("");
-  const [validationError, setValidationError] = useState<string>();
-  const [serverError, setServerError] = useState<string>();
+  const [showValidation, setShowValidation] = useState(false);
+  const [serverCause, setServerError] = useState<unknown>();
+  const serverError = serverCause ? (isApiError(serverCause) ? localizeApiError(serverCause, locale).message : t("salesWorkspace.saleFailed")) : undefined;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [completed, setCompleted] = useState<RetailCheckoutResult | null>(null);
   const submitting = useRef(false);
-  const resetSale = () => { setCart({}); setCustomer({ kind: "walk_in" }); setReference(""); setValidationError(undefined); setServerError(undefined); setSheetOpen(false); };
+  const resetSale = () => { setCart({}); setCustomer({ kind: "walk_in" }); setReference(""); setShowValidation(false); setServerError(undefined); setSheetOpen(false); };
   const { branches, concreteBranchId, chooseBranch, branchChanging, branchSelectionError, session } = useCheckoutBranch(resetSale);
   const currency = session?.organization.currency ?? "JOD";
   const branchName = branches.find((branch) => branch.id === concreteBranchId)?.name;
@@ -104,30 +110,30 @@ export function CheckoutWorkspace() {
       void invalidate([qk.operations(), qk.members(), qk.receipt(result.receiptId), qk.currentShift(concreteBranchId)]);
     },
     onError: (error) => {
-      setServerError(isApiError(error) ? error.message : "The sale could not be completed. Check stock and try again.");
+      setServerError(error);
       if (isApiError(error) && error.code === "NO_OPEN_SHIFT") void shiftQuery.refetch();
     },
     onSettled: () => { submitting.current = false; },
   });
 
-  if (!can("members.read")) return <ForbiddenState description="Checkout needs access to members. Ask the owner or a manager." />;
-  if (!can("payments.collect")) return <ForbiddenState description="Checkout needs access to take payments. Ask the owner or a manager." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title="Checkout" description="Loading…" /><Skeleton className="h-48 w-full" /></div>;
+  if (!can("members.read")) return <ForbiddenState description={t("salesWorkspace.needMemberAccess")} />;
+  if (!can("payments.collect")) return <ForbiddenState description={t("salesWorkspace.needPaymentAccess")} />;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title={t("nav.item.checkout")} description={t("common.state.loading")} /><Skeleton className="h-48 w-full" /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => void workspaceQuery.refetch()} />;
-  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Checkout is not included in your plan" description="The Growth plan and above include stock, checkout, suppliers and purchase orders." className="mt-4" />;
-  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Checkout is turned off" description="Ask the gym owner to turn on stock and checkout." className="mt-4" />;
+  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title={t("salesWorkspace.planExcluded")} description={t("salesWorkspace.planHint")} className="mt-4" />;
+  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title={t("salesWorkspace.checkoutDisabled")} description={t("salesWorkspace.checkoutDisabledHint")} className="mt-4" />;
 
   const branchPicker = branches.length > 1 ? (
     <div className="flex flex-wrap items-center gap-2">
-      <label htmlFor="checkout-branch" className="text-[12px] font-medium text-ink-2">Selling from</label>
+      <label htmlFor="checkout-branch" className="text-[12px] font-medium text-ink-2">{t("salesWorkspace.sellingFrom")}</label>
       <Select value={concreteBranchId} onValueChange={chooseBranch} disabled={branchChanging}>
-        <SelectTrigger id="checkout-branch" className="h-11 w-56 sm:h-9" aria-label="Checkout branch"><SelectValue placeholder="Choose a branch" /></SelectTrigger>
+        <SelectTrigger id="checkout-branch" className="h-11 w-56 sm:h-9" aria-label={t("salesWorkspace.checkoutBranch")}><SelectValue placeholder={t("renewFlow.adjust.transfer.chooseBranch")} /></SelectTrigger>
         <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
       </Select>
       {branchSelectionError ? <p className="basis-full text-[12px] text-danger" role="alert">{branchSelectionError}</p> : null}
     </div>
   ) : null;
-  const header = <PageHeader title="Checkout" description={branchName ? `Selling from ${branchName}.` : "Sell stock at the desk."} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes /> Stock & purchasing</Link></Button>} />;
+  const header = <PageHeader title={t("nav.item.checkout")} description={branchName ? t("salesWorkspace.sellingBranch", { branch: isolate(branchName) }) : t("salesWorkspace.sellDesk")} actions={<Button asChild variant="secondary" size="sm"><Link href={concreteBranchId ? `/operations?branch=${encodeURIComponent(concreteBranchId)}` : "/operations"}><Boxes />{" "}{t("nav.item.operations")}</Link></Button>} />;
 
   if (completed) {
     return (
@@ -143,7 +149,7 @@ export function CheckoutWorkspace() {
       <div className="mx-auto max-w-6xl space-y-5" data-testid="retail-checkout">
         {header}
         {branchPicker}
-        <EmptyState title={branches.length ? "Choose a branch to check out" : "No branch available"} description={branches.length ? "Choose the branch you are selling from." : "Ask the gym owner to set up a branch first."} />
+        <EmptyState title={branches.length ? t("salesWorkspace.chooseBranch") : t("salesWorkspace.noBranch")} description={branches.length ? t("salesWorkspace.chooseBranchHint") : t("salesWorkspace.addBranchHint")} />
       </div>
     );
   }
@@ -153,21 +159,22 @@ export function CheckoutWorkspace() {
   const submit = () => {
     if (submitting.current || checkout.isPending) return;
     setServerError(undefined);
-    const problem = validateSaleDraft(draft, inventory, currency, { cashShiftOpen });
-    setValidationError(problem);
+    const problem = validateSaleDraft(draft, inventory, currency, { cashShiftOpen, t });
+    setShowValidation(Boolean(problem));
     if (problem) return;
     submitting.current = true;
     checkout.mutate(buildCheckoutInput(draft, idempotencyKey));
   };
   const cashBlocked = method === "cash" && cashShiftOpen === false;
 
+  const validationError = showValidation ? validateSaleDraft(draft, inventory, currency, { cashShiftOpen, t }) : undefined;
   const salePanel = (
     <>
       <CustomerAttach value={customer} onChange={setCustomer} branchId={concreteBranchId} />
       <PaymentSection method={method} onMethod={(next) => { setMethod(next); if (next === "cash") setReference(""); }} enabledMethods={enabledMethods} reference={reference} onReference={setReference} branchName={branchName} cashShift={{ known: canSeeShift, loading: shiftQuery.isLoading, error: shiftQuery.error ?? undefined, shift: shiftQuery.data ?? null, onRetry: () => void shiftQuery.refetch() }} />
       {validationError ? <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{validationError}</div> : null}
       {serverError ? <div className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{serverError}</div> : null}
-      <Button type="button" size="lg" className="h-12 w-full" onClick={submit} loading={checkout.isPending} disabled={cartLines.length === 0 || cashBlocked} data-testid="complete-retail-sale">Complete sale · <span dir="ltr">{toMajorString(total)} {total.currency}</span></Button>
+      <Button type="button" size="lg" className="h-12 w-full" onClick={submit} loading={checkout.isPending} disabled={cartLines.length === 0 || cashBlocked} data-testid="complete-retail-sale">{t("salesWorkspace.completeSale", { amount: isolate(f.money(total)) })}</Button>
     </>
   );
   const queryError = productsQuery.error ?? inventoryQuery.error;
@@ -182,7 +189,7 @@ export function CheckoutWorkspace() {
           ? <DesktopCart lines={cartLines} inventory={inventory} currency={currency} total={total} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</DesktopCart>
           : <MobileCart lines={cartLines} inventory={inventory} currency={currency} total={total} open={sheetOpen} onOpenChange={setSheetOpen} onQuantity={updateQuantity} onRemove={removeLine}>{salePanel}</MobileCart>}
       </div>
-      <p className="text-[12px] text-ink-3">If the connection drops during payment, try the same sale again. The items will not be sold twice.</p>
+      <p className="text-[12px] text-ink-3">{t("salesWorkspace.retrySaleHint")}</p>
     </div>
   );
 }

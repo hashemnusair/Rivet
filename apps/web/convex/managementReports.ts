@@ -1,3 +1,4 @@
+import { describeStatementText, statementWarningMessages } from "../src/lib/domain/statement-messages";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBranchAccess, domainError, publicBranchId, publicOrganizationId, requirePermission, type ActorContext } from "./security";
@@ -262,7 +263,9 @@ function reportMeta(actor: ActorContext, report: ReportContext): JsonObject {
     lastQueueProjectionAt: report.lastQueueProjectionAt,
     depreciationCoverage: report.depreciationCoverage,
     warnings: report.warnings,
+    warningMessages: statementWarningMessages(report.warnings),
     disclaimer: DISCLAIMER,
+    disclaimerMessage: describeStatementText(DISCLAIMER),
   };
 }
 
@@ -469,9 +472,10 @@ async function cashflowStatement(ctx: QueryCtx, actor: ActorContext, input: Json
       asOfCash: money(asOfCash, currency),
       difference: money(difference, currency),
       note: reconciliationNote,
+      noteMessage: reconciliationNote ? describeStatementText(reconciliationNote) : undefined,
     },
     balanced: reconciliationStatus === "proven" && difference === 0,
-    classificationPolicy: CASHFLOW_POLICY,
+    classificationPolicy: { ...CASHFLOW_POLICY, descriptionMessage: describeStatementText(CASHFLOW_POLICY.description) },
   };
 }
 
@@ -549,6 +553,6 @@ export async function managementReportQuery(ctx: QueryCtx, actor: ActorContext, 
     case "reports.balance_sheet": return await balanceSheet(ctx, actor, input);
     case "reports.cashflow_statement": return await cashflowStatement(ctx, actor, input);
     case "reports.gm_analysis": return await generalManagerAnalysis(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown management report operation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown management report operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }

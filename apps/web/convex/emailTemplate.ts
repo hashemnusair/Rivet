@@ -8,8 +8,11 @@
  * the overrides that hold a client's dark mode off.
  *
  * No Convex imports: the mock adapter and the tests render the same bytes.
+ * Every fixed word comes from the typed catalogue in the message's own
+ * language; values (names, references, amounts) are passed in as written.
  */
 import { BRAND, BRAND_CONTACT, BRAND_YEAR, brandLegalLine } from "./brandTokens";
+import { createTranslator } from "../src/lib/i18n/core";
 
 export type EmailLanguage = "en" | "ar";
 /** Who is reading: a gym's own team, or one of its members. */
@@ -91,25 +94,22 @@ const STATUS_COLOURS: Record<EmailStatusTone, { ink: string; background: string 
 /** The footer lines, in order, exactly as the identity system sets them. */
 export function footerLines(message: BrandedEmail): string[] {
   const arabic = message.language === "ar";
+  const t = createTranslator(message.language);
   const lines = [
     `RIVET · ${arabic ? BRAND_CONTACT.cityAr : BRAND_CONTACT.city}`,
     `${BRAND_CONTACT.phone} · ${BRAND_CONTACT.whatsapp} · ${BRAND_CONTACT.instagram} · ${BRAND_CONTACT.website} · ${BRAND_CONTACT.email}`,
     arabic ? BRAND_CONTACT.supportHoursAr : BRAND_CONTACT.supportHours,
   ];
-  const legal = arabic ? ["سياسة الخصوصية", "شروط الخدمة"] : ["Privacy policy", "Terms of service"];
-  if (message.audience === "gym") legal.push(arabic ? "تفضيلات البريد" : "Email preferences");
-  if (message.marketing) legal.push(arabic ? "إلغاء الاشتراك" : "Unsubscribe");
+  const legal = [t("communicationCompletion.email.footer.privacy"), t("communicationCompletion.email.footer.terms")];
+  if (message.audience === "gym") legal.push(t("communicationCompletion.email.footer.preferences"));
+  if (message.marketing) legal.push(t("communicationCompletion.email.footer.unsubscribe"));
   lines.push(legal.join(" · "));
   lines.push(
     message.audience === "member" && message.gymName
-      ? arabic
-        ? `أُرسلت من RIVET نيابةً عن ${message.gymName}، المسؤول عن عضويتك.`
-        : `Sent by RIVET for ${message.gymName}, which is responsible for your membership.`
-      : arabic
-        ? "هذه رسالة خدمة بخصوص حسابك في RIVET."
-        : "This is a service message about your RIVET account.",
+      ? t("communicationCompletion.email.footer.sentForGym", { gym: message.gymName })
+      : t("communicationCompletion.email.footer.serviceMessage"),
   );
-  lines.push(arabic ? `© ${BRAND_YEAR} RIVET. جميع الحقوق محفوظة.` : `© ${BRAND_YEAR} RIVET. All rights reserved.`);
+  lines.push(t("communicationCompletion.email.footer.copyright", { year: BRAND_YEAR }));
   const registered = brandLegalLine();
   if (registered) lines.push(registered);
   return lines;
@@ -117,11 +117,12 @@ export function footerLines(message: BrandedEmail): string[] {
 
 function footerHtml(message: BrandedEmail, origin: string): string {
   const arabic = message.language === "ar";
+  const t = createTranslator(message.language);
   const font = arabic ? SANS_AR : SANS;
   const [contact, channels, hours, , why, copyright, legal] = footerLines(message);
   const link = (label: string, path: string) => `<a href="${origin}${path}" style="${surface(origin, "sunken")};color:${BRAND.inkMuted};text-decoration:underline">${escapeHtml(label)}</a>`;
-  const links = [link(arabic ? "سياسة الخصوصية" : "Privacy policy", "/privacy"), link(arabic ? "شروط الخدمة" : "Terms of service", "/terms")];
-  if (message.audience === "gym") links.push(link(arabic ? "تفضيلات البريد" : "Email preferences", "/settings?section=email"));
+  const links = [link(t("communicationCompletion.email.footer.privacy"), "/privacy"), link(t("communicationCompletion.email.footer.terms"), "/terms")];
+  if (message.audience === "gym") links.push(link(t("communicationCompletion.email.footer.preferences"), "/settings?section=email"));
   return `<tr><td class="rv-footer" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")};border-top:1px solid ${BRAND.line};padding:24px 32px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
 <td valign="top" width="32" style="padding-${arabic ? "left" : "right"}:12px"><img src="${origin}/brand/rivet-glyph.png" width="14" alt="" style="height:20px;width:auto;display:block;border:0"></td>
@@ -147,7 +148,7 @@ function rowsHtml(rows: EmailRow[], arabic: boolean, origin: string): string {
       : `font-family:${font};font-size:15px;${row.strong ? "font-weight:600;" : ""}`;
     return `<tr>
 <td class="rv-muted rv-label" align="${start}" bgcolor="${BRAND.surface}" style="${surface(origin, "surface")};${border}padding:12px 16px;font-family:${font};font-size:13px;color:${BRAND.inkMuted};">${escapeHtml(row.label)}</td>
-<td class="rv-ink rv-value" align="${end}" bgcolor="${BRAND.surface}" style="${surface(origin, "surface")};${border}padding:12px 16px;${valueStyle}color:${BRAND.ink};word-break:break-word">${escapeHtml(row.value)}</td>
+<td class="rv-ink rv-value" dir="${row.mono ? "ltr" : "auto"}" align="${end}" bgcolor="${BRAND.surface}" style="${surface(origin, "surface")};${border}padding:12px 16px;${valueStyle}color:${BRAND.ink};word-break:break-word">${escapeHtml(row.value)}</td>
 </tr>`;
   });
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-card" bgcolor="${BRAND.surface}" style="border:1px solid ${BRAND.line};border-radius:8px;${surface(origin, "surface")}">${cells.join("")}</table>`;
@@ -205,7 +206,7 @@ body{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}
 [data-ogsc] .rv-button-link,[data-ogsb] .rv-button-link{color:${BRAND.paper}!important}
 @media only screen and (max-width:480px){
 .rv-outer{padding:8px 0!important}
-.rv-frame{border-left:0!important;border-right:0!important}
+.rv-frame{width:100%!important;max-width:100%!important;border-left:0!important;border-right:0!important}
 .rv-pad{padding-left:20px!important;padding-right:20px!important}
 .rv-header{padding:24px 20px!important}
 .rv-footer{padding:20px!important}
@@ -261,7 +262,7 @@ ${footerHtml(message, origin)}
     textLines.push("");
   }
   if (message.button) textLines.push(`${message.button.label}: ${message.button.href}`, "");
-  if (message.attachment) textLines.push(`Attached: ${message.attachment.filename} (${message.attachment.sizeLabel})`, "");
+  if (message.attachment) textLines.push(createTranslator(message.language)("communicationCompletion.email.attached", { filename: message.attachment.filename, size: message.attachment.sizeLabel }), "");
   if (message.note) textLines.push(message.note, "");
   textLines.push(...footerLines(message));
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectSubscriptionBilling, subscriptionBillingLines } from "./subscription-billing";
+import { projectSubscriptionBilling, subscriptionBillingLineDescriptors, subscriptionBillingLines } from "./subscription-billing";
 
 const DAY_MS = 86_400_000;
 const NOW = Date.parse("2026-08-27T12:00:00.000Z");
@@ -56,5 +56,33 @@ describe("projectSubscriptionBilling", () => {
     expect(lines[0]).toBe("An invoice for JOD 249.000 (Pro · monthly) is issued today.");
     expect(lines[1]).toMatch(/^15 unused paid days of the current term are credited: JOD \d+\.\d{3} off, leaving JOD \d+\.\d{3} to pay\.$/);
     expect(lines[2]).toBe("The new term runs until 27 Sep 2026.");
+  });
+
+  it("returns locale-neutral lines with exact minor units and the existing proration date", () => {
+    const input = {
+      currentStatus: "active" as const,
+      currentPeriodEndsAt: new Date(NOW + 15 * DAY_MS).toISOString(),
+      currentPlanPriceMinor: 149_000,
+      currentBillingInterval: "monthly" as const,
+      plan: "Pro" as const,
+      billingInterval: "monthly" as const,
+      priceMinor: 249_000,
+      now: NOW,
+    };
+    const projection = projectSubscriptionBilling(input);
+    expect(subscriptionBillingLineDescriptors(input)).toEqual([
+      { kind: "invoice", plan: "Pro", billingInterval: "monthly", subtotalMinor: 249_000 },
+      { kind: "credit", creditDays: 15, creditMinor: projection.creditMinor, amountMinor: projection.amountMinor },
+      { kind: "term_end", date: projection.newPeriodEnd.toISOString() },
+      { kind: "void_previous_invoice" },
+    ]);
+  });
+
+  it("keeps the catalog-loading invoice descriptor unpriced", () => {
+    expect(subscriptionBillingLineDescriptors({ currentStatus: "active", plan: "Growth", billingInterval: "annual", now: NOW })[0]).toEqual({
+      kind: "invoice_unpriced",
+      plan: "Growth",
+      billingInterval: "annual",
+    });
   });
 });

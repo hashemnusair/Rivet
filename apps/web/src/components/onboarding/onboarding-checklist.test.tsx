@@ -1,3 +1,4 @@
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,4 +77,16 @@ describe("onboarding completion", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Mark as done" }));
     await waitFor(() => expect(mocks.success).toHaveBeenCalledWith("Step marked as done."));
   });
+});
+
+it("renders Arabic setup instructions and records only the canonical task key", async () => {
+  mocks.get.mockResolvedValue({ ...staffExperience, role: "manager" });
+  mocks.update.mockResolvedValue(staffExperience.progress);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<LocaleProvider initialLocale="ar"><QueryClientProvider client={client}><OnboardingChecklist audience="staff" /></QueryClientProvider></LocaleProvider>);
+  expect(await screen.findByRole("heading", { name: "فهم دورك" })).toBeInTheDocument();
+  expect(screen.getByText(/راجع ما يمكن لدور/)).toHaveTextContent("مدير");
+  fireEvent.click(screen.getByRole("button", { name: "تحديد كمكتملة" }));
+  await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ audience: "staff", completedStepKey: "staff_role" }));
+  expect(mocks.success).toHaveBeenCalledWith("تم تحديد الخطوة كمكتملة.");
 });

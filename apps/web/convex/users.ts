@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { membershipInvitationAccepted } from "./security";
+import { domainError, membershipInvitationAccepted, requireAuthenticated } from "./security";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 import type { Id } from "./_generated/dataModel";
 
@@ -11,6 +11,7 @@ type SafeUser = {
   email: string;
   fullName: string;
   phone?: string;
+  uiLocale?: "en" | "ar";
   platformAdmin: boolean;
   status: "active";
 };
@@ -38,6 +39,7 @@ function safeUserProjection(user: {
   email: string;
   fullName: string;
   phone?: string;
+  uiLocale?: "en" | "ar";
   platformAdmin: boolean;
   status?: "active" | "invited" | "deactivated";
 }): SafeUser {
@@ -54,6 +56,7 @@ function safeUserProjection(user: {
     email: user.email,
     fullName: user.fullName,
     ...(user.phone ? { phone: user.phone } : {}),
+    ...(user.uiLocale ? { uiLocale: user.uiLocale } : {}),
     platformAdmin: user.platformAdmin,
     status: "active",
   };
@@ -493,5 +496,16 @@ export const acceptInvitation = internalMutation({
       });
     }
     return { claimed: true, id: user.publicId ?? "" };
+  },
+});
+
+/** An account may change only its own UI language. No recipient or gym default changes. */
+export const setUiLocale = mutation({
+  args: { locale: v.union(v.literal("en"), v.literal("ar")), accountId: v.string() },
+  handler: async (ctx, { locale, accountId }) => {
+    const { user, identity } = await requireAuthenticated(ctx);
+    if (identity.subject !== accountId) domainError("ACCOUNT_CHANGED", "Sign in again to save your language preference.");
+    if (user.uiLocale !== locale) await ctx.db.patch(user._id, { uiLocale: locale, updatedAt: Date.now() });
+    return { locale };
   },
 });

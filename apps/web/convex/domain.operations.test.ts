@@ -1,3 +1,4 @@
+import { describeEquipmentRationale } from "../src/lib/domain/equipment-rationale";
 import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import { api } from "./_generated/api";
@@ -432,8 +433,10 @@ describe("daily operations typed contracts", () => {
     const workOrder = await manager.mutation(api.domain.mutate, operation("operations.equipment_work_order.upsert", { branchId: "operations-branch-a", assetId: asset.id, description: "Inspect motor", partsCost: { amount: 100, currency: "JOD" }, financialPostingStatus: "posted", financialSourceId: "forged-work-order-source" })) as { financialPostingStatus: string; financialSourceId?: string };
     expect(workOrder).toMatchObject({ financialPostingStatus: "not_posted" });
     expect(workOrder.financialSourceId).toBeUndefined();
-    const recommendation = await owner.query(api.domain.query, operation("operations.equipment.recommendation", { id: asset.id })) as { decision: string; rationale: string[] };
+    const recommendation = await owner.query(api.domain.query, operation("operations.equipment.recommendation", { id: asset.id })) as { decision: string; rationale: string[]; rationaleMessages: unknown[] };
     expect(recommendation.decision).toBe("insufficient_data");
+    expect(recommendation.rationaleMessages).toEqual(recommendation.rationale.map(describeEquipmentRationale));
+    expect(recommendation.rationaleMessages.every(Boolean)).toBe(true);
     expect(recommendation.rationale.join(" ")).toMatch(/replacement estimate|repair cost|purchase date|useful life/i);
   });
 

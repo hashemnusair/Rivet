@@ -1,5 +1,7 @@
+import type { EquipmentRationaleMessage } from "./equipment-rationale";
 import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
 import type { Money } from "./money";
+import type { SystemMessage } from "../i18n/system-messages";
 export type { Money } from "./money";
 
 /**
@@ -435,6 +437,8 @@ export interface SubscriptionAgreementTerms {
   quote?: string;
   /** The fee RIVET published for the plan when the agreement was signed. */
   feeLabel?: string;
+  /** Billing interval frozen with the signed fee, independent of later plan changes. */
+  billingInterval?: "monthly" | "annual";
 }
 
 export interface SubscriptionAgreementConsents {
@@ -502,6 +506,8 @@ export interface SubscriptionAgreementPrefill {
   plan: AgreementPlan;
   /** The fee RIVET currently publishes for that plan, as the document prints it. */
   feeLabel?: string;
+  /** Billing interval frozen with the signed fee, independent of later plan changes. */
+  billingInterval?: "monthly" | "annual";
   startDate: ISODate;
 }
 
@@ -521,6 +527,8 @@ export interface SubscriptionAgreementContext {
 }
 
 export interface SignSubscriptionAgreementInput {
+  /** Exact version displayed and hashed; omitted by legacy English clients. */
+  agreementVersion?: string;
   customer: SubscriptionAgreementCustomer;
   signatory: { name: string; idType: AgreementIdType; idNumber: string; email: string; title?: string; phone?: string };
   subscription: SubscriptionAgreementTerms;
@@ -967,6 +975,7 @@ export interface CustomerClassOccurrence extends Omit<ClassOccurrence, "roster">
   };
   canBook: boolean;
   bookingBlockReason?: string;
+  bookingBlockMessage?: import("../i18n/error-messages").ErrorMessageDescriptor;
 }
 
 export interface ClassBookingPolicy {
@@ -1201,6 +1210,8 @@ export interface EquipmentRecommendation {
   assetAgeMonths?: number;
   expectedUsefulLifeMonths?: number;
   rationale: string[];
+  /** Optional presentation descriptors; the source rationale remains unchanged. */
+  rationaleMessages?: Array<EquipmentRationaleMessage | null>;
 }
 
 
@@ -1337,6 +1348,8 @@ export interface Session {
     currency: string;
     timezone: string;
     locale: string;
+    /** Default language for messages when a recipient has no stored preference. */
+    defaultLanguage?: "en" | "ar";
     phoneCountryCallingCode?: string;
     brand?: BrandKit;
     /** What this gym pays RIVET, and when the paid term ends. */
@@ -1381,6 +1394,8 @@ export interface MemberSummary {
   memberNumber: string; // unique within tenant, e.g. "ABD-1042"
   fullName: string;
   fullNameAr?: string;
+  /** Stored recipient language for recipient-facing communication drafts. */
+  preferredLanguage?: PreferredLanguage;
   phone: string;
   email?: string;
   homeBranchId: UUID;
@@ -2337,8 +2352,12 @@ export interface TimelineEvent {
   memberId?: UUID;
   leadId?: UUID;
   type: TimelineEventType;
+  /** Original stored text; render through `presentTimelineEvent` for the reader's language. */
   title: string;
   body?: string;
+  /** Optional stable descriptors for system-written text; authored text has none. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   actorId?: UUID; // undefined = system/automation
   actorName?: string;
   occurredAt: ISODateTime;
@@ -2591,7 +2610,7 @@ export interface ReceiptDetail {
   receipt: Receipt;
   /** Convenience projection used by retail checkout responses; legacy callers use receipt.id. */
   receiptId?: UUID;
-  organization: { name: string; receiptFooter: string; taxRatePercent: number };
+  organization: { name: string; receiptFooter: string; taxRatePercent: number; timezone?: string };
   branch: { name: string; code: string; address: string; phone: string };
   /** Legacy member projection. Retail guest receipts expose customer instead. */
   member?: { fullName: string; memberNumber: string };
@@ -2850,6 +2869,7 @@ export interface AccountingSourcePosting {
   journalEntryId?: UUID;
   idempotencyKey?: string;
   reason?: string;
+  reasonMessage?: import("./accounting-messages").AccountingReasonMessage;
   details?: Record<string, unknown>;
   projectionFingerprint?: string;
   /** Set when an owner/manager review permanently excluded this fact from the books. */
@@ -2954,7 +2974,9 @@ export interface ManagementReportCompleteness {
   queueCoverage: ManagementQueueCoverage;
   lastQueueProjectionAt?: ISODateTime;
   warnings: string[];
+  warningMessages?: Array<import("./statement-messages").StatementTextMessage & { original: string }>;
   disclaimer: string;
+  disclaimerMessage?: import("./statement-messages").StatementTextMessage;
 }
 
 export interface ManagementStatementLine {
@@ -3028,6 +3050,7 @@ export interface CashflowReconciliation {
   /** expectedClosingCash - asOfCash; zero is arithmetic agreement only. */
   difference: Money;
   note?: string;
+  noteMessage?: import("./statement-messages").StatementTextMessage;
 }
 
 export interface CashflowStatement extends ManagementReportCompleteness {
@@ -3041,7 +3064,7 @@ export interface CashflowStatement extends ManagementReportCompleteness {
   reconciliationStatus: ManagementReconciliationStatus;
   reconciliation: CashflowReconciliation;
   balanced: boolean;
-  classificationPolicy: { code: string; version: number; description: string };
+  classificationPolicy: { code: string; version: number; description: string; descriptionMessage?: import("./statement-messages").StatementTextMessage };
 }
 
 export interface ManagementAnalysisMetric {

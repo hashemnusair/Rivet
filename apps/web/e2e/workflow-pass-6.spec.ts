@@ -73,7 +73,7 @@ const SECTIONS: Section[] = [
   { id: "receipts", label: "Receipts & tax", ready: async (page) => { await expect(page.getByLabel("Receipt prefix")).toHaveValue(/./); } },
   { id: "notifications", label: "Notifications", ready: async (page) => { await expect(page.getByRole("switch", { name: "Renewal reminders" })).toBeVisible(); await expect(page.getByTestId("messaging-status")).toBeVisible(); } },
   { id: "email", label: "Emails", ready: async (page) => { await expect(page.getByTestId("email-delivery-mode")).toBeVisible(); await expect(page.getByRole("checkbox", { name: "Payment receipt" })).toBeVisible(); } },
-  { id: "operations", label: "Gym rules", ready: async (page) => { await expect(page.getByRole("spinbutton", { name: "Ending soon warning, days" })).toHaveValue(/./); } },
+  { id: "operations", label: "Gym rules", ready: async (page) => { await expect(page.getByRole("textbox", { name: "Ending soon warning, days" })).toHaveValue(/./); } },
   { id: "hours", label: "Hours & trials", ready: async (page) => { await expect(page.getByRole("checkbox", { name: "Sunday open" })).toBeVisible(); } },
   { id: "checklists", label: "Daily checklists", ready: async (page) => { await expect(page.getByRole("heading", { name: /^Checklists/ })).toBeVisible(); await expect(page.getByRole("list", { name: "Checklists" }).getByRole("listitem").first()).toBeVisible(); } },
 ];
@@ -213,7 +213,7 @@ test("payment methods and discount limits save as one draft", async ({ page }) =
   await signIn(page);
   await visit(page, "/settings?section=payments", "Payments", 2);
 
-  const other = page.getByRole("switch", { name: "Other / adjustment" });
+  const other = page.getByRole("switch", { name: "Other" });
   await expect(other).toHaveAttribute("data-state", "unchecked");
   await other.click();
   await expect(other).toHaveAttribute("data-state", "checked");
@@ -330,5 +330,6 @@ test("the public profile keeps its draft, publication and preview apart", async 
   await bar.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText("Draft saved.")).toBeVisible();
   await expect(review).toBeEnabled();
-  await expect(page.getByText(/Draft · version/)).toBeVisible();
+  const profileHeader = page.getByRole("heading", { name: "Public profile", level: 2 }).locator("xpath=ancestor::header[1]");
+  await expect(profileHeader).toContainText(/Draft\s*·\s*version\s*\d+/);
 });

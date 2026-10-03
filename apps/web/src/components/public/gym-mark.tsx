@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
 const SIZES = {
   sm: "size-9 text-[9px]",
@@ -26,6 +27,7 @@ export function GymMark({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
+  const { t, isolate } = useLocale();
   const initials = (shortName ?? name).trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || name.slice(0, 2).toUpperCase();
   // A short brand word ("FORGE", "PULSE") reads better than its initial when
   // the tile has room for it; the small tile keeps to initials.
@@ -36,7 +38,7 @@ export function GymMark({
       className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-cover bg-center font-mono font-semibold uppercase tracking-[0.08em] text-white", SIZES[size], className)}
       style={{ backgroundColor: accent ?? "var(--color-ink)", backgroundImage: logoUrl ? `url(${logoUrl})` : undefined }}
       role="img"
-      aria-label={`${name} logo`}
+      aria-label={t("publicCompletion.accessibility.gymLogo", { name: isolate(name) })}
     >
       {logoUrl ? null : fallback}
     </span>

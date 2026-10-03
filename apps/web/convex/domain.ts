@@ -1,3 +1,8 @@
+import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
+import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
+import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
+import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
+import { searchKey } from "../src/lib/utils/text";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -29,7 +34,9 @@ import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
 import { marketingStatusFromProvenance, marketingSuppressionReason } from "./marketing";
-import { enqueueOperationalEmail } from "./operationalEmail";
+import { enqueueOperationalEmail, type OperationalEmailFacts } from "./operationalEmail";
+import { resolveRecipientLanguage, type CommunicationLanguageSource } from "../src/lib/i18n/communication";
+import { isRenderableSystemMessage, systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
 import {
   buildWorkspaceAccess,
   defaultWorkspacePreferences,
@@ -78,9 +85,9 @@ import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dash
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefScope, type BriefSourceInput, type BriefSourceKey, type OperatingBrief } from "./operatingBrief";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
-import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
+import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, isContactOutcome, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
 import { deriveRetentionRisks } from "../src/lib/retention/at-risk";
-import { buildCsvDocument, exportList, exportStatusLabel, formatExportDateTime, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
+import { buildCsvDocument, exportList, formatMinorUnits, type CsvValue } from "../src/lib/exports/csv";
 
 type ReadContext = QueryCtx | MutationCtx;
 // Convex's `v.any()` is the deliberate JSON storage boundary for normalized
@@ -141,6 +148,7 @@ function automationsGloballyPaused(): boolean {
 function requireAutomationsLive(correlationId: string): void {
   if (automationsGloballyPaused()) {
     domainError("FEATURE_NOT_AVAILABLE", AUTOMATIONS_PAUSE_REASON, {
+      message: { key: "apiErrors.automationsPaused" },
       correlationId,
       details: { feature: "automations", globallyPaused: true },
     });
@@ -664,6 +672,8 @@ async function notificationView(ctx: ReadContext, notification: Doc<"operational
     kind: notification.kind,
     title: notification.title,
     body: notification.body,
+    ...(notification.titleMessage ? { titleMessage: notification.titleMessage } : {}),
+    ...(notification.bodyMessage ? { bodyMessage: notification.bodyMessage } : {}),
     href: notification.href,
     dedupeKey: notification.dedupeKey,
     organizationId: organization ? publicOrganizationId(organization) : undefined,
@@ -681,6 +691,9 @@ async function insertOperationalNotification(ctx: MutationCtx, input: {
   kind: string;
   title: string;
   body: string;
+  /** Optional descriptors beside the original English; omitted for authored text. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   expiresAt?: number;
@@ -699,6 +712,8 @@ async function insertOperationalNotification(ctx: MutationCtx, input: {
     kind: input.kind,
     title: input.title,
     body: input.body,
+    ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}),
+    ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}),
     href: input.href,
     dedupeKey: input.dedupeKey,
     expiresAt: input.expiresAt,
@@ -713,6 +728,8 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
   kind: string;
   title: string;
   body: string;
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   excludeUserId?: Id<"users">;
@@ -734,10 +751,28 @@ async function notifyOrganizationRoles(ctx: MutationCtx, input: {
       kind: input.kind,
       title: input.title,
       body: input.body,
+      titleMessage: input.titleMessage,
+      bodyMessage: input.bodyMessage,
       href: input.href,
       dedupeKey: input.dedupeKey,
     });
   }));
+}
+
+/** A stored calendar date and wall-clock time, kept verbatim when either is not in its canonical form. */
+function dateClockMessage(date: unknown, time: unknown): SystemMessage {
+  const day = stringValue(date);
+  const clock = stringValue(time);
+  return systemMessage("communicationCompletion.notifications.dateClock", {
+    date: /^\d{4}-\d{2}-\d{2}$/.test(day) ? { date: day } : day,
+    time: /^([01]\d|2[0-3]):[0-5]\d$/.test(clock) ? { clock } : clock,
+  });
+}
+
+/** The recipient's stored language, then the gym default; never the acting operator's screen language. */
+function recipientLanguage(preference: unknown, organization: { defaultLanguage?: "en" | "ar" } | null | undefined): { language: "en" | "ar"; languageSource: CommunicationLanguageSource } {
+  const resolved = resolveRecipientLanguage(preference, organization?.defaultLanguage);
+  return { language: resolved.language, languageSource: resolved.source };
 }
 
 async function queueOperationalEmail(ctx: MutationCtx, input: {
@@ -746,6 +781,8 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
   kind: string;
   templateVersion: string;
   language?: "en" | "ar";
+  languageSource?: CommunicationLanguageSource;
+  facts?: OperationalEmailFacts;
   recipientReference: string;
   recipientEmail?: string;
   dedupeKey: string;
@@ -763,12 +800,23 @@ async function queueOperationalEmail(ctx: MutationCtx, input: {
     messageClass: input.messageClass,
     templateVersion: input.templateVersion,
     language: input.language,
+    languageSource: input.languageSource,
+    facts: input.facts,
     recipientReference: input.recipientReference,
     attachments: input.attachments,
     recipientEmail: input.recipientEmail,
     dedupeKey: input.dedupeKey,
     suppressionReason,
   });
+}
+
+/** The figures a platform invoice notice repeats, taken from the stored invoice as written. */
+function platformInvoiceFacts(invoiceId: string, invoice: Data): OperationalEmailFacts | undefined {
+  const amountMinor = invoice.amountMinor;
+  if (typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor)) return undefined;
+  // Calendar dates stay dates; instants are shown on the gym's own calendar day.
+  const when = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
+  return { type: "invoice", invoiceNumber: invoiceId, amountMinor, currency: stringValue(invoice.currency, "JOD"), periodStart: when(invoice.periodStart), periodEnd: when(invoice.periodEnd), dueAt: when(invoice.dueAt) };
 }
 
 /** "Bill to" on an invoice: the gym, its owner, and the plan it is on. */
@@ -923,12 +971,12 @@ function normalize(value: string | undefined): string {
 
 function matchesSearch(values: unknown[], search?: string): boolean {
   if (!search?.trim()) return true;
-  const query = search.trim().toLowerCase();
+  const query = searchKey(search);
   const compact = query.replace(/[\s\-]/g, "");
   return values.some((value) => {
     if (typeof value !== "string") return false;
-    return value.toLowerCase().includes(query)
-      || value.replace(/[\s\-]/g, "").includes(compact)
+    return searchKey(value).includes(query)
+      || searchKey(value).replace(/[\s\-]/g, "").includes(compact)
       || phoneSearchMatches(value, query);
   });
 }
@@ -1087,6 +1135,14 @@ async function insertTimeline(ctx: MutationCtx, actor: ActorContext, value: Data
     branchId: optionalString(event.branchId) ?? optionalString(event.homeBranchId),
     memberPublicId: optionalString(event.memberId),
     leadPublicId: optionalString(event.leadId),
+  });
+}
+
+function contactAttemptTitleMessage(outcome: string, kind: "contact" | "call"): SystemMessage | undefined {
+  if (outcome === "whatsapp_opened") return systemMessage("communicationCompletion.timeline.whatsappOpened");
+  if (!isContactOutcome(outcome)) return undefined;
+  return systemMessage(kind === "call" ? "communicationCompletion.timeline.callAttempt" : "communicationCompletion.timeline.contactAttempt", {
+    outcome: { enum: "contactOutcome", value: outcome },
   });
 }
 
@@ -1325,7 +1381,7 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
   const timeline: FollowUpTimelineLike[] = timelineRows
     .map((row) => data(row.data))
     .filter((event) => identityIds.includes(stringValue(event.memberId)))
-    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
+    .map((event) => ({ id: stringValue(event.id), type: stringValue(event.type), title: stringValue(event.title), body: optionalString(event.body), ...(isRenderableSystemMessage(event.bodyMessage) ? { bodyMessage: event.bodyMessage } : {}), occurredAt: stringValue(event.occurredAt), actorName: optionalString(event.actorName), meta: data(event.meta) }));
   const deliveries: FollowUpDeliveryLike[] = deliveryRows.flat().map((row) => ({ id: row.publicId, checkpointKey: row.checkpointKey, channel: row.channel, status: row.status, suppressionReason: row.suppressionReason, cancellationReason: row.cancellationReason, deferredUntil: row.deferredUntil, attempts: row.attempts.length, updatedAt: row.updatedAt, membershipId: row.membershipPublicId }));
   const notifications = data(settings.notifications);
   const tasks = hasPermission(actor, "crm.read") ? await followUpRelatedTasks(ctx, actor, { memberId }) : [];
@@ -1341,6 +1397,7 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
     timezone: actor.organization.timezone || TZ_FALLBACK,
     today,
     now: Date.now(),
+    organizationDefaultLanguage: actor.organization.defaultLanguage,
   });
 }
 
@@ -1466,7 +1523,7 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
       const opensAt = stringValue(day.opensAt, "06:00");
       const closesAt = stringValue(day.closesAt, "23:00");
       if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
-        domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Operating hours for ${weekday} are invalid.`, { message: { key: "apiErrors.operatingHoursDay", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       validatedDays[weekday] = { enabled, opensAt, closesAt, slots: enabled ? [opensAt, closesAt] : [] };
     }
@@ -1489,11 +1546,11 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
       const opensAt = stringValue(window.opensAt);
       const closesAt = stringValue(window.closesAt);
       if (!TIME_PATTERN.test(opensAt) || !TIME_PATTERN.test(closesAt) || (enabled && opensAt >= closesAt)) {
-        domainError("VALIDATION_ERROR", `Trial window for ${weekday} is invalid.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} is invalid.`, { message: { key: "apiErrors.trialHoursDay", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       const hours = data(operatingByBranch.get(branchId)?.[weekday]);
       if (enabled && (!booleanValue(hours.enabled) || opensAt < stringValue(hours.opensAt) || closesAt > stringValue(hours.closesAt))) {
-        domainError("VALIDATION_ERROR", `Trial window for ${weekday} must fall inside the branch's operating hours.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `Trial window for ${weekday} must fall inside the branch's operating hours.`, { message: { key: "apiErrors.trialWithinHours", params: { weekday: String(weekday) } }, correlationId: actor.correlationId });
       }
       validatedDays[weekday] = { enabled, opensAt, closesAt };
     }
@@ -1649,6 +1706,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       currency: actor.organization.currency,
       timezone: actor.organization.timezone,
       locale: actor.organization.locale ?? "en-JO",
+      defaultLanguage: actor.organization.defaultLanguage ?? "en",
       brand,
       // What the gym pays RIVET, so Settings can state the term without a
       // second round trip.
@@ -1749,12 +1807,12 @@ async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input:
     contactsByMember.set(stringValue(event.memberId), contacts);
   }
   for (const contacts of contactsByMember.values()) contacts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
-  const search = optionalString(input.search)?.trim().toLowerCase();
+  const search = optionalString(input.search);
   return filtered.flatMap((risk) => {
     const member = memberSummaryById.get(risk.memberId);
     const membership = membershipSummaryById.get(risk.membershipId);
     if (!member || !membership) return [];
-    if (search && ![member.fullName, member.memberNumber, member.phone, membership.planName].some((value) => stringValue(value).toLowerCase().includes(search))) return [];
+    if (search && !matchesSearch([member.fullName, member.memberNumber, member.phone, membership.planName], search)) return [];
     const contact = contactsByMember.get(risk.memberId)?.[0];
     return [{ ...risk, member, membership, lastContactAt: optionalString(contact?.occurredAt), lastContactOutcome: optionalString(data(contact?.meta).outcome), recommendedSnoozeDays: numberValue(retention.defaultSnoozeDays, 7) }];
   });
@@ -1788,6 +1846,7 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
     memberNumber: stringValue(value.memberNumber),
     fullName: stringValue(value.fullName),
     fullNameAr: optionalString(value.fullNameAr),
+    preferredLanguage: value.preferredLanguage === "ar" ? "ar" : value.preferredLanguage === "en" ? "en" : undefined,
     phone: stringValue(value.phone),
     email: optionalString(value.email),
     homeBranchId: stringValue(value.homeBranchId),
@@ -1867,6 +1926,7 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
       memberNumber: stringValue(value.memberNumber),
       fullName: stringValue(value.fullName),
       fullNameAr: optionalString(value.fullNameAr),
+      preferredLanguage: value.preferredLanguage === "ar" ? "ar" : value.preferredLanguage === "en" ? "en" : undefined,
       phone: stringValue(value.phone),
       email: optionalString(value.email),
       homeBranchId: stringValue(value.homeBranchId),
@@ -2340,7 +2400,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
     return {
       receipt: receiptData,
       receiptId: sale.receiptId,
-      organization: { name: actor.organization.name, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
+      organization: { name: actor.organization.name, timezone: actor.organization.timezone, receiptFooter: stringValue(actor.organization.receiptFooter), taxRatePercent: numberValue(actor.organization.taxRatePercent) },
       branch: { name: branch.name, code: branch.code, address: branch.address, phone: branch.phone },
       member: customer.kind === "member" ? { fullName: stringValue(customer.fullName), memberNumber: stringValue(customer.memberNumber, "Member") } : undefined,
       customer,
@@ -2360,7 +2420,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
   const organization = organizationView(actor.organization);
   return {
     receipt: receiptData,
-    organization: { name: actor.organization.name, receiptFooter: stringValue(organization.receiptFooter), taxRatePercent: numberValue(organization.taxRatePercent) },
+    organization: { name: actor.organization.name, timezone: actor.organization.timezone, receiptFooter: stringValue(organization.receiptFooter), taxRatePercent: numberValue(organization.taxRatePercent) },
     branch: {
       name: branch?.name ?? "—",
       code: branch?.code ?? "—",
@@ -3043,6 +3103,7 @@ async function customerExperience(ctx: ReadContext): Promise<Data> {
       gymName: stringValue(marketplaceValue.name, tenant.name),
       gymLogoUrl: optionalString(logo?.url),
       gymCoverUrl: optionalString(cover?.url),
+      timezone,
       branchId: optionalString(directoryBranch?.id) ?? stringValue(projection.branchId),
       branchName: stringValue(directoryBranch?.name, stringValue(branch?.name)),
       memberNumber: optionalString(member.memberNumber) ?? stringValue(projection.memberNumber),
@@ -3260,7 +3321,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
       return {
         gymId: publicOrganizationId(context.organization),
         receipt: receiptValue,
-        organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+        organization: { name: context.organization.name, timezone: context.organization.timezone, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
         branch: { name: branch.name, code: branch.code, address: branch.address ?? "", phone: branch.phone ?? "" },
         member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
         customer: retailSale.customer,
@@ -3305,7 +3366,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
     return {
       gymId: publicOrganizationId(context.organization),
       receipt: receiptValue,
-      organization: { name: context.organization.name, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
+      organization: { name: context.organization.name, timezone: context.organization.timezone, receiptFooter: stringValue(context.organization.receiptFooter), taxRatePercent: numberValue(context.organization.taxRatePercent) },
       branch: { name: branch?.name ?? "Gym branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
       member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
       customer: { kind: "member", fullName: stringValue(context.member.fullName), phone: optionalString(context.member.phone), memberId: context.memberId, memberNumber: stringValue(context.member.memberNumber) },
@@ -3567,6 +3628,8 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
       kind: "trial_request",
       title: "New free-trial request",
       body: `${base.fullName} · ${branch.name} · ${base.preferredDate} ${base.preferredTime}`,
+      titleMessage: systemMessage("communicationCompletion.notifications.trialRequest"),
+      bodyMessage: systemMessage("communicationCompletion.notifications.facts3", { a: stringValue(base.fullName), b: branch.name, c: { message: dateClockMessage(base.preferredDate, base.preferredTime) } }),
       href: `/crm/leads/${leadId}`,
       dedupeKey: `trial-request:${bookingId}`,
     });
@@ -3576,7 +3639,7 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     branchId: branch?._id,
     kind: "trial_request_confirmation",
     templateVersion: "trial-request-v1",
-    language: stringValue(profile.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    ...recipientLanguage(profile.preferredLanguage, storageOrganization),
     recipientReference: publicUserId(user),
     recipientEmail: profile.email,
     dedupeKey: `trial-request-confirmation:${bookingId}`,
@@ -3630,7 +3693,7 @@ const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "recepti
 
 function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
-    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { correlationId });
+    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { message: { key: "apiErrors.minimumWholeNumber", params: { field: String(label), minimum: String(minimum) } }, correlationId });
   }
   return value;
 }
@@ -4573,24 +4636,20 @@ const STAFF_EXPORT_HEADERS: Record<StaffExportKind, string[]> = {
   operations: ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "Reference type", "When"],
 };
 
-function exportFilterSummary(filters: Data): string {
-  const entries = Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== "");
-  return entries.length > 0
-    ? entries.map(([key, value]) => `${exportStatusLabel(key)}: ${String(value)}`).join("; ")
-    : "None";
-}
-
-function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+function csvFromRows(rows: Data[], metadata: { title: string; headers: string[]; generatedAt: string; timezone: string; branchScope: string; filters: Data; locale: "en" | "ar" }): { content: string; rowCount: number; totalRows: number; complete: boolean } {
+  const copy = makeExportCopy(metadata.locale);
   const normalized = rows.slice(0, 2_000);
   const content = buildCsvDocument({
-    title: metadata.title,
+    locale: metadata.locale,
+    title: copy.label(metadata.title),
     metadata: [
-      { label: "Generated at", value: formatExportDateTime(metadata.generatedAt, metadata.timezone) },
-      { label: "Timezone", value: metadata.timezone },
-      { label: "Branch scope", value: metadata.branchScope },
-      { label: "Applied filters", value: exportFilterSummary(metadata.filters) },
+      { label: copy.label("Generated at"), value: copy.dateTime(metadata.generatedAt, metadata.timezone) },
+      { label: copy.label("Timezone"), value: metadata.timezone },
+      { label: copy.label("Branch scope"), value: copy.scope(metadata.branchScope) },
+      { label: copy.label("Applied filters"), value: copy.filters(metadata.filters) },
     ],
-    headers: metadata.headers,
+    headers: metadata.headers.map(copy.label),
+    // Keys stay canonical inside the builder. Only human-facing headers change.
     rows: normalized.map((row) => metadata.headers.map((header) => row[header] as string | number | boolean | null | undefined)),
   });
   const contentBytes = new TextEncoder().encode(content).byteLength;
@@ -4613,7 +4672,8 @@ function exportMatchesFilters(row: Data, filters: Data, timezone: string): boole
   return true;
 }
 
-async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data): Promise<Data[]> {
+async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: StaffExportKind, filters: Data, locale: "en" | "ar"): Promise<Data[]> {
+  const copy = makeExportCopy(locale);
   const timezone = actor.organization.timezone || TZ_FALLBACK;
   const currency = actor.organization.currency || JOD;
   const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
@@ -4634,20 +4694,20 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Arabic name": summary.fullNameAr,
         "Phone": summary.phone,
         "Email": summary.email,
-        "Gender": exportStatusLabel(optionalString(raw.gender)),
-        "Member status": exportStatusLabel(optionalString(summary.status)),
-        "Membership status": exportStatusLabel(optionalString(summary.membershipStatus)),
+        "Gender": copy.status(optionalString(raw.gender)),
+        "Member status": copy.status(optionalString(summary.status)),
+        "Membership status": copy.status(optionalString(summary.membershipStatus)),
         "Current plan": summary.currentPlanName,
-        "Membership ends": summary.membershipEndDate,
+        "Membership ends": copy.date(optionalString(summary.membershipEndDate)),
         "Outstanding amount": formatMinorUnits(amountOf(summary.outstanding), currency),
         "Currency": currency,
-        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? "Unknown branch",
-        "Last check-in": formatExportDateTime(optionalString(summary.lastCheckInAt), timezone),
-        "Preferred language": exportStatusLabel(optionalString(raw.preferredLanguage)),
-        "Marketing consent": exportStatusLabel(marketingStatus),
+        "Home branch": branchNames.get(stringValue(summary.homeBranchId)) ?? copy.label("Unknown branch"),
+        "Last check-in": copy.dateTime(optionalString(summary.lastCheckInAt), timezone),
+        "Preferred language": copy.status(optionalString(raw.preferredLanguage)),
+        "Marketing consent": copy.status(marketingStatus),
         "Tags": exportList(summary.tags),
         "Notes": optionalString(raw.notes),
-        "Created": formatExportDateTime(optionalString(summary.createdAt), timezone),
+        "Created": copy.dateTime(optionalString(summary.createdAt), timezone),
       };
     });
   }
@@ -4662,18 +4722,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         "Phone": lead.phone,
         "Email": lead.email,
         "Branch": lead.branchName,
-        "Stage": exportStatusLabel(optionalString(lead.stage)),
-        "Source": exportStatusLabel(optionalString(lead.source)),
-        "Owner": lead.ownerName ?? "Unassigned",
+        "Stage": copy.status(optionalString(lead.stage)),
+        "Source": copy.status(optionalString(lead.source)),
+        "Owner": lead.ownerName ?? copy.label("Unassigned"),
         "Expected value": lead.expectedValue ? formatMinorUnits(amountOf(expected), expectedCurrency) : "",
         "Currency": lead.expectedValue ? expectedCurrency : "",
-        "Next follow-up": formatExportDateTime(optionalString(lead.nextFollowUpAt), timezone),
-        "Last contacted": formatExportDateTime(optionalString(lead.lastContactAt), timezone),
-        "Last contact outcome": exportStatusLabel(optionalString(lead.lastContactOutcome)),
+        "Next follow-up": copy.dateTime(optionalString(lead.nextFollowUpAt), timezone),
+        "Last contacted": copy.dateTime(optionalString(lead.lastContactAt), timezone),
+        "Last contact outcome": copy.status(optionalString(lead.lastContactOutcome)),
         "Overdue": booleanValue(lead.overdue),
         "Lost reason": optionalString(lead.lostReason),
-        "Created": formatExportDateTime(optionalString(lead.createdAt), timezone),
-        "Updated": formatExportDateTime(optionalString(lead.updatedAt), timezone),
+        "Created": copy.dateTime(optionalString(lead.createdAt), timezone),
+        "Updated": copy.dateTime(optionalString(lead.updatedAt), timezone),
       };
     });
   }
@@ -4683,16 +4743,16 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return transactions.map((payment) => {
       const paymentCurrency = currencyOf(payment.amount, currency);
       return {
-        "When": formatExportDateTime(optionalString(payment.occurredAt), timezone),
+        "When": copy.dateTime(optionalString(payment.occurredAt), timezone),
         "Member": payment.memberName,
         "Member number": payment.memberNumber,
         "Branch": payment.branchName,
         "Receipt number": payment.receiptNumber,
-        "Transaction type": exportStatusLabel(optionalString(payment.type)),
-        "Payment method": exportStatusLabel(optionalString(payment.method)),
+        "Transaction type": copy.status(optionalString(payment.type)),
+        "Payment method": copy.status(optionalString(payment.method)),
         "Amount": formatMinorUnits(amountOf(payment.amount), paymentCurrency),
         "Currency": paymentCurrency,
-        "Status": exportStatusLabel(optionalString(payment.status)),
+        "Status": copy.status(optionalString(payment.status)),
         "Refunded amount": payment.refundedAmount ? formatMinorUnits(amountOf(payment.refundedAmount), paymentCurrency) : "",
         "Recorded by": payment.collectedByName,
         "External reference": payment.externalReference,
@@ -4709,18 +4769,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
         const member = members.get(stringValue(charge.memberId));
         const chargeCurrency = currencyOf(charge.total, currency);
         return {
-          "Member": member ? member.fullName : "Unknown member",
+          "Member": member ? member.fullName : copy.label("Unknown member"),
           "Member number": member ? member.memberNumber : "",
           "Description": charge.description,
-          "Issued": charge.issueDate,
-          "Due": charge.dueDate,
+          "Issued": copy.date(optionalString(charge.issueDate)),
+          "Due": copy.date(optionalString(charge.dueDate)),
           "Total": formatMinorUnits(amountOf(charge.total), chargeCurrency),
           "Paid": formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
           "Outstanding": formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
           "Currency": chargeCurrency,
-          "Status": exportStatusLabel(optionalString(charge.status)),
+          "Status": copy.status(optionalString(charge.status)),
           "Collectible now": booleanValue(charge.collectible),
-          "Created": formatExportDateTime(optionalString(charge.createdAt), timezone),
+          "Created": copy.dateTime(optionalString(charge.createdAt), timezone),
         };
       });
   }
@@ -4730,17 +4790,17 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return events.map((event) => ({ id: event.publicId, branchId: event.branchId ? branchPublicIdsByInternalId.get(String(event.branchId)) : undefined, actorName: event.actorName, actorRole: event.actorRole, category: event.category, action: event.action, entityType: event.entityType, entityLabel: event.entityLabel, summary: event.summary, reason: event.reason, approvalStatus: event.approvalStatus, occurredAt: utcIso(event.occurredAt) }))
       .filter((row) => exportMatchesFilters(row, filters, timezone))
       .map((event) => ({
-        "When": formatExportDateTime(event.occurredAt, timezone),
-        "Branch": event.branchId ? branchNames.get(event.branchId) ?? "Unknown branch" : "Organization-wide",
+        "When": copy.dateTime(event.occurredAt, timezone),
+        "Branch": event.branchId ? branchNames.get(event.branchId) ?? copy.label("Unknown branch") : copy.label("Organization-wide"),
         "Recorded by": event.actorName,
-        "Role": exportStatusLabel(event.actorRole),
-        "Category": exportStatusLabel(event.category),
+        "Role": copy.status(event.actorRole),
+        "Category": copy.status(event.category),
         "Action": event.action.replaceAll("_", " "),
-        "Record type": exportStatusLabel(event.entityType),
+        "Record type": copy.status(event.entityType),
         "Record": event.entityLabel,
         "Summary": event.summary,
         "Reason": event.reason,
-        "Approval status": exportStatusLabel(event.approvalStatus),
+        "Approval status": copy.status(event.approvalStatus),
       }));
   }
   if (kind === "personal_training") {
@@ -4749,18 +4809,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     return orders.filter((order) => visibleMembers.has(order.memberPublicId)).map((order) => ({ id: order.publicId, memberId: order.memberPublicId, homeBranchId: visibleMembers.get(order.memberPublicId)?.homeBranchId, packageName: order.packageNameSnapshot, sessions: order.sessionCountSnapshot, totalPriceMinor: order.totalPriceMinorSnapshot, currency: order.currencySnapshot, status: order.status, paidAt: order.paidAt ? utcIso(order.paidAt) : undefined, refundedSessions: order.refundedSessions, refundedMinor: order.refundedMinor, createdAt: utcIso(order.createdAt), updatedAt: utcIso(order.updatedAt) })).filter((row) => exportMatchesFilters(row, filters, timezone)).map((order) => {
       const member = visibleMembers.get(order.memberId);
       return {
-        "Member": member?.fullName ?? "Unknown member",
+        "Member": member?.fullName ?? copy.label("Unknown member"),
         "Member number": member?.memberNumber,
         "Package": order.packageName,
         "Sessions purchased": order.sessions,
         "Total price": formatMinorUnits(order.totalPriceMinor, order.currency),
         "Currency": order.currency,
-        "Status": exportStatusLabel(order.status),
-        "Paid": formatExportDateTime(order.paidAt, timezone),
+        "Status": copy.status(order.status),
+        "Paid": copy.dateTime(order.paidAt, timezone),
         "Refunded sessions": order.refundedSessions,
         "Refunded amount": formatMinorUnits(order.refundedMinor, order.currency),
-        "Created": formatExportDateTime(order.createdAt, timezone),
-        "Updated": formatExportDateTime(order.updatedAt, timezone),
+        "Created": copy.dateTime(order.createdAt, timezone),
+        "Updated": copy.dateTime(order.updatedAt, timezone),
       };
     });
   }
@@ -4781,16 +4841,16 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     ...scoped(movements).map((row) => ({ recordType: "Stock movement", id: row.publicId, branchId: branchPublicIds.get(row.branchId), sku: row.productSku, itemName: row.productName, movementType: row.type, quantityChange: row.quantityDelta, amountMinor: row.totalCostMinor, currency: row.totalCostCurrency, reason: row.reason, referenceType: row.referenceType, occurredAt: utcIso(row.occurredAt) })),
   ];
   return operationRows.filter((row) => exportMatchesFilters(row, filters, timezone)).map((row) => ({
-    "Record type": row.recordType,
-    "Branch": row.branchId ? branchNames.get(row.branchId) ?? "Unknown branch" : "Organization-wide",
+    "Record type": copy.label(stringValue(row.recordType)),
+    "Branch": row.branchId ? branchNames.get(row.branchId) ?? copy.label("Unknown branch") : copy.label("Organization-wide"),
     "SKU": row.sku,
     "Product or supplier": row.itemName,
-    "Unit": row.unit ? exportStatusLabel(row.unit) : "",
-    "Status": exportStatusLabel(row.status),
+    "Unit": row.unit ? copy.status(row.unit) : "",
+    "Status": copy.status(row.status),
     "Reorder point": row.reorderPoint,
     "Quantity on hand": row.quantityOnHand,
     "Committed quantity": row.committedQuantity,
-    "Movement type": exportStatusLabel(row.movementType),
+    "Movement type": copy.status(row.movementType),
     "Quantity change": row.quantityChange,
     "Amount": row.amountMinor === undefined ? "" : formatMinorUnits(row.amountMinor, row.currency),
     "Currency": row.currency,
@@ -4798,16 +4858,18 @@ async function staffExportRows(ctx: ReadContext, actor: ActorContext, kind: Staf
     "Phone": row.phone,
     "Email": row.email,
     "Reason": row.reason,
-    "Reference type": exportStatusLabel(row.referenceType),
-    "When": formatExportDateTime(row.occurredAt, timezone),
+    "Reference type": copy.status(row.referenceType),
+    "When": copy.dateTime(row.occurredAt, timezone),
   }));
 }
 
 function exportJobView(value: Data): Data {
-  return { id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
+  return { locale: exportLocale(value.locale), failureMessageKey: value.failureMessageKey === "exports.tooLarge" ? "exports.tooLarge" : undefined, failureMessageParams: value.failureMessageKey === "exports.tooLarge" ? { count: numberValue(data(value.failureMessageParams).count) } : undefined, id: stringValue(value.id), kind: stringValue(value.kind), status: stringValue(value.status), fileName: optionalString(value.fileName), mimeType: optionalString(value.mimeType), rowCount: numberValue(value.rowCount), totalRows: typeof value.totalRows === "number" ? value.totalRows : numberValue(value.rowCount), content: Date.parse(stringValue(value.expiresAt)) > Date.now() ? optionalString(value.content) : undefined, failureMessage: optionalString(value.failureMessage), timezone: optionalString(value.timezone), branchScope: optionalString(value.branchScope), filters: data(value.filters), createdAt: stringValue(value.createdAt), completedAt: optionalString(value.completedAt), expiresAt: optionalString(value.expiresAt) };
 }
 
 async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const locale = exportLocale(input.locale);
+  const copy = makeExportCopy(locale);
   const { user } = await requireMember(ctx);
   const idempotencyKey = stringValue(input.idempotencyKey).trim();
   if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: request.correlationId });
@@ -4855,7 +4917,7 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
         paid: formatMinorUnits(amountOf(charge.paidAmount), chargeCurrency),
         outstanding: formatMinorUnits(amountOf(charge.outstandingAmount), chargeCurrency),
         currency: chargeCurrency,
-        status: exportStatusLabel(optionalString(charge.status)),
+        status: copy.status(optionalString(charge.status)),
         id: record.publicId,
       };
     }));
@@ -4863,9 +4925,9 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const checkIn = data(record.data);
       return {
         gym: context.organization.name,
-        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? "Gym branch",
-        occurredAt: formatExportDateTime(optionalString(checkIn.occurredAt), timezone),
-        result: exportStatusLabel(optionalString(checkIn.decision)),
+        branch: optionalString(checkIn.branchName) ?? branchNames.get(stringValue(checkIn.branchId)) ?? copy.label("Gym branch"),
+        occurredAt: copy.dateTime(optionalString(checkIn.occurredAt), timezone),
+        result: copy.status(optionalString(checkIn.decision)),
         reason: exportList(checkIn.reasonCodes) || optionalString(checkIn.reason),
         recordedBy: optionalString(checkIn.actorName),
         id: record.publicId,
@@ -4875,10 +4937,10 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const event = data(record.data);
       return {
         gym: context.organization.name,
-        occurredAt: formatExportDateTime(optionalString(event.occurredAt), timezone),
-        type: exportStatusLabel(optionalString(event.type)),
-        title: optionalString(event.title),
-        detail: optionalString(event.body) ?? optionalString(event.detail),
+        occurredAt: copy.dateTime(optionalString(event.occurredAt), timezone),
+        type: copy.status(optionalString(event.type)),
+        title: copy.systemText(optionalString(event.title), event.titleMessage, timezone),
+        detail: copy.systemText(optionalString(event.body) ?? optionalString(event.detail), event.bodyMessage, timezone),
         recordedBy: optionalString(event.actorName),
         id: record.publicId,
       };
@@ -4887,11 +4949,11 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
       const occurrence = await ctx.db.get(booking.occurrenceId);
       return {
         gym: context.organization.name,
-        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? "Gym branch",
-        className: occurrence?.name ?? "Class",
-        startsAt: formatExportDateTime(booking.startsAt, timezone),
-        status: exportStatusLabel(booking.status),
-        bookedAt: formatExportDateTime(booking.bookedAt, timezone),
+        branch: branchNamesByInternalId.get(String(booking.branchId)) ?? copy.label("Gym branch"),
+        className: occurrence?.name ?? copy.label("Class"),
+        startsAt: copy.dateTime(booking.startsAt, timezone),
+        status: copy.status(booking.status),
+        bookedAt: copy.dateTime(booking.bookedAt, timezone),
         fromWaitlist: booking.fromWaitlist,
         id: booking.publicId,
       };
@@ -4906,45 +4968,45 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
     ["Arabic name", optionalString(profile.nameAr)],
     ["Email", stringValue(profile.email, user.email)],
     ["Phone", optionalString(profile.phone)],
-    ["Date of birth", optionalString(profile.dateOfBirth)],
-    ["Gender", exportStatusLabel(optionalString(profile.gender))],
-    ["Preferred language", exportStatusLabel(optionalString(profile.preferredLanguage))],
+    ["Date of birth", copy.date(optionalString(profile.dateOfBirth))],
+    ["Gender", copy.status(optionalString(profile.gender))],
+    ["Preferred language", copy.status(optionalString(profile.preferredLanguage))],
     ["Address", optionalString(profile.addressLine1)],
     ["City", optionalString(profile.city)],
     ["Emergency contact", optionalString(profile.emergencyContactName)],
     ["Emergency relationship", optionalString(profile.emergencyContactRelationship)],
     ["Emergency phone", optionalString(profile.emergencyContactPhone)],
   ];
-  rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => ["Profile", "", "", "", label, value, "", "", ""]));
+  rows.push(...profileFields.filter(([, value]) => Boolean(value)).map(([label, value]) => [copy.label("Profile"), "", "", "", copy.label(label), value, "", "", ""]));
   rows.push(...memberships.map((membership): CsvValue[] => {
     const context = contexts.find((item) => item.membershipId === membership.membershipId || item.membershipId === membership.id);
     const currency = context?.organization.currency ?? JOD;
     return [
-      "Membership",
+      copy.label("Membership"),
       membership.gymName,
       membership.branchName,
-      membership.startDate,
+      copy.date(optionalString(membership.startDate)),
       membership.planName,
       details(
-        optionalString(membership.memberNumber) ? `Member ${optionalString(membership.memberNumber)}` : undefined,
-        optionalString(membership.endDate) ? `Ends ${optionalString(membership.endDate)}` : undefined,
-        optionalString(membership.lastCheckInAt) ? `Last check-in ${formatExportDateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK)}` : undefined,
+        optionalString(membership.memberNumber) ? copy.t("exportDocuments.phrases.member_number", { value: stringValue(membership.memberNumber) }) : undefined,
+        optionalString(membership.endDate) ? copy.t("exportDocuments.phrases.ends", { value: copy.date(optionalString(membership.endDate)) }) : undefined,
+        optionalString(membership.lastCheckInAt) ? copy.t("exportDocuments.phrases.last_check_in", { value: copy.dateTime(optionalString(membership.lastCheckInAt), context?.organization.timezone ?? TZ_FALLBACK) }) : undefined,
       ),
       formatMinorUnits(numberValue(membership.balanceMinor), currency),
       currency,
-      exportStatusLabel(optionalString(membership.status)),
+      copy.status(optionalString(membership.status)),
     ];
   }));
   rows.push(...charges.map((charge): CsvValue[] => [
-    "Charge",
+    copy.label("Charge"),
     charge.gym,
     "",
-    charge.issueDate,
+    copy.date(optionalString(charge.issueDate)),
     charge.description,
     details(
-      charge.dueDate ? `Due ${charge.dueDate}` : undefined,
-      charge.total ? `Total ${charge.total} ${charge.currency}` : undefined,
-      charge.paid ? `Paid ${charge.paid} ${charge.currency}` : undefined,
+      charge.dueDate ? copy.t("exportDocuments.phrases.due", { value: copy.date(optionalString(charge.dueDate)) }) : undefined,
+      charge.total ? copy.t("exportDocuments.phrases.total", { value: `${charge.total} ${charge.currency}` }) : undefined,
+      charge.paid ? copy.t("exportDocuments.phrases.paid", { value: `${charge.paid} ${charge.currency}` }) : undefined,
     ),
     charge.outstanding,
     charge.currency,
@@ -4953,26 +5015,26 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   rows.push(...transactions.map((transaction): CsvValue[] => {
     const currency = currencyOf(transaction.amount, JOD);
     return [
-      "Payment",
+      copy.label("Payment"),
       transaction.gymName,
       transaction.branchName,
-      formatExportDateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK),
-      optionalString(transaction.receiptNumber) ? `${exportStatusLabel(optionalString(transaction.type))} · Receipt ${optionalString(transaction.receiptNumber)}` : exportStatusLabel(optionalString(transaction.type)),
-      details(exportStatusLabel(optionalString(transaction.method)), optionalString(transaction.explanation)),
+      copy.dateTime(optionalString(transaction.occurredAt), organizationsByPublicId.get(stringValue(transaction.gymId))?.timezone ?? TZ_FALLBACK),
+      optionalString(transaction.receiptNumber) ? copy.t("exportDocuments.phrases.receipt", { type: copy.status(optionalString(transaction.type)), number: stringValue(transaction.receiptNumber) }) : copy.status(optionalString(transaction.type)),
+      details(copy.status(optionalString(transaction.method)), copy.paymentExplanation(stringValue(transaction.type), stringValue(transaction.status), optionalString(transaction.explanation))),
       formatMinorUnits(amountOf(transaction.amount), currency),
       currency,
-      exportStatusLabel(optionalString(transaction.status)),
+      copy.status(optionalString(transaction.status)),
     ];
   }));
-  rows.push(...visits.map((visit): CsvValue[] => ["Check-in", visit.gym, visit.branch, visit.occurredAt, "Gym visit", visit.reason, "", "", visit.result]));
-  rows.push(...timeline.map((event): CsvValue[] => ["Account activity", event.gym, "", event.occurredAt, event.title || event.type, event.detail, "", "", ""]));
+  rows.push(...visits.map((visit): CsvValue[] => [copy.label("Check-in"), visit.gym, visit.branch, visit.occurredAt, copy.label("Gym visit"), visit.reason, "", "", visit.result]));
+  rows.push(...timeline.map((event): CsvValue[] => [copy.label("Account activity"), event.gym, "", event.occurredAt, event.title || event.type, event.detail, "", "", ""]));
   rows.push(...classBookings.map((booking): CsvValue[] => [
-    "Class booking",
+    copy.label("Class booking"),
     booking.gym,
     booking.branch,
     booking.startsAt,
     booking.className,
-    details(booking.bookedAt ? `Booked ${booking.bookedAt}` : undefined, booking.fromWaitlist ? "Promoted from waitlist" : undefined),
+    details(booking.bookedAt ? copy.t("exportDocuments.phrases.booked", { value: stringValue(booking.bookedAt) }) : undefined, booking.fromWaitlist ? copy.label("Promoted from waitlist") : undefined),
     "",
     "",
     booking.status,
@@ -4980,43 +5042,44 @@ async function memberPersonalDataExport(ctx: MutationCtx, input: Data, request: 
   rows.push(...trialBookings.map((booking): CsvValue[] => {
     const gymId = stringValue(booking.gymId);
     return [
-      "Trial booking",
-      marketplaceNames.get(gymId) ?? "Unknown gym",
-      marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? "Unknown branch",
-      details(optionalString(booking.preferredDate), optionalString(booking.preferredTime)),
-      optionalString(booking.goal) || "Gym trial",
-      optionalString(booking.createdAt) ? `Requested ${formatExportDateTime(optionalString(booking.createdAt), personalTimezone)}` : "",
+      copy.label("Trial booking"),
+      marketplaceNames.get(gymId) ?? copy.label("Unknown gym"),
+      marketplaceBranchNames.get(`${gymId}:${stringValue(booking.branchId)}`) ?? copy.label("Unknown branch"),
+      details(copy.date(optionalString(booking.preferredDate)), copy.clock(optionalString(booking.preferredTime))),
+      optionalString(booking.goal) || copy.label("Gym trial"),
+      optionalString(booking.createdAt) ? copy.t("exportDocuments.phrases.requested", { value: copy.dateTime(optionalString(booking.createdAt), personalTimezone) }) : "",
       "",
       "",
-      exportStatusLabel(optionalString(booking.status)),
+      copy.status(optionalString(booking.status)),
     ];
   }));
   rows.push(...[...preferenceEvents].sort((left, right) => left.changedAt - right.changedAt).map((event): CsvValue[] => [
-    "Marketing preference",
+    copy.label("Marketing preference"),
     "",
     "",
-    formatExportDateTime(event.changedAt, personalTimezone),
-    "Marketing messages",
-    `Recorded through ${exportStatusLabel(event.source)}`,
+    copy.dateTime(event.changedAt, personalTimezone),
+    copy.label("Marketing messages"),
+    copy.t("exportDocuments.phrases.recorded_through", { value: copy.status(event.source) }),
     "",
     "",
-    `${event.optedIn ? "Allowed" : "Not allowed"} · ${exportStatusLabel(event.status)}`,
+    `${event.optedIn ? copy.label("Allowed") : copy.label("Not allowed")} · ${copy.status(event.status)}`,
   ]));
   const totalRows = rows.length;
   const content = buildCsvDocument({
-    title: "My RIVET data",
+    locale,
+    title: copy.label("My RIVET data"),
     metadata: [
-      { label: "Generated at", value: formatExportDateTime(now, personalTimezone) },
-      { label: "Account", value: stringValue(profile.email, user.email) },
-      { label: "Included gyms", value: [...organizations.values()].map((organization) => organization.name).join("; ") || "None" },
+      { label: copy.label("Generated at"), value: copy.dateTime(now, personalTimezone) },
+      { label: copy.label("Account"), value: stringValue(profile.email, user.email) },
+      { label: copy.label("Included gyms"), value: [...organizations.values()].map((organization) => organization.name).join("; ") || copy.label("None") },
     ],
-    headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"],
+    headers: ["Category", "Gym", "Branch", "Date", "Record", "Details", "Amount", "Currency", "Status"].map(copy.label),
     rows,
-    emptyMessage: "No personal data was available for export.",
+    emptyMessage: copy.label("No personal data was available for export."),
   });
-  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { correlationId: request.correlationId });
+  if (new TextEncoder().encode(content).byteLength > 750_000) domainError("CONFLICT", `Your personal-data export contains ${totalRows} records and exceeds the current safe single-download limit. Contact RIVET support for a complete archive.`, { message: { key: "apiErrors.personalExportLimit", params: { count: String(totalRows) } }, correlationId: request.correlationId });
   for (const organization of organizations.values()) await ctx.db.insert("auditEvents", { organizationId: organization._id, publicId: newPublicId(), actorUserId: user._id, actorPublicId: userId, actorName: user.fullName, actorRole: "member", category: "settings", action: "member.personal_data_export", entityType: "member_data_export", entityPublicId: idempotencyKey, entityLabel: user.fullName, summary: "Member downloaded a personal-data export", correlationId: request.correlationId ?? idempotencyKey, occurredAt: Date.now() });
-  return { id: idempotencyKey, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
+  return { id: idempotencyKey, locale, kind: "member_personal_data", status: "completed", fileName: `rivet-my-data-${now.slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8", rowCount: totalRows, totalRows, content, createdAt: now, completedAt: now, expiresAt: utcIso(Date.now() + 86_400_000) };
 }
 
 function workspaceInternalHref(value: unknown, correlationId: string): string {
@@ -5066,11 +5129,11 @@ async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Dat
   }
   if (hasPermission(actor, "crm.read")) {
     const rows = (await recordsOf(ctx, actor, "lead")).map((record) => data(record.data)).filter((lead) => matchesSearch([lead.fullName, lead.phone, lead.email, lead.source], search)).slice(0, 6);
-    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
+    results.push(...rows.map((lead) => ({ kind: "lead", id: stringValue(lead.id), title: stringValue(lead.fullName), subtitle: `${stringValue(lead.stage)} · ${stringValue(lead.phone)}`, subtitleParts: { kind: "lead", stage: stringValue(lead.stage), phone: stringValue(lead.phone) }, href: `/crm/leads/${lead.id}`, keywords: [stringValue(lead.phone), stringValue(lead.email)] })));
   }
   if (hasPermission(actor, "reports.financial.read")) {
     const rows = (await recordsOf(ctx, actor, "payment")).map((record) => data(record.data)).filter((payment) => matchesSearch([payment.receiptNumber, payment.externalReference, payment.idempotencyKey, payment.memberName, payment.memberNumber], search)).slice(0, 6);
-    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
+    results.push(...rows.map((payment) => ({ kind: "receipt", id: stringValue(payment.receiptId, stringValue(payment.id)), title: stringValue(payment.receiptNumber, "Receipt"), subtitle: `${stringValue(payment.memberName, stringValue(payment.memberNumber, "Member"))} · ${stringValue(payment.status)}`, subtitleParts: { kind: "receipt", memberName: optionalString(payment.memberName) ?? optionalString(payment.memberNumber), status: stringValue(payment.status) }, href: `/payments/receipts/${stringValue(payment.receiptId, stringValue(payment.id))}`, keywords: [stringValue(payment.externalReference), stringValue(payment.idempotencyKey)] })));
   }
   const navigation: Data[] = workspacePages(actor).map((row) => ({ kind: "page", ...row }));
   const actions: Data[] = workspaceQuickActions(actor).map((row) => ({ kind: "action", ...row }));
@@ -5079,7 +5142,7 @@ async function workspaceSearch(ctx: ReadContext, actor: ActorContext, input: Dat
 }
 
 function recentWorkspaceItemView(row: Doc<"recentWorkspaceItems">): Data {
-  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, href: row.href, viewedAt: utcIso(row.viewedAt) };
+  return { kind: row.kind, id: row.entityPublicId, title: row.title, subtitle: row.subtitle, subtitleParts: row.subtitleParts, href: row.href, viewedAt: utcIso(row.viewedAt) };
 }
 
 function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
@@ -6433,7 +6496,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     case "reports.gm_analysis":
       return await managementReportQuery(ctx, actor, operation, input);
     default:
-      domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { correlationId: actor.correlationId });
+      domainError("NOT_FOUND", `Unknown query operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -6605,7 +6668,7 @@ async function paymentRecord(
   if (!charge) domainError("NO_OUTSTANDING_BALANCE", "No unpaid amount is available for this member.", { correlationId: actor.correlationId });
   const chargeData = data(charge.data);
   if (chargeData.memberId !== memberId) domainError("NOT_FOUND", "Charge not found.", { correlationId: actor.correlationId });
-  if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
+  if (!chargeIsCollectibleValue(chargeData, today)) domainError("VALIDATION_ERROR", `This invoice becomes collectible on ${chargeDueDateValue(chargeData)}.`, { message: { key: "apiErrors.collectibleDate", params: { date: String(chargeDueDateValue(chargeData)) } }, correlationId: actor.correlationId, fieldErrors: { chargeId: ["Upcoming invoices cannot be paid before their due date"] } });
   const outstanding = amountOf(chargeData.outstandingAmount);
   const allocation = paymentAllocation(amount, outstanding);
   if (!allocation.ok) domainError("VALIDATION_ERROR", allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Payment cannot exceed the unpaid amount." : "Payment amount must be greater than zero.", { correlationId: actor.correlationId, fieldErrors: { amount: [allocation.code === "AMOUNT_EXCEEDS_OUTSTANDING" ? "Cannot exceed unpaid amount" : "Must be a positive integer"] } });
@@ -6650,15 +6713,16 @@ async function paymentRecord(
   const paid = amountOf(chargeData.paidAmount) + amount;
   await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, outstanding - amount), actor.organization.currency), status: paymentStatusForCharge(amountOf(chargeData.total), paid) });
   if (paid >= amountOf(chargeData.total)) await activatePtOrderForCharge(ctx, actor, charge.publicId);
-  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} ${method.replace("_", " ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
+  await insertTimeline(ctx, actor, { memberId, type: "payment_collected", title: `Payment collected — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} ${method.replace("_", " ")}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentCollected", { amount: { amountMinor: amount, currency: actor.organization.currency }, method: { enum: "paymentMethod", value: method } }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { receiptNumber: allocated.number, receiptId: allocated.id } });
   await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.create", key: idempotencyKey, requestHash, result: { paymentId: payment.id, receiptId: receipt.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
   const member = data(memberRecord.data);
   await queueOperationalEmail(ctx, {
     organizationId: actor.organization._id,
     branchId: branch?._id,
     kind: "payment_receipt",
-    templateVersion: "payment-receipt-v1",
-    language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en",
+    templateVersion: "payment-receipt-v2",
+    facts: { type: "receipt", receiptNumber: allocated.number, amountMinor: amount, currency: actor.organization.currency, method, paidAt: Date.parse(now), outstandingMinor: Math.max(0, outstanding - amount) },
+    ...recipientLanguage(member.preferredLanguage, actor.organization),
     recipientReference: memberId,
     recipientEmail: optionalString(member.email),
     dedupeKey: `payment-receipt:${receipt.id}`,
@@ -6793,7 +6857,7 @@ function normalizedPlanMapping(value: unknown): Map<string, string> {
 }
 
 function memberImportView(value: Data, includeRows: boolean): Data {
-  const rows = arrayValue(value.rows).map(data);
+  const rows: Data[] = arrayValue(value.rows).map(value => { const row = data(value); return { ...row, errorMessages: arrayValue(row.errors).map(error => describeMemberImportError(String(error))) }; });
   return {
     id: stringValue(value.id),
     branchId: stringValue(value.branchId),
@@ -6920,7 +6984,7 @@ async function previewMemberImport(ctx: MutationCtx, actor: ActorContext, input:
       ...(validImportDate(historicalPaymentDate) && historicalPaymentDate > migrationCutoffDate ? ["Historical payment date cannot be after the migration cutoff"] : []),
       ...(duplicateMemberIds.length ? ["A member with this phone or email already exists"] : []),
     ];
-    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, duplicateMemberIds };
+    return { rowNumber: index + 2, fullName, phone, gender, email, sourcePlanName, planId, planName: optionalString(plan?.name), membershipStartDate, membershipEndDate, remainingVisits, freezeStartDate, freezeEndDate, openingBalanceMinor: openingBalance.amount, historicalPaidMinor: historicalPaid.amount, historicalPaymentDate, historicalPaymentReference, status: duplicateMemberIds.length ? "duplicate" : errors.length ? "invalid" : "valid", errors, errorMessages: errors.map(describeMemberImportError), duplicateMemberIds };
   });
   const id = newPublicId();
   const now = Date.now();
@@ -6940,8 +7004,8 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
   if (!planId) return {};
   const planRecord = await recordOf(ctx, actor, "plan", planId);
   const plan = data(planRecord.data);
-  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { correlationId: actor.correlationId });
-  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { correlationId: actor.correlationId });
+  if (stringValue(plan.status) === "archived") domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” was archived after preview. Run the preview again.`, { message: { key: "apiErrors.importPlanArchived", params: { plan: String(stringValue(plan.name)) } }, correlationId: actor.correlationId });
+  if (plan.branchAccess === "selected" && !arrayValue(plan.branchIds).map(String).includes(stringValue(importData.branchId))) domainError("CONFLICT", `Mapped plan “${stringValue(plan.name)}” is no longer available at this branch. Run the preview again.`, { message: { key: "apiErrors.importPlanBranch", params: { plan: String(stringValue(plan.name)) } }, correlationId: actor.correlationId });
   const membershipId = newPublicId();
   const freezeStartDate = optionalString(row.freezeStartDate);
   const freezeEndDate = optionalString(row.freezeEndDate);
@@ -7001,7 +7065,7 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
       createdAt: isoNow(),
     }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
     chargeVersion = String((await recordOf(ctx, actor, "charge", chargeId)).updatedAt);
-    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Opening balance imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.openingBalanceImported", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: `Unpaid as of ${stringValue(importData.migrationCutoffDate)}. No receipt, cash movement, or historical sale was created.`, bodyMessage: systemMessage("communicationCompletion.timeline.openingBalanceImportedBody", { cutoff: { date: stringValue(importData.migrationCutoffDate) } }), meta: { importBatchId: importData.id, chargeId, sourceRowNumber: row.rowNumber } });
   }
   let evidenceId: string | undefined;
   let evidenceVersion: string | undefined;
@@ -7023,9 +7087,10 @@ async function createImportedMembershipArtifacts(ctx: MutationCtx, actor: ActorC
       createdAt: isoNow(),
     }, { branchId: stringValue(importData.branchId), memberPublicId: stringValue(member.id) });
     evidenceVersion = String((await recordOf(ctx, actor, "migrationPaymentEvidence", evidenceId)).updatedAt);
-    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${optionalString(row.historicalPaymentReference) ? ` · ${stringValue(row.historicalPaymentReference)}` : ""}. No RIVET payment or receipt was created.`, meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
+    const historicalReference = optionalString(row.historicalPaymentReference);
+    await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `Historical payment evidence imported — ${actor.organization.currency} ${(amount / 10 ** importCurrencyDigits(actor.organization.currency)).toFixed(importCurrencyDigits(actor.organization.currency))}`, titleMessage: systemMessage("communicationCompletion.timeline.historicalPaymentEvidenceImported", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: `Read-only evidence through ${stringValue(row.historicalPaymentDate)}${historicalReference ? ` · ${historicalReference}` : ""}. No RIVET payment or receipt was created.`, bodyMessage: systemMessage(historicalReference ? "communicationCompletion.timeline.historicalPaymentEvidenceImportedBodyWithReference" : "communicationCompletion.timeline.historicalPaymentEvidenceImportedBody", { date: { date: stringValue(row.historicalPaymentDate) }, ...(historicalReference ? { reference: historicalReference } : {}) }), meta: { importBatchId: importData.id, evidenceId, sourceRowNumber: row.rowNumber } });
   }
-  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
+  await insertTimeline(ctx, actor, { memberId: member.id, branchId: importData.branchId, type: "note", title: `${stringValue(plan.name)} membership history imported`, titleMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImported", { plan: stringValue(plan.name) }), body: `${stringValue(row.membershipStartDate)} → ${stringValue(row.membershipEndDate)} · source cutoff ${stringValue(importData.migrationCutoffDate)}`, bodyMessage: systemMessage("communicationCompletion.timeline.membershipHistoryImportedBody", { startDate: { date: stringValue(row.membershipStartDate) }, endDate: { date: stringValue(row.membershipEndDate) }, cutoffDate: { date: stringValue(importData.migrationCutoffDate) } }), meta: { importBatchId: importData.id, membershipId, sourceRowNumber: row.rowNumber, financialPostingEligible: false } });
   await insertAudit(ctx, actor, { category: "memberships", action: "membership.history_imported", entityType: "membership", entityId: membershipId, entityLabel: `${stringValue(member.fullName)} · ${stringValue(plan.name)}`, summary: `Imported active or scheduled membership history from row ${numberValue(row.rowNumber)}`, branchId: stringValue(importData.branchId), after: { startDate: row.membershipStartDate, endDate: row.membershipEndDate, activeFreeze: Boolean(activeFreeze), openingBalanceMinor: numberValue(row.openingBalanceMinor), historicalPaidMinor: numberValue(row.historicalPaidMinor), importBatchId: importData.id, financialPostingEligible: false } });
   return { membershipId, membershipVersion: String(membershipRecord.updatedAt), chargeId, chargeVersion, evidenceId, evidenceVersion };
 }
@@ -7242,7 +7307,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
     notes: optionalString(input.notes),
     createdAt: isoNow(),
   }, { branchId: homeBranchId });
-  await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
+  await insertTimeline(ctx, actor, { memberId: member.id, type: "member_created", title: "Member profile created", titleMessage: systemMessage("communicationCompletion.timeline.memberCreated"), actorId: publicUserId(actor.user), actorName: actor.user.fullName, branchId: homeBranchId });
   await insertAudit(ctx, actor, { category: "members", action: "member.create", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Member profile created", branchId: homeBranchId });
   if (duplicates.length > 0 && unconfirmedDuplicates.length === 0) {
     await insertAudit(ctx, actor, { category: "members", action: "member.duplicate_identity_override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: "Created a distinct member after reviewing contact matches", reason: "Front desk confirmed this is a different person.", after: { matchedMemberIds: duplicates.map((duplicate) => duplicate.memberId) }, branchId: homeBranchId });
@@ -7346,7 +7411,11 @@ async function createMembershipMutation(
     branchId: memberData.homeBranchId,
     type: operation === "plan_change" ? "membership_plan_changed" : renewal ? "membership_renewed" : "membership_sold",
     title: operation === "plan_change" ? `Membership plan changed to ${stringValue(planData.name)}` : `${stringValue(planData.name)} membership ${renewal ? "renewed" : "sold"}`,
+    titleMessage: operation === "plan_change" ? systemMessage("communicationCompletion.timeline.membershipPlanChanged", { plan: stringValue(planData.name) }) : renewal ? systemMessage("communicationCompletion.timeline.membershipRenewed", { plan: stringValue(planData.name) }) : systemMessage("communicationCompletion.timeline.membershipSold", { plan: stringValue(planData.name) }),
     body: operation === "plan_change" ? `${options.reason ?? "Plan change"} Effective ${membership.startDate}; no proration applied.` : `Term ${membership.startDate} → ${membership.endDate}.`,
+    bodyMessage: operation === "plan_change"
+      ? systemMessage("communicationCompletion.timeline.membershipPlanChangeBody", { reason: options.reason ?? "Plan change", date: { date: stringValue(membership.startDate) } })
+      : systemMessage("communicationCompletion.timeline.membershipTerm", { startDate: { date: stringValue(membership.startDate) }, endDate: { date: stringValue(membership.endDate) } }),
     actorId: publicUserId(actor.user),
     actorName: actor.user.fullName,
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
@@ -7549,7 +7618,7 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
   const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
   const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, body: related ? `Follow-on to: ${related.title}` : undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
 
@@ -7591,7 +7660,7 @@ async function resolveFollowUpTasksForContact(
     const record = byId.get(task.id);
     if (!record) continue;
     const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: completedOutcome, completedAt: isoNow() });
-    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, body: completedOutcome, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+    if (task.memberId) await insertTimeline(ctx, actor, { memberId: task.memberId, type: "task_completed", title: `Task completed: ${stringValue(updated.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(updated.title) }), body: completedOutcome, ...(isContactOutcome(outcome) ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskContactCompleted", { outcome: { enum: "contactOutcome", value: outcome } }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   }
   if (resolution.reschedule && nextFollowUpAt) {
     const record = byId.get(resolution.reschedule.id);
@@ -7695,7 +7764,7 @@ async function executeAutomationCandidate(
         messageClass: "marketing",
         channel: "sandbox",
         requestedChannel: stringValue(action.channel, "whatsapp"),
-        language: stringValue(candidate.value.preferredLanguage, "en"),
+        ...recipientLanguage(candidate.value.preferredLanguage, actor.organization),
         templateId: optionalString(action.templateId),
         memberId,
         leadId,
@@ -7716,6 +7785,7 @@ async function executeAutomationCandidate(
         roles: ["owner", "manager"],
         kind: "automation_attention",
         title: stringValue(rule.name, "Automation requires attention"),
+        ...(typeof rule.name === "string" ? {} : { titleMessage: systemMessage("communicationCompletion.notifications.automationAttention") }),
         body: candidate.subjectName,
         href: automationAttentionHref(memberId, leadId),
         dedupeKey: `automation-notification:${executionId}`,
@@ -7806,11 +7876,11 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
           const next = kind === "members_add_tags" ? [...new Set([...current, ...tags])] : current.filter((tag) => !tags.includes(tag));
           if (JSON.stringify(current) === JSON.stringify(next)) { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { tags: next });
-          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: optionalString(member.homeBranchId), type: "member_updated", title: kind === "members_add_tags" ? `Tags added: ${tags.join(", ")}` : `Tags removed: ${tags.join(", ")}`, titleMessage: systemMessage(kind === "members_add_tags" ? "communicationCompletion.timeline.tagsAdded" : "communicationCompletion.timeline.tagsRemoved", { tags: tags.join(", ") }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "members_assign_branch") {
           if (member.homeBranchId === publicBranchId(branch!)) { skippedCount += 1; continue; }
           await ctx.db.patch(record._id, { branchId: branch!._id, data: { ...member, homeBranchId: publicBranchId(branch!) }, updatedAt: Date.now() });
-          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { memberId: id, branchId: publicBranchId(branch!), type: "member_updated", title: `Home branch assigned — ${branch!.name}`, titleMessage: systemMessage("communicationCompletion.timeline.homeBranchAssigned", { branch: branch!.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "members_create_follow_up") {
           await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(member.fullName)}`, ownerId: publicUserId(actor.user), dueAt, priority: "normal", memberId: id });
         } else if (kind === "members_archive") {
@@ -7827,13 +7897,13 @@ async function runBulkOperationMutation(ctx: MutationCtx, actor: ActorContext, i
         if (kind === "leads_assign_owner") {
           if (lead.ownerId === publicUserId(owner!)) { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { ownerId: publicUserId(owner!), ownerName: owner!.fullName, updatedAt: isoNow() });
-          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_assigned", title: `Assigned to ${owner!.fullName}`, titleMessage: systemMessage("communicationCompletion.timeline.leadAssigned", { name: owner!.fullName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         } else if (kind === "leads_create_follow_up") {
           await createTaskMutation(ctx, actor, { type: "follow_up", title: `Follow up — ${stringValue(lead.fullName)}`, ownerId: optionalString(lead.ownerId) ?? publicUserId(actor.user), dueAt, priority: "normal", leadId: id });
         } else if (kind === "leads_close_lost") {
           if (stringValue(lead.stage) === "lost") { skippedCount += 1; continue; }
           await patchRecord(ctx, actor, record, { stage: "lost", lostReason: reason, nextFollowUpAt: undefined, updatedAt: isoNow() });
-          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+          await insertTimeline(ctx, actor, { leadId: id, branchId: optionalString(lead.branchId), type: "lead_lost", title: "Lead closed as not sold", titleMessage: systemMessage("communicationCompletion.timeline.leadLost"), body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName });
         }
       }
       succeededCount += 1;
@@ -7899,7 +7969,7 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     const patch: Data = {};
     for (const field of MEMBER_MERGE_FIELDS) {
       const sourceId = optionalString(sources[field]);
-      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { correlationId: actor.correlationId });
+      if (sourceId && !pair.has(sourceId)) domainError("VALIDATION_ERROR", `Invalid field source for ${field}.`, { message: { key: "apiErrors.fieldSource", params: { field: String(field) } }, correlationId: actor.correlationId });
       const source = sourceId === mergedMemberId ? mergedValue : survivorValue;
       if (Object.prototype.hasOwnProperty.call(source, field)) patch[field] = source[field];
     }
@@ -7910,7 +7980,7 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     await patchRecord(ctx, actor, merged, { status: "archived", archivedAt: now, mergedIntoMemberId: survivingMemberId, mergedAt: now });
     const mergedProjections = projections.filter((projection) => stringValue(data(projection.data).memberId) === mergedMemberId);
     await Promise.all(mergedProjections.map((projection) => ctx.db.patch(projection._id, { memberPublicId: survivingMemberId, data: { ...data(projection.data), memberId: survivingMemberId, memberNumber: stringValue(patch.memberNumber, stringValue(survivorValue.memberNumber)) }, updatedAt: Date.now() })));
-    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
+    const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, titleMessage: systemMessage("communicationCompletion.timeline.memberMerged", { memberNumber: stringValue(mergedValue.memberNumber) }), body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
     const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
     mergeAuditReference = stringValue(audit.publicId);
   }
@@ -7969,7 +8039,7 @@ async function grantIncludedPtCredits(ctx: MutationCtx, actor: ActorContext, mem
   });
   await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: stringValue(membership.memberId), type: "grant", quantity: sessions, reason: `Included with ${stringValue(plan.name)} membership term` });
   const scheduled = startsAt > now;
-  await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} ${scheduled ? "scheduled" : "granted"}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, startsAt: utcIso(startsAt) } });
+  await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_credit_granted", title: `${sessions} included PT session${sessions === 1 ? "" : "s"} ${scheduled ? "scheduled" : "granted"}`, titleMessage: systemMessage(scheduled ? "communicationCompletion.timeline.ptIncludedCreditsScheduled" : "communicationCompletion.timeline.ptIncludedCreditsGranted", { count: sessions }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, startsAt: utcIso(startsAt) } });
   await insertAudit(ctx, actor, { category: "memberships", action: scheduled ? "pt.credit.schedule" : "pt.credit.grant", entityType: "pt_entitlement", entityId: (await ctx.db.get(entitlementId))?.publicId ?? membershipId, entityLabel: stringValue(membership.memberId), summary: `${scheduled ? "Scheduled" : "Granted"} ${sessions} included PT session${sessions === 1 ? "" : "s"}`, branchId: stringValue(membership.homeBranchId), after: { sessions, membershipId, startsAt: utcIso(startsAt) } });
 }
 
@@ -8025,7 +8095,7 @@ async function revokeUnusedIncludedPtCredits(ctx: MutationCtx, actor: ActorConte
   if (unused <= 0) return;
   await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + unused, status: entitlement.reserved > 0 ? "active" : "revoked", updatedAt: Date.now() });
   await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -unused, reason });
-  await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_refunded", title: `${unused} unused included PT session${unused === 1 ? "" : "s"} revoked`, body: reason, meta: { membershipId, entitlementId: entitlement.publicId } });
+  await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_refunded", title: `${unused} unused included PT session${unused === 1 ? "" : "s"} revoked`, titleMessage: systemMessage("communicationCompletion.timeline.ptIncludedCreditsRevoked", { count: unused }), body: reason, meta: { membershipId, entitlementId: entitlement.publicId } });
   await insertAudit(ctx, actor, { category: "memberships", action: "pt.credit.revoke", entityType: "pt_entitlement", entityId: entitlement.publicId, entityLabel: entitlement.memberPublicId, summary: `Revoked ${unused} unused included PT session${unused === 1 ? "" : "s"}`, reason, before: { available: unused }, after: { available: 0 } });
 }
 
@@ -8057,11 +8127,11 @@ async function activatePtOrderForCharge(ctx: MutationCtx, actor: ActorContext, c
   });
   await ctx.db.patch(order._id, { status: "active", entitlementId, paidAt: now, updatedAt: now });
   await insertPtLedger(ctx, actor, { entitlementId, memberPublicId: order.memberPublicId, type: "grant", quantity: terms.sessionCount, reason: `Activated ${terms.name} after full payment` });
-  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_activated", title: `${terms.name} activated`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, chargeId } });
-  await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, roles: ["owner", "manager", "receptionist"], kind: "pt_package_activated", title: "PT package activated", body: terms.name, href: `/members/${order.memberPublicId}`, dedupeKey: `pt-package-activated:${order.publicId}` });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_activated", title: `${terms.name} activated`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageActivated", { package: terms.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, entitlementId: (await ctx.db.get(entitlementId))?.publicId, chargeId } });
+  await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, roles: ["owner", "manager", "receptionist"], kind: "pt_package_activated", title: "PT package activated", titleMessage: systemMessage("communicationCompletion.notifications.ptPackageActivated"), body: terms.name, href: `/members/${order.memberPublicId}`, dedupeKey: `pt-package-activated:${order.publicId}` });
   const memberRecord = await recordOfOptional(ctx, actor, "member", order.memberPublicId);
   const member = data(memberRecord?.data);
-  await queueOperationalEmail(ctx, { organizationId: actor.organization._id, kind: "pt_package_paid", templateVersion: "pt-package-paid-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: order.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-package-paid:${order.publicId}` });
+  await queueOperationalEmail(ctx, { organizationId: actor.organization._id, kind: "pt_package_paid", templateVersion: "pt-package-paid-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: order.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-package-paid:${order.publicId}` });
 }
 
 async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorContext, chargeId: string, reason: string): Promise<void> {
@@ -8076,7 +8146,7 @@ async function reverseUnusedPtOrderAfterVoid(ctx: MutationCtx, actor: ActorConte
   await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + available, status: "revoked", updatedAt: Date.now() });
   await ctx.db.patch(order._id, { status: "pending_payment", updatedAt: Date.now() });
   await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "adjustment", quantity: -available, reason });
-  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: "PT package activation reversed after payment void", body: reason, meta: { orderId: order.publicId, chargeId } });
+  await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: "PT package activation reversed after payment void", titleMessage: systemMessage("communicationCompletion.timeline.ptPackageActivationReversed"), body: reason, meta: { orderId: order.publicId, chargeId } });
   await insertAudit(ctx, actor, { category: "payments", action: "pt.package.activation_reverse", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Revoked ${available} unused PT credit${available === 1 ? "" : "s"} after payment void`, reason, before: { orderStatus: order.status, available }, after: { orderStatus: "pending_payment", available: 0 } });
 }
 
@@ -8108,7 +8178,7 @@ async function customerPtContext(ctx: ReadContext, membershipId: string) {
   return { user, organization, projection, membership, member };
 }
 
-async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization: Organization; memberId: string; branchId?: Id<"branches">; type: string; title: string; body?: string; meta?: Data; user: User }): Promise<void> {
+async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization: Organization; memberId: string; branchId?: Id<"branches">; type: string; title: string; titleMessage?: SystemMessage; bodyMessage?: SystemMessage; body?: string; meta?: Data; user: User }): Promise<void> {
   const now = Date.now();
   const id = newPublicId();
   await ctx.db.insert("domainRecords", {
@@ -8119,7 +8189,7 @@ async function insertCustomerPtTimeline(ctx: MutationCtx, input: { organization:
     memberPublicId: input.memberId,
     createdAt: now,
     updatedAt: now,
-    data: { id, organizationId: publicOrganizationId(input.organization), memberId: input.memberId, type: input.type, title: input.title, body: input.body, actorId: publicUserId(input.user), actorName: input.user.fullName, occurredAt: utcIso(now), meta: input.meta },
+    data: { id, organizationId: publicOrganizationId(input.organization), memberId: input.memberId, type: input.type, title: input.title, ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}), body: input.body, ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}), actorId: publicUserId(input.user), actorName: input.user.fullName, occurredAt: utcIso(now), meta: input.meta },
   });
 }
 
@@ -8201,7 +8271,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const responseId = newPublicId();
     await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "offerResponse", publicId: responseId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: responseId, organizationId: publicOrganizationId(organization), offerId: offer.publicId, leadId: lead.publicId, outcome, reason: reason || undefined, source: "public_link", occurredAt: respondedAt } });
     const timelineId = newPublicId();
-    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
+    await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "timeline", publicId: timelineId, branchId: lead.branchId, leadPublicId: lead.publicId, createdAt: Date.now(), updatedAt: Date.now(), data: { id: timelineId, organizationId: publicOrganizationId(organization), leadId: lead.publicId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, titleMessage: outcome === "accepted" ? systemMessage("communicationCompletion.timeline.offerAccepted", { plan: stringValue(current.planName) }) : systemMessage("communicationCompletion.timeline.offerDeclined", { plan: stringValue(current.planName) }), body: reason || undefined, actorName: "Offer recipient", occurredAt: respondedAt, meta: { offerId: offer.publicId, outcome, source: "public_link" } } });
     return await publicOfferView(ctx, token);
   }
 
@@ -8320,7 +8390,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (stringValue(membershipData.endDate) < startDate) domainError("VALIDATION_ERROR", "The freeze must start before the membership ends.", { correlationId: request.correlationId });
     const minimumFreezeDays = numberValue(data(data(data(settings?.data).operationalPolicies).membership).minimumFreezeDays, 1);
     if (!Number.isSafeInteger(days) || days < minimumFreezeDays || days > numberValue(policy.maxDaysPerFreeze, 30)) {
-      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { correlationId: request.correlationId });
+      domainError("VALIDATION_ERROR", `A freeze must be between ${minimumFreezeDays} and ${numberValue(policy.maxDaysPerFreeze, 30)} days.`, { message: { key: "apiErrors.freezeRange", params: { minimum: String(minimumFreezeDays), maximum: String(numberValue(policy.maxDaysPerFreeze, 30)) } }, correlationId: request.correlationId });
     }
     if (!reason) domainError("VALIDATION_ERROR", "Tell the gym why you need the freeze.", { correlationId: request.correlationId });
     const membershipId = context.membership.publicId;
@@ -8396,9 +8466,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     });
     const order = (await ctx.db.get(orderId))!;
     await ctx.db.insert("idempotencyRecords", { organizationId: context.organization._id, operation: "customer.pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
-    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_package_requested", title: `${ptPackage.name} requested`, meta: { orderId: order.publicId, chargeId } });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_package_requested", title: `${ptPackage.name} requested`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageRequested", { package: ptPackage.name }), meta: { orderId: order.publicId, chargeId } });
     await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: context.member.publicId, summary: `Member requested ${ptPackage.name}`, after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId }, correlationId: request.correlationId });
-    await notifyOrganizationRoles(ctx, { organizationId: context.organization._id, branchId: branch._id, roles: ["owner", "manager", "sales", "receptionist"], kind: "pt_package_request", title: "PT package payment requested", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${ptPackage.name}`, href: `/members/${context.member.publicId}`, dedupeKey: `pt-package-request:${order.publicId}` });
+    await notifyOrganizationRoles(ctx, { organizationId: context.organization._id, branchId: branch._id, roles: ["owner", "manager", "sales", "receptionist"], kind: "pt_package_request", title: "PT package payment requested", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${ptPackage.name}`, titleMessage: systemMessage("communicationCompletion.notifications.ptPackageRequested"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: stringValue(data(context.member.data).fullName, "Member"), b: ptPackage.name }), href: `/members/${context.member.publicId}`, dedupeKey: `pt-package-request:${order.publicId}` });
     return await ptPackageOrderView(ctx, context.organization, order);
   }
   if (operation === "customer.pt.booking.create") {
@@ -8418,7 +8488,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const today = todayIn(context.organization.timezone || TZ_FALLBACK);
     const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
     const policies = { ...DEFAULT_OPERATIONAL_POLICIES.personalTraining, ...data(data(data(settings?.data).operationalPolicies).personalTraining) };
-    if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`);
+    if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { message: { key: "apiErrors.ptHorizon", params: { days: String(numberValue(policies.bookingHorizonDays, 30)) } } });
     if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.");
     const freeze = data(membership.activeFreeze);
     if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.");
@@ -8443,10 +8513,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const bookingId = await ctx.db.insert("ptBookings", { organizationId: context.organization._id, publicId: newPublicId(), memberPublicId: context.member.publicId, membershipPublicId: context.membership.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: context.user._id, idempotencyKey, createdAt: now, updatedAt: now });
     const booking = (await ctx.db.get(bookingId))!;
     await ctx.db.insert("ptCreditLedger", { organizationId: context.organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: context.member.publicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "Member reserved PT booking", actorUserId: context.user._id, occurredAt: now });
-    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtTimeline(ctx, { organization: context.organization, user: context.user, memberId: context.member.publicId, branchId: branch._id, type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptBooked", { trainer: trainer.displayName }), meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
     await insertCustomerPtAudit(ctx, { organization: context.organization, user: context.user, branchId: branch._id, action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data(context.member.data).fullName)} · ${trainer.displayName}`, summary: "Member reserved one PT credit", after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId }, correlationId: request.correlationId });
-    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${utcIso(startsAt)}`, href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
-    await queueOperationalEmail(ctx, { organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(data(context.member.data).preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: publicUserId(context.user), recipientEmail: context.user.email, dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: `${stringValue(data(context.member.data).fullName, "Member")} · ${utcIso(startsAt)}`, titleMessage: systemMessage("communicationCompletion.notifications.ptBooking"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: stringValue(data(context.member.data).fullName, "Member"), b: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+    await queueOperationalEmail(ctx, { organizationId: context.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", ...recipientLanguage(data(context.member.data).preferredLanguage, context.organization), recipientReference: publicUserId(context.user), recipientEmail: context.user.email, dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
     return await ptBookingView(ctx, context.organization, booking);
   }
   if (operation === "customer.pt.booking.cancel") {
@@ -8469,9 +8539,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + (timely ? 0 : 1), updatedAt: Date.now() });
     await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason), actorUserId: user._id, occurredAt: Date.now() });
-    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: booking.branchId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: booking.branchId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", titleMessage: timely ? systemMessage("communicationCompletion.timeline.ptCancelledRestored") : systemMessage("communicationCompletion.timeline.ptCancelledUsed"), body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
     await insertCustomerPtAudit(ctx, { organization, user, branchId: booking.branchId, action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Member cancelled PT booking and restored credit" : "Member late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, correlationId: request.correlationId });
-    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-cancelled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-cancelled-v1", ...recipientLanguage(profile?.preferredLanguage, organization), recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
     return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
   }
   if (operation === "customer.pt.booking.reschedule") {
@@ -8519,10 +8589,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
     await ctx.db.insert("ptCreditLedger", { organizationId: organization._id, publicId: newPublicId(), entitlementId: entitlement._id, memberPublicId: booking.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}`, actorUserId: user._id, occurredAt: Date.now() });
     await ctx.db.insert("idempotencyRecords", { organizationId: organization._id, operation: "customer.pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
-    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: branch._id, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+    await insertCustomerPtTimeline(ctx, { organization, user, memberId: booking.memberPublicId, branchId: branch._id, type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptRescheduled", { trainer: trainer.displayName }), body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
     await insertCustomerPtAudit(ctx, { organization, user, branchId: branch._id, action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Member rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, correlationId: request.correlationId });
-    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
-    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+    await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingRescheduled"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+    await queueOperationalEmail(ctx, { organizationId: organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", ...recipientLanguage(profile?.preferredLanguage, organization), recipientReference: publicUserId(user), recipientEmail: user.email, dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
     return await ptBookingView(ctx, organization, (await ctx.db.get(booking._id))!);
   }
   if (operation === "notifications.read" || operation === "notifications.readAll") {
@@ -8932,14 +9002,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const billedRecipient = await platformGymOwnerRecipient(ctx, gymId);
         if (billedRecipient && billedRecipient.organization._id === organization._id) {
           const issued = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "platformInvoice").eq("publicId", invoiceId)).unique();
+          // Gym-addressed: the gym's chosen language, for the notice and its PDF alike.
+          const notice = recipientLanguage(undefined, billedRecipient.organization);
           await queueOperationalEmail(ctx, {
             organizationId: billedRecipient.organization._id,
             kind: "platform_invoice_issued",
-            templateVersion: "platform-invoice-issued-v1",
+            templateVersion: "platform-invoice-issued-v2",
+            ...notice,
+            facts: issued ? platformInvoiceFacts(invoiceId, data(issued.data)) : undefined,
             recipientReference: publicUserId(billedRecipient.user),
             recipientEmail: billedRecipient.user.email,
             dedupeKey: `subscription-change-invoice:${invoiceId}`,
-            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user))] : undefined,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone })] : undefined,
           });
         }
       }
@@ -9036,11 +9110,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("VALIDATION_ERROR", "Workspace capabilities must use canonical module keys.", { correlationId: admin.correlationId });
       }
       const unsupported = input.entitledModules.filter((module): module is string => typeof module === "string" && !allWorkspaceModuleKeys().includes(module as WorkspaceModuleKey));
-      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { correlationId: admin.correlationId });
+      if (unsupported.length > 0) domainError("VALIDATION_ERROR", `Unknown workspace capabilities: ${unsupported.join(", ")}.`, { message: { key: "apiErrors.workspaceCapabilities" }, correlationId: admin.correlationId });
       try {
         entitledModules = validateWorkspaceModuleSelection(input.entitledModules, allWorkspaceModuleKeys());
       } catch (error) {
-        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { correlationId: admin.correlationId });
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: admin.correlationId });
       }
     }
     const updated = { ...current, name, priceMinor, branches, staff, members, entitledModules };
@@ -9280,15 +9354,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     });
     if (["platform.invoice.issue", "platform.invoice.past_due", "platform.invoice.payment"].includes(operation)) {
       const recipient = await platformGymOwnerRecipient(ctx, stringValue(current.gymId));
-      if (recipient) await queueOperationalEmail(ctx, {
+      const notice = recipient ? recipientLanguage(undefined, recipient.organization) : undefined;
+      if (recipient && notice) await queueOperationalEmail(ctx, {
         organizationId: recipient.organization._id,
         kind: operation === "platform.invoice.issue" ? "platform_invoice_issued" : operation === "platform.invoice.past_due" ? "platform_invoice_past_due" : "platform_invoice_paid",
-        templateVersion: operation === "platform.invoice.issue" ? "platform-invoice-issued-v1" : operation === "platform.invoice.past_due" ? "platform-invoice-past-due-v1" : "platform-invoice-paid-v1",
+        templateVersion: operation === "platform.invoice.issue" ? "platform-invoice-issued-v2" : operation === "platform.invoice.past_due" ? "platform-invoice-past-due-v2" : "platform-invoice-paid-v2",
+        ...notice,
+        facts: platformInvoiceFacts(invoiceId, updated),
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
-        // The invoice travels with the notice, as the paperwork it is.
-        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user))],
+        // The invoice travels with the notice, as the paperwork it is, in the same language.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone })],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {
@@ -9297,6 +9374,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "platform_invoice_past_due",
           title: "RIVET invoice marked past due",
           body: `${invoiceId} · ${platformInvoiceAmount(numberValue(current.amountMinor), stringValue(current.currency, "JOD"))}`,
+          titleMessage: systemMessage("communicationCompletion.notifications.invoicePastDue"),
+          bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: invoiceId, b: { amountMinor: numberValue(current.amountMinor), currency: stringValue(current.currency, "JOD") } }),
           href: "/support",
           dedupeKey: `platform-invoice-past-due:${invoiceId}`,
         });
@@ -9371,6 +9450,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: operation === "platform.support.reply" ? "support_reply" : "support_resolved",
         title: operation === "platform.support.reply" ? "RIVET replied to your support case" : "RIVET resolved your support case",
+        titleMessage: systemMessage(operation === "platform.support.reply" ? "communicationCompletion.notifications.supportReply" : "communicationCompletion.notifications.supportResolved"),
         body: stringValue(current.subject, publicId),
         href: `/support?case=${publicId}`,
         dedupeKey: `${operation}:${publicId}:${now}`,
@@ -9393,6 +9473,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: "support_assignment",
         title: "Support case assigned to you",
+        titleMessage: systemMessage("communicationCompletion.notifications.supportAssigned"),
         body: `${stringValue(current.gym, "Gym")} · ${stringValue(current.subject, publicId)}`,
         href: `/platform/support?case=${publicId}`,
         dedupeKey: `support-assigned:${publicId}:${publicUserId(assignee)}`,
@@ -9408,6 +9489,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 
   switch (operation) {
     case "exports.request": {
+      const locale = exportLocale(input.locale);
       const kind = staffExportKind(input.kind, actor.correlationId);
       requireExportPermission(actor, kind);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
@@ -9423,8 +9505,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const generatedAt = isoNow();
       const branchScope = branchId ? `branch:${branchId}` : actor.branchScope === "all" ? "all accessible branches" : `${actor.branchIds.length} assigned branches`;
-      const rows = await staffExportRows(ctx, actor, kind, filters);
+      const rows = await staffExportRows(ctx, actor, kind, filters, locale);
       const csv = csvFromRows(rows, {
+        locale,
         title: STAFF_EXPORT_TITLES[kind],
         headers: STAFF_EXPORT_HEADERS[kind],
         generatedAt,
@@ -9436,7 +9519,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const fileName = `rivet-${kind.replaceAll("_", "-")}-${generatedAt.slice(0, 10)}.csv`;
       const status = csv.complete ? "completed" : "failed";
       const failureMessage = csv.complete ? undefined : `This export contains ${csv.totalRows} rows and exceeds the current safe single-download limit. Narrow the date, branch, or search filters and try again.`;
-      const value = { id, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
+      const value = { id, locale, kind, status, fileName: csv.complete ? fileName : undefined, mimeType: csv.complete ? "text/csv;charset=utf-8" : undefined, rowCount: csv.rowCount, totalRows: csv.totalRows, content: csv.complete ? csv.content : undefined, failureMessage, ...(failureMessage ? { failureMessageKey: "exports.tooLarge", failureMessageParams: { count: csv.totalRows } } : {}), timezone: actor.organization.timezone || TZ_FALLBACK, branchScope, filters, requestedById: publicUserId(actor.user), idempotencyKey, requestFingerprint, createdAt: generatedAt, completedAt: generatedAt, expiresAt: utcIso(Date.now() + 86_400_000) };
       await insertRecord(ctx, actor, "exportJob", value);
       await insertAudit(ctx, actor, { category: "settings", action: csv.complete ? "data.export" : "data.export_rejected", entityType: "data_export", entityId: id, entityLabel: fileName, summary: csv.complete ? `Exported ${kind.replaceAll("_", " ")} (${csv.rowCount} rows)` : `Rejected oversized ${kind.replaceAll("_", " ")} export (${csv.totalRows} rows)`, after: { kind, status, rowCount: csv.rowCount, totalRows: csv.totalRows, filters, branchScope, timezone: actor.organization.timezone || TZ_FALLBACK } });
       return exportJobView(value);
@@ -9448,11 +9531,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const title = stringValue(input.title).trim().slice(0, 160);
       if (!title) domainError("VALIDATION_ERROR", "Recent-item title is required.", { correlationId: actor.correlationId });
       const subtitle = optionalString(input.subtitle)?.trim().slice(0, 240);
+      const subtitleParts = parseWorkspaceSubtitle(input.subtitleParts, kind);
       const href = workspaceInternalHref(input.href, actor.correlationId);
       const existing = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_entity", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id).eq("kind", kind as "member" | "lead" | "receipt" | "page").eq("entityPublicId", entityPublicId)).unique();
       const viewedAt = Date.now();
-      if (existing) await ctx.db.patch(existing._id, { title, subtitle, href, viewedAt });
-      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, href, viewedAt });
+      if (existing) await ctx.db.patch(existing._id, { title, subtitle, subtitleParts, href, viewedAt });
+      else await ctx.db.insert("recentWorkspaceItems", { userId: actor.user._id, organizationId: actor.organization._id, kind: kind as "member" | "lead" | "receipt" | "page", entityPublicId, title, subtitle, subtitleParts, href, viewedAt });
       const all = await ctx.db.query("recentWorkspaceItems").withIndex("by_user_organization_viewed", (q) => q.eq("userId", actor.user._id).eq("organizationId", actor.organization._id)).order("desc").collect();
       await Promise.all(all.slice(20).map((row) => ctx.db.delete(row._id)));
       return undefined;
@@ -9569,6 +9653,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: record.branchId,
         kind: "support_gym_reply",
         title: "New gym reply on support case",
+        titleMessage: systemMessage("communicationCompletion.notifications.supportGymReply"),
         body: `${actor.organization.name} · ${stringValue(current.subject, record.publicId)}`,
         href: `/platform/support?case=${record.publicId}`,
         dedupeKey: `support-gym-reply:${messageId}`,
@@ -9632,6 +9717,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: branch?._id,
         kind: "support_case_created",
         title: priority === "urgent" ? "Urgent gym support case" : "New gym support case",
+        titleMessage: systemMessage(priority === "urgent" ? "communicationCompletion.notifications.supportCreatedUrgent" : "communicationCompletion.notifications.supportCreated"),
         body: `${actor.organization.name} · ${subject}`,
         href: `/platform/support?case=${caseId}`,
         dedupeKey: `support-created:${caseId}`,
@@ -9691,7 +9777,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           branchId: optionalString(updated.homeBranchId),
           type: "marketing_preference_changed",
           title: `Marketing messages ${updated.marketingOptIn ? "enabled" : "disabled"}`,
+          titleMessage: updated.marketingOptIn ? systemMessage("communicationCompletion.timeline.marketingEnabled") : systemMessage("communicationCompletion.timeline.marketingDisabled"),
           body: `Preference changed from ${marketingPreference(previous.marketingOptIn) ? "opted in" : "opted out"} to ${updated.marketingOptIn ? "opted in" : "opted out"}.`,
+          // The fixed sentences only describe a real flip; a source-only change keeps just the original text.
+          ...(Boolean(marketingPreference(previous.marketingOptIn)) === Boolean(updated.marketingOptIn) ? {} : { bodyMessage: updated.marketingOptIn ? systemMessage("communicationCompletion.timeline.marketingNowIn") : systemMessage("communicationCompletion.timeline.marketingNowOut") }),
           actorId: publicUserId(actor.user),
           actorName: actor.user.fullName,
           meta: { optedIn: Boolean(updated.marketingOptIn), source: stringValue(data(updated.marketingPreference).source, "staff_selected") },
@@ -9779,7 +9868,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "members.write");
       const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
       requireReason(input.body, actor.correlationId, "body");
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "note", title: "Note added", body: stringValue(input.body), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, type: "note", title: "Note added", titleMessage: systemMessage("communicationCompletion.timeline.noteAdded"), body: stringValue(input.body), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
     }
     case "members.contact": {
       requirePermission(actor, "members.write");
@@ -9789,7 +9878,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const nextFollowUpAt = optionalString(input.nextFollowUpAt);
       await resolveFollowUpTasksForContact(ctx, actor, { memberId: member.publicId }, stringValue(data(member.data).fullName), outcome, nextFollowUpAt, { createWhenMissing: true });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Contact — ${outcome.replaceAll("_", " ")}`;
-      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
+      const titleMessage = contactAttemptTitleMessage(outcome, "contact");
+      return await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(data(member.data).homeBranchId), type: "call_attempt", title: contactTitle, ...(titleMessage ? { titleMessage } : {}), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome }, occurredAt: isoNow() });
     }
     case "retention.snooze": {
       requirePermission(actor, "crm.write");
@@ -9804,7 +9894,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const value = { id: publicId, memberId: member.publicId, snoozedUntil: until, snoozedAt: isoNow(), snoozedById: publicUserId(actor.user), reason: optionalString(input.reason)?.trim() };
       if (existing) await patchRecord(ctx, actor, existing, value);
       else await insertRecord(ctx, actor, "retentionState", value, { branchId: optionalString(memberData.homeBranchId), memberPublicId: member.publicId });
-      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, body: value.reason, meta: { kind: "retention_snooze", until } });
+      await insertTimeline(ctx, actor, { memberId: member.publicId, branchId: optionalString(memberData.homeBranchId), type: "note", title: `Retention follow-up snoozed until ${until}`, titleMessage: systemMessage("communicationCompletion.timeline.retentionSnoozed", { date: { date: until } }), body: value.reason, meta: { kind: "retention_snooze", until } });
       await insertAudit(ctx, actor, { category: "crm", action: "retention.snooze", entityType: "member", entityId: member.publicId, entityLabel: `${stringValue(memberData.fullName)} · ${stringValue(memberData.memberNumber)}`, summary: `At-risk follow-up snoozed until ${until}`, reason: value.reason, before, after: value, branchId: optionalString(memberData.homeBranchId) });
       return undefined;
     }
@@ -9844,7 +9934,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!/^#[0-9a-f]{6}$/i.test(accentColor)) domainError("VALIDATION_ERROR", "Accent color must be a six-digit hex color.", { correlationId: actor.correlationId });
       for (const field of ["websiteUrl", "instagramUrl"] as const) {
         const candidate = optionalString(input[field])?.trim();
-        if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { correlationId: actor.correlationId }); } }
+        if (candidate) { try { const parsed = new URL(candidate); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); } catch { domainError("VALIDATION_ERROR", `${field === "websiteUrl" ? "Website" : "Instagram"} URL must be a valid HTTP or HTTPS address.`, { message: { key: "apiErrors.httpAddress", params: { field: String(field === "websiteUrl" ? "Website" : "Instagram") } }, correlationId: actor.correlationId }); } }
       }
       const assetIds = [optionalString(input.logoAssetId), optionalString(input.coverAssetId), ...arrayValue(input.galleryAssetIds).map((item) => optionalString(item))].filter((item): item is string => Boolean(item));
       const referencedAssets: Doc<"mediaAssets">[] = [];
@@ -10122,7 +10212,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       const order = (await ctx.db.get(orderId))!;
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.package.request", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
-      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_package_requested", title: `${ptPackage.name} requested`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, chargeId: charge.id } });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: membership.homeBranchId, type: "pt_package_requested", title: `${ptPackage.name} requested`, titleMessage: systemMessage("communicationCompletion.timeline.ptPackageRequested", { package: ptPackage.name }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { orderId: order.publicId, chargeId: charge.id } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.package.request", entityType: "pt_package_order", entityId: order.publicId, entityLabel: stringValue(membership.memberId), summary: `Created unpaid charge for ${ptPackage.name}`, branchId: stringValue(membership.homeBranchId), after: { sessions: ptPackage.sessionCount, amount: ptPackage.totalPriceMinor, chargeId: charge.id } });
       return await ptPackageOrderView(ctx, actor.organization, order);
     }
@@ -10159,7 +10249,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const reason = stringValue(input.reason).trim();
       await patchRecord(ctx, actor, charge, { status: "void", paidAmount: money(0, actor.organization.currency), outstandingAmount: money(0, actor.organization.currency), voidReason: reason, voidedAt: utcIso(now) });
       await ctx.db.patch(order._id, { status: "cancelled", cancelledAt: now, cancellationReason: reason, updatedAt: now });
-      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_cancelled", title: "PT package order cancelled", body: reason, meta: { orderId: order.publicId, chargeId: order.chargePublicId } });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_package_cancelled", title: "PT package order cancelled", titleMessage: systemMessage("communicationCompletion.timeline.ptPackageCancelled"), body: reason, meta: { orderId: order.publicId, chargeId: order.chargePublicId } });
       await insertAudit(ctx, actor, { category: "payments", action: "pt.package.cancel", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: "Cancelled pending PT package order and voided unpaid charge", reason, before: { orderStatus: order.status, chargeStatus: chargeData.status }, after: { orderStatus: "cancelled", chargeStatus: "void" } });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.package.cancel", key: idempotencyKey, requestHash, result: { orderId: order.publicId }, createdAt: now, expiresAt: now + 365 * 86_400_000 });
       return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
@@ -10190,7 +10280,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const entitlementId = await ctx.db.insert("ptEntitlements", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), source: "manual", grantKind: "introductory", membershipPublicId: membershipRecord.publicId, granted: sessionCount, reserved: 0, consumed: 0, revoked: 0, startsAt: now, expiresAt: ptWallTime(addDays(stringValue(membership.endDate), 1), 0, actor.organization.timezone || TZ_FALLBACK) - 1, status: "active", createdAt: now, updatedAt: now });
         const entitlement = (await ctx.db.get(entitlementId))!;
         await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, type: "grant", quantity: sessionCount, reason: stringValue(input.reason) });
-        await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_granted", title: `${sessionCount} introductory PT credits granted`, body: stringValue(input.reason), meta: { entitlementId: entitlement.publicId, migrationId } });
+        await insertTimeline(ctx, actor, { memberId: entitlement.memberPublicId, type: "pt_credit_granted", title: `${sessionCount} introductory PT credits granted`, titleMessage: systemMessage("communicationCompletion.timeline.ptIntroductoryCreditsGranted", { count: sessionCount }), body: stringValue(input.reason), meta: { entitlementId: entitlement.publicId, migrationId } });
         grantedMemberships += 1;
       }
       const result = { eligibleMemberships: Math.max(0, memberships.length - grantedMembershipIds.size - grantedMemberships), alreadyGranted: grantedMembershipIds.size + grantedMemberships, sessionCount, grantedMemberships, migrationId };
@@ -10247,7 +10337,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(entitlement._id, { revoked: entitlement.revoked + sessions, status: ptAvailable({ ...entitlement, revoked: entitlement.revoked + sessions }) === 0 && entitlement.reserved === 0 ? "revoked" : "active", updatedAt: Date.now() });
       await ctx.db.patch(order._id, { refundedSessions: nextSessions, refundedMinor: cumulativeMinor, status: nextSessions >= terms.sessionCount ? "refunded" : "partially_refunded", updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: order.memberPublicId, type: "refund_revoke", quantity: -sessions, reason: stringValue(input.reason) });
-      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, body: `${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)} · ${stringValue(input.reason)}`, meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
+      await insertTimeline(ctx, actor, { memberId: order.memberPublicId, type: "pt_credit_refunded", title: `${sessions} PT credit${sessions === 1 ? "" : "s"} refunded`, titleMessage: systemMessage("communicationCompletion.timeline.ptCreditsRefunded", { count: sessions }), body: `${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)} · ${stringValue(input.reason)}`, bodyMessage: systemMessage("communicationCompletion.timeline.ptCreditsRefundedBody", { amount: { amountMinor: refundMinor, currency: actor.organization.currency }, reason: stringValue(input.reason) }), meta: { orderId: order.publicId, chargeId: charge.publicId, sessions, refundMinor } });
       await insertAudit(ctx, actor, { category: "payments", action: "pt.package.refund", entityType: "pt_package_order", entityId: order.publicId, entityLabel: order.memberPublicId, summary: `Refunded ${sessions} unused PT session${sessions === 1 ? "" : "s"} — ${actor.organization.currency} ${formatMinorUnits(refundMinor, actor.organization.currency)}`, reason: stringValue(input.reason), before: { available, refundedSessions: previousSessions, refundedMinor: previousMinor }, after: { available: available - sessions, refundedSessions: nextSessions, refundedMinor: cumulativeMinor } });
       return await ptPackageOrderView(ctx, actor.organization, (await ctx.db.get(order._id))!);
     }
@@ -10268,7 +10358,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const sessionDate = businessDate(stringValue(input.startsAt), actor.organization.timezone || TZ_FALLBACK);
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
       const policies = data(data((await settingsData(ctx, actor)).operationalPolicies).personalTraining);
-      if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { correlationId: actor.correlationId });
+      if (startsAt <= Date.now() || diffDays(today, sessionDate) > numberValue(policies.bookingHorizonDays, 30)) domainError("VALIDATION_ERROR", `PT sessions may be booked up to ${numberValue(policies.bookingHorizonDays, 30)} days ahead.`, { message: { key: "apiErrors.ptHorizon", params: { days: String(numberValue(policies.bookingHorizonDays, 30)) } }, correlationId: actor.correlationId });
       if (membership.cancelledAt || sessionDate < stringValue(membership.startDate) || sessionDate > stringValue(membership.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "The membership does not cover this PT session date.", { correlationId: actor.correlationId });
       const freeze = data(membership.activeFreeze);
       if (freeze.status === "active" && sessionDate >= stringValue(freeze.startDate) && sessionDate <= stringValue(freeze.endDate)) domainError("MEMBERSHIP_NOT_ACTIVE", "Frozen memberships cannot book PT sessions during the freeze.", { correlationId: actor.correlationId });
@@ -10291,12 +10381,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const bookingId = await ctx.db.insert("ptBookings", { organizationId: actor.organization._id, publicId: newPublicId(), memberPublicId: stringValue(membership.memberId), membershipPublicId: membershipRecord.publicId, trainerProfileId: trainer._id, branchId: branch._id, entitlementId: entitlement._id, startsAt, endsAt, status: "reserved", bookedByUserId: actor.user._id, idempotencyKey, createdAt: now, updatedAt: now });
       const booking = (await ctx.db.get(bookingId))!;
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: "PT booking reserved" });
-      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: publicBranchId(branch), type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
+      await insertTimeline(ctx, actor, { memberId: membership.memberId, branchId: publicBranchId(branch), type: "pt_booking_reserved", title: `PT booked with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptBooked", { trainer: trainer.displayName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, entitlementId: entitlement.publicId, startsAt: utcIso(startsAt) } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.create", entityType: "pt_booking", entityId: booking.publicId, entityLabel: `${stringValue(data((await recordOf(ctx, actor, "member", stringValue(membership.memberId))).data).fullName)} · ${trainer.displayName}`, summary: "Reserved one PT credit", branchId: publicBranchId(branch), after: { startsAt: utcIso(startsAt), trainerId: trainer.publicId, entitlementId: entitlement.publicId } });
-      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking", title: "New PT booking", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBooking"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-booking:${booking.publicId}` });
       const memberRecord = await recordOf(ctx, actor, "member", stringValue(membership.memberId));
       const member = data(memberRecord.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: stringValue(membership.memberId), recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_confirmation", templateVersion: "pt-booking-confirmation-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: stringValue(membership.memberId), recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-confirmation:${booking.publicId}` });
       return await ptBookingView(ctx, actor.organization, booking);
     }
     case "pt.booking.cancel": {
@@ -10315,11 +10405,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const status = cancelledByGym ? "gym_cancelled" : timely ? "cancelled" : "late_cancelled";
       await ctx.db.patch(booking._id, { status, cancellationReason: stringValue(input.reason).trim(), updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: timely ? "release" : "consume", quantity: timely ? 1 : -1, reason: stringValue(input.reason) });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: "pt_booking_cancelled", title: timely ? "PT booking cancelled — credit restored" : "PT booking cancelled after cutoff — credit used", titleMessage: timely ? systemMessage("communicationCompletion.timeline.ptCancelledRestored") : systemMessage("communicationCompletion.timeline.ptCancelledUsed"), body: stringValue(input.reason), meta: { bookingId: booking.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.cancel", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: timely ? "Cancelled PT booking and restored credit" : "Late-cancelled PT booking and consumed credit", reason: stringValue(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
       const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
       const member = data(memberRecord?.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: cancelledByGym ? "pt-booking-gym-cancelled-v1" : "pt-booking-cancelled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: cancelledByGym ? "pt-booking-gym-cancelled-v1" : "pt-booking-cancelled-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-cancelled:${booking.publicId}:${status}` });
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
     case "pt.booking.reschedule": {
@@ -10364,13 +10454,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "release", quantity: 1, reason: `Reschedule: ${stringValue(input.reason)}` });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "reserve", quantity: -1, reason: `Reschedule: ${stringValue(input.reason)}` });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "pt.booking.reschedule", key: idempotencyKey, requestHash, result: { bookingId: booking.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 365 * 86_400_000 });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, branchId: publicBranchId(branch), type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, branchId: publicBranchId(branch), type: "pt_booking_rescheduled", title: `PT rescheduled with ${trainer.displayName}`, titleMessage: systemMessage("communicationCompletion.timeline.ptRescheduled", { trainer: trainer.displayName }), body: stringValue(input.reason), meta: { bookingId: booking.publicId, startsAt: utcIso(startsAt) } });
       await insertAudit(ctx, actor, { category: "memberships", action: "pt.booking.reschedule", entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: "Rescheduled PT booking without changing credit balance", reason: stringValue(input.reason), before, after: { startsAt: utcIso(startsAt), trainerProfileId: trainer.publicId, branchId: publicBranchId(branch) }, branchId: publicBranchId(branch) });
-      if (oldTrainer && oldTrainer.userId !== trainer.userId) await insertOperationalNotification(ctx, { recipientUserId: oldTrainer.userId, organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_reassigned", title: "PT booking reassigned", body: utcIso(booking.startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reassigned-old:${booking.publicId}:${startsAt}` });
-      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
+      if (oldTrainer && oldTrainer.userId !== trainer.userId) await insertOperationalNotification(ctx, { recipientUserId: oldTrainer.userId, organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_reassigned", title: "PT booking reassigned", body: utcIso(booking.startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingReassigned"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(booking.startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reassigned-old:${booking.publicId}:${startsAt}` });
+      await insertOperationalNotification(ctx, { recipientUserId: trainer.userId, organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_rescheduled", title: "PT booking rescheduled", body: utcIso(startsAt), titleMessage: systemMessage("communicationCompletion.notifications.ptBookingRescheduled"), bodyMessage: systemMessage("communicationCompletion.notifications.when", { at: { at: utcIso(startsAt) } }), href: `/pt?booking=${booking.publicId}`, dedupeKey: `pt-reschedule:${booking.publicId}:${startsAt}` });
       const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
       const member = data(memberRecord?.data);
-      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
+      await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: branch._id, kind: "pt_booking_update", templateVersion: "pt-booking-rescheduled-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-rescheduled:${booking.publicId}:${startsAt}` });
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
     case "pt.booking.complete":
@@ -10388,18 +10478,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(entitlement._id, { reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1, updatedAt: Date.now() });
       await ctx.db.patch(booking._id, { status, outcomeReason: optionalString(input.reason), updatedAt: Date.now() });
       await insertPtLedger(ctx, actor, { entitlementId: entitlement._id, memberPublicId: entitlement.memberPublicId, bookingPublicId: booking.publicId, type: "consume", quantity: -1, reason: status === "completed" ? "PT session completed" : "PT session no-show" });
-      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", body: optionalString(input.reason), meta: { bookingId: booking.publicId } });
+      await insertTimeline(ctx, actor, { memberId: booking.memberPublicId, type: status === "completed" ? "pt_session_completed" : "pt_session_no_show", title: status === "completed" ? "PT session completed" : "PT session marked no-show", titleMessage: status === "completed" ? systemMessage("communicationCompletion.timeline.ptCompleted") : systemMessage("communicationCompletion.timeline.ptNoShow"), body: optionalString(input.reason), meta: { bookingId: booking.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: `pt.booking.${status}`, entityType: "pt_booking", entityId: booking.publicId, entityLabel: booking.memberPublicId, summary: status === "completed" ? "Completed PT session and consumed credit" : "Recorded PT no-show and consumed credit", reason: optionalString(input.reason), before: { status: booking.status }, after: { status }, branchId: await publicBranchIdFromId(ctx, actor.organization._id, booking.branchId) });
       if (status === "no_show") {
         const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
         const member = data(memberRecord?.data);
-        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-no-show-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-no-show:${booking.publicId}` });
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_booking_update", templateVersion: "pt-booking-no-show-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-booking-no-show:${booking.publicId}` });
       }
       const remainingCredits = ptAvailable({ ...entitlement, reserved: Math.max(0, entitlement.reserved - 1), consumed: entitlement.consumed + 1 });
       if (remainingCredits <= 2) {
         const memberRecord = await recordOfOptional(ctx, actor, "member", booking.memberPublicId);
         const member = data(memberRecord?.data);
-        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_low_balance", templateVersion: "pt-low-balance-v1", language: stringValue(member.preferredLanguage, "en") === "ar" ? "ar" : "en", recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-low-balance:${entitlement.publicId}:${remainingCredits}` });
+        await queueOperationalEmail(ctx, { organizationId: actor.organization._id, branchId: booking.branchId, kind: "pt_low_balance", templateVersion: "pt-low-balance-v1", ...recipientLanguage(member.preferredLanguage, actor.organization), recipientReference: booking.memberPublicId, recipientEmail: optionalString(member.email), dedupeKey: `pt-low-balance:${entitlement.publicId}:${remainingCredits}` });
       }
       return await ptBookingView(ctx, actor.organization, (await ctx.db.get(booking._id))!);
     }
@@ -10503,7 +10593,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         value = await patchRecord(ctx, actor, record, { activeFreeze: undefined, frozenDaysUsed: numberValue(value.frozenDaysUsed) + Math.max(0, used), freezes: arrayValue(value.freezes).map((item) => data(item).id === previousFreeze.id ? { ...data(item), status: "completed" } : item) });
       }
       const status = statusOfMembership(value, today);
-      if (!(status === "active" || status === "expiring")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot freeze a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      if (!(status === "active" || status === "expiring")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot freeze a membership in “${status}” state.`, { message: { key: "apiErrors.freezeStatus", params: { status: String(status) } }, correlationId: actor.correlationId });
       const plan = await recordOf(ctx, actor, "plan", stringValue(value.planId));
       const planData = data(plan.data);
       const freezeStartDate = stringValue(input.startDate);
@@ -10514,14 +10604,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const days = diffDays(freezeStartDate, freezeEndDate) + 1;
       if (days <= 0) domainError("VALIDATION_ERROR", "Freeze end must be on or after the start date.", { correlationId: actor.correlationId });
       const minimumFreezeDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).minimumFreezeDays, 1);
-      if (days < minimumFreezeDays) domainError("VALIDATION_ERROR", `A freeze must be at least ${minimumFreezeDays} day${minimumFreezeDays === 1 ? "" : "s"}.`, { correlationId: actor.correlationId });
+      if (days < minimumFreezeDays) domainError("VALIDATION_ERROR", `A freeze must be at least ${minimumFreezeDays} day${minimumFreezeDays === 1 ? "" : "s"}.`, { message: { key: "apiErrors.minimumFreeze", params: { minimum: String(minimumFreezeDays) } }, correlationId: actor.correlationId });
       const allowance = numberValue(planData.freezeAllowanceDays) - numberValue(value.frozenDaysUsed);
-      if (days > allowance) domainError("FREEZE_ALLOWANCE_EXCEEDED", `This plan allows ${numberValue(planData.freezeAllowanceDays)} freeze days total; ${Math.max(0, allowance)} remain.`, { correlationId: actor.correlationId });
+      if (days > allowance) domainError("FREEZE_ALLOWANCE_EXCEEDED", `This plan allows ${numberValue(planData.freezeAllowanceDays)} freeze days total; ${Math.max(0, allowance)} remain.`, { message: { key: "apiErrors.freezeDaysRemaining", params: { total: String(numberValue(planData.freezeAllowanceDays)), remaining: String(Math.max(0, allowance)) } }, correlationId: actor.correlationId });
       const freeze = { id: newPublicId(), membershipId: record.publicId, startDate: freezeStartDate, endDate: freezeEndDate, status: "active", reason: stringValue(input.reason), createdById: publicUserId(actor.user), createdAt: isoNow() };
       const newEndDate = addDays(stringValue(value.endDate), days);
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "freeze", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { activeFreeze: freeze, freezes: [...arrayValue(value.freezes), freeze], endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_frozen", title: `Membership frozen ${freeze.startDate} → ${freeze.endDate}`, body: freeze.reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_frozen", title: `Membership frozen ${freeze.startDate} → ${freeze.endDate}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipFrozen", { startDate: { date: freeze.startDate }, endDate: { date: freeze.endDate } }), body: freeze.reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.freeze", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: `Frozen ${days} day${days === 1 ? "" : "s"}`, reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10541,7 +10631,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const completed = { ...freeze, status: "completed", endDate: today };
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "unfreeze", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { activeFreeze: undefined, freezes: arrayValue(value.freezes).map((item) => data(item).id === freeze.id ? completed : item), frozenDaysUsed: numberValue(value.frozenDaysUsed) + usedDays, endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_unfrozen", title: "Freeze ended early", body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_unfrozen", title: "Freeze ended early", titleMessage: systemMessage("communicationCompletion.timeline.freezeEnded"), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.unfreeze", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Freeze ended early", reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10550,13 +10640,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requireReason(input.reason, actor.correlationId);
       const days = numberValue(input.days);
       const maximumExtensionDays = numberValue(data(data((await settingsData(ctx, actor)).operationalPolicies).membership).maximumExtensionDays, 365);
-      if (days <= 0 || days > maximumExtensionDays) domainError("VALIDATION_ERROR", `Extension must be between 1 and ${maximumExtensionDays} days.`, { correlationId: actor.correlationId });
+      if (days <= 0 || days > maximumExtensionDays) domainError("VALIDATION_ERROR", `Extension must be between 1 and ${maximumExtensionDays} days.`, { message: { key: "apiErrors.maximumExtension", params: { maximum: String(maximumExtensionDays) } }, correlationId: actor.correlationId });
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const newEndDate = addDays(stringValue(value.endDate), days);
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "extension", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { endDate: value.endDate }, after: { endDate: newEndDate }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { endDate: newEndDate, adjustments: [...arrayValue(value.adjustments), adjustment] });
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_extended", title: `Membership extended by ${days} day${days === 1 ? "" : "s"}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_extended", title: `Membership extended by ${days} day${days === 1 ? "" : "s"}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipExtended", { count: days }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: `Extended ${days} days`, reason: stringValue(input.reason), before: { endDate: value.endDate }, after: { endDate: newEndDate }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10574,7 +10664,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           await patchRecord(ctx, actor, futureCharge, { status: "void", outstandingAmount: money(0, actor.organization.currency), voidReason: stringValue(input.reason), voidedAt: isoNow() });
         }
       }
-      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", titleMessage: systemMessage("communicationCompletion.timeline.membershipCancelled"), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.cancel", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Membership cancelled", reason: stringValue(input.reason), before: { status: value.status ?? "active" }, after: { status: "cancelled" }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
@@ -10584,7 +10674,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       const status = statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK));
-      if (["cancelled", "expired", "depleted"].includes(status) || (value.status !== undefined && stringValue(value.status) !== "active")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { correlationId: actor.correlationId });
+      if (["cancelled", "expired", "depleted"].includes(status) || (value.status !== undefined && stringValue(value.status) !== "active")) domainError("MEMBERSHIP_NOT_ACTIVE", `Cannot transfer a membership in “${status}” state.`, { message: { key: "apiErrors.transferStatus", params: { status: String(status) } }, correlationId: actor.correlationId });
       const member = await recordOf(ctx, actor, "member", stringValue(value.memberId));
       const memberValue = data(member.data);
       if (["inactive", "archived"].includes(stringValue(memberValue.status))) domainError("MEMBERSHIP_NOT_ACTIVE", "Cannot transfer a membership for an inactive member.", { correlationId: actor.correlationId });
@@ -10618,7 +10708,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.patch(member._id, { branchId: destination._id, data: { ...memberValue, homeBranchId: destinationBranchId }, updatedAt: Date.now() });
       }
       const previousBranch = await branchByPublicId(ctx, actor.organization._id, previousBranchId);
-      await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
+      await insertTimeline(ctx, actor, { memberId: value.memberId, branchId: destinationBranchId, type: "membership_transferred", title: `Membership transferred to ${destination.name}`, titleMessage: systemMessage("communicationCompletion.timeline.membershipTransferred", { branch: destination.name }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId, previousBranchId, branchId: destinationBranchId } });
       await insertAudit(ctx, actor, { category: "memberships", action: "membership.branch_transfer", entityType: "membership", entityId: record.publicId, entityLabel: `${memberValue.fullName} · ${memberValue.memberNumber}`, summary: `Transferred ${previousBranch?.name ?? "branch"} → ${destination.name}`, reason: stringValue(input.reason), before: { branchId: previousBranchId }, after: { branchId: destinationBranchId }, branchId: destinationBranchId });
       if (idempotencyKey && requestHash) {
         await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "membership.transfer", key: idempotencyKey, requestHash, result: { membershipId: record.publicId }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
@@ -10637,7 +10727,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (ownerId && ownerId !== publicUserId(actor.user)) requirePermission(actor, "crm.assign");
       if (ownerId) await assertLeadOwner(ctx, actor, ownerId);
       const lead = await insertRecord(ctx, actor, "lead", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), branchId, fullName, phone, email, stage: "new", source: stringValue(input.source, "other"), ownerId, expectedValue: input.expectedValue ? { amount: amountOf(input.expectedValue), currency: actor.organization.currency } : undefined, nextFollowUpAt: optionalString(input.nextFollowUpAt), notes: optionalString(input.notes), createdAt: isoNow(), updatedAt: isoNow() }, { branchId });
-      await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { leadId: lead.id, branchId, type: "member_created", title: "Lead captured", titleMessage: systemMessage("communicationCompletion.timeline.leadCaptured"), body: optionalString(input.notes), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities: [], offers: [] };
     }
     case "leads.update": {
@@ -10701,7 +10791,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       }
       const updated = await patchRecord(ctx, actor, record, { fullName, phone, email, updatedAt: isoNow() });
       await insertAudit(ctx, actor, { category: "crm", action: "lead.contact.update", entityType: "lead", entityId: record.publicId, entityLabel: fullName, summary: "Lead contact details corrected", before, after, branchId: optionalString(current.branchId) });
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", body: "Contact details were updated; pipeline status was unchanged.", actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "lead_contact_updated", title: "Lead contact details corrected", titleMessage: systemMessage("communicationCompletion.timeline.leadContactUpdated"), body: "Contact details were updated; pipeline status was unchanged.", bodyMessage: systemMessage("communicationCompletion.timeline.leadContactUpdatedBody"), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { fields: changedFields.join(",") } });
       const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities, offers };
@@ -10736,7 +10826,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       // are the same work and must not survive as duplicates on Today.
       await resolveFollowUpTasksForContact(ctx, actor, { leadId: record.publicId }, stringValue(current.fullName), outcome, nextStage === "lost" ? undefined : optionalString(input.nextFollowUpAt), { createWhenMissing: false });
       const contactTitle = outcome === "whatsapp_opened" ? "WhatsApp handoff opened — delivery not confirmed" : `Call — ${outcome.replaceAll("_", " ")}`;
-      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
+      const titleMessage = contactAttemptTitleMessage(outcome, "call");
+      await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: current.branchId, type: "call_attempt", title: contactTitle, ...(titleMessage ? { titleMessage } : {}), body: notes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { outcome: input.outcome } });
       if (nextStage === "lost") {
         await insertAudit(ctx, actor, {
           category: "crm",
@@ -10797,7 +10888,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         updatedAt: isoNow(),
       }, { branchId, leadPublicId: lead.publicId });
       const updatedLead = await patchRecord(ctx, actor, lead, { stage: "trial_booked", nextFollowUpAt: utcIso(requestedAt), updatedAt: isoNow() });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", body: `${preferredDate} · ${preferredTime}${optionalString(input.goal) ? ` · ${optionalString(input.goal)}` : ""}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
+      const trialGoal = optionalString(input.goal);
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId, type: "trial_confirmed", title: "Trial scheduled", titleMessage: systemMessage("communicationCompletion.timeline.trialScheduled"), body: `${preferredDate} · ${preferredTime}${trialGoal ? ` · ${trialGoal}` : ""}`, bodyMessage: systemMessage(trialGoal ? "communicationCompletion.timeline.trialScheduledBodyWithGoal" : "communicationCompletion.timeline.trialScheduledBody", { date: { date: preferredDate }, time: { clock: preferredTime }, ...(trialGoal ? { goal: trialGoal } : {}) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.id } });
       await insertAudit(ctx, actor, { category: "crm", action: "trial.scheduled", entityType: "trial_booking", entityId: booking.id, entityLabel: `${stringValue(leadValue.fullName)} · ${preferredDate} ${preferredTime}`, summary: "Trial scheduled by staff", branchId });
       const activities = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === lead.publicId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, lead.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === lead.publicId);
@@ -10809,7 +10901,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = data(booking.data);
       const currentStatus = stringValue(current.status, "requested");
       const nextStatus = stringValue(input.status);
-      if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { correlationId: actor.correlationId });
+      if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { message: { key: "apiErrors.trialTransition", params: { fromStatus: String(currentStatus.replaceAll("_", " ")), toStatus: String(nextStatus.replaceAll("_", " ")) } }, correlationId: actor.correlationId });
       const note = optionalString(input.note);
       if ((nextStatus === "no_show" || nextStatus === "cancelled") && !note) domainError("VALIDATION_ERROR", "Record a reason for this trial outcome.", { correlationId: actor.correlationId });
       const leadId = optionalString(current.leadId);
@@ -10818,6 +10910,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const leadValue = data(lead.data);
       const occurredAt = isoNow();
       const labels: Record<string, string> = { confirmed: "Trial confirmed", completed: "Trial completed", no_show: "Trial marked as no-show", cancelled: "Trial cancelled" };
+      const labelKeys: Record<string, SystemMessageKey> = { confirmed: "communicationCompletion.notifications.trialConfirmed", completed: "communicationCompletion.notifications.trialCompleted", no_show: "communicationCompletion.notifications.trialNoShow", cancelled: "communicationCompletion.notifications.trialCancelled" };
       const eventTypes: Record<string, string> = { confirmed: "trial_confirmed", completed: "trial_completed", no_show: "trial_no_show", cancelled: "trial_cancelled" };
       const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
       const leadPatch: Data = nextStatus === "completed"
@@ -10829,7 +10922,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             : { stage: "trial_booked", updatedAt: occurredAt };
       const updatedBooking = await patchRecord(ctx, actor, booking, { status: nextStatus, updatedAt: occurredAt });
       const updatedLead = await patchRecord(ctx, actor, lead, leadPatch);
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadValue.branchId), type: eventTypes[nextStatus], title: labels[nextStatus], body: note, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, status: nextStatus } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadValue.branchId), type: eventTypes[nextStatus], title: labels[nextStatus], ...(labelKeys[nextStatus] ? { titleMessage: systemMessage(labelKeys[nextStatus]!) } : {}), body: note, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { bookingId: booking.publicId, status: nextStatus } });
       if (nextStatus === "completed" || nextStatus === "no_show") {
         const existing = (await recordsOf(ctx, actor, "task")).find((record) => {
           const task = data(record.data);
@@ -10843,7 +10936,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: booking.branchId,
         kind: "trial_status",
         templateVersion: `trial-${nextStatus}-v1`,
-        language: stringValue(current.preferredLanguage, "en") === "ar" ? "ar" : "en",
+        ...recipientLanguage(current.preferredLanguage, actor.organization),
         recipientReference: stringValue(current.customerUserId, booking.publicId),
         recipientEmail: optionalString(current.email) ?? optionalString(leadValue.email),
         dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
@@ -10858,6 +10951,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           kind: "trial_status",
           title: stringValue(labels[nextStatus]),
           body: `${actor.organization.name} · ${stringValue(current.preferredDate)} ${stringValue(current.preferredTime)}`,
+          ...(labelKeys[nextStatus] ? { titleMessage: systemMessage(labelKeys[nextStatus]!) } : {}),
+          bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: actor.organization.name, b: { message: dateClockMessage(current.preferredDate, current.preferredTime) } }),
           href: "/customer/my-gyms",
           dedupeKey: `trial-status:${booking.publicId}:${nextStatus}`,
         });
@@ -10877,7 +10972,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const token = publicOfferToken();
       const offer = await insertRecord(ctx, actor, "offer", { id: newPublicId(), leadId: lead.publicId, planId: plan.publicId, planName: stringValue(data(plan.data).name), price: { amount: price, currency: actor.organization.currency }, expiresAt: new Date(Date.now() + expiresInDays * 86_400_000).toISOString(), status: "draft", publicToken: token, createdById: publicUserId(actor.user), createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
       await insertRecord(ctx, actor, "offerLink", { id: token, offerId: offer.id, leadId: lead.publicId, createdAt: isoNow() }, { branchId: optionalString(data(lead.data).branchId), leadPublicId: lead.publicId });
-      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
+      await insertTimeline(ctx, actor, { leadId: lead.publicId, branchId: optionalString(data(lead.data).branchId), type: "offer_drafted", title: `Offer drafted — ${stringValue(data(plan.data).name)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerDrafted", { plan: stringValue(data(plan.data).name) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offer.id } });
       return offer;
     }
     case "offers.deliver": {
@@ -10894,13 +10989,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const email = optionalString(leadData.email);
       const phone = optionalString(leadData.phone);
       if ((channel === "email" && !email) || ((channel === "whatsapp" || channel === "sms") && !phone)) {
-        domainError("VALIDATION_ERROR", `This lead has no ${channel === "email" ? "email address" : "phone number"} to record delivery against.`, { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", `This lead has no ${channel === "email" ? "email address" : "phone number"} to record delivery against.`, { message: { key: "apiErrors.leadContactMissing", params: { field: String(channel === "email" ? "email address" : "phone number") } }, correlationId: actor.correlationId });
       }
       const deliveredAt = isoNow();
       const reference = typeof input.reference === "string" ? input.reference.trim() : undefined;
       const updated = await patchRecord(ctx, actor, offerRecord, { status: "sent", deliveryChannel: channel, deliveredAt, deliveredById: publicUserId(actor.user), deliveryReference: reference || undefined });
       await patchRecord(ctx, actor, lead, { stage: "offer_sent", updatedAt: deliveredAt });
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: "offer_sent", title: `Offer delivery confirmed — ${stringValue(current.planName)}`, titleMessage: systemMessage("communicationCompletion.timeline.offerSent", { plan: stringValue(current.planName) }), body: `${channel === "manual" ? "Manual delivery" : channel} confirmed${reference ? ` · ${reference}` : ""}.`, bodyMessage: systemMessage(reference ? "communicationCompletion.timeline.offerDeliveryConfirmedBodyWithReference" : "communicationCompletion.timeline.offerDeliveryConfirmedBody", { channel: { enum: "channel", value: channel }, ...(reference ? { reference } : {}) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, channel } });
       await insertAudit(ctx, actor, { category: "crm", action: "offer.delivered", entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer delivery confirmed via ${channel}`, reason: reference || `Manual ${channel} delivery confirmation`, before: { status: "draft" }, after: { status: "sent", deliveryChannel: channel }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
@@ -10925,7 +11020,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const updated = await patchRecord(ctx, actor, offerRecord, { status: outcome, respondedAt, respondedById: publicUserId(actor.user), responseReason: reason || undefined });
       if (outcome === "declined") await patchRecord(ctx, actor, lead, { stage: "contacted", nextFollowUpAt: new Date(Date.now() + 86_400_000).toISOString(), updatedAt: respondedAt });
       else await patchRecord(ctx, actor, lead, { updatedAt: respondedAt });
-      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, body: reason || undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, outcome } });
+      await insertTimeline(ctx, actor, { leadId, branchId: optionalString(leadData.branchId), type: outcome === "accepted" ? "offer_accepted" : "offer_declined", title: `Offer ${outcome} — ${stringValue(current.planName)}`, titleMessage: outcome === "accepted" ? systemMessage("communicationCompletion.timeline.offerAccepted", { plan: stringValue(current.planName) }) : systemMessage("communicationCompletion.timeline.offerDeclined", { plan: stringValue(current.planName) }), body: reason || undefined, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { offerId: offerRecord.publicId, outcome } });
       await insertAudit(ctx, actor, { category: "crm", action: `offer.${outcome}`, entityType: "offer", entityId: offerRecord.publicId, entityLabel: `${stringValue(current.planName)} · ${stringValue(leadData.fullName)}`, summary: `Offer ${outcome}`, reason: reason || undefined, before: { status: "sent" }, after: { status: outcome }, branchId: optionalString(leadData.branchId) });
       return updated;
     }
@@ -10936,7 +11031,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "task", recordId(input.taskId));
       const value = data(record.data);
       const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: stringValue(input.outcome), completedAt: isoNow() });
-      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await toTask(ctx, actor, updated);
     }
     case "leads.complete_sale": {
@@ -11068,9 +11163,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         branchId: optionalString(leadData.branchId),
         type: "lead_converted",
         title: `Membership sold — ${stringValue(planData.name)}`,
+        titleMessage: systemMessage("communicationCompletion.timeline.leadConverted", { plan: stringValue(planData.name) }),
         body: existingMemberRecord
           ? `${stringValue(member.memberNumber)} received a new active membership record.`
           : `${stringValue(leadData.fullName)} became ${stringValue(member.memberNumber)} with an active membership record.`,
+        bodyMessage: existingMemberRecord
+          ? systemMessage("communicationCompletion.timeline.leadConvertedExistingMemberBody", { memberNumber: stringValue(member.memberNumber) })
+          : systemMessage("communicationCompletion.timeline.leadConvertedNewMemberBody", { name: stringValue(leadData.fullName), memberNumber: stringValue(member.memberNumber) }),
         actorId: publicUserId(actor.user),
         actorName: actor.user.fullName,
         meta: { membershipId: data(sale.membership).id, planId: planData.id },
@@ -11121,7 +11220,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id));
           await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) });
         }
-        await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision } });
+        await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision } });
         if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       }
       return { checkInId: checkIn.id, decision, reasonCodes: evaluation.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: evaluation.message };
@@ -11142,11 +11241,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
       const membership = await currentMembership(ctx, actor, member.id);
       if (membership && membership.remainingVisits != null) { const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id)); await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) }); }
-      await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
+      await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
       if (entryPass) await ctx.db.patch(entryPass.pass._id, { consumedAt: Date.now(), lastValidatedAt: Date.now() });
       await insertAudit(ctx, actor, { category: "checkins", action: "checkin.override", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Manual check-in override (${arrayValue(evaluation.reasonCodes).join(", ")})`, reason: stringValue(input.reason), before: { decision: evaluation.decision }, after: { decision: "overridden" }, branchId });
       const overrideBranch = await branchByPublicId(ctx, actor.organization._id, branchId);
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: overrideBranch?._id, roles: ["owner", "manager"], kind: "checkin_override", title: "Check-in override recorded", titleMessage: systemMessage("communicationCompletion.notifications.checkinOverride"), body: `${member.fullName} · ${checkIn.branchName} · ${actor.user.fullName}`, href: `/members/${member.id}`, dedupeKey: `checkin-override:${checkIn.id}` });
       return { checkInId: checkIn.id, decision: "overridden", reasonCodes: checkIn.reasonCodes, member: await toMemberSummary(ctx, actor, member), membership: evaluation.membership, occurredAt: checkIn.occurredAt, message: `Overridden by ${actor.user.fullName}: ${input.reason}` };
     }
     case "payments.create": {
@@ -11212,10 +11311,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const chargeData = data(charge.data); const paid = Math.max(0, amountOf(chargeData.paidAmount) - amount); await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "refunded" : "partial" });
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.refund", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Refunded ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, reason: stringValue(input.reason), before: { paymentStatus: original.status }, after: { paymentStatus: updatedStatus, refunded: alreadyRefunded + amount }, approvalStatus: amount > 25_000 ? "pending" : "approved", branchId: optionalString(original.branchId) });
-      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_refunded", title: `Payment refunded — ${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentRefunded", { amount: { amountMinor: amount, currency: actor.organization.currency } }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.refund", key: idempotencyKey, requestHash, result: { receiptId: receipt.id, paymentId: refund.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const refundBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: refundBranch?._id, roles: ["owner", "manager"], kind: "refund_review", title: "Payment refund recorded", body: `${actor.organization.currency} ${formatMinorUnits(amount, actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.refundRecorded"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: amount, currency: actor.organization.currency }, b: actor.user.fullName }), href: `/payments/receipts/${receipt.id}`, dedupeKey: `refund:${refund.id}` });
       return await receiptDetail(ctx, actor, receipt.id);
     }
     case "payments.void": {
@@ -11255,10 +11354,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await patchRecord(ctx, actor, charge, { paidAmount: money(paid, actor.organization.currency), outstandingAmount: money(Math.max(0, amountOf(chargeData.total) - paid), actor.organization.currency), status: paid <= 0 ? "unpaid" : "partial" });
       }
       await insertAudit(ctx, actor, { category: "payments", action: "payment.void", entityType: "payment", entityId: original.id, entityLabel: await paymentAuditEntityLabel(ctx, actor, original), summary: `Voided ${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)}`, reason: stringValue(input.reason), before: { status: "completed" }, after: { status: "voided" }, branchId: optionalString(original.branchId) });
-      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      await insertTimeline(ctx, actor, { memberId: original.memberId, branchId: original.branchId, type: "payment_voided", title: `Payment voided — ${original.receiptNumber}`, titleMessage: systemMessage("communicationCompletion.timeline.paymentVoided", { receipt: original.receiptNumber }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       await ctx.db.insert("idempotencyRecords", { organizationId: actor.organization._id, operation: "payment.void", key: idempotencyKey, requestHash, result: { receiptId: original.receiptId, paymentId: original.id }, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 * 365 });
       const voidBranch = optionalString(original.branchId) ? await branchByPublicId(ctx, actor.organization._id, stringValue(original.branchId)) : null;
-      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)} · ${actor.user.fullName}`, href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
+      await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: voidBranch?._id, roles: ["owner", "manager"], kind: "void_review", title: "Payment voided", body: `${actor.organization.currency} ${formatMinorUnits(amountOf(original.amount), actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.paymentVoided"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: amountOf(original.amount), currency: actor.organization.currency }, b: actor.user.fullName }), href: `/payments/receipts/${stringValue(original.receiptId)}`, dedupeKey: `void:${original.id}` });
       return await receiptDetail(ctx, actor, stringValue(original.receiptId));
     }
     case "shifts.open": {
@@ -11284,7 +11383,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "reconciliation", action: variance === 0 ? "shift.close" : "shift.close_variance", entityType: "cash_shift", entityId: record.publicId, entityLabel: stringValue(shift.branchId), summary: variance === 0 ? "Cash shift closed" : `Cash shift closed with variance ${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)}`, reason: optionalString(input.varianceExplanation), before: { status: "open" }, after: { status: "closed", expected, counted, variance }, approvalStatus: varianceAuditApprovalStatusForAmount(variance), branchId: optionalString(shift.branchId) });
       if (variance !== 0) {
         const shiftBranch = await branchByPublicId(ctx, actor.organization._id, stringValue(shift.branchId));
-        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)} · ${actor.user.fullName}`, href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
+        await notifyOrganizationRoles(ctx, { organizationId: actor.organization._id, branchId: shiftBranch?._id, roles: ["owner", "manager"], kind: "cash_shift_variance", title: "Cash shift variance", body: `${actor.organization.currency} ${formatMinorUnits(variance, actor.organization.currency)} · ${actor.user.fullName}`, titleMessage: systemMessage("communicationCompletion.notifications.cashVariance"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: variance, currency: actor.organization.currency }, b: actor.user.fullName }), href: "/payments/shifts", dedupeKey: `shift-variance:${record.publicId}` });
       }
       return updated;
     }
@@ -11369,6 +11468,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           roles: ["owner", "manager"],
           kind: "automation_failed",
           title: "Automation retries exhausted",
+          titleMessage: systemMessage("communicationCompletion.notifications.automationFailed"),
           body: stringValue(execution.subjectName, stringValue(execution.ruleName)),
           href: "/audit?category=automations",
           dedupeKey: `automation-exhausted:${executionRecord.publicId}`,
@@ -11409,7 +11509,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       try {
         enabledModules = validateWorkspaceModuleSelection(inputModules, access.entitlements.entitledModules as WorkspaceModuleKey[]);
       } catch (error) {
-        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace module preferences are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: actor.correlationId });
       }
       const existing = await workspacePreferencesRecord(ctx, actor);
       const before = access.preferences.enabledModules as WorkspaceModuleKey[];
@@ -11799,7 +11899,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "settings.manage");
       return undefined;
     default:
-      domainError("NOT_FOUND", `Unknown mutation operation ${operation}.`, { correlationId: actor.correlationId });
+      domainError("NOT_FOUND", `Unknown mutation operation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { authErrorText } from "@/lib/auth/messages";
 import { isRivetHost, RIVET_HOSTS, postSignInPath } from "@/lib/routing/host-routing";
 import { useAction } from "convex/react";
 import { useClerk } from "@clerk/nextjs";
@@ -11,7 +12,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { destinationFor, INVITATION_CLAIMED_EVENT, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
-import { ROLE_LABELS } from "@/lib/domain/permissions";
+import { roleLabel } from "@/lib/i18n/labels";
+import { useLocale } from "@/lib/i18n/provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import type { Audience } from "./portals";
@@ -29,9 +31,10 @@ const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(re
  */
 export function IdentityPanel({ audience = "account" }: { audience?: Audience }) {
   const identity = useRivetIdentity();
+  const { t } = useLocale();
 
   if (identity.status === "loading" || identity.status === "pending") {
-    return <AutomaticEntry label="Getting your account ready" />;
+    return <AutomaticEntry label={t("auth.identity.gettingReady")} />;
   }
 
   // Only a confirmed synchronization/query failure becomes an error. Normal
@@ -39,8 +42,8 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
   if (identity.status === "error") {
     return (
       <NotEntitled
-        title={identity.accountDeactivated ? "This account was deactivated" : "We could not load your account"}
-        body={identity.errorMessage ?? "You are signed in, but we could not load your account. Sign out and sign in again."}
+        title={identity.accountDeactivated ? t("auth.identity.deactivatedTitle") : t("auth.identity.loadFailedTitle")}
+        body={identity.accountDeactivated ? t("auth.identity.deactivatedBody") : authErrorText({ message: identity.errorMessage }, "auth.identity.loadFailedBody", t)}
       />
     );
   }
@@ -70,6 +73,7 @@ export function directEntryPath(identity: RivetIdentity): string | null {
  * An account arriving from another host (the landing, an old link) opens its
  * page there in one hop rather than through a second sign-in screen. */
 function IdentityHostGate({ identity, children }: { identity: RivetIdentity; children: ReactNode }) {
+  const { t } = useLocale();
   const [ready, setReady] = useState(false);
   const destination = destinationFor(identity);
   const host = destination.area === "platform" ? RIVET_HOSTS.platform
@@ -84,7 +88,7 @@ function IdentityHostGate({ identity, children }: { identity: RivetIdentity; chi
     }
     setReady(true);
   }, [host, identity]);
-  return ready ? children : <AutomaticEntry label="Opening your account" />;
+  return ready ? children : <AutomaticEntry label={t("auth.identity.openingAccount")} />;
 }
 
 function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audience: Audience }) {
@@ -120,6 +124,7 @@ function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audi
 }
 
 function StaffInvitationRecovery() {
+  const { t } = useLocale();
   const claimInvitation = useAction(api.users.claimInvitation);
   const attempted = useRef(false);
   const [state, setState] = useState<"checking" | "claimed" | "failed">("checking");
@@ -142,35 +147,38 @@ function StaffInvitationRecovery() {
       .catch(() => setState("failed"));
   }, [claimInvitation]);
 
-  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? "Confirming your gym invitation" : "Checking your gym invitation"} />;
+  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? t("auth.identity.confirmingInvitation") : t("auth.identity.checkingInvitation")} />;
   return (
     <NotEntitled
-      title="We could not confirm your gym invitation"
-      body="Ask your gym owner to send the invitation again. Then sign in again."
+      title={t("auth.identity.invitationFailedTitle")}
+      body={t("auth.identity.invitationFailedBody")}
     />
   );
 }
 
 function NoGymTeamEntry() {
+  const { t } = useLocale();
   return (
     <NotEntitled
-      title="This account is not on a gym team"
-      body="This sign-in is for gym staff. Ask your gym owner or manager to invite you. If you train at a gym, use member sign-in."
+      title={t("auth.identity.noTeamTitle")}
+      body={t("auth.identity.noTeamBody")}
     />
   );
 }
 
 function WrongAudienceEntry({ audience }: { audience: "member" | "admin" }) {
+  const { t } = useLocale();
   return (
     <NotEntitled
-      title={audience === "admin" ? "This is for RIVET staff only" : "This sign-in is for gym members"}
-      body={audience === "admin" ? "Only RIVET staff can sign in here." : "Gym staff accounts cannot sign in here. Use gym team sign-in."}
+      title={audience === "admin" ? t("auth.identity.wrongAdminTitle") : t("auth.identity.wrongMemberTitle")}
+      body={audience === "admin" ? t("auth.identity.wrongAdminBody") : t("auth.identity.wrongMemberBody")}
     />
   );
 }
 
 function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
   const { selectOrganization } = useApp();
+  const { t } = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState(false);
@@ -191,17 +199,17 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
 
   return (
     <NotEntitled
-      title="Choose a gym"
-      body="You work at more than one gym. Choose the one to open."
+      title={t("auth.identity.chooseGymTitle")}
+      body={t("auth.identity.chooseGymBody")}
       action={(
-        <div className="mt-4 grid gap-2 text-left">
+        <div className="mt-4 grid gap-2 text-start">
           {identity.memberships.map((membership) => (
-            <Button key={membership.organizationId} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(membership.organizationId)} disabled={Boolean(busy)} loading={busy === membership.organizationId}>
-              <span><span className="block font-medium">{membership.organizationName}</span><span className="mt-0.5 block text-[12px] text-ink-3">{ROLE_LABELS[membership.role]}</span></span>
-              <span aria-hidden>→</span>
+            <Button key={membership.organizationId} variant="secondary" className="h-auto justify-between py-3 text-start" onClick={() => void choose(membership.organizationId)} disabled={Boolean(busy)} loading={busy === membership.organizationId}>
+              <span><span className="block font-medium"><bdi>{membership.organizationName}</bdi></span><span className="mt-0.5 block text-[12px] text-ink-3">{roleLabel(t, membership.role)}</span></span>
+              <span aria-hidden className="inline-block rtl:-scale-x-100">→</span>
             </Button>
           ))}
-          {error ? <p className="text-[12px] text-danger" role="alert">That gym could not be opened. Try again.</p> : null}
+          {error ? <p className="text-[12px] text-danger" role="alert">{t("auth.identity.gymOpenFailed")}</p> : null}
         </div>
       )}
     />
@@ -209,22 +217,24 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
 }
 
 export function UnavailableGymEntry() {
+  const { t } = useLocale();
   return (
     <NotEntitled
-      title="Your gym is not active on RIVET"
-      body="Your gym's RIVET plan is not active right now. Contact RIVET to turn it back on, or sign out and use another account."
+      title={t("auth.identity.unavailableTitle")}
+      body={t("auth.identity.unavailableBody")}
     />
   );
 }
 
 function GymEntry({ identity }: { identity: RivetIdentity }) {
+  const { t } = useLocale();
   const membership = identity.memberships[0];
 
   if (!membership) {
     return (
       <NotEntitled
-        title="This account is not on a gym team"
-        body="Ask your gym owner or manager to add your email to the team. Then sign in here again."
+        title={t("auth.identity.noTeamTitle")}
+        body={t("auth.identity.noTeamAddBody")}
       />
     );
   }
@@ -240,8 +250,8 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
   if (membership.branchScope === "selected" && membership.branches.length === 0) {
     return (
       <NotEntitled
-        title="You are not added to a branch"
-        body="Ask your gym manager to add you to a branch."
+        title={t("auth.identity.noBranchTitle")}
+        body={t("auth.identity.noBranchBody")}
       />
     );
   }
@@ -251,6 +261,7 @@ function GymEntry({ identity }: { identity: RivetIdentity }) {
 
 function BranchSelection({ identity, membership }: { identity: RivetIdentity; membership: RivetMembership }) {
   const { signIn } = useApp();
+  const { t } = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState<string>();
   const [failed, setFailed] = useState(false);
@@ -272,23 +283,23 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
     } catch {
       setBusy(undefined);
       setFailed(true);
-      toast.error("Could not open that branch. Try again.");
+      toast.error(t("auth.identity.branchOpenToast"));
     }
   };
 
   return (
     <NotEntitled
-      title="Choose a branch"
-      body="You work at more than one branch. Choose the one to open."
+      title={t("auth.identity.chooseBranchTitle")}
+      body={t("auth.identity.chooseBranchBody")}
       action={(
-        <div className="mt-4 grid gap-2 text-left">
+        <div className="mt-4 grid gap-2 text-start">
           {membership.branches.map((branch) => (
-            <Button key={branch.id} variant="secondary" className="h-auto justify-between py-3 text-left" onClick={() => void choose(branch.id)} disabled={Boolean(busy)} loading={busy === branch.id}>
-              <span className="block font-medium">{branch.name}</span>
-              <span aria-hidden>→</span>
+            <Button key={branch.id} variant="secondary" className="h-auto justify-between py-3 text-start" onClick={() => void choose(branch.id)} disabled={Boolean(busy)} loading={busy === branch.id}>
+              <span className="block font-medium"><bdi>{branch.name}</bdi></span>
+              <span aria-hidden className="inline-block rtl:-scale-x-100">→</span>
             </Button>
           ))}
-          {failed ? <p className="text-[12px] text-danger" role="alert">That branch could not be opened. Try again.</p> : null}
+          {failed ? <p className="text-[12px] text-danger" role="alert">{t("auth.identity.branchOpenFailed")}</p> : null}
         </div>
       )}
     />
@@ -298,6 +309,7 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
 function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; membership: RivetMembership }) {
   const router = useRouter();
   const { signIn } = useApp();
+  const { t } = useLocale();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
   const destination = destinationFor(identity);
@@ -316,24 +328,25 @@ function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; 
       .then(() => router.replace(postSignInPath(destination.href, window.location.search)))
       .catch(() => {
         setFailed(true);
-        toast.error("Could not open your gym. Try again.");
+        toast.error(t("auth.identity.gymToast"));
       });
-  }, [branchId, destination.href, identity.email, identity.fullName, membership.role, router, signIn]);
+  }, [branchId, destination.href, identity.email, identity.fullName, membership.role, router, signIn, t]);
 
   if (failed) {
     return (
       <NotEntitled
-        title="Your gym could not be opened"
-        body="We found your gym but could not open it here. Sign out and sign in again."
+        title={t("auth.identity.gymFailedTitle")}
+        body={t("auth.identity.gymFailedBody")}
       />
     );
   }
 
-  return <AutomaticEntry label="Opening your gym" />;
+  return <AutomaticEntry label={t("auth.identity.openingGym")} />;
 }
 
 function MemberEntry({ identity }: { identity: RivetIdentity }) {
   const router = useRouter();
+  const { t } = useLocale();
   const { signInAsIdentity } = useExperience();
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
@@ -363,17 +376,18 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   if (failed) {
     return (
       <NotEntitled
-        title="Your member account could not be opened"
-        body="You are signed in, but we could not open your account here. Sign out and sign in again."
+        title={t("auth.identity.memberFailedTitle")}
+        body={t("auth.identity.memberFailedBody")}
       />
     );
   }
 
-  return <AutomaticEntry label="Opening your memberships" />;
+  return <AutomaticEntry label={t("auth.identity.openingMemberships")} />;
 }
 
 function AdminEntry({ identity }: { identity: RivetIdentity }) {
   const router = useRouter();
+  const { t } = useLocale();
   const { signInPlatformAdmin } = useExperience();
   const started = useRef(false);
   const signInPlatformAdminRef = useRef(signInPlatformAdmin);
@@ -393,16 +407,17 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
   if (!identity.platformAdmin) {
     return (
       <NotEntitled
-        title="This account is not RIVET staff"
-        body="Only RIVET staff can open the platform console."
+        title={t("auth.identity.notStaffTitle")}
+        body={t("auth.identity.notStaffBody")}
       />
     );
   }
 
-  return <AutomaticEntry label="Opening the platform console" />;
+  return <AutomaticEntry label={t("auth.identity.openingConsole")} />;
 }
 
 function AutomaticEntry({ label }: { label: string }) {
+  const { t } = useLocale();
   return (
     <div className="mt-7 flex min-h-56 flex-col items-center justify-center" role="status" aria-live="polite">
       <div className="relative flex size-16 items-center justify-center">
@@ -410,7 +425,7 @@ function AutomaticEntry({ label }: { label: string }) {
         <span className="absolute inset-2 rounded-full bg-sunken" aria-hidden />
         <Image src="/brand/rivet-glyph.png" alt="" width={23} height={36} className="relative" />
       </div>
-      <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">You’re signed in</p>
+      <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{t("auth.identity.signedIn")}</p>
       <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
       <AuthProgressBar className="mt-5 w-36" />
     </div>
@@ -429,6 +444,7 @@ function NotEntitled({
   const { signOut: signOutClerk } = useClerk();
   const { signOut } = useApp();
   const { signOutCustomer, signOutPlatformAdmin } = useExperience();
+  const { t } = useLocale();
   const [signingOut, setSigningOut] = useState(false);
 
   const recover = async () => {
@@ -441,7 +457,7 @@ function NotEntitled({
       await signOutClerk({ redirectUrl: "/login" });
     } catch {
       setSigningOut(false);
-      toast.error("Could not sign out. Please try again.");
+      toast.error(t("auth.identity.signOutFailed"));
     }
   };
 
@@ -463,7 +479,7 @@ function NotEntitled({
         onClick={() => void recover()}
       >
         <LogOut aria-hidden />
-        {signingOut ? "Signing out" : "Sign out and use another account"}
+        {signingOut ? t("auth.identity.signingOut") : t("auth.identity.signOutUseAnother")}
       </Button>
     </div>
   );

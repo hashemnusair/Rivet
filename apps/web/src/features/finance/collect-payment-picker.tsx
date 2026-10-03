@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Search } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +13,7 @@ import { MoneyText } from "@/components/shared/data-display";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
-import { EmptyState } from "@/components/ui/states";
+import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 
 /**
@@ -20,6 +21,7 @@ import { CollectPaymentDialog } from "@/features/membership-actions/payment-dial
  * then the standard collect-payment dialog takes over.
  */
 export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search, 250);
   const [member, setMember] = useState<MemberSummary | null>(null);
@@ -39,13 +41,13 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
       <Dialog open={open && !member} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Collect payment</DialogTitle>
-            <DialogDescription>Find the member. You will see what each person owes.</DialogDescription>
+            <DialogTitle>{t("renewFlow.payment.collectPlain")}</DialogTitle>
+            <DialogDescription>{t("salesWorkspace.collectMemberHint")}</DialogDescription>
           </DialogHeader>
           <div className="px-5 pb-5">
             <div className="relative">
               <Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-              <Input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, phone or member number…" className="ps-8" aria-label="Search member" />
+              <Input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("salesWorkspace.memberSearchPlaceholder")} className="ps-8" aria-label={t("salesWorkspace.searchMemberShort")} />
             </div>
             <div className="mt-3 max-h-72 overflow-y-auto">
               {query.isLoading ? (
@@ -54,8 +56,8 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : (query.data?.items.length ?? 0) === 0 ? (
-                <EmptyState compact title="No members found" className="border-0" />
+              ) : query.isError ? <QueryErrorState error={query.error} onRetry={() => void query.refetch()} /> : (query.data?.items.length ?? 0) === 0 ? (
+                <EmptyState compact title={t("salesWorkspace.noMembers")} className="border-0" />
               ) : (
                 <ul className="divide-y divide-line rounded-md border border-line">
                   {query.data!.items.map((m) => (
@@ -73,7 +75,7 @@ export function CollectPaymentMemberPicker({ open, onOpenChange }: { open: boole
                         {m.outstanding.amount > 0 ? (
                           <MoneyText money={m.outstanding} className="text-[12px] font-medium text-warning-deep" />
                         ) : (
-                          <span className="text-[12px] text-ink-4">Nothing owed</span>
+                          <span className="text-[12px] text-ink-4">{t("salesWorkspace.nothingOwed")}</span>
                         )}
                       </button>
                     </li>

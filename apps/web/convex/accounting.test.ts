@@ -197,7 +197,7 @@ describe("immutable management-accounting ledger", () => {
     const discountedEntry = await owner.query(api.domain.query, operation("accounting.journal_entries.get", { entryId: discounted.journalEntryId })) as { postingDate: string };
     expect(discountedEntry.postingDate).toBe(new Date(createdAt).toISOString().slice(0, 10));
     const pendingDiscount = await manager.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "membership_sale", sourceId: "accounting-membership-pending", idempotencyKey: "membership-pending-1" })) as { status: string };
-    expect(pendingDiscount.status).toBe("unconfigured");
+    expect(pendingDiscount).toMatchObject({ status: "unconfigured", reason: "A pending membership discount approval cannot be posted.", reasonMessage: { key: "accountingMessages.pendingDiscount" } });
 
     const product = await owner.mutation(api.domain.mutate, operation("operations.product.upsert", { sku: "LEDGER-PROTEIN", name: "Ledger Protein", unit: "each", reorderPoint: 1 })) as { id: string };
     const supplier = await owner.mutation(api.domain.mutate, operation("operations.supplier.upsert", { name: "Ledger Supplier", branchIds: ["accounting-branch-a"], preferredProductIds: [product.id] })) as { id: string };

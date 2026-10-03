@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { DEFAULT_ROLE_DEFINITIONS, PERMISSION_CATALOG_VERSION, rolePermissions } from "./permissions";
@@ -178,6 +179,8 @@ async function recordPermanentBeginConflict(ctx: MutationCtx, admin: Provisionin
     kind: "provisioning_failure",
     title: "Gym provisioning requires manual correction",
     body: `${application.gymName} · ${boundedMessage}`,
+    // The body carries the gym name and an internal error as written; only the title has a descriptor.
+    titleMessage: systemMessage("communicationCompletion.notifications.provisioningNeedsCorrection"),
     href: `/platform/applications?application=${application.publicId}`,
     dedupeKey: `gym-provisioning-failed:${application.publicId}:${now}`,
   });
@@ -716,6 +719,7 @@ export const fail = internalMutation({
       kind: "provisioning_failure",
       title: "Gym provisioning failed",
       body: `${application.gymName} · ${message}`,
+      titleMessage: systemMessage("communicationCompletion.notifications.provisioningFailed"),
       href: `/platform/applications?application=${application.publicId}`,
       dedupeKey: `gym-provisioning-failed:${application.publicId}:${now}`,
     });

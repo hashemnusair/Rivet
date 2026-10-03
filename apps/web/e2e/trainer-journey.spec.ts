@@ -119,11 +119,11 @@ test.describe("trainer account journey (preview)", () => {
     await availability.getByLabel("Date").fill("2026-09-21");
     await availability.getByLabel("Reason").fill("Leave");
     await availability.getByRole("button", { name: "Add time off" }).click();
-    await expect(availability).toContainText("2026-09-21 · all day · Leave");
+    await expect(availability).toContainText("21 Sept 2026 · all day · Leave");
     await availability.getByRole("button", { name: "Save availability" }).click();
     await expect(page.getByText("Trainer availability and time off saved.")).toBeVisible();
     await page.getByRole("button", { name: "Availability" }).click();
-    await expect(page.getByRole("dialog", { name: "Fadi Khoury availability" })).toContainText("2026-09-21 · all day · Leave");
+    await expect(page.getByRole("dialog", { name: "Fadi Khoury availability" })).toContainText("21 Sept 2026 · all day · Leave");
     await page.getByRole("dialog", { name: "Fadi Khoury availability" }).getByRole("button", { name: "Cancel" }).click();
 
     // Later that day the session has started: the trainer records it.

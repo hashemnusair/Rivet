@@ -37,6 +37,7 @@ const state = vi.hoisted(() => ({
         branchId: "branch-1",
         lastContactAt: "2026-09-05T08:00:00.000Z",
         lastContactOutcome: "whatsapp_opened",
+        lastVisitAt: "2026-08-20T08:00:00.000Z",
         snoozedUntil: "2020-01-01",
         recommendedSnoozeDays: 7,
       }],

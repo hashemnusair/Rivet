@@ -3,8 +3,9 @@ import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CustomerSignupClient } from "../../../customer/signup/customer-signup.client";
 import { PreviewMemberSignupNotice } from "../../../customer/signup/preview-signup-notice";
+import { pageTitle } from "../../page-title";
 
-export const metadata: Metadata = { title: "Create a member account" };
+export const generateMetadata = (): Promise<Metadata> => pageTitle("auth.pageTitle.memberCreate");
 
 /**
  * A signed-in visitor has an account already. In a real build the middleware

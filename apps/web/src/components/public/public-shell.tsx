@@ -1,4 +1,6 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
+
 
 import { useClerk } from "@clerk/nextjs";
 import { ChevronDown, GraduationCap, Home, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
@@ -31,10 +33,10 @@ import { MemberPwaManager } from "@/components/pwa/member-pwa";
 // gym's page are public-site pages and wear the site's chrome instead.
 // ---------------------------------------------------------------------------
 const MEMBER_NAV = [
-  { href: "/customer/my-gyms", label: "Home", shortLabel: "Home", icon: Home, requiresAuth: true },
-  { href: "/customer/finance", label: "Payments", shortLabel: "Payments", icon: ReceiptText, requiresAuth: true },
-  { href: "/customer/discover", label: "Explore gyms", shortLabel: "Explore", icon: Search, requiresAuth: false },
-];
+  { href: "/customer/my-gyms", labelKey: "publicCompletion.memberShell.home", shortLabelKey: "publicCompletion.memberShell.home", icon: Home, requiresAuth: true },
+  { href: "/customer/finance", labelKey: "publicCompletion.memberShell.payments", shortLabelKey: "publicCompletion.memberShell.payments", icon: ReceiptText, requiresAuth: true },
+  { href: "/customer/discover", labelKey: "publicCompletion.memberShell.exploreGyms", shortLabelKey: "publicCompletion.memberShell.explore", icon: Search, requiresAuth: false },
+] as const;
 
 const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", "/customer/profile", "/customer/getting-started"];
 
@@ -48,6 +50,7 @@ function isProtectedMemberRoute(pathname: string) {
  * cannot reach elsewhere: profile, the guide, communication choices, sign out.
  */
 function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
+  const t = useT();
   const itemClass = touch ? "min-h-11 py-2.5 text-[13.5px]" : undefined;
   return (
     <>
@@ -57,23 +60,23 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile"><UserRound /> Profile</Link>
+        <Link href="/customer/profile"><UserRound />{" "}{t("marketing.memberShell.profile")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/getting-started"><GraduationCap /> Getting started</Link>
+        <Link href="/customer/getting-started"><GraduationCap />{" "}{t("shell.account.gettingStarted")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile#communication"><MessageSquare /> Offers and news</Link>
+        <Link href="/customer/profile#communication"><MessageSquare />{" "}{t("publicCompletion.memberShell.offersAndNews")}</Link>
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem className={itemClass} onClick={onSignOut}>
-        <LogOut /> Sign out
-      </DropdownMenuItem>
+        <LogOut />{" "}{t("common.action.signOut")}</DropdownMenuItem>
     </>
   );
 }
 
 export function CustomerShell({ children }: { children: ReactNode }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const { session } = useApp();
@@ -124,10 +127,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // A cold preview restores its member from sessionStorage after hydration.
   // Mounting the public layout first would replace the page when that finishes,
   // discarding an early tab selection or input focus along with its subtree.
-  if (!previewSessionReady) return <AuthTransition title="Loading your account" detail="Just a moment…" />;
+  if (!previewSessionReady) return <AuthTransition title={t("publicCompletion.memberShell.loading")} detail={t("publicCompletion.memberShell.justAMoment")} />;
 
-  if (signingOut) return <AuthTransition title="Signing you out" detail="Returning to secure sign in…" />;
-  if (elevatedDestination) return <AuthTransition title="Opening your account" detail="Taking you to the right page…" />;
+  if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail={t("publicCompletion.memberShell.returningToSignIn")} />;
+  if (elevatedDestination) return <AuthTransition title={t("publicCompletion.memberShell.openingAccount")} detail={t("publicCompletion.memberShell.openingDetail")} />;
 
   // A visitor who is not signed in as a member is on the public site: the
   // marketplace and a gym's page wear the site's own bar and footer, with the
@@ -148,14 +151,12 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       <MemberPwaManager />
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
-          <Link href="/customer/my-gyms" className="flex shrink-0 items-center gap-3" aria-label="RIVET">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={112} height={29} priority />
-            <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">
-              Member
-            </span>
+          <Link href="/customer/my-gyms" className="flex shrink-0 items-center gap-3" aria-label={t("common.brand.name")}>
+            <Image src="/brand/rivet-lockup.png" alt={t("common.brand.name")} width={112} height={29} priority />
+            <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">{t("marketing.memberShell.member")}</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Member navigation">
+          <nav className="hidden items-center gap-1 sm:flex" aria-label={t("marketing.memberShell.navigation")}>
             {nav.map((item) => {
               const active = isActive(item.href);
               return (
@@ -169,7 +170,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   aria-current={active ? "page" : undefined}
                 >
                   <item.icon className="size-3.5" aria-hidden />
-                  <span>{item.label}</span>
+                  <span>{t(item.labelKey)}</span>
                 </Link>
               );
             })}
@@ -183,7 +184,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                     <button
                       type="button"
                       className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
-                      aria-label="Open account menu"
+                      aria-label={t("marketing.memberShell.accountMenu")}
                     >
                       <Monogram name={customer.name} size="sm" />
                       <span className="hidden text-[13px] font-medium text-ink md:block">{customer.name}</span>
@@ -207,7 +208,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       {customer ? (
         <nav
           className="member-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-paper/95 backdrop-blur-sm sm:hidden"
-          aria-label="Member navigation"
+          aria-label={t("marketing.memberShell.navigation")}
         >
           <div className="mx-auto grid h-16 max-w-md grid-cols-4 px-3">
             {nav.map((item) => {
@@ -225,7 +226,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", active && "bg-sunken")}>
                     <item.icon className="size-[18px]" aria-hidden />
                   </span>
-                  <span>{item.shortLabel}</span>
+                  <span>{t(item.shortLabelKey)}</span>
                 </Link>
               );
             })}
@@ -235,12 +236,12 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   className={cn("flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors", isActive("/customer/profile") || isActive("/customer/getting-started") ? "text-ink" : "text-ink-3")}
-                  aria-label="Open account menu"
+                  aria-label={t("marketing.memberShell.accountMenu")}
                 >
                   <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", (isActive("/customer/profile") || isActive("/customer/getting-started")) && "bg-sunken")}>
                     <UserRound className="size-[18px]" aria-hidden />
                   </span>
-                  <span>Account</span>
+                  <span>{t("marketing.memberShell.account")}</span>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top" sideOffset={10} className="w-64">

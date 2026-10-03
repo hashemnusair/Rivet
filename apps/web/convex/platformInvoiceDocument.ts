@@ -1,3 +1,6 @@
+import { createTranslator } from "../src/lib/i18n/core";
+import { makeFormatters } from "../src/lib/i18n/formatters";
+import { isolateLtr } from "../src/lib/i18n/bidi";
 /**
  * A stored platform invoice, projected into the printable document.
  *
@@ -33,9 +36,15 @@ export interface InvoiceCustomer {
   plan?: string;
 }
 
+export interface InvoiceDocumentContext { locale?: "en" | "ar"; timeZone?: string }
+
 const MINOR_EXPONENT: Readonly<Record<string, number>> = { JOD: 3, KWD: 3, BHD: 3, OMR: 3, TND: 3 };
 
-export function invoiceMoney(amountMinor: number, currency: string): string {
+export function invoiceMoney(amountMinor: number, currency: string, locale: "en" | "ar" = "en"): string {
+  if (locale === "ar") {
+    const value = makeFormatters(locale, "").money({ amount: amountMinor, currency });
+    return value.replace(/^([+-]?[0-9,.]+)/, number => isolateLtr(number));
+  }
   const exponent = MINOR_EXPONENT[currency.toUpperCase()] ?? 2;
   return `${currency.toUpperCase()} ${(amountMinor / 10 ** exponent).toFixed(exponent)}`;
 }
@@ -47,7 +56,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
  * The month names are fixed here rather than taken from the runtime's locale
  * data, which spells September as "Sept" in newer versions.
  */
-export function invoiceDate(value: unknown, fallback = "—"): string {
+export function invoiceDate(value: unknown, fallback = "—", context: InvoiceDocumentContext = {}): string {
+  if (context.locale === "ar") {
+    const iso = typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? new Date(value).toISOString() : undefined;
+    return iso && Number.isFinite(Date.parse(iso)) ? makeFormatters("ar", "", context.timeZone ?? "Asia/Amman").date(iso) : fallback;
+  }
   const iso = typeof value === "string" ? value : typeof value === "number" ? new Date(value).toISOString() : undefined;
   const timestamp = iso ? Date.parse(iso) : Number.NaN;
   if (!Number.isFinite(timestamp)) return fallback;
@@ -74,41 +87,46 @@ function daysApart(from: unknown, to: unknown): number | undefined {
   return Math.round((end - start) / 86_400_000);
 }
 
-export function invoicePdfInput(number: string, invoice: StoredInvoice, customer: InvoiceCustomer): InvoicePdfInput {
+export function invoicePdfInput(number: string, invoice: StoredInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = {}): InvoicePdfInput {
+  const locale = context.locale ?? "en";
+  const t = createTranslator(locale);
+  const amountText = (minor: number, currency: string) => invoiceMoney(minor, currency, locale);
+  const dateText = (value: unknown, fallback = "—") => invoiceDate(value, fallback, context);
   const currency = typeof invoice.currency === "string" ? invoice.currency : "JOD";
   const amountMinor = typeof invoice.amountMinor === "number" ? invoice.amountMinor : 0;
   const creditMinor = typeof invoice.creditMinor === "number" && invoice.creditMinor > 0 ? invoice.creditMinor : 0;
   const subtotalMinor = typeof invoice.subtotalMinor === "number" && invoice.subtotalMinor > 0 ? invoice.subtotalMinor : amountMinor + creditMinor;
   const interval = intervalOf(invoice.billingInterval);
   const creditDays = typeof invoice.creditDays === "number" ? invoice.creditDays : 0;
-  const amount = invoiceMoney(amountMinor, currency);
-  const periodStart = invoiceDate(invoice.periodStart);
-  const periodEnd = invoiceDate(invoice.periodEnd);
-  const plan = customer.plan ? `${customer.plan} plan` : "RIVET platform subscription";
+  const amount = amountText(amountMinor, currency);
+  const periodStart = dateText(invoice.periodStart);
+  const periodEnd = dateText(invoice.periodEnd);
+  const plan = customer.plan ? t("documents.plan", { plan: customer.plan }) : t("documents.platformSubscription");
   const status = statusOf(invoice.status);
   const issuedValue = invoice.createdAt ?? invoice.periodStart;
   const paymentTermDays = daysApart(issuedValue, invoice.dueAt);
   return {
     number,
+    ...(context.locale ? { locale } : {}),
     status,
-    issuedDate: invoiceDate(invoice.createdAt, invoiceDate(invoice.periodStart)),
-    dueDate: invoiceDate(invoice.dueAt),
+    issuedDate: dateText(invoice.createdAt, dateText(invoice.periodStart)),
+    dueDate: dateText(invoice.dueAt),
     periodStart,
     periodEnd,
     interval,
     ...(paymentTermDays === undefined ? {} : { paymentTermDays }),
     customer: { name: customer.name, address: customer.address, contactName: customer.contactName, contactEmail: customer.contactEmail },
     lines: [{
-      description: `${plan}, ${interval === "annual" ? "yearly" : "monthly"} subscription`,
+      description: t("documents.subscriptionLine", { plan, interval: t(interval === "annual" ? "documents.annualAdjective" : "documents.monthlyAdjective") }),
       period: `${periodStart} – ${periodEnd}`,
-      amount: invoiceMoney(subtotalMinor, currency),
+      amount: amountText(subtotalMinor, currency),
     }],
-    subtotal: invoiceMoney(subtotalMinor, currency),
+    subtotal: amountText(subtotalMinor, currency),
     ...(creditMinor > 0
       ? {
           credit: {
-            label: creditDays > 0 ? `Credit, ${creditDays} unused ${creditDays === 1 ? "day" : "days"} of the previous term` : "Credit from the previous term",
-            value: `-${invoiceMoney(creditMinor, currency)}`,
+            label: creditDays > 0 ? creditDays === 1 ? t("documents.creditOne") : t("documents.creditDays", { count: creditDays }) : t("documents.credit"),
+            value: locale === "ar" ? amountText(-creditMinor, currency) : `-${invoiceMoney(creditMinor, currency)}`,
           },
         }
       : {}),
@@ -116,19 +134,19 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
     payment: status === "paid"
       ? {
           reference: typeof invoice.paymentReference === "string" ? invoice.paymentReference : undefined,
-          paidDate: invoice.paidAt ? invoiceDate(invoice.paidAt) : undefined,
+          paidDate: invoice.paidAt ? dateText(invoice.paidAt) : undefined,
           amount,
-          balance: invoiceMoney(0, currency),
+          balance: amountText(0, currency),
         }
       : undefined,
   };
 }
 
 /** The invoice as a PDF, ready to hang off an operational email. */
-export function platformInvoiceAttachment(number: string, invoice: StoredInvoice, customer: InvoiceCustomer): { filename: string; contentType: string; contentBase64: string } {
+export function platformInvoiceAttachment(number: string, invoice: StoredInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = {}): { filename: string; contentType: string; contentBase64: string } {
   return {
     filename: invoicePdfFilename(number),
     contentType: "application/pdf",
-    contentBase64: renderInvoicePdfBase64(invoicePdfInput(number, invoice, customer)),
+    contentBase64: renderInvoicePdfBase64(invoicePdfInput(number, invoice, customer, context)),
   };
 }

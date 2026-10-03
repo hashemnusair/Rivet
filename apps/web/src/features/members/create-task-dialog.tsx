@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -13,14 +14,18 @@ import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { RelatedTaskCheck } from "@/features/followup/related-task-check";
+import { useLocale, type TFunction } from "@/lib/i18n/provider";
 
-const taskSchema = z.object({
-  title: z.string().min(3, "Enter a title"),
-  ownerId: z.string().min(1, "Choose who will do it"),
-  dueAt: z.string().min(1, "Choose a due date"),
-  type: z.enum(["follow_up", "renewal_call", "payment_collection", "trial_follow_up", "general"]),
-});
-type TaskValues = z.infer<typeof taskSchema>;
+/** The messages are read at validation time, so they follow the reader's language. */
+function makeTaskSchema(t: TFunction) {
+  return z.object({
+    title: z.string().min(3, t("memberProfile.createTask.errorTitle")),
+    ownerId: z.string().min(1, t("memberProfile.createTask.errorOwner")),
+    dueAt: z.string().min(1, t("memberProfile.createTask.errorDue")),
+    type: z.enum(["follow_up", "renewal_call", "payment_collection", "trial_follow_up", "general"]),
+  });
+}
+type TaskValues = z.infer<ReturnType<typeof makeTaskSchema>>;
 
 /**
  * Create a task about a member. The person's open work is always listed;
@@ -40,13 +45,15 @@ export function CreateTaskDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const { session } = useApp();
+  const { t, isolate } = useLocale();
+  const taskSchema = useMemo(() => makeTaskSchema(t), [t]);
   const invalidate = useInvalidate();
   const usersQuery = useApiQuery(qk.users({ staff: true }), (api) => api.listUsers({ status: "active", pageSize: 30 }));
 
   const form = useForm<TaskValues>({
     resolver: zodResolver(taskSchema),
     defaultValues: {
-      title: `Follow up — ${memberName}`,
+      title: t("memberProfile.createTask.defaultTitle", { name: memberName }),
       ownerId: session?.user.id ?? "",
       dueAt: new Date(Date.now() + 24 * 3_600_000).toISOString().slice(0, 10),
       type: "follow_up",
@@ -67,7 +74,7 @@ export function CreateTaskDialog({
       }),
     {
       onSuccess: async () => {
-        toast.success("Task created.");
+        toast.success(t("memberProfile.createTask.created"));
         onOpenChange(false);
         await invalidate();
       },
@@ -79,22 +86,22 @@ export function CreateTaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>For {memberName}. It shows in task lists and on their timeline.</DialogDescription>
+          <DialogTitle>{t("memberProfile.createTask.title")}</DialogTitle>
+          <DialogDescription>{t("memberProfile.createTask.description", { name: isolate(memberName) })}</DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
-            <Field label="Title" required error={form.formState.errors.title?.message}>
-              <Input {...form.register("title")} />
+            <Field label={t("memberProfile.createTask.titleLabel")} required error={form.formState.errors.title?.message}>
+              <Input dir="auto" {...form.register("title")} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Assigned to" required>
+              <Field label={t("memberProfile.createTask.assignedTo")} required>
                 <Controller
                   control={form.control}
                   name="ownerId"
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Assigned to">
+                      <SelectTrigger aria-label={t("memberProfile.createTask.assignedTo")}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -102,7 +109,7 @@ export function CreateTaskDialog({
                           .filter((u) => ["salesperson", "manager", "receptionist"].includes(u.role))
                           .map((u) => (
                             <SelectItem key={u.id} value={u.id}>
-                              {u.name}
+                              <bdi>{u.name}</bdi>
                             </SelectItem>
                           ))}
                       </SelectContent>
@@ -110,25 +117,25 @@ export function CreateTaskDialog({
                   )}
                 />
               </Field>
-              <Field label="Due date" required>
-                <Input type="date" {...form.register("dueAt")} />
+              <Field label={t("memberProfile.createTask.dueDate")} required>
+                <Input type="date" dir="ltr" {...form.register("dueAt")} />
               </Field>
             </div>
-            <Field label="Type">
+            <Field label={t("common.label.type")}>
               <Controller
                 control={form.control}
                 name="type"
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Task type">
+                    <SelectTrigger aria-label={t("memberProfile.createTask.typeAria")}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="follow_up">Follow-up</SelectItem>
-                      <SelectItem value="renewal_call">Renewal call</SelectItem>
-                      <SelectItem value="payment_collection">Collect payment</SelectItem>
-                      <SelectItem value="trial_follow_up">Trial follow-up</SelectItem>
-                      <SelectItem value="general">General</SelectItem>
+                      <SelectItem value="follow_up">{t("memberProfile.createTask.types.follow_up")}</SelectItem>
+                      <SelectItem value="renewal_call">{t("memberProfile.createTask.types.renewal_call")}</SelectItem>
+                      <SelectItem value="payment_collection">{t("memberProfile.createTask.types.payment_collection")}</SelectItem>
+                      <SelectItem value="trial_follow_up">{t("memberProfile.createTask.types.trial_follow_up")}</SelectItem>
+                      <SelectItem value="general">{t("memberProfile.createTask.types.general")}</SelectItem>
                     </SelectContent>
                   </Select>
                 )}
@@ -140,7 +147,7 @@ export function CreateTaskDialog({
                 subjectId={memberId}
                 personName={memberName}
                 draft={{ type: values.type, title: values.title, dueDate: values.dueAt, ownerName: owner?.name }}
-                onKeepExisting={() => { toast.success("No new task added. The existing task stays."); onOpenChange(false); }}
+                onKeepExisting={() => { toast.success(t("memberProfile.createTask.keptExisting")); onOpenChange(false); }}
                 onLinkAndCreate={(task) => submitWith(task.id)}
                 onCreateSeparately={() => submitWith(undefined)}
                 pending={mutation.isPending}
@@ -148,8 +155,8 @@ export function CreateTaskDialog({
             ) : null}
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" loading={mutation.isPending}>Create task</Button>
+            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
+            <Button type="submit" loading={mutation.isPending}>{t("memberProfile.createTask.title")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

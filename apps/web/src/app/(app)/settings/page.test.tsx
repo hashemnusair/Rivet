@@ -123,8 +123,8 @@ describe("Settings navigation and operational drafts", () => {
     await renderWithApp(<SettingsPageInner />);
     await user.click(screen.getByRole("tab", { name: "Gym rules" }));
 
-    const expiry = await screen.findByRole("spinbutton", { name: "Ending soon warning, days" });
-    expect(expiry).toHaveValue(7);
+    const expiry = await screen.findByRole("textbox", { name: "Ending soon warning, days" });
+    expect(expiry).toHaveValue("7");
     await user.clear(expiry);
     await user.type(expiry, "12");
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
@@ -133,7 +133,7 @@ describe("Settings navigation and operational drafts", () => {
     expect(screen.getByRole("dialog", { name: "Unsaved gym rules" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stay" }));
     await user.click(screen.getByRole("button", { name: "Discard" }));
-    expect(expiry).toHaveValue(7);
+    expect(screen.getByRole("textbox", { name: "Ending soon warning, days" })).toHaveValue("7");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

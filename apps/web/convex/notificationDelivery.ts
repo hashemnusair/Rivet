@@ -1,11 +1,16 @@
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import type { OrganizationRole } from "./security";
+import type { SystemMessage } from "../src/lib/i18n/system-messages";
 
 interface NotificationInput {
   kind: string;
+  /** Original stored English; kept forever. */
   title: string;
   body: string;
+  /** Stable descriptors for readers in another language; omit for authored text. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   organizationId?: Id<"organizations">;
@@ -26,6 +31,8 @@ async function insertOnce(ctx: MutationCtx, recipientUserId: Id<"users">, input:
     kind: input.kind,
     title: input.title,
     body: input.body,
+    ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}),
+    ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}),
     href: input.href,
     dedupeKey: input.dedupeKey,
     createdAt: Date.now(),

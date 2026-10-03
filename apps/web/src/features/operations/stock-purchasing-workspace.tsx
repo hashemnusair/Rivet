@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Boxes, ClipboardCheck, ShoppingCart, Store, WalletCards, Wrench } from "lucide-react";
 import Link from "next/link";
@@ -32,6 +33,7 @@ function tabFromParam(value: string | null): StockTab {
  * its own page; both are one click away from here.
  */
 export function StockPurchasingWorkspace() {
+  const t = useT();
   const { session, setBranch } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -41,7 +43,7 @@ export function StockPurchasingWorkspace() {
   const highlightOrderId = searchParams.get("order") ?? undefined;
   const [tab, setTab] = useState<StockTab>(() => tabFromParam(requestedTab));
   const branchId = session?.activeBranchId;
-  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : "All branches";
+  const branchLabel = branchId ? session?.branches.find((branch) => branch.id === branchId)?.name ?? branchId : t("common.label.allBranches");
   const currency = session?.organization.currency ?? CURRENCY_FALLBACK;
   const writeEnabled = can("operations.manage");
   const canCheckout = can("payments.collect");
@@ -87,11 +89,11 @@ export function StockPurchasingWorkspace() {
     void setBranch(requestedBranchId);
   }, [searchParams, session?.activeBranchId, session?.branches, setBranch]);
 
-  if (!can("members.read")) return <ForbiddenState description="You don’t have access to stock and purchasing." />;
-  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title="Stock & purchasing" description="Stock, orders, suppliers, bills and machines for each branch." /><LoadingGrid /></div>;
+  if (!can("members.read")) return <ForbiddenState description={t("stockWorkspace.noWorkspaceAccess")} />;
+  if (workspaceQuery.isLoading) return <div className="space-y-4"><PageHeader title={t("nav.item.operations")} description={t("stockWorkspace.workspaceHint")} /><LoadingGrid /></div>;
   if (workspaceQuery.isError || !workspace) return <QueryErrorState error={workspaceQuery.error} onRetry={() => workspaceQuery.refetch()} />;
-  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title="Stock & purchasing is not included in your plan" description="The Growth plan adds stock, checkout, suppliers, purchase orders and supplier bills." className="mt-4" />;
-  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title="Stock & purchasing is turned off" description="An owner can turn it on in Settings." className="mt-4" />;
+  if (!operationsModule?.entitled) return <StatePanel icon={Boxes} title={t("stockWorkspace.planMissing")} description={t("stockWorkspace.upgradeHint")} className="mt-4" />;
+  if (!operationsModule.enabled) return <StatePanel icon={Boxes} title={t("stockWorkspace.workspaceOff")} description={t("stockWorkspace.ownerEnableHint")} className="mt-4" />;
 
   const inventoryError = productQuery.error ?? supplierQuery.error ?? inventoryQuery.error ?? alertQuery.error ?? ordersQuery.error;
   const equipmentError = zonesQuery.error ?? assetsQuery.error ?? issuesQuery.error ?? workOrdersQuery.error;
@@ -110,8 +112,8 @@ export function StockPurchasingWorkspace() {
 
   return (
     <div className="space-y-4" data-testid="operations-command-center">
-      <PageHeader title="Stock & purchasing" description={branchId ? `Stock, orders, suppliers, bills and machines at ${branchLabel}.` : "Showing all branches. Choose one branch to make changes."} />
-      {inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">Some details could not load. <button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>Try again</button></div> : null}
+      <PageHeader title={t("nav.item.operations")} description={branchId ? t("stockWorkspace.branchWorkspace", { branch: branchLabel }) : t("stockWorkspace.allBranchesHint")} />
+      {inventoryError || equipmentError ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status">{t("stockWorkspace.partialLoadFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => { retryInventory(); retryEquipment(); }}>{t("common.action.retry")}</button></div> : null}
       <Tabs value={tab} onValueChange={(value) => {
         setTab(value as StockTab);
         const next = new URLSearchParams(searchParams.toString());
@@ -119,17 +121,17 @@ export function StockPurchasingWorkspace() {
         if (branchId) next.set("branch", branchId);
         router.replace(`/operations?${next}`, { scroll: false });
       }}>
-        <TabsList aria-label="Stock and purchasing">
-          <TabsTrigger value="inventory"><Boxes className="size-3.5" /> Stock</TabsTrigger>
-          <TabsTrigger value="orders"><ShoppingCart className="size-3.5" /> Purchase orders</TabsTrigger>
-          <TabsTrigger value="suppliers"><Store className="size-3.5" /> Suppliers</TabsTrigger>
-          {canReadPayables ? <TabsTrigger value="payables"><WalletCards className="size-3.5" /> Supplier bills</TabsTrigger> : null}
-          <TabsTrigger value="equipment"><Wrench className="size-3.5" /> Machines</TabsTrigger>
+        <TabsList aria-label={t("stockWorkspace.workspaceLabel")}>
+          <TabsTrigger value="inventory"><Boxes className="size-3.5" />{" "}{t("dashboard.today.kind.low_stock")}</TabsTrigger>
+          <TabsTrigger value="orders"><ShoppingCart className="size-3.5" /> {" "}{t("stockWorkspace.purchaseOrders")}</TabsTrigger>
+          <TabsTrigger value="suppliers"><Store className="size-3.5" /> {" "}{t("stockWorkspace.suppliers")}</TabsTrigger>
+          {canReadPayables ? <TabsTrigger value="payables"><WalletCards className="size-3.5" />{" "}{t("palette.pages.supplierBills")}</TabsTrigger> : null}
+          <TabsTrigger value="equipment"><Wrench className="size-3.5" /> {" "}{t("operationsWorkspace.machines")}</TabsTrigger>
         </TabsList>
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center"><div className="col-span-2 min-w-0 sm:w-64"><label htmlFor="operations-branch" className="sr-only">Branch</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center"><div className="col-span-2 min-w-0 sm:w-64"><label htmlFor="operations-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
             const next = new URLSearchParams(searchParams.toString());
             if (value === "all") next.delete("branch"); else next.set("branch", value);
-            router.replace(`/operations?${next}`, { scroll: false }); }}><SelectTrigger id="operations-branch" aria-label="Branch" className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild className="h-11"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart /> Checkout</Link></Button> : null}<Button asChild className="h-11" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck /> Maintenance</Link></Button></div>
+            router.replace(`/operations?${next}`, { scroll: false }); }}><SelectTrigger id="operations-branch" aria-label={t("common.label.branch")} className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild className="h-11"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart />{" "}{t("nav.item.checkout")}</Link></Button> : null}<Button asChild className="h-11" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck />{" "}{t("palette.pages.maintenance")}</Link></Button></div>
         <TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} onSell={sell} /></TabsContent>
         <TabsContent value="orders"><PurchaseOrdersTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} highlightOrderId={highlightOrderId} /></TabsContent>
         <TabsContent value="suppliers"><SuppliersTab branchId={branchId} branches={branches} writeEnabled={writeEnabled} suppliers={suppliers} loading={supplierQuery.isLoading} error={supplierQuery.error} onRetry={() => void supplierQuery.refetch()} mutations={mutations} /></TabsContent>

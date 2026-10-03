@@ -5,7 +5,8 @@ const config = [
   {
     ignores: [
       ".next/**",
-      ".next-playwright/**",
+      // Custom NEXT_DIST_DIR outputs used by isolated verification.
+      ".next-*/**",
       "node_modules/**",
       "playwright-report/**",
       "test-results/**",

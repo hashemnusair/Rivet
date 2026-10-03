@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useT } from "@/lib/i18n/provider";
 
 /**
  * The RIVET glyph is a weight stack with a selector pin, and this section makes
@@ -15,47 +16,15 @@ import { cn } from "@/lib/utils/cn";
  * Geometry is traced from `rivet-glyph-source.png` (units = source px / 20), so
  * the drawing at rest *is* the logo, not an illustration of it.
  */
-const STAGES = [
-  {
-    label: "Lead",
-    detail:
-      "A marketplace booking, a walk-in, a referral — every name lands in one pipeline with an owner and a follow-up time. Nothing lives in a notebook.",
-  },
-  {
-    label: "Contact",
-    detail:
-      "Sales works a daily queue, not a memory. Every call, reply and promise is stamped onto the member's record the moment it happens.",
-  },
-  {
-    label: "Free trial",
-    detail:
-      "Trials are booked against real slots and confirmed before the visit, so the desk knows who is walking in and what they came for.",
-  },
-  {
-    label: "Offer",
-    detail:
-      "Plans and prices come from the catalog, so an offer is priced without guesswork — and every discount carries a reason with a name on it.",
-  },
-  {
-    label: "Membership",
-    detail:
-      "The sale writes the membership: dates, terms, freezes and transfers live on the record, not on paper taped to the front desk.",
-  },
-  {
-    label: "Payment",
-    detail:
-      "Cash, card or CliQ — every dinar is receipted the moment it moves, and lands in a drawer that has to reconcile at close.",
-  },
-  {
-    label: "Check-in",
-    detail:
-      "One scan at the door returns a verdict — valid, expiring, frozen or blocked — with the next action already attached to it.",
-  },
-  {
-    label: "Renewal",
-    detail:
-      "Expiring members enter the renewal queue before they lapse, and the loop hands the sale straight back to plate one.",
-  },
+const STAGE_KEYS = [
+  "lead",
+  "contact",
+  "trial",
+  "offer",
+  "membership",
+  "payment",
+  "checkIn",
+  "renewal",
 ] as const;
 
 /** How long the pin rests in each plate while the machine runs itself. */
@@ -90,6 +59,7 @@ const PLATES: Plate[] = [
 const PIN_HOME = PLATES[4]!;
 
 export function RivetLoopMachine() {
+  const t = useT();
   const sectionRef = useRef<HTMLElement>(null);
   const [active, setActive] = useState(0);
   const [pinned, setPinned] = useState(false);
@@ -111,8 +81,8 @@ export function RivetLoopMachine() {
 
   // Advance one plate per dwell, park on the last; a manual pick stops it for good.
   useEffect(() => {
-    if (!running || pinned || active >= STAGES.length - 1) return;
-    const id = window.setTimeout(() => setActive((current) => Math.min(current + 1, STAGES.length - 1)), DWELL_MS);
+    if (!running || pinned || active >= STAGE_KEYS.length - 1) return;
+    const id = window.setTimeout(() => setActive((current) => Math.min(current + 1, STAGE_KEYS.length - 1)), DWELL_MS);
     return () => window.clearTimeout(id);
   }, [running, pinned, active]);
 
@@ -121,8 +91,8 @@ export function RivetLoopMachine() {
     setActive(index);
   };
 
-  const autoplaying = running && !pinned && active < STAGES.length - 1;
-  const stage = STAGES[active]!;
+  const autoplaying = running && !pinned && active < STAGE_KEYS.length - 1;
+  const stageKey = STAGE_KEYS[active]!;
 
   return (
     <section
@@ -132,24 +102,23 @@ export function RivetLoopMachine() {
     >
       {/* The whole loop, for readers and crawlers; the machine is the visual. */}
       <ol className="sr-only">
-        {STAGES.map((item) => (
-          <li key={item.label}>
-            {item.label} — {item.detail}
+        {STAGE_KEYS.map((key) => (
+          <li key={key}>
+            {t(`marketing.loop.stages.${key}.label`)} — {t(`marketing.loop.stages.${key}.detail`)}
           </li>
         ))}
       </ol>
 
       <div className="mx-auto grid max-w-[1344px] grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-16">
         <div>
-          <p className="eyebrow">The commercial loop</p>
+          <p className="eyebrow">{t("marketing.loop.eyebrow")}</p>
           <h2 className="marketing-display mt-4 text-[clamp(2rem,3.6vw,3.4rem)] leading-[0.95]">
-            Eight plates.
+            {t("marketing.loop.titleLine1")}
             <br />
-            One machine.
+            {t("marketing.loop.titleLine2")}
           </h2>
           <p className="mt-5 max-w-md text-[14px] leading-[1.7] text-ink-2">
-            The RIVET mark is a weight stack, and it runs like one — eight stages of a gym&rsquo;s revenue, all pinned
-            to the same member record. Watch the machine work through them, or pick a plate yourself.
+            {t("marketing.loop.body")}
           </p>
 
           <div className="mt-8 flex items-baseline gap-3">
@@ -161,14 +130,18 @@ export function RivetLoopMachine() {
               {String(active + 1).padStart(2, "0")}
             </p>
             <p className="font-mono text-[12px] text-ink-3" aria-hidden>
-              / {String(STAGES.length).padStart(2, "0")}
+              / {String(STAGE_KEYS.length).padStart(2, "0")}
             </p>
           </div>
 
           {/* min-h keeps the block steady while stage copy changes length */}
           <div key={`stage-${active}`} className="mt-3 min-h-[108px] max-w-md animate-fade-up sm:min-h-[92px]" aria-live="polite">
-            <p className="text-[clamp(1.2rem,1.8vw,1.5rem)] font-semibold tracking-tight">{stage.label}</p>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">{stage.detail}</p>
+            <p className="text-[clamp(1.2rem,1.8vw,1.5rem)] font-semibold tracking-tight">
+              {t(`marketing.loop.stages.${stageKey}.label`)}
+            </p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">
+              {t(`marketing.loop.stages.${stageKey}.detail`)}
+            </p>
           </div>
 
           {/* dwell indicator — fills while the machine is running itself */}
@@ -176,14 +149,14 @@ export function RivetLoopMachine() {
             {autoplaying ? <div key={`fill-${active}`} className="h-full origin-left animate-stage-fill bg-signal" /> : null}
           </div>
 
-          <div className="mt-5 flex items-center gap-1.5" role="tablist" aria-label="Loop stages">
-            {STAGES.map((item, index) => (
+          <div className="mt-5 flex items-center gap-1.5" role="tablist" aria-label={t("marketing.loop.stagesLabel")}>
+            {STAGE_KEYS.map((key, index) => (
               <button
-                key={item.label}
+                key={key}
                 type="button"
                 role="tab"
                 aria-selected={index === active}
-                aria-label={`${index + 1}. ${item.label}`}
+                aria-label={`${index + 1}. ${t(`marketing.loop.stages.${key}.label`)}`}
                 onClick={() => select(index)}
                 className={cn(
                   "h-7 w-7 cursor-pointer rounded-sm font-mono text-[10px] transition-colors",

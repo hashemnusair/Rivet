@@ -1,3 +1,4 @@
+import { createTranslator } from "@/lib/i18n/core";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
 import { RIVET_CONTACT } from "@/lib/rivet-contact";
@@ -40,6 +41,7 @@ export function DocumentSheet({
   className,
   testId,
   id,
+  locale,
 }: {
   /** Uppercase technical label at the end of the header: PRIVACY POLICY, INVOICE. */
   label: string;
@@ -56,10 +58,13 @@ export function DocumentSheet({
   className?: string;
   testId?: string;
   id?: string;
+  locale?: "en" | "ar";
 }) {
   return (
     <article
       id={id}
+      lang={locale}
+      dir={locale ? locale === "ar" ? "rtl" : "ltr" : undefined}
       data-testid={testId}
       className={cn("document-sheet mx-auto w-full max-w-[794px] bg-surface text-ink", frame && "border border-line", className)}
     >
@@ -84,9 +89,9 @@ export function DocumentSheet({
       <footer className="border-t border-line px-6 pb-6 pt-4 sm:px-14">
         <div className="flex flex-wrap items-baseline justify-between gap-2 font-mono text-[11px] text-ink-3">
           <span className="font-medium uppercase tracking-[0.06em]">{reference ?? label}</span>
-          <span>RIVET, {RIVET_CONTACT.city} · {BRAND_CONTACT.email}</span>
+          <span>RIVET, {locale === "ar" ? createTranslator(locale)("agreementDocument.city") : RIVET_CONTACT.city} · {BRAND_CONTACT.email}</span>
         </div>
-        {brandLegalLine() ? <p className="mt-1 font-mono text-[11px] text-ink-3">{brandLegalLine()}</p> : null}
+        {brandLegalLine(locale) ? <p className="mt-1 font-mono text-[11px] text-ink-3">{brandLegalLine(locale)}</p> : null}
       </footer>
     </article>
   );

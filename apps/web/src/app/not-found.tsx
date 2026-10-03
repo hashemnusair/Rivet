@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -11,6 +12,7 @@ import { Button } from "@/components/ui/button";
  * where they were, or into RIVET through sign-in, which routes by role.
  */
 export default function NotFound() {
+  const t = useT();
   const router = useRouter();
   const goBack = () => {
     if (window.history.length > 1) router.back();
@@ -26,8 +28,8 @@ export default function NotFound() {
         It may have been removed, or the link may be wrong. Check the address, or go back.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
-        <Button onClick={goBack}>Go back</Button>
-        <Button asChild variant="secondary"><Link href="/login">Open RIVET</Link></Button>
+        <Button onClick={goBack}>{t("common.action.goBack")}</Button>
+        <Button asChild variant="secondary"><Link href="/login">{t("marketing.actions.openRivet")}</Link></Button>
       </div>
       <p className="mt-5 text-[12px] text-ink-3"><Link href="/" className="underline underline-offset-4 hover:text-ink">rivet.jo</Link></p>
     </main>

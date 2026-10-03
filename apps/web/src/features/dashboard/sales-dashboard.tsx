@@ -1,4 +1,7 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
+
 
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -6,7 +9,7 @@ import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, todayISODate, formatDate } from "@/lib/utils/dates";
+import { addDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
@@ -16,14 +19,18 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
 import { TodayQueue } from "./today-queue";
+import { useGreeting } from "./dashboard-scope";
 
 /**
  * The salesperson's cockpit: what needs action now, how the month is going,
  * and a direct line into each follow-up.
  */
 export function SalesDashboard() {
+  const t = useT();
   const { session } = useApp();
-  const today = todayISODate();
+  const f = useFormat(session?.organization.timezone);
+  const today = todayISODate(session?.organization.timezone);
+  const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
 
   const leadInput: LeadListQuery = { ownerId: session?.user.id, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 8, sort: "nextFollowUpAt" };
   const leadsQuery = useRealtimeApiQuery({ queryKey: qk.leads({ mine: true, open: true }), query: (api) => api.listLeads(leadInput), subscribe: (api, onValue, onError) => api.subscribeLeads(leadInput, onValue, onError), enabled: Boolean(session) });
@@ -39,24 +46,24 @@ export function SalesDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        sectionLabel={formatDate(today)}
-        title={`Your day, ${session?.user.name.split(" ")[0] ?? ""}`}
-        description="What to do now, and how your month is going."
+        sectionLabel={f.date(today)}
+        title={greeting}
+        description={t("deskCompletion.dashboard.sales.description")}
         actions={
           <Button asChild>
             <Link href="/crm/queues">
-              Open work queues <ArrowRight />
+              {t("deskCompletion.dashboard.sales.openQueues")} <ArrowRight />
             </Link>
           </Button>
         }
       />
 
-      <section aria-label="Your numbers" className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
+      <section aria-label={t("dashboard.sales.yourNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
         {[
-          { label: "Late follow-ups", value: overdueFollowUps, danger: overdueFollowUps > 0 },
-          { label: "Due today", value: Math.max(0, dueFollowUps - overdueFollowUps), danger: false },
-          { label: "Collected this month", value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
-          { label: "Leads who joined", value: me?.leadsConverted ?? 0, danger: false },
+          { label: t("dashboard.owner.lateFollowUps"), value: f.number(overdueFollowUps), danger: overdueFollowUps > 0 },
+          { label: t("dashboard.sales.dueToday"), value: f.number(Math.max(0, dueFollowUps - overdueFollowUps)), danger: false },
+          { label: t("dashboard.sales.collectedThisMonth"), value: <MoneyText money={me?.revenueCollected ?? money(0)} compact />, danger: false },
+          { label: t("deskCompletion.dashboard.sales.convertedLeads"), value: f.number(me?.leadsConverted ?? 0), danger: false },
         ].map((cell) => (
           <div key={cell.label} className="px-4 py-3.5">
             <p className="context-label">{cell.label}</p>
@@ -73,9 +80,8 @@ export function SalesDashboard() {
         {/* My pipeline */}
         <section className="panel overflow-hidden">
           <header className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">Your open leads</h2>
-            <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">
-              Pipeline <ArrowRight className="size-3" />
+            <h2 className="text-[13px] font-semibold">{t("dashboard.sales.yourOpenLeads")}</h2>
+            <Link href="/crm/pipeline" className="inline-flex items-center gap-1 text-[12px] text-ink-3 hover:text-ink">{t("nav.chrome.pipeline")}{" "}<ArrowRight className="size-3" />
             </Link>
           </header>
           {leadsQuery.isLoading ? (
@@ -85,7 +91,7 @@ export function SalesDashboard() {
               ))}
             </div>
           ) : (leadsQuery.data?.items.length ?? 0) === 0 ? (
-            <p className="px-4 py-8 text-center text-[13px] text-ink-3">No open leads assigned to you right now.</p>
+            <p className="px-4 py-8 text-center text-[13px] text-ink-3">{t("dashboard.sales.noOpenLeads")}</p>
           ) : (
             <ul className="divide-y divide-line">
               {leadsQuery.data!.items.map((lead) => (

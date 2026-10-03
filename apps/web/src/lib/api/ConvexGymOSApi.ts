@@ -1,3 +1,4 @@
+import { parseErrorDescriptor } from "@/lib/i18n/error-messages";
 import { api } from "../../../convex/_generated/api";
 import type {
   AuditQuery,
@@ -170,11 +171,17 @@ function errorFromConvex(error: unknown): ApiError {
   const nested = payload && isRecord(payload.error) ? payload.error : payload;
   const message = typeof candidate?.message === "string" ? candidate.message : "Convex request failed.";
   const code = nested && typeof nested.code === "string" ? nested.code : inferCode(message);
-  const safeMessage = nested && typeof nested.message === "string" ? nested.message : message;
+  const safeMessage = nested && typeof nested.message === "string" ? nested.message : "Something went wrong. Please try again.";
   const requestId = nested && typeof nested.requestId === "string" ? nested.requestId : correlationId();
   const details = nested && isRecord(nested.details) ? nested.details : undefined;
   const fieldErrors = nested && isRecord(nested.fieldErrors) ? (nested.fieldErrors as Record<string, string[]>) : undefined;
-  return new ApiError({ code, message: safeMessage, requestId, details, fieldErrors });
+  const descriptor = parseErrorDescriptor({ key: nested?.messageKey, params: nested?.messageParams });
+  const fieldMessages = nested && isRecord(nested.fieldMessages) ? Object.fromEntries(Object.entries(nested.fieldMessages).flatMap(([field, values]) => {
+    if (!Array.isArray(values)) return [];
+    const parsed = values.map(parseErrorDescriptor).filter((value): value is NonNullable<typeof value> => Boolean(value));
+    return parsed.length ? [[field, parsed]] : [];
+  })) : undefined;
+  return new ApiError({ code, message: safeMessage, requestId, details, fieldErrors, messageKey: descriptor?.key, messageParams: descriptor?.params, fieldMessages });
 }
 
 function inferCode(message: string): string {
@@ -663,7 +670,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeOperationalEmailDeliveries(query: T.ListQuery, onValue: (page: T.Page<T.OperationalEmailDelivery>) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("operationalEmails.list", query, onValue, onError); }
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.request", input); }
   listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> { return this.query("exports.list"); }
-  requestMemberPersonalDataExport(idempotencyKey: string): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey }); }
+  requestMemberPersonalDataExport(idempotencyKey: string, locale?: "en" | "ar"): Promise<import("@/lib/domain/qol").ExportJob> { return this.mutate("exports.member_personal_data", { idempotencyKey, locale }); }
   searchWorkspace(search: string): Promise<import("@/lib/domain/qol").WorkspaceSearchResult[]> { return this.query("workspace.search", { search }); }
   listRecentWorkspaceItems(): Promise<import("@/lib/domain/qol").RecentWorkspaceItem[]> { return this.query("workspace.recents"); }
   async recordRecentWorkspaceItem(item: Omit<import("@/lib/domain/qol").RecentWorkspaceItem, "viewedAt">): Promise<void> { await this.mutate("workspace.recent.record", item); }
@@ -716,7 +723,7 @@ export class ConvexGymOSApi implements GymOSApi {
   getMessagingStatus(): Promise<T.MessagingStatus> { return this.query("messaging.status", {}); }
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> { return this.query("messaging.templates.catalogue", {}); }
   listMyPlatformInvoices(): Promise<PlatformBillingInvoice[]> { return this.query("billing.invoices.list", {}); }
-  getSubscriptionAgreementContext(): Promise<T.SubscriptionAgreementContext> { return this.query("legal.agreement.current", {}); }
+  getSubscriptionAgreementContext(options: { language?: "en" | "ar" } = {}): Promise<T.SubscriptionAgreementContext> { return this.query("legal.agreement.current", options); }
   signSubscriptionAgreement(input: T.SignSubscriptionAgreementInput): Promise<T.SubscriptionAgreement> { return this.mutate("legal.agreement.sign", input); }
   listPlatformAgreements(): Promise<T.PlatformAgreementSummary[]> { return this.query("platform.agreements.list", {}); }
   getPlatformAgreement(agreementId: T.UUID): Promise<T.SubscriptionAgreement> { return this.query("platform.agreement.get", { agreementId }); }

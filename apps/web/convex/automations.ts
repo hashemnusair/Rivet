@@ -1,4 +1,7 @@
 import { nextRenewalQuietHoursEnd } from "./renewalPolicy";
+import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
+import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
+import { MESSAGE_TEMPLATE_VERSION } from "./messagingTemplates";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { marketingSuppressionReason, normalizeMarketingChannel } from "./marketing";
@@ -49,6 +52,13 @@ function localMinutes(timezone: string): number {
     const now = new Date();
     return now.getUTCHours() * 60 + now.getUTCMinutes();
   }
+}
+
+
+/** Captured once at queue time: the recipient's language, then the gym default. Retries keep it. */
+function queuedMessageLanguage(preference: unknown, organizationDefault: unknown): { language: "en" | "ar"; languageSource: "recipient" | "organization" | "default" } {
+  const resolved = resolveRecipientLanguage(preference, organizationDefault);
+  return { language: resolved.language, languageSource: resolved.source };
 }
 
 export function isQuietHours(timezone: string, start: string, end: string, now = new Date()): boolean {
@@ -157,7 +167,7 @@ async function marketingPreferenceForCandidate(
   return candidate;
 }
 
-async function notifyManagers(ctx: MutationCtx, organizationId: Id<"organizations">, branchId: Id<"branches"> | undefined, input: { title: string; body: string; href: string; dedupeKey: string }): Promise<void> {
+async function notifyManagers(ctx: MutationCtx, organizationId: Id<"organizations">, branchId: Id<"branches"> | undefined, input: { title: string; body: string; href: string; dedupeKey: string; titleMessage?: SystemMessage }): Promise<void> {
   const memberships = (await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect())
     .filter((membership) => membership.active && (membership.role === "owner" || membership.role === "manager"))
     .filter((membership) => !branchId || membership.branchScope === "all" || membership.branchIds.includes(branchId));
@@ -166,7 +176,7 @@ async function notifyManagers(ctx: MutationCtx, organizationId: Id<"organization
     if (!user || user.status === "deactivated") continue;
     const existing = await ctx.db.query("operationalNotifications").withIndex("by_recipient_dedupe", (q) => q.eq("recipientUserId", user._id).eq("dedupeKey", input.dedupeKey)).unique();
     if (existing && (!existing.expiresAt || existing.expiresAt > Date.now())) continue;
-    await ctx.db.insert("operationalNotifications", { publicId: `NOT-${newId()}`, recipientUserId: user._id, organizationId, branchId, kind: "automation_attention", title: input.title, body: input.body, href: input.href, dedupeKey: input.dedupeKey, createdAt: Date.now() });
+    await ctx.db.insert("operationalNotifications", { publicId: `NOT-${newId()}`, recipientUserId: user._id, organizationId, branchId, kind: "automation_attention", title: input.title, body: input.body, ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}), href: input.href, dedupeKey: input.dedupeKey, createdAt: Date.now() });
   }
 }
 
@@ -241,14 +251,14 @@ export const evaluate = internalMutation({
               // live gym would get instead of a "suppressed" it would not.
               const deferredUntil = !suppressionReason && quiet && quietUntil ? new Date(quietUntil).toISOString() : undefined;
               const requestedChannel = normalizeMarketingChannel(actionItem.channel);
-              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: live ? requestedChannel : "sandbox", requestedChannel, language: stringValue(candidate.preferredLanguage, "en"), templateId: actionItem.templateId, templateKey: actionItem.templateKey, recipientPhone: stringValue(candidate.phone) || undefined, memberId, leadId, queuedAt: isoNow(), suppressionReason, deferredUntil, nextAttemptAt: messageStatus === "queued" ? (deferredUntil ?? isoNow()) : undefined, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason ?? (deferredUntil ? `Deferred until quiet hours end (${quietEnd})` : undefined) }], automationExecutionId: executionId };
+              const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: live ? requestedChannel : "sandbox", requestedChannel, ...queuedMessageLanguage(candidate.preferredLanguage, organization.defaultLanguage), ...(actionItem.templateKey && !actionItem.templateId ? { catalogueVersion: MESSAGE_TEMPLATE_VERSION } : {}), templateId: actionItem.templateId, templateKey: actionItem.templateKey, recipientPhone: stringValue(candidate.phone) || undefined, memberId, leadId, queuedAt: isoNow(), suppressionReason, deferredUntil, nextAttemptAt: messageStatus === "queued" ? (deferredUntil ?? isoNow()) : undefined, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason ?? (deferredUntil ? `Deferred until quiet hours end (${quietEnd})` : undefined) }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });
               const attemptId = newId();
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "automationAttempt", publicId: attemptId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: { id: attemptId, executionId, action, attempt: 1, status: messageStatus, reason: suppressionReason, nextAttemptAt: suppressionReason ? undefined : isoNow() } });
               actionResults.push({ key: action, messageId, status: messageStatus, suppressionReason });
               attemptHistory.push({ action, attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason });
             } else if (action === "notify_manager") {
-              await notifyManagers(ctx, organization._id, candidateRecord.branchId, { title: stringValue(rule.name, "Automation requires attention"), body: subjectName, href: automationAttentionHref(memberId, leadId), dedupeKey: `automation-notification:${executionId}` });
+              await notifyManagers(ctx, organization._id, candidateRecord.branchId, { title: stringValue(rule.name, "Automation requires attention"), ...(typeof rule.name === "string" ? {} : { titleMessage: systemMessage("communicationCompletion.notifications.automationAttention") }), body: subjectName, href: automationAttentionHref(memberId, leadId), dedupeKey: `automation-notification:${executionId}` });
               actionResults.push({ key: action, status: "completed" });
               attemptHistory.push({ action, attempt: 1, status: "completed", occurredAt: isoNow() });
             }

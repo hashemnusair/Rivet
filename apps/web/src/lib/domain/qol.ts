@@ -1,3 +1,5 @@
+import type { WorkspaceSubtitle } from "./workspace-subtitle";
+export type { WorkspaceSubtitle } from "./workspace-subtitle";
 import type { ISODateTime, Money, ReceiptDetail, TransactionStatus, TransactionType, UUID } from "./types";
 
 export type SavedViewSurface = "members" | "leads" | "customer_finance";
@@ -158,6 +160,10 @@ export type ExportKind =
   | "member_personal_data";
 
 export interface ExportJob {
+  /** Language frozen with this download; older jobs without it are English. */
+  locale?: "en" | "ar";
+  failureMessageKey?: "exports.tooLarge";
+  failureMessageParams?: { count: number };
   id: UUID;
   kind: ExportKind;
   status: JobStatus;
@@ -179,6 +185,8 @@ export interface ExportJob {
 }
 
 export interface ExportRequestInput {
+  /** Presentation only; never changes member communication preferences. */
+  locale?: "en" | "ar";
   kind: ExportKind;
   filters?: Record<string, unknown>;
   idempotencyKey: string;
@@ -191,6 +199,7 @@ export interface WorkspaceSearchResult {
   id: string;
   title: string;
   subtitle?: string;
+  subtitleParts?: WorkspaceSubtitle;
   href: string;
   keywords?: string[];
 }
@@ -200,6 +209,7 @@ export interface RecentWorkspaceItem {
   id: string;
   title: string;
   subtitle?: string;
+  subtitleParts?: WorkspaceSubtitle;
   href: string;
   viewedAt: ISODateTime;
 }

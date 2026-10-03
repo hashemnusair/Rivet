@@ -17,3 +17,10 @@ export function auditApprovalStatusForDisplay(
 
   return event.approvalStatus;
 }
+
+/** Only this exact system-owned posting reason is projected; audit bytes stay original. */
+export function auditReasonMessageKey(event: Pick<AuditEvent, "action" | "reason">): "accountingMessages.sourceQueueReason" | undefined {
+  return event.action === "accounting.source.post" && event.reason === "Posted from the management-ledger source queue."
+    ? "accountingMessages.sourceQueueReason"
+    : undefined;
+}

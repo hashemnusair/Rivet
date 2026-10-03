@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { LockKeyhole, MailCheck, ShieldAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -14,36 +15,8 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { cn } from "@/lib/utils/cn";
 import { SettingsPanel, SettingsSaveBar, SettingsSection } from "@/features/settings/settings-layout";
 
-const EMAIL_MODE_LABELS: Record<string, string> = { off: "Off", sandbox: "Test mode", allowlist: "Approved addresses only", live: "On" };
-const EMAIL_MODE_HINTS: Record<string, string> = {
-  off: "RIVET is not sending any emails.",
-  sandbox: "Emails go to a RIVET test inbox, not to the real person.",
-  allowlist: "Only approved addresses get emails. The rest are not sent.",
-  live: "Emails go to the real people.",
-};
 
-const LABELS: Record<string, string> = {
-  trial_request_confirmation: "Trial confirmation",
-  trial_status: "Trial update",
-  payment_receipt: "Payment receipt",
-  support_acknowledgement: "Support request received",
-  support_reply: "Support reply",
-  support_resolved: "Support request solved",
-  renewal_reminder: "Renewal reminder",
-  membership_expiry: "Membership ended",
-  pt_booking_confirmation: "PT booking confirmation",
-  pt_booking_reminder: "PT booking reminder",
-  pt_booking_update: "PT booking changes",
-  pt_low_balance: "PT sessions running low",
-  pt_package_paid: "PT package activated",
-  platform_invoice_issued: "RIVET invoice sent",
-  platform_invoice_paid: "RIVET invoice paid",
-  platform_invoice_past_due: "RIVET invoice overdue",
-  platform_subscription_suspended: "RIVET subscription suspended",
-  platform_subscription_cancelled: "RIVET subscription cancelled",
-};
 
-const DESCRIPTION = "Choose which emails your gym sends to members. You cannot turn off RIVET’s own billing and account emails.";
 
 export function disabledOperationalEmailKinds(previous: string[], next: string[]): string[] {
   const nextKinds = new Set(next);
@@ -55,11 +28,43 @@ function operationalEmailKindSetsMatch(left: string[], right: string[]): boolean
     && disabledOperationalEmailKinds(right, left).length === 0;
 }
 
-function kindLabel(kind: string): string {
-  return LABELS[kind] ?? kind.replaceAll("_", " ");
-}
+
 
 export function OperationalEmailSection() {
+  const t = useT();
+  const LABELS: Record<string, string> = {
+  trial_request_confirmation: t("settingsDetails.text179"),
+  trial_status: t("settingsDetails.text180"),
+  payment_receipt: t("settingsDetails.text181"),
+  support_acknowledgement: t("settingsDetails.text182"),
+  support_reply: t("settingsDetails.text183"),
+  support_resolved: t("settingsDetails.text184"),
+  renewal_reminder: t("settingsDetails.text185"),
+  membership_expiry: t("settingsDetails.text186"),
+  pt_booking_confirmation: t("settingsDetails.text187"),
+  pt_booking_reminder: t("settingsDetails.text188"),
+  pt_booking_update: t("settingsDetails.text189"),
+  pt_low_balance: t("settingsDetails.text190"),
+  pt_package_paid: t("settingsDetails.text191"),
+  platform_invoice_issued: t("settingsDetails.text192"),
+  platform_invoice_paid: t("settingsDetails.text193"),
+  platform_invoice_past_due: t("settingsDetails.text194"),
+  platform_subscription_suspended: t("settingsDetails.text195"),
+  platform_subscription_cancelled: t("settingsDetails.text196"),
+};
+
+  const EMAIL_MODE_HINTS: Record<string, string> = {
+  off: t("settingsDetails.text175"),
+  sandbox: t("settingsDetails.text176"),
+  allowlist: t("settingsDetails.text177"),
+  live: t("settingsDetails.text178"),
+};
+
+  const EMAIL_MODE_LABELS: Record<string, string> = { off: t("settingsCore.text151"), sandbox: t("settingsCore.text152"), allowlist: t("settingsDetails.text174"), live: t("settingsCore.text154") };
+
+  const DESCRIPTION = t("settingsDetails.text197");
+
+  const kindLabel = (kind: string): string => LABELS[kind] ?? kind;
   const invalidate = useInvalidate();
   const query = useApiQuery(["settings", "operational-email"], (api) => api.getOperationalEmailSettings());
   const [enabledKinds, setEnabledKinds] = useState<string[]>([]);
@@ -75,35 +80,35 @@ export function OperationalEmailSection() {
   }, [enabledKinds, query.data]); // Local edits must not be overwritten by a background refetch.
   const disabledKinds = disabledOperationalEmailKinds(query.data?.enabledKinds ?? [], enabledKinds);
   const requiresReason = disabledKinds.length > 0;
-  const save = useApiMutation((api) => api.updateOperationalEmailSettings({ enabledKinds, reason: reason.trim() }), { onSuccess: async () => { await invalidate([["settings", "operational-email"]]); setReason(""); toast.success("Email settings saved."); } });
-  if (query.isError) return <SettingsSection title="Emails" description={DESCRIPTION}><ErrorState layout="section" title="Email settings could not load" onRetry={() => query.refetch()} /></SettingsSection>;
-  if (!query.data) return <SettingsSection title="Emails" description={DESCRIPTION}><Skeleton className="h-48 w-full" /></SettingsSection>;
+  const save = useApiMutation((api) => api.updateOperationalEmailSettings({ enabledKinds, reason: reason.trim() }), { onSuccess: async () => { await invalidate([["settings", "operational-email"]]); setReason(""); toast.success(t("settingsDetails.text198")); } });
+  if (query.isError) return <SettingsSection title={t("settingsCore.text189")} description={DESCRIPTION}><ErrorState layout="section" title={t("settingsDetails.text199")} onRetry={() => query.refetch()} /></SettingsSection>;
+  if (!query.data) return <SettingsSection title={t("settingsCore.text189")} description={DESCRIPTION}><Skeleton className="h-48 w-full" /></SettingsSection>;
   const settings = query.data;
   const dirty = !operationalEmailKindSetsMatch(settings.enabledKinds, enabledKinds) || reason.trim().length > 0;
-  const saveDisabledReason = requiresReason && reason.trim().length < 3 ? "Add a short reason before you turn off an email." : undefined;
+  const saveDisabledReason = requiresReason && reason.trim().length < 3 ? t("settingsDetails.text200") : undefined;
   const readiness = [
-    { label: settings.liveWorkerEnabled ? "Sending switched on" : "Sending switched off", ok: settings.liveWorkerEnabled, variant: settings.liveWorkerEnabled ? "success" : "outline" },
-    { label: settings.providerConfigured ? "Email service connected" : "Email service not connected", ok: settings.providerConfigured, variant: settings.providerConfigured ? "success" : "warning" },
-    { label: settings.webhookConfigured ? "Delivery tracking on" : "Delivery tracking not set up", ok: settings.webhookConfigured, variant: settings.webhookConfigured ? "success" : "warning" },
+    { label: settings.liveWorkerEnabled ? t("settingsDetails.text201") : t("settingsDetails.text202"), ok: settings.liveWorkerEnabled, variant: settings.liveWorkerEnabled ? "success" : "outline" },
+    { label: settings.providerConfigured ? t("settingsDetails.text203") : t("settingsDetails.text204"), ok: settings.providerConfigured, variant: settings.providerConfigured ? "success" : "warning" },
+    { label: settings.webhookConfigured ? t("settingsDetails.text205") : t("settingsDetails.text206"), ok: settings.webhookConfigured, variant: settings.webhookConfigured ? "success" : "warning" },
   ] as const;
   const notice = !settings.liveWorkerEnabled
-    ? { tone: "warning" as const, icon: ShieldAlert, text: "RIVET has turned off email sending for now. You can still save your choices. They start working when RIVET turns sending on." }
+    ? { tone: "warning" as const, icon: ShieldAlert, text: t("settingsDetails.text207") }
     : !settings.ownerConfirmed
-      ? { tone: "warning" as const, icon: ShieldAlert, text: "Check the emails below and save them. Your gym cannot send emails to members until you do." }
-      : { tone: "success" as const, icon: MailCheck, text: "The emails you ticked below are being sent." };
+      ? { tone: "warning" as const, icon: ShieldAlert, text: t("settingsDetails.text208") }
+      : { tone: "success" as const, icon: MailCheck, text: t("settingsDetails.text209") };
 
   return (
-    <SettingsSection title="Emails" description={DESCRIPTION}>
-      <SettingsPanel title="Sending status" description="RIVET controls this for all gyms. Your choices apply once sending is on." bodyClassName="px-4 py-3 sm:px-5">
+    <SettingsSection title={t("settingsCore.text189")} description={DESCRIPTION}>
+      <SettingsPanel title={t("settingsDetails.text210")} description={t("settingsDetails.text211")} bodyClassName="px-4 py-3 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12.5px] text-ink-2" data-testid="email-delivery-mode">
-          <span className="text-ink-3">Email sending</span>
+          <span className="text-ink-3">{t("settingsDetails.text212")}</span>
           <Badge variant={settings.deliveryMode === "live" ? "success" : settings.deliveryMode === "off" ? "neutral" : "warning"} dot>{EMAIL_MODE_LABELS[settings.deliveryMode] ?? settings.deliveryMode}</Badge>
           <span className="text-ink-3">{EMAIL_MODE_HINTS[settings.deliveryMode]}</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {readiness.map((item) => <Badge key={item.label} variant={item.variant} dot>{item.label}</Badge>)}
         </div>
-        {settings.deliveryModeWarning ? <p className="mt-2 text-[12px] leading-5 text-warning-deep">{settings.deliveryModeWarning}</p> : null}
+        {settings.deliveryModeWarning ? <p className="mt-2 text-[12px] leading-5 text-warning-deep">{t("settingsDetails.emailModeWarning")}</p> : null}
         <div className={cn("mt-3 flex gap-3 rounded-md px-3 py-2.5 text-[12.5px] leading-5", notice.tone === "warning" ? "bg-warning-bg text-warning-deep" : "bg-success-bg text-success-deep")} role="status">
           <notice.icon className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>{notice.text}</p>
@@ -112,7 +117,7 @@ export function OperationalEmailSection() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-4">
-          <SettingsPanel title="Emails to members" description="Tick the emails your gym sends. Each one uses your gym’s language." bodyClassName="px-4 py-1 sm:px-5">
+          <SettingsPanel title={t("settingsDetails.text213")} description={t("settingsDetails.text214")} bodyClassName="px-4 py-1 sm:px-5">
             <div className="divide-y divide-line sm:grid sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
               {settings.configurableKinds.map((kind) => {
                 const checked = enabledKinds.includes(kind);
@@ -130,19 +135,19 @@ export function OperationalEmailSection() {
             <div className="flex gap-3">
               <LockKeyhole className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
               <div className="min-w-0">
-                <h3 className="text-[13.5px] font-semibold text-ink">RIVET emails you cannot turn off</h3>
-                <p className="mt-0.5 text-[12px] leading-5 text-ink-3">Invoices, overdue and suspension notices, cancellations and account access emails always stay on.</p>
+                <h3 className="text-[13.5px] font-semibold text-ink">{t("settingsDetails.text215")}</h3>
+                <p className="mt-0.5 text-[12px] leading-5 text-ink-3">{t("settingsDetails.text216")}</p>
                 <ul className="mt-2 grid gap-y-1 text-[12.5px] text-ink-2 sm:grid-cols-2 sm:gap-x-6">{settings.mandatoryPlatformKinds.map((kind) => <li key={kind}>{kindLabel(kind)}</li>)}</ul>
               </div>
             </div>
           </div>
         </div>
-        <SettingsPanel title="Reason for the change" description="Saved in the history with this change.">
-          <Field label={requiresReason ? "Why are you turning off these emails?" : "Note (optional)"} htmlFor="operational-email-reason" required={requiresReason} hint={requiresReason ? `Needed because you are turning off ${disabledKinds.length} ${disabledKinds.length === 1 ? "email" : "emails"}.` : "You only need a reason when you turn an email off."}>
-            <Textarea id="operational-email-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={requiresReason ? "For example: we send this by WhatsApp instead" : "Add a note"} />
+        <SettingsPanel title={t("renewFlow.sale.changeReason")} description={t("settingsDetails.text217")}>
+          <Field label={requiresReason ? t("settingsDetails.text218") : t("settingsDetails.text219")} htmlFor="operational-email-reason" required={requiresReason} hint={requiresReason ? t("settingsDetails.disableEmailCount", { count: disabledKinds.length }) : t("settingsDetails.text220")}>
+            <Textarea id="operational-email-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={requiresReason ? t("settingsDetails.text221") : t("settingsDetails.text222")} />
           </Field>
-          {settings.ownerConfirmedAt ? <p className="mt-3 text-[12px] leading-5 text-ink-3">Confirmed by {settings.ownerConfirmedBy ?? "an owner or manager"}.</p> : null}
-          {settings.updatedAt ? <p className="mt-1 text-[12px] leading-5 text-ink-3">Last changed by {settings.updatedBy ?? "someone with access"}.{settings.reason ? ` ${settings.reason}` : ""}</p> : null}
+          {settings.ownerConfirmedAt ? <p className="mt-3 text-[12px] leading-5 text-ink-3">{t("settingsDetails.confirmedBy", { name: settings.ownerConfirmedBy ?? t("settingsDetails.text223") })}</p> : null}
+          {settings.updatedAt ? <p className="mt-1 text-[12px] leading-5 text-ink-3">{t("settingsDetails.changedBy", { name: settings.updatedBy ?? t("settingsDetails.text224") })}{settings.reason ? ` ${settings.reason}` : ""}</p> : null}
         </SettingsPanel>
       </div>
       <SettingsSaveBar
@@ -150,11 +155,11 @@ export function OperationalEmailSection() {
         saving={save.isPending}
         saveDisabled={Boolean(saveDisabledReason)}
         saveDisabledReason={saveDisabledReason}
-        error={save.isError ? (isApiError(save.error) ? save.error.message : "Email settings were not saved. Try again.") : undefined}
+        error={save.isError ? (isApiError(save.error) ? save.error.message : t("settingsDetails.text225")) : undefined}
         onSave={async () => { await save.mutateAsync(); }}
         onDiscard={() => { setEnabledKinds(settings.enabledKinds); setReason(""); }}
-        saveLabel="Save email settings"
-        guardTitle="Unsaved email settings"
+        saveLabel={t("settingsDetails.text226")}
+        guardTitle={t("settingsDetails.text227")}
       />
     </SettingsSection>
   );

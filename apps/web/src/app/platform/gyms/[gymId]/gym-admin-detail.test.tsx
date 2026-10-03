@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformGymDetail } from "@/lib/api/GymOSApi";
+import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import GymAdminDetail from "./gym-admin-detail";
 
 const state = vi.hoisted(() => ({
@@ -24,6 +25,11 @@ vi.mock("next/navigation", () => ({
 /** Radix tabs activate on mouse down, not click. */
 function openTab(name: RegExp | string) {
   fireEvent.mouseDown(screen.getByRole("tab", { name }));
+}
+
+function LocaleSwitch() {
+  const { locale, setLocale } = useLocale();
+  return <button type="button" data-testid="locale-switch" onClick={() => setLocale(locale === "en" ? "ar" : "en")}>toggle-locale</button>;
 }
 
 vi.mock("@/lib/hooks/use-realtime-api", () => ({
@@ -213,6 +219,24 @@ describe("Gym admin detail (informational record)", () => {
     expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-1", isPublic: false, reason: "Hide from the marketplace during rebrand." });
   });
 
+  it("localizes the admin detail and preserves the exact-name archive action across a language change", async () => {
+    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><GymAdminDetail gymId="gym-1" /></LocaleProvider>);
+    expect(screen.getByText("Subscription facts")).toBeInTheDocument();
+
+    openTab("Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Archive gym" }));
+    fireEvent.change(screen.getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });
+    fireEvent.change(screen.getByLabelText("Reason for this change"), { target: { value: "Archive confirmed after review." } });
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByText("الظهور العام")).toBeInTheDocument();
+    expect(screen.getByLabelText("اكتب اسم النادي للتأكيد")).toHaveValue("Forge Fitness");
+    expect(screen.getByLabelText("سبب التغيير")).toHaveValue("Archive confirmed after review.");
+    fireEvent.click(screen.getByRole("button", { name: "أرشفة النادي" }));
+    await waitFor(() => expect(state.api.archivePlatformGym).toHaveBeenCalledWith({ gymId: "gym-1", confirmation: "Forge Fitness", reason: "Archive confirmed after review." }));
+  });
+
   it("shows a suppressed, locked listing for a suspended gym and points at billing to reactivate", () => {
     state.query = { data: detail({ status: "suspended", isPublic: false }), isLoading: false, isError: false, error: undefined, refetch: vi.fn() };
     render(<GymAdminDetail gymId="gym-1" />);
@@ -258,7 +282,7 @@ describe("Gym admin detail (informational record)", () => {
     expect(confirm()).toBeDisabled();
 
     fireEvent.change(within(dialog).getByLabelText("Type the gym name to confirm"), { target: { value: "Forge" } });
-    fireEvent.change(within(dialog).getByLabelText("Reason for archiving"), { target: { value: "Customer requested account closure." } });
+    fireEvent.change(within(dialog).getByLabelText("Reason for this change"), { target: { value: "Customer requested account closure." } });
     expect(confirm()).toBeDisabled();
 
     fireEvent.change(within(dialog).getByLabelText("Type the gym name to confirm"), { target: { value: "Forge Fitness" } });

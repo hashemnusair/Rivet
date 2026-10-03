@@ -1,3 +1,4 @@
+import { searchKey } from "../utils/text";
 import type { Money, Payable, PayableStatus, PayableStatusFilter, PayablesAgingBucket, PayablesSupplierTotal, SupplierPaymentMethod } from "./types";
 
 export const SUPPLIER_PAYMENT_METHODS: readonly SupplierPaymentMethod[] = ["cash", "bank_transfer", "cliq"];
@@ -57,9 +58,9 @@ export function matchesPayableFilters(payable: Payable, filters: PayableFilterIn
   if (filters.supplierId && payable.supplierId !== filters.supplierId) return false;
   const status = filters.status ?? "open";
   if (status === "open" ? !payableIsOpen(payable) : status !== "all" && payable.status !== status) return false;
-  const search = filters.search?.trim().toLowerCase();
+  const search = filters.search ? searchKey(filters.search.trim()) : "";
   if (search) {
-    const haystack = `${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`.toLowerCase();
+    const haystack = searchKey(`${payable.supplierName} ${payable.sourceId} ${payable.sourceLabel} ${payable.externalReference ?? ""} ${payable.branchName}`);
     if (!haystack.includes(search)) return false;
   }
   return true;

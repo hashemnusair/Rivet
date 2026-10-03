@@ -1,3 +1,5 @@
+import { searchKey } from "../src/lib/utils/text";
+
 /**
  * The one catalogue of places a person can go in the gym workspace:
  * destinations, report views, form entry points and Settings sections. Every
@@ -125,7 +127,7 @@ export function permittedNavigationEntries(access: NavigationAccess): Navigation
 }
 
 export function normalizeNavigationQuery(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}\s&]+/gu, " ").replace(/\s+/g, " ").trim();
+  return searchKey(value).replace(/[^\p{L}\p{N}\s&]+/gu, " ").replace(/\s+/g, " ").trim();
 }
 
 function tokens(value: string): string[] {

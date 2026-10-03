@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import { pageTitle } from "../page-title";
 import { PortalSignIn } from "../portal-sign-in.client";
 
-export const metadata: Metadata = { title: "Gym team sign-in" };
+export const generateMetadata = (): Promise<Metadata> => pageTitle("auth.pageTitle.gym");
 
 export default function GymLoginPage() {
   return <PortalSignIn audience="staff" />;

@@ -1,5 +1,11 @@
+import { isCalendarDate } from "../utils/dates";
+import { searchKey } from "../utils/text";
+import { createTranslator, type TFunction } from "../i18n/core";
+import type { Locale } from "../i18n/locale";
+import { makeFormatters } from "../i18n/formatters";
+import { memberImportErrors } from "./member-import-errors";
 import type { MemberImportColumnMapping, MemberImportField, MemberImportRow } from "@/lib/api/GymOSApi";
-import { buildCsvDocument, exportStatusLabel, formatMinorUnits } from "@/lib/exports/csv";
+import { buildCsvDocument, formatMinorUnits } from "@/lib/exports/csv";
 
 export type ImportMatrix = string[][];
 
@@ -59,14 +65,14 @@ export function parseCsvMatrix(value: string): ImportMatrix {
 }
 
 export function normalizeImportHeader(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().trim().replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "");
+  return searchKey(value).replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_+|_+$/g, "");
 }
 
 export function inferMemberImportMapping(headers: string[]): MemberImportColumnMapping {
   const normalized = headers.map(normalizeImportHeader);
   const mapping: MemberImportColumnMapping = {};
   for (const field of Object.keys(FIELD_ALIASES) as MemberImportField[]) {
-    const index = normalized.findIndex((header) => FIELD_ALIASES[field].includes(header));
+    const index = normalized.findIndex((header) => FIELD_ALIASES[field].map(normalizeImportHeader).includes(header));
     if (index >= 0) mapping[field] = index;
   }
   return mapping;
@@ -107,12 +113,20 @@ export function sourcePlanNames(matrix: ImportMatrix, mapping: MemberImportColum
   return [...new Set(matrix.slice(1).map((row) => row[mapping.sourcePlanName!]?.trim()).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right));
 }
 
-export function rejectedMemberRowsCsv(rows: MemberImportRow[], currency = "JOD"): string {
+export function rejectedMemberRowsCsv(rows: MemberImportRow[], currency = "JOD", locale: Locale = "en"): string {
+  const t = createTranslator(locale);
+  const f = makeFormatters(locale, t("common.time.now"));
   const rejected = rows.filter((row) => row.status === "duplicate" || row.status === "invalid" || row.status === "skipped");
   return buildCsvDocument({
-    title: "Member import rows requiring attention",
-    headers: ["Source row", "Full name", "Phone", "Gender", "Email", "Source plan", "Membership starts", "Membership ends", "Opening balance", "Currency", "Result", "What needs attention"],
-    rows: rejected.map((row) => [row.rowNumber, row.fullName, row.phone, exportStatusLabel(row.gender), row.email, row.sourcePlanName, row.membershipStartDate, row.membershipEndDate, formatMinorUnits(row.openingBalanceMinor, currency), currency, exportStatusLabel(row.status), row.errors.join("; ")]),
-    emptyMessage: "Every row passed preview; there are no rejected rows.",
+    locale,
+    title: t("memberMigration.rejectedTitle"),
+    headers: [t("memberMigration.sourceRow"), t("common.label.fullName"), t("common.label.phone"), t("memberProfile.details.gender"), t("common.label.email"), t("memberMigration.sourcePlan"), t("memberMigration.membershipStarts"), t("memberMigration.membershipEnds"), t("memberMigration.outstandingBalance"), t("memberMigration.currency"), t("memberMigration.result"), t("memberMigration.attention")],
+    rows: rejected.map((row) => [row.rowNumber, row.fullName, row.phone, row.gender ? t(row.gender === "male" ? "memberProfile.details.male" : "memberProfile.details.female") : "", row.email, row.sourcePlanName, row.membershipStartDate && isCalendarDate(row.membershipStartDate) ? f.date(row.membershipStartDate) : row.membershipStartDate ?? "", row.membershipEndDate && isCalendarDate(row.membershipEndDate) ? f.date(row.membershipEndDate) : row.membershipEndDate ?? "", formatMinorUnits(row.openingBalanceMinor, currency), currency, t(row.status === "duplicate" ? "memberMigration.duplicate" : row.status === "invalid" ? "memberMigration.needsFix" : "memberMigration.skipped"), memberImportErrors(t, row).join(locale === "ar" ? "؛ " : "; ")]),
+    emptyMessage: t("memberMigration.noRejected"),
   });
+}
+
+export function importColumnLabel(t: TFunction, field: typeof OPTIONAL_MEMBERSHIP_IMPORT_FIELDS[number]["field"]): string {
+  const keys = {"sourcePlanName": "memberMigration.currentPlan", "membershipStartDate": "memberMigration.membershipStarts", "membershipEndDate": "memberMigration.membershipEnds", "remainingVisits": "memberMigration.visitsRemaining", "freezeStartDate": "memberMigration.freezeStarts", "freezeEndDate": "memberMigration.freezeEnds", "openingBalance": "memberMigration.outstandingBalance", "historicalPaidTotal": "memberMigration.historicalPaid", "historicalPaymentDate": "memberMigration.historicalPaymentDate", "historicalPaymentReference": "memberMigration.historicalReference"} as const;
+  return t(keys[field]);
 }

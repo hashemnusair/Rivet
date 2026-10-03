@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
@@ -24,16 +25,16 @@ export function ExperienceDataState({
   compact?: boolean;
   className?: string;
 }) {
+  const t = useT();
   if (status === "loading") {
     return (
       <div className={`flex items-center justify-center gap-2 border border-dashed border-line-2 bg-surface/60 px-6 py-10 text-center text-[13px] text-ink-2 ${className ?? ""}`} role="status" aria-live="polite">
         <LoaderCircle className="size-4 animate-spin text-ink-3" aria-hidden />
-        Loading gyms…
-      </div>
+        {" "}{t("customerPortal.loadingGyms")}{" "}</div>
     );
   }
   if (status === "error") {
-    return <ErrorState title="Could not load the latest details" description={error ?? "Check your internet connection and try again."} onRetry={onRetry} className={className} />;
+    return <ErrorState title={t("customerPortal.latestDetailsFailed")} description={error ?? t("customerPortal.checkConnection")} onRetry={onRetry} className={className} />;
   }
   return <EmptyState title={emptyTitle} description={emptyDescription} action={emptyAction} compact={compact} className={className} />;
 }

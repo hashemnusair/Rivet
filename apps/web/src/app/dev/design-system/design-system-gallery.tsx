@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import {
   AlertTriangle,
@@ -52,6 +53,7 @@ const SAMPLE_PAGE = {
 };
 
 export function DesignSystemGallery() {
+  const t = useT();
   const [page, setPage] = useState(2);
 
   return (
@@ -59,7 +61,7 @@ export function DesignSystemGallery() {
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex max-w-[1480px] flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-8">
           <div className="flex items-center gap-5">
-            <Image src="/brand/rivet-lockup.png" alt="RIVET" width={122} height={31} priority />
+            <Image src="/brand/rivet-lockup.png" alt={t("common.brand.name")} width={122} height={31} priority />
             <span className="h-8 w-px bg-line" aria-hidden />
             <div>
               <ContextLabel>Product interface reference</ContextLabel>
@@ -92,10 +94,10 @@ export function DesignSystemGallery() {
           </div>
 
           <section className="mt-5 grid grid-cols-2 divide-x divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface sm:grid-cols-4 sm:divide-y-0" aria-label="Example metrics">
-            <Stat label="Collected today" value="JOD 767.750" className="p-4" />
+            <Stat label={t("marketing.device.kpi.collectedToday")} value="JOD 767.750" className="p-4" />
             <Stat label="Open leads" value="24" context="6 need contact" className="p-4" />
             <Stat label="Renewals due" value="5" tone="warning" context="next 7 days" className="p-4" />
-            <Stat label="Check-ins" value="16" context="today" className="p-4" />
+            <Stat label={t("palette.pages.receptionSubtitle")} value="16" context="today" className="p-4" />
           </section>
 
           <div className="mt-5 grid gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-[1.4fr_1fr]">
@@ -143,10 +145,10 @@ export function DesignSystemGallery() {
             </div>
             <FieldGrid className="sm:grid-cols-2" alignFrom="sm">
               <Field label="Member name" htmlFor="gallery-member-name" required><Input id="gallery-member-name" defaultValue="Rana Haddad" /></Field>
-              <Field label="Home branch" htmlFor="gallery-home-branch"><Select defaultValue="abdoun"><SelectTrigger id="gallery-home-branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="abdoun">Abdoun</SelectItem><SelectItem value="sweifieh">Sweifieh</SelectItem></SelectContent></Select></Field>
-              <Field label="Phone" htmlFor="gallery-phone" hint="Jordan is the default; international numbers remain supported."><Input id="gallery-phone" defaultValue="+962 79 123 4567" dir="ltr" /></Field>
+              <Field label={t("members.header.homeBranch")} htmlFor="gallery-home-branch"><Select defaultValue="abdoun"><SelectTrigger id="gallery-home-branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="abdoun">Abdoun</SelectItem><SelectItem value="sweifieh">Sweifieh</SelectItem></SelectContent></Select></Field>
+              <Field label={t("common.label.phone")} htmlFor="gallery-phone" hint="Jordan is the default; international numbers remain supported."><Input id="gallery-phone" defaultValue="+962 79 123 4567" dir="ltr" /></Field>
               <Field label="Reference" htmlFor="gallery-reference" error="Use a valid transfer reference."><Input id="gallery-reference" aria-invalid defaultValue="CLIQ-" /></Field>
-              <Field label="Desk note" htmlFor="gallery-desk-note" className="sm:col-span-2"><Textarea id="gallery-desk-note" placeholder="Add only the context the next employee needs." /></Field>
+              <Field label={t("members.tabs.notes.desk")} htmlFor="gallery-desk-note" className="sm:col-span-2"><Textarea id="gallery-desk-note" placeholder="Add only the context the next employee needs." /></Field>
               <Field label="Disabled field" htmlFor="gallery-disabled-field"><Input id="gallery-disabled-field" disabled defaultValue="Managed by the gym" /></Field>
               <label className="flex items-center justify-between gap-4 rounded-md border border-line px-3 py-2.5 text-[13px] font-medium"><span>Class booking enabled</span><Switch defaultChecked aria-label="Class booking enabled" /></label>
             </FieldGrid>
@@ -155,24 +157,24 @@ export function DesignSystemGallery() {
 
         <GallerySection title="Filters, status, and records" description="Compact controls and stable row patterns for high-frequency work.">
           <Tabs defaultValue="members">
-            <TabsList aria-label="Example record views"><TabsTrigger value="members">Members</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
+            <TabsList aria-label="Example record views"><TabsTrigger value="members">{t("palette.groups.members")}</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
             <TabsContent value="members" className="mt-4">
           <div className="panel overflow-hidden">
             <header className="flex flex-wrap items-center gap-2 border-b border-line p-3">
-              <div className="relative min-w-[220px] flex-1"><Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input className="ps-9" placeholder="Search members" aria-label="Search example members" /></div>
-              <Button size="sm">Active <span className="tabular opacity-70">38</span></Button>
-              <Button size="sm" variant="secondary">Expiring <span className="tabular opacity-70">5</span></Button>
+              <div className="relative min-w-[220px] flex-1"><Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden /><Input className="ps-9" placeholder={t("members.list.searchLabel")} aria-label="Search example members" /></div>
+              <Button size="sm">{t("renewFlow.adjust.membershipStatus.active")}{" "}<span className="tabular opacity-70">38</span></Button>
+              <Button size="sm" variant="secondary">{t("renewFlow.adjust.membershipStatus.expiring")}{" "}<span className="tabular opacity-70">5</span></Button>
               <Button size="sm" variant="secondary">Has balance <span className="tabular opacity-70">3</span></Button>
             </header>
             <div className="flex flex-wrap gap-2 border-b border-line px-4 py-3">
-              <StatusChip tone="green">Active</StatusChip>
-              <StatusChip tone="amber">Needs attention</StatusChip>
-              <StatusChip tone="red">Blocked</StatusChip>
-              <StatusChip tone="neutral">Frozen</StatusChip>
-              <StatusChip tone="outline">Cancelled</StatusChip>
+              <StatusChip tone="green">{t("renewFlow.adjust.membershipStatus.active")}</StatusChip>
+              <StatusChip tone="amber">{t("marketing.device.needsAttention")}</StatusChip>
+              <StatusChip tone="red">{t("reception.decision.blocked")}</StatusChip>
+              <StatusChip tone="neutral">{t("renewFlow.adjust.membershipStatus.frozen")}</StatusChip>
+              <StatusChip tone="outline">{t("renewFlow.adjust.membershipStatus.cancelled")}</StatusChip>
             </div>
             <Table>
-              <TableHeader><TableRow><TableHead>Member</TableHead><TableHead>Branch</TableHead><TableHead>Status</TableHead><TableHead className="text-end">Balance</TableHead><TableHead>Last visit</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>{t("palette.kind.member")}</TableHead><TableHead>{t("common.label.branch")}</TableHead><TableHead>{t("common.label.status")}</TableHead><TableHead className="text-end">{t("reception.member.balance")}</TableHead><TableHead>Last visit</TableHead></TableRow></TableHeader>
               <TableBody>
                 <ExampleMemberRow name="Rana Haddad" number="ABD-1042" branch="Abdoun" balance="JOD 0.000" status="Active" />
                 <ExampleMemberRow name="Yousef Nasser" number="SWF-1097" branch="Sweifieh" balance="JOD 42.750" status="Expiring" />
@@ -204,12 +206,12 @@ export function DesignSystemGallery() {
 
         <GallerySection title="Feedback states" description="States scale to their container instead of turning every absence into a landing page.">
           <div className="space-y-4">
-            <StatePanel layout="inline" icon={AlertTriangle} title="Connection interrupted" description="The last loaded member list is still visible." action={<Button size="sm" variant="secondary">Retry</Button>} />
+            <StatePanel layout="inline" icon={AlertTriangle} title="Connection interrupted" description="The last loaded member list is still visible." action={<Button size="sm" variant="secondary">{t("palette.notifications.retry")}</Button>} />
             <div className="grid gap-4 lg:grid-cols-2">
-              <StatePanel layout="section" icon={Inbox} title="No payments in this range" description="Change the dates or clear the filters." action={<Button size="sm" variant="secondary">Clear filters</Button>} />
+              <StatePanel layout="section" icon={Inbox} title="No payments in this range" description="Change the dates or clear the filters." action={<Button size="sm" variant="secondary">{t("common.action.clearFilters")}</Button>} />
               <StatePanel layout="section" icon={Lock} title="Owner approval required" description="Ask an owner to approve this discount before collecting." />
             </div>
-            <StatePanel layout="page" icon={Building2} title="Choose a branch to open Reception" description="Reception works one branch at a time." action={<Button variant="secondary">Choose branch</Button>} />
+            <StatePanel layout="page" icon={Building2} title="Choose a branch to open Reception" description="Reception works one branch at a time." action={<Button variant="secondary">{t("members.bulk.chooseBranch")}</Button>} />
           </div>
         </GallerySection>
 
@@ -218,16 +220,16 @@ export function DesignSystemGallery() {
             <NavigationSpec title="Settings rail" tone="light" items={["Organization", "Roles & permissions", "Payments", "Operational rules"]} active="Roles & permissions" />
             <NavigationSpec title="Night workspace" tone="night" items={["Dashboard", "Reception", "Members", "Classes"]} active="Reception" />
             <article className="overflow-hidden rounded-lg border border-line bg-surface">
-              <div className="border-b border-line px-4 py-3"><ContextLabel>Member mobile</ContextLabel><h3 className="mt-1 text-[16px] font-semibold">Membership</h3></div>
-              <div className="space-y-3 p-4"><div className="rounded-md border border-line p-4"><StatusChip tone="green">Active</StatusChip><p className="mt-3 text-[20px] font-semibold">Annual access</p><p className="mt-1 text-[12px] text-ink-3">Renews 18 October · Abdoun</p></div><Button className="w-full" size="lg">Show entry pass</Button></div>
-              <nav className="grid grid-cols-4 border-t border-line bg-paper px-2 py-2" aria-label="Example member navigation">{[{ icon: LayoutDashboard, label: "Home" }, { icon: CalendarDays, label: "Classes" }, { icon: CircleDollarSign, label: "Payments" }, { icon: Users, label: "Account" }].map(({ icon: MemberIcon, label }) => <span key={label} className={cn("flex flex-col items-center gap-1 py-1 text-[12px]", label === "Payments" ? "font-semibold text-ink" : "text-ink-3")}><MemberIcon className="size-4" />{label}</span>)}</nav>
+              <div className="border-b border-line px-4 py-3"><ContextLabel>Member mobile</ContextLabel><h3 className="mt-1 text-[16px] font-semibold">{t("memberProfile.followUp.membershipFallback")}</h3></div>
+              <div className="space-y-3 p-4"><div className="rounded-md border border-line p-4"><StatusChip tone="green">{t("renewFlow.adjust.membershipStatus.active")}</StatusChip><p className="mt-3 text-[20px] font-semibold">Annual access</p><p className="mt-1 text-[12px] text-ink-3">Renews 18 October · Abdoun</p></div><Button className="w-full" size="lg">Show entry pass</Button></div>
+              <nav className="grid grid-cols-4 border-t border-line bg-paper px-2 py-2" aria-label="Example member navigation">{[{ icon: LayoutDashboard, label: t("marketing.memberShell.home") }, { icon: CalendarDays, label: t("nav.item.classes") }, { icon: CircleDollarSign, label: t("renewFlow.receipt.back") }, { icon: Users, label: t("marketing.memberShell.account") }].map(({ icon: MemberIcon, label }) => <span key={label} className={cn("flex flex-col items-center gap-1 py-1 text-[12px]", label === "Payments" ? "font-semibold text-ink" : "text-ink-3")}><MemberIcon className="size-4" />{label}</span>)}</nav>
             </article>
           </div>
         </GallerySection>
 
         <GallerySection title="Loading and motion" description="Short, interruptible transitions explain state. Reduced-motion users receive an immediate equivalent.">
           <div className="panel grid gap-6 p-5 md:grid-cols-2">
-            <div><ContextLabel>Loading</ContextLabel><div className="mt-3 space-y-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div></div>
+            <div><ContextLabel>{t("common.a11y.loading")}</ContextLabel><div className="mt-3 space-y-2"><Skeleton className="h-4 w-40" /><Skeleton className="h-10 w-full" /><Skeleton className="h-10 w-full" /></div></div>
             <div><ContextLabel>Meaningful transition</ContextLabel><div className="mt-3 flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-md bg-success-bg text-success transition-[transform,opacity] duration-150 hover:scale-[1.03]"><ShieldCheck className="size-4" /></span><div><p className="text-[13px] font-semibold">Saved</p><p className="text-[12px] text-ink-3">Opacity and transform only; no layout shift.</p></div></div></div>
           </div>
         </GallerySection>

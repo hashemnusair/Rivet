@@ -189,4 +189,22 @@ describe("gym application durable email migration", () => {
     application = await t.run((ctx) => ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", submitted.applicationId)).unique());
     expect(application?.reviewNotificationStatus).toBe("sent");
   });
+
+  it("writes the applicant's own copies in the language they applied in and keeps RIVET's copy in English", async () => {
+    delete process.env.RIVET_OPERATIONAL_EMAIL_LIVE;
+    const t = await seedAdmin();
+    const submitted = await t.action(api.gymApplications.submit, { gymName: "نادي القوة Strength", gymAddress: "12 Airport Road, Amman", ownerName: "رانيا Odeh", email: "arabic-owner@example.test", contactNumber: "+962790000077", plan: "Growth", language: "ar" });
+    const received = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").withIndex("by_related_entity", (q) => q.eq("relatedEntityType", "gym_application_submission").eq("relatedEntityPublicId", submitted.applicationId)).collect()));
+    const applicant = received.find((row) => row.kind === "gym_application_received_applicant")!;
+    const team = received.find((row) => row.kind === "gym_application_received_internal")!;
+    expect(applicant).toMatchObject({ language: "ar", subject: "تم استلام طلب تسجيل النادي في RIVET" });
+    expect(applicant.html).toContain('dir="rtl"');
+    expect(team).toMatchObject({ language: "en", subject: "New RIVET gym application · نادي القوة Strength" });
+    const admin = t.withIdentity({ subject: "clerk-application-admin" });
+    const reviewed = await admin.action(api.gymApplications.review, { applicationId: submitted.applicationId, decision: "rejected", note: "Outside the launch area", correlationId: "cor-application-review-ar" }) as Record<string, unknown>;
+    expect(reviewed).not.toHaveProperty("applicantLanguage");
+    const review = await t.run(async (ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_related_entity", (q) => q.eq("relatedEntityType", "gym_application_review").eq("relatedEntityPublicId", submitted.applicationId)).unique());
+    expect(review).toMatchObject({ language: "ar", subject: "تحديث على طلب RIVET · نادي القوة Strength" });
+    expect(review?.text).not.toContain("Outside the launch area");
+  });
 });

@@ -1,3 +1,6 @@
+import { latinDigits } from "../src/lib/utils/text";
+import { SUBSCRIPTION_AGREEMENT_SECTIONS_AR, SUBSCRIPTION_AGREEMENT_VERSION_AR } from "./legalAgreementArabic";
+export { SUBSCRIPTION_AGREEMENT_VERSION_AR } from "./legalAgreementArabic";
 /**
  * The subscription agreement RIVET asks a gym owner to sign at onboarding.
  *
@@ -115,16 +118,23 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = SUBS
 
 /** The clauses that were published under a given version string. */
 export function agreementSectionsForVersion(version: string): readonly AgreementSection[] | undefined {
+  if (version === SUBSCRIPTION_AGREEMENT_VERSION_AR) return SUBSCRIPTION_AGREEMENT_SECTIONS_AR;
   if (version === SUBSCRIPTION_AGREEMENT_VERSION) return SUBSCRIPTION_AGREEMENT_SECTIONS;
   if (version === SUBSCRIPTION_AGREEMENT_VERSION_1_1) return SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1;
   return undefined;
 }
 
+export function agreementVersionForLanguage(language: "en" | "ar" = "en"): string { return language === "ar" ? SUBSCRIPTION_AGREEMENT_VERSION_AR : SUBSCRIPTION_AGREEMENT_VERSION; }
+export function agreementLanguageForVersion(version: string): "en" | "ar" { return version === SUBSCRIPTION_AGREEMENT_VERSION_AR ? "ar" : "en"; }
+
 export const SUBSCRIPTION_AGREEMENT_PREAMBLE = "Subscription agreement between RIVET, Amman, the Hashemite Kingdom of Jordan (\"RIVET\"), and the Customer identified in the signature block (the gym).";
 
 /** The exact string that is hashed. Never reformat it: whitespace is part of the fingerprint. */
-export function canonicalAgreementText(version = SUBSCRIPTION_AGREEMENT_VERSION, sections = SUBSCRIPTION_AGREEMENT_SECTIONS): string {
+export function canonicalAgreementText(version = SUBSCRIPTION_AGREEMENT_VERSION, sections = agreementSectionsForVersion(version) ?? SUBSCRIPTION_AGREEMENT_SECTIONS): string {
   const body = sections.map((section) => [`${section.number}. ${section.heading}`, ...section.paragraphs].join("\n")).join("\n\n");
+  if (agreementLanguageForVersion(version) === "ar") {
+    return `RIVET — \u0627\u062a\u0641\u0627\u0642\u064a\u0629 \u0627\u0644\u0627\u0634\u062a\u0631\u0627\u0643\n\u0627\u0644\u0625\u0635\u062f\u0627\u0631 ${version}\n\n\u0627\u062a\u0641\u0627\u0642\u064a\u0629 \u0627\u0634\u062a\u0631\u0627\u0643 \u0628\u064a\u0646 RIVET\u060c \u0639\u0645\u0651\u0627\u0646\u060c \u0627\u0644\u0645\u0645\u0644\u0643\u0629 \u0627\u0644\u0623\u0631\u062f\u0646\u064a\u0629 \u0627\u0644\u0647\u0627\u0634\u0645\u064a\u0629 ("RIVET")\u060c \u0648\u0627\u0644\u0639\u0645\u064a\u0644 \u0627\u0644\u0645\u062d\u062f\u062f \u0641\u064a \u0642\u0633\u0645 \u0627\u0644\u062a\u0648\u0642\u064a\u0639 (\u0627\u0644\u0646\u0627\u062f\u064a).\n\n${body}\n`;
+  }
   return `RIVET SUBSCRIPTION AGREEMENT\nVersion ${version}\n\n${SUBSCRIPTION_AGREEMENT_PREAMBLE}\n\n${body}\n`;
 }
 
@@ -157,11 +167,11 @@ export function maskIdNumber(value: string): string {
 }
 
 export function validNationalId(value: string): boolean {
-  return /^\d{10}$/.test(value.trim());
+  return /^\d{10}$/.test(latinDigits(value.trim()));
 }
 
 export function validPassportNumber(value: string): boolean {
-  return /^[A-Za-z0-9]{5,20}$/.test(value.trim());
+  return /^[A-Za-z0-9]{5,20}$/.test(latinDigits(value.trim()));
 }
 
 export function validCalendarDate(value: string): boolean {

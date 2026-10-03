@@ -1,4 +1,6 @@
 import { v } from "convex/values";
+import { systemMessage } from "../src/lib/i18n/system-messages";
+import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import { enqueueOperationalEmail } from "./operationalEmail";
@@ -40,6 +42,7 @@ async function notifyOnce(ctx: MutationCtx, input: {
   booking: Doc<"ptBookings">;
   body: string;
 }) {
+  // Original English is stored; the descriptor lets the member read it in their own language.
   const dedupeKey = `pt-booking-reminder:${input.booking.publicId}`;
   const existing = await ctx.db.query("operationalNotifications").withIndex("by_recipient_dedupe", (q) =>
     q.eq("recipientUserId", input.recipientUserId).eq("dedupeKey", dedupeKey),
@@ -53,6 +56,8 @@ async function notifyOnce(ctx: MutationCtx, input: {
     kind: "pt_booking_reminder",
     title: "PT session tomorrow",
     body: input.body,
+    titleMessage: systemMessage("communicationCompletion.notifications.ptBookingReminder"),
+    bodyMessage: systemMessage("communicationCompletion.notifications.ptBookingReminderBody", { startsAt: { at: new Date(input.booking.startsAt).toISOString() } }),
     href: "/customer/my-gyms",
     dedupeKey,
     expiresAt: input.booking.endsAt,
@@ -81,7 +86,9 @@ export const queueUpcomingReminders = internalMutation({
     for (const booking of [...reserved, ...confirmed]) {
       const memberRecord = await memberForBooking(ctx, booking);
       const member = objectValue(memberRecord?.data) as MemberData;
-      const language = member.preferredLanguage === "ar" ? "ar" as const : "en" as const;
+      const organizationRow = await ctx.db.get(booking.organizationId);
+      const resolved = resolveRecipientLanguage(member.preferredLanguage, organizationRow?.defaultLanguage);
+      const language = resolved.language;
       const dedupeKey = `pt-booking-reminder:${booking.publicId}`;
       const existed = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique();
       const delivery = await enqueueOperationalEmail(ctx, {
@@ -90,6 +97,7 @@ export const queueUpcomingReminders = internalMutation({
         kind: "pt_booking_reminder",
         templateVersion: "pt-booking-reminder-v1",
         language,
+        languageSource: resolved.source,
         recipientReference: booking.memberPublicId,
         recipientEmail: stringValue(member.email),
         dedupeKey,
@@ -98,8 +106,8 @@ export const queueUpcomingReminders = internalMutation({
       const user = await customerUserForMember(ctx, booking.organizationId, booking.memberPublicId);
       if (user && user.status !== "deactivated") {
         const organization = await ctx.db.get(booking.organizationId);
-        const starts = new Intl.DateTimeFormat(language === "ar" ? "ar-JO" : "en-JO", { dateStyle: "medium", timeStyle: "short", timeZone: organization?.timezone || "UTC" }).format(booking.startsAt);
-        if (await notifyOnce(ctx, { recipientUserId: user._id, booking, body: language === "ar" ? `موعد جلستك في ${starts}` : `Your session starts ${starts}.` })) notified += 1;
+        const starts = new Intl.DateTimeFormat("en-JO", { dateStyle: "medium", timeStyle: "short", timeZone: organization?.timezone || "UTC" }).format(booking.startsAt);
+        if (await notifyOnce(ctx, { recipientUserId: user._id, booking, body: `Your session starts ${starts}.` })) notified += 1;
       }
     }
     return { scanned: reserved.length + confirmed.length, queued, notified };

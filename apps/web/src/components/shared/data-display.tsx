@@ -1,15 +1,14 @@
+"use client";
+
 import type { ComponentProps } from "react";
 import type { Money } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
-import { formatDate, formatDateTime, formatRelative, formatTime } from "@/lib/utils/dates";
-import { formatMoney } from "@/lib/utils/money";
+import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
+import { useLocale } from "@/lib/i18n/provider";
+import { todayISODate } from "@/lib/utils/dates";
 
-// Dates, times, amounts and relative labels start with a digit. In an RTL
-// layout the bidi algorithm splits "8 Sept 2026" or "7:00 PM" into separate
-// runs and shows "Sept 2026 8" / "PM 7:00"; dir="ltr" isolates each value so
-// it reads the same in Arabic and English layouts.
-
-/** Money always in tabular mono — the ledger voice of the product. */
+// Values are isolated independently of surrounding prose. Amount signs stay
+// with Latin digits; the Arabic currency label follows the page's direction.
 export function MoneyText({
   money,
   hideCurrency,
@@ -23,64 +22,69 @@ export function MoneyText({
   signed?: boolean;
   className?: string;
 }) {
+  const format = useFormat();
   if (!money) return <span className={cn("tabular text-ink-3", className)}>—</span>;
   const negative = money.amount < 0;
-  const abs = { ...money, amount: Math.abs(money.amount) };
-  const formatted = formatMoney(abs, { hideCurrency, compact });
+  const formatted = format.money(money, { hideCurrency, compact, signDisplay: signed ? "exceptZero" : "auto" });
+  const numberPrefix = formatted.match(/^([+−-]?[0-9,.]+)(.*)$/);
   return (
-    <span dir="ltr" className={cn("tabular", negative && "text-danger", className)}>
-      {signed && money.amount > 0 ? "+" : null}
-      {negative ? "−" : null}
-      {formatted}
-    </span>
+    <bdi dir="auto" title={compact ? format.money(money) : undefined} className={cn("tabular", negative && "text-danger", className)}>
+      {numberPrefix ? <><bdi dir="ltr">{numberPrefix[1]}</bdi>{numberPrefix[2]}</> : formatted}
+    </bdi>
   );
 }
 
 export function DateText({ iso, className }: { iso?: string | null; className?: string }) {
+  const format = useFormat();
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span dir="ltr" className={cn("whitespace-nowrap", className)}>{formatDate(iso)}</span>;
+  return <span dir="auto" className={cn("whitespace-nowrap", className)}>{format.date(iso)}</span>;
 }
 
 export function TimeText({ iso, className }: { iso?: string | null; className?: string }) {
+  const format = useFormat();
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span dir="ltr" className={cn("whitespace-nowrap tabular", className)}>{formatTime(iso)}</span>;
+  return <bdi dir="auto" className={cn("whitespace-nowrap tabular", className)}>{format.time(iso)}</bdi>;
 }
 
 export function DateTimeText({ iso, className }: { iso?: string | null; className?: string }) {
+  const format = useFormat();
   if (!iso) return <span className="text-ink-3">—</span>;
-  return <span dir="ltr" className={cn("whitespace-nowrap tabular", className)}>{formatDateTime(iso)}</span>;
+  return <span dir="auto" className={cn("whitespace-nowrap tabular", className)}>{format.dateTime(iso)}</span>;
 }
 
 export function RelativeText({ iso, className, ...rest }: { iso?: string | null } & ComponentProps<"span">) {
+  const format = useFormat();
   if (!iso) return <span className="text-ink-3">—</span>;
   return (
-    <span dir="ltr" className={cn("whitespace-nowrap", className)} title={formatDateTime(iso)} {...rest}>
-      {formatRelative(iso)}
+    <span dir="auto" className={cn("whitespace-nowrap", className)} title={format.dateTime(iso)} {...rest}>
+      {format.relative(iso)}
     </span>
   );
 }
 
 /** Days-until label for membership end dates: "in 4 days" / "3 days ago". */
 export function DaysUntilText({ date, className }: { date: string; className?: string }) {
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Amman" });
+  const format = useFormat();
+  const { t } = useLocale();
+  const timeZone = useFormattingTimeZone();
+  const today = todayISODate(timeZone);
   const ms = Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
   const days = Math.round(ms / 86_400_000);
   let label: string;
   let tone = "text-ink-2";
   if (days === 0) {
-    label = "today";
+    label = t("common.time.today").toLowerCase();
     tone = "text-warning-deep font-medium";
   } else if (days === 1) {
-    label = "tomorrow";
+    label = t("common.time.tomorrow").toLowerCase();
     tone = "text-warning-deep font-medium";
-  } else if (days > 1) {
-    label = `in ${days} days`;
   } else if (days === -1) {
-    label = "yesterday";
+    label = t("common.time.yesterday").toLowerCase();
     tone = "text-danger";
   } else {
-    label = `${-days} days ago`;
-    tone = "text-danger";
+    // Intl.RelativeTimeFormat gets the Arabic dual and plural agreement right.
+    label = format.relativeDays(days);
+    if (days < 0) tone = "text-danger";
   }
   return <span className={cn("whitespace-nowrap", tone, className)}>{label}</span>;
 }

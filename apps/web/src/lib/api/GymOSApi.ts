@@ -1,3 +1,5 @@
+import type { MemberImportErrorMessage } from "../imports/member-import-errors";
+import type { SystemMessage } from "../i18n/system-messages";
 import type {
   AuditCategory,
   AuditEvent,
@@ -249,6 +251,8 @@ export interface MemberImportRow {
   email?: string;
   status: "valid" | "duplicate" | "invalid" | "committed" | "skipped";
   errors: string[];
+  /** Optional structured projection; original row errors remain unchanged. */
+  errorMessages?: MemberImportErrorMessage[];
   duplicateMemberIds: string[];
   memberId?: string;
   sourcePlanName?: string;
@@ -607,8 +611,12 @@ export interface PlatformOperatorQueueItem {
 export interface OperationalNotification {
   id: string;
   kind: string;
+  /** Original stored text (English); render through `presentNotification` for the reader's language. */
   title: string;
   body: string;
+  /** Optional stable descriptors; absent on authored or older records. */
+  titleMessage?: SystemMessage;
+  bodyMessage?: SystemMessage;
   href: string;
   dedupeKey: string;
   organizationId?: string;
@@ -671,6 +679,8 @@ export interface SubmitGymApplicationInput {
   billingInterval?: BillingInterval;
   /** Client retry key; never used as an authorization credential. */
   idempotencyKey?: string;
+  /** The applicant's language for their own emails (the form's current language). Absent means English. */
+  language?: "en" | "ar";
   /** Deliberately invisible browser honeypot. Bots filling it receive a generic success. */
   website?: string;
 }
@@ -1150,7 +1160,7 @@ export interface GymOSApi {
   // Data portability
   requestExport(input: ExportRequestInput): Promise<ExportJob>;
   listExportJobs(): Promise<ExportJob[]>;
-  requestMemberPersonalDataExport(idempotencyKey: string): Promise<ExportJob>;
+  requestMemberPersonalDataExport(idempotencyKey: string, locale?: "en" | "ar"): Promise<ExportJob>;
   searchWorkspace(query: string): Promise<WorkspaceSearchResult[]>;
   listRecentWorkspaceItems(): Promise<RecentWorkspaceItem[]>;
   recordRecentWorkspaceItem(item: Omit<RecentWorkspaceItem, "viewedAt">): Promise<void>;
@@ -1214,7 +1224,7 @@ export interface GymOSApi {
   listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
 
   // Subscription agreement (e-signature at onboarding)
-  getSubscriptionAgreementContext(): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
+  getSubscriptionAgreementContext(options?: { language?: "en" | "ar" }): Promise<import("@/lib/domain/types").SubscriptionAgreementContext>;
   signSubscriptionAgreement(input: import("@/lib/domain/types").SignSubscriptionAgreementInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
   listPlatformAgreements(): Promise<import("@/lib/domain/types").PlatformAgreementSummary[]>;
   getPlatformAgreement(agreementId: UUID): Promise<import("@/lib/domain/types").SubscriptionAgreement>;

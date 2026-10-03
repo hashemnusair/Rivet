@@ -1,45 +1,30 @@
-# Arabic review room
+# Arabic implementation handoff
 
-Route: **https://www.rivetjo.com/arabic-room**. Choose **Elias** or **Hashem** when opening the page. No account or sign-in is required. The old `/platform/arabic-room` link redirects here, preserving the selected question. This page sits outside the platform console and is not added to gym/member navigation.
+**Start here.** Hashem and Elias approved all **247** language decisions in the live Arabic room. Version 1 records catalog `2026-09-30-v1`, revision **607**, exported on **2026-10-01 at 11:06:41.355 UTC**. Both named approvals are present and `readyForImplementation` is true.
 
-## How Hashem and Elias use it
+The original documentation checkpoint was on **`arabic-localisation`**, built directly on Elias’s `f98e324`. The completed implementation is now integrated from `codex/complete-arabic-support`; read [the 3 October audit](AUDIT_2026-10-03.md) and the newest `CURRENT_STATE.md` release entry for repairs, deployment status and remaining interactive acceptance. The approved standard below is unchanged.
 
-1. Choose a section or start at the first unanswered question. There are **247 multiple-choice questions in 13 sections**. Each has a meaning/context, two or three Arabic drafts, “None of these”, an optional custom answer and a comment.
-2. Choose an option and press **Save answer** or **Save & next**. Selection alone is an unsaved draft; the page explicitly labels it. A save is only acknowledged after the server commits it. Refreshing retains saved answers, and fresh visits resume at the first unanswered question unless a `?card=` link specifies one.
-3. Answers and comments belong to the selected name. Saved answers sync live through Convex. The other person's answer is visually revealed after your own first save, as an aid to independent judgment, not a confidentiality boundary between reviewers.
-4. Filter **Discuss together** to resolve different answers. Each person edits their own answer to the agreed wording. Identical custom answers count as agreement; two “None of these” votes never do. The agent never resolves disagreements automatically.
-5. Presence shows who is active; **Follow their questions** follows a partner's selected card while they are active. Editing pauses following so a draft is not interrupted. The presence timeout is 90 seconds, checked on a 30-second heartbeat. It is an approximate activity indicator.
-6. Once every question agrees, each reviewer presses **Approve agreed wording**. Any answer/comment change clears all approvals. The reviewer roster is fixed to Elias and Hashem. A stale tab cannot overwrite another tab's newer answer.
-7. Download **Export approved choices**, then download **Agent prompt**. Supply both to a fresh implementation session. The prompt also contains a read-only command for fetching the current production preferences directly.
+## Read in order
 
-## Scope and evidence
+1. [STANDARD.md](STANDARD.md) — binding wording rules, exact exceptions, and how to resolve apparent conflicts.
+2. [DECISIONS.md](DECISIONS.md) — all 247 agreed items, their contexts, custom wording and the one reviewer note.
+3. [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — branch findings, preservation strategy, work packages and acceptance gates.
+4. [COVERAGE.md](COVERAGE.md) — all 76 current-main page entries and 40 integration overlaps; expand into a completion ledger.
+5. [IMPLEMENTATION_PROMPT.md](IMPLEMENTATION_PROMPT.md) — ready-to-use instructions for the implementation agent.
 
-The repository-wide static inventory scanned **414 TS/TSX source files**, including staff/member/platform/public routes, shared UI and Convex code. It contains **13,179 candidate strings** with source locations in `source-inventory.json`. Candidates deliberately include some implementation strings; this is a discovery aid, not a claim that every entry needs translation. It excludes tests, generated bindings, mock/seed fixtures and the review tool itself. Regenerate from `apps/web` using `node scripts/inventory-arabic-copy.mjs` and inspect dynamic, external-provider, image and document text separately.
+## Evidence and verification
 
-The 247 editorial questions sample recurring and exceptional language decisions across:
+- [approved-decisions.v1.json](approved-decisions.v1.json) is the full saved export, including both votes, timestamps, all original options, contexts and source hints. No decisions were changed by the agent.
+- [approved-decisions.v1.sha256](approved-decisions.v1.sha256) records its SHA-256 checksum.
+- [baseline-inventory.json](baseline-inventory.json) records the inspected main/Arabic commits, common ancestor, page files and overlapping modifications.
+- Run `python3 docs/arabic/verify-lock.py` from the repository root before working on this standard.
 
-- Voice, grammatical address, politeness, button form, digits, calendars, month names, currency and time, product name and borrowed terms.
-- Navigation, common actions, members/subscriptions, reception/access, payments/cash.
-- Leads/follow-ups, classes/PT, stock/purchasing, repairs/checklists.
-- Financial reports/bookkeeping, roles/access, errors and unusual failure states.
-- Member app, marketing/public/auth/legal surfaces, platform/support and notifications.
+“Locked” means a versioned repository standard, not a disabled review room. The room remains available at https://www.rivetjo.com/arabic-room. The approved identities are the room’s self-selected Elias/Hashem profiles; they are not authenticated signatures. Hashem also confirmed approval in the task that created this handoff.
 
-178 cards link related source wording; the rest are explicitly labeled editorial scenarios or formatting choices. Source links are context evidence, not claims of exact copy on every matching screen. All options remain drafts until the founders choose them. Review-card coverage is not translation coverage. The implementation prompt requires a fresh full-product audit, including backend text, provider UI, accessibility labels, email/WhatsApp, receipts/PDFs, images, offline states and true RTL behavior.
+Do not silently refresh v1 from a mutable live room. New jointly approved wording becomes a new version with a decision diff and explicit supersession. A changed draft in the room does not by itself replace this approved checkpoint. Preserve old snapshots and their checksums.
 
-## Data and security
+The original main-branch review-room README and downloadable implementation prompt describe the questionnaire workflow. During integration, preserve that operational documentation under a review-room section or separate file, and update both the repository prompt and its public download to point to this approved standard. Preserve the public name picker, saved choices and collaborative behavior.
 
-- `arabicReviewVotes`: current answer per catalog version/card/selected name.
-- `arabicReviewHistory`: append-only answer/comment changes. UI shows latest 30 per card; older history remains stored.
-- `arabicReviewRooms`: revision and approvals tied to the two named reviewers.
-- `arabicReviewPresence`: last active question/time per selected name. No chat or third-party messaging.
-- On 1 October 2026, Hashem explicitly requested unauthenticated access with a two-name picker. All review queries and mutations are deliberately public. Anyone with the link can view the review content and choose either name to edit or approve it; the names are not authenticated identities. No gym, account, money or platform-admin API permission is granted by choosing a name.
-- Only the literal reviewer keys `elias` and `hashem` are accepted. Inputs, catalog version, stale writes and approval state are still validated server-side. Mutations have bounded per-name write/presence rate limits. These are traffic controls, not identity verification.
-- Legacy account-owned review answers, comments, history and approvals can be preserved by the internal, idempotent `migrateNamedReviewers` mutation. It verifies the supplied legacy accounts, remaps only review-table ownership to stable names and refuses duplicate answer conflicts. It never modifies the accounts themselves.
-- Version `2026-09-30-v1` binds votes to the questionnaire. Bump the version whenever meanings/options change after release; never repurpose option IDs under an existing version. Prior versions remain stored and are not treated as current approvals.
-- The production UI never falls back to local/demo persistence. The picker appears on each opening/reload; choosing a name restores its saved progress, and “Switch name” changes the current reviewer after drafts are saved. The existing guarded mock preview uses visibly labeled in-memory sample answers for UI tests only.
+## Current integration
 
-## Agent handoff
-
-Read `IMPLEMENTATION_PROMPT.md`, the current approved JSON export, `CURRENT_STATE.md`, `DESIGN.md`, and `docs/22_PLAIN_LANGUAGE_GUIDE.md`. The public download at `apps/web/public/arabic-implementation-prompt.txt` matches the Markdown prompt. The prompt requires full Arabic implementation based on actual approved choices and keeps unresolved or stale exports from silently becoming a language specification.
-
-This release only adds the review tool and future implementation prompt. It does not enable Arabic in the product or merge `origin/arabic-localisation`. No runtime translation service or new paid dependency is used.
+The integration also preserves the newer local `arabic-foundation` history at `9fbd53c`. Its typed catalogs, translated member/auth flows and tests extend the older Arabic work; draft wording is being aligned with v1. See [REVIEW_ROOM.md](REVIEW_ROOM.md) for the current public review-room operation and [COVERAGE.md](COVERAGE.md) for implementation status.

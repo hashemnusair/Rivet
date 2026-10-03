@@ -31,6 +31,7 @@ import {
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { CreateTaskDialog } from "@/features/members/create-task-dialog";
+import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
 
 export default function MemberDetailPageClient() {
@@ -39,6 +40,7 @@ export default function MemberDetailPageClient() {
   const searchParams = useSearchParams();
   const { session } = useApp();
   const { can } = usePermissions();
+  const { t, isolate } = useLocale();
   const [noteOpen, setNoteOpen] = useState(false);
   const [taskOpen, setTaskOpen] = useState(false);
   // Today and the queues link here with ?action=contact to record an outcome.
@@ -64,7 +66,7 @@ export default function MemberDetailPageClient() {
 
   if (memberQuery.isError) {
     return isApiError(memberQuery.error) && memberQuery.error.code === "NOT_FOUND" ? (
-      <NotFoundState title="Member not found" description="This member may have been archived, or the link is wrong." />
+      <NotFoundState title={t("memberProfile.page.notFoundTitle")} description={t("memberProfile.page.notFoundDescription")} />
     ) : (
       <ErrorState onRetry={() => memberQuery.refetch()} />
     );
@@ -91,7 +93,7 @@ export default function MemberDetailPageClient() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumbs items={[{ label: "Members", href: "/members" }, { label: member.fullName }]} />
+      <Breadcrumbs items={[{ label: t("nav.item.members"), href: "/members" }, { label: isolate(member.fullName) }]} />
 
       <MemberHeader member={member} currentMembership={currentMembership} renewalTarget={renewalTarget} upcomingMembership={upcomingMembership} branchName={branchName} />
 
@@ -104,11 +106,11 @@ export default function MemberDetailPageClient() {
           router.replace(query ? `/members/${memberId}?${query}` : `/members/${memberId}`, { scroll: false });
         }}>
           <div className="min-w-0">
-            <TabsList aria-label="Member sections">
+            <TabsList aria-label={t("memberProfile.page.sectionsLabel")}>
               {MEMBER_TABS.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={tab.value === "timeline" ? "tab-timeline" : undefined}>
                   {tab.value === "pt" ? <Dumbbell className="size-3.5" /> : null}
-                  {tab.label}
+                  {t(tab.labelKey)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -136,32 +138,32 @@ export default function MemberDetailPageClient() {
 
         <aside className="space-y-4 self-start">
           {can("members.write") ? (
-            <div className="flex flex-wrap gap-2" aria-label="Member contact actions">
-              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} phone={member.phone} />
+            <div className="flex flex-wrap gap-2" aria-label={t("memberProfile.page.contactActionsLabel")}>
+              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />
               <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") router.replace(`/members/${memberId}`, { scroll: false }); }} />
               <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
-                <StickyNote /> Add note
+                <StickyNote /> {t("memberProfile.page.addNote")}
               </Button>
               {can("crm.write") ? (
                 <Button variant="secondary" size="sm" onClick={() => setTaskOpen(true)}>
-                  <CalendarClock /> Create task
+                  <CalendarClock /> {t("memberProfile.page.createTask")}
                 </Button>
               ) : null}
             </div>
           ) : null}
 
           <section className="panel p-4">
-            <h3 className="mb-3 font-display text-[13px] font-semibold">Details</h3>
+            <h3 className="mb-3 font-display text-[13px] font-semibold">{t("memberProfile.page.detailsHeading")}</h3>
             <MemberDetailsPanel member={member} branchName={branchName} salespersonName={salesperson?.name} />
           </section>
 
           <section className="panel p-4">
-            <h3 className="mb-3 font-display text-[13px] font-semibold">Open tasks</h3>
+            <h3 className="mb-3 font-display text-[13px] font-semibold">{t("memberProfile.shared.openTasks")}</h3>
             <MemberTasksPanel memberId={member.id} />
           </section>
 
           <section className="panel p-4">
-            <h3 className="mb-3 font-display text-[13px] font-semibold">Renewal and contact</h3>
+            <h3 className="mb-3 font-display text-[13px] font-semibold">{t("memberProfile.page.renewalHeading")}</h3>
             <FollowUpContextPanel memberId={member.id} />
           </section>
         </aside>
@@ -178,10 +180,11 @@ export default function MemberDetailPageClient() {
 // ---------------------------------------------------------------------------
 function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const invalidate = useInvalidate();
+  const { t } = useLocale();
   const [body, setBody] = useState("");
   const mutation = useApiMutation((api) => api.addMemberNote(memberId, { body }), {
     onSuccess: async () => {
-      toast.success("Note saved.");
+      toast.success(t("memberProfile.note.saved"));
       setBody("");
       onOpenChange(false);
       await invalidate();
@@ -191,16 +194,16 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add note</DialogTitle>
-          <DialogDescription>Everyone on your team can see this note.</DialogDescription>
+          <DialogTitle>{t("memberProfile.note.title")}</DialogTitle>
+          <DialogDescription>{t("memberProfile.note.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <Textarea autoFocus rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="For example: Asked about pausing during Ramadan. Call again next week." data-testid="note-body" />
+          <Textarea autoFocus rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("memberProfile.note.placeholder")} dir="auto" data-testid="note-body" />
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button>
           <Button disabled={body.trim().length < 2} loading={mutation.isPending} onClick={() => mutation.mutate()} data-testid="save-note">
-            Save note
+            {t("memberProfile.note.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -208,11 +211,11 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
   );
 }
 
-const MEMBER_TABS = [
-  { value: "overview", label: "Overview" },
-  { value: "timeline", label: "Timeline" },
-  { value: "memberships", label: "Memberships" },
-  { value: "payments", label: "Payments" },
-  { value: "checkins", label: "Check-ins" },
-  { value: "pt", label: "PT" },
-] as const;
+const MEMBER_TABS: ReadonlyArray<{ value: string; labelKey: TKey }> = [
+  { value: "overview", labelKey: "memberProfile.tabs.overview" },
+  { value: "timeline", labelKey: "memberProfile.tabs.timeline" },
+  { value: "memberships", labelKey: "memberProfile.tabs.memberships" },
+  { value: "payments", labelKey: "memberProfile.tabs.payments" },
+  { value: "checkins", labelKey: "memberProfile.tabs.checkins" },
+  { value: "pt", labelKey: "memberProfile.tabs.pt" },
+];

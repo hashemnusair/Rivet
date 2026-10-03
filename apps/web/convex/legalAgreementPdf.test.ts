@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agreementPdfBlocks, agreementPdfFilename, renderAgreementPdf, type AgreementPdfInput } from "./legalAgreementPdf";
-import { SUBSCRIPTION_AGREEMENT_SECTIONS } from "./legalAgreementText";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementSectionsForVersion, SUBSCRIPTION_AGREEMENT_SECTIONS } from "./legalAgreementText";
 
 const signed: AgreementPdfInput = {
   reference: "RVT-20261001-ABCDE",
@@ -119,4 +120,29 @@ describe("agreement PDF", () => {
     expect([...body.matchAll(/\/Type \/Page[^s]/g)].length).toBeGreaterThan(1);
     expect(body).not.toContain("9871234567");
   });
+});
+
+
+it("renders the published Arabic agreement with signed mixed-script names and frozen annual fee", () => {
+  const record: AgreementPdfInput = {
+    ...signed,
+    version: SUBSCRIPTION_AGREEMENT_VERSION_AR,
+    customer: { legalName: "نادي القوة Fitness", address: "شارع مكة 12", city: "عمّان" },
+    signatory: { ...signed.signatory, name: "عمر Haddad" },
+    signature: { method: "typed", typedName: "عمر Haddad" },
+    subscription: { ...signed.subscription, billingInterval: "annual", feeLabel: "1,430.400 د.أ سنويًا" },
+    signedAtLocal: "2 تشرين الأول 2026، 2:30 م",
+  };
+  const sections = agreementSectionsForVersion(record.version)!;
+  const blocks = JSON.stringify(agreementPdfBlocks(record, sections));
+  expect(blocks).toContain("1,430.400 د.أ سنويًا");
+  expect(blocks).toContain("سنويًا، مقدمًا");
+  expect(blocks).toContain("التوقيع الإلكتروني");
+  expect(blocks).not.toContain("What this agreement covers");
+  const pdf = renderAgreementPdf(record, sections);
+  const binary = Array.from(pdf, byte => String.fromCharCode(byte)).join("");
+  expect(binary).toContain("/ToUnicode");
+  expect([...binary.matchAll(/\/Type \/Page[^s]/g)].length).toBeGreaterThan(1);
+  const dir = process.env.RIVET_PDF_FIXTURE_DIR;
+  if (dir) { mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/arabic-signed-agreement.pdf`, pdf); }
 });

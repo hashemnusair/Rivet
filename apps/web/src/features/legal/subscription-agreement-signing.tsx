@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/lib/i18n/provider";
 
 import { Download, FileSignature } from "lucide-react";
 import { qk } from "@/lib/api/keys";
@@ -18,6 +19,7 @@ import { downloadAgreementPdf } from "./agreement-pdf";
  * ever shows the record or the reason there is none.
  */
 export function SubscriptionAgreementSigning({ embedded = false }: { embedded?: boolean }) {
+  const t = useT();
   const query = useApiQuery(qk.legalAgreement, (api) => api.getSubscriptionAgreementContext());
   const context = query.data;
 
@@ -27,16 +29,16 @@ export function SubscriptionAgreementSigning({ embedded = false }: { embedded?: 
   if (context.agreement) {
     return (
       <div className="space-y-5">
-        {!embedded ? <PageHeader title="Your subscription agreement" description={context.agreement.status === "countersigned" ? "Signed by you and by RIVET. Keep a copy for your records." : "Signed by you. RIVET will sign too and email you the completed agreement."} actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> Download PDF</Button>} /> : null}
+        {!embedded ? <PageHeader title={t("agreementFlow.recordTitle")} description={context.agreement.status === "countersigned" ? t("agreementFlow.recordCompleted") : t("agreementFlow.recordAwaiting")} actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> {t("agreementFlow.download")}</Button>} /> : null}
         <AgreementRecord agreement={context.agreement} sections={context.sections} />
-        {!embedded ? <p className="text-[12.5px] text-ink-3">Questions about the agreement? WhatsApp RIVET on <a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>.</p> : null}
+        {!embedded ? <p className="text-[12.5px] text-ink-3">{t("agreementFlow.contact")} <a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>{t("members.bulk.toast.end")}</p> : null}
       </div>
     );
   }
 
   if (!context.canSign) {
-    return <StatePanel icon={FileSignature} title="The gym owner signs this agreement" description="Only the owner can sign the agreement with RIVET. Ask the owner to sign in and finish setting up." />;
+    return <StatePanel icon={FileSignature} title={t("agreementFlow.ownerSigns")} description={t("agreementFlow.ownerSignIn")} />;
   }
 
-  return <StatePanel icon={FileSignature} title="Sign the agreement to continue" description="The owner must sign the agreement before your gym can use RIVET. It opens when the owner signs in." />;
+  return <StatePanel icon={FileSignature} title={t("agreementFlow.signToContinue")} description={t("agreementFlow.requiredBody")} />;
 }

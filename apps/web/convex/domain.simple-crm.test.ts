@@ -38,8 +38,14 @@ describe("simple CRM membership sale", () => {
     await seed(t);
     const sales = t.withIdentity({ subject: "clerk-simple-crm-sales" });
     await expect(sales.mutation(api.domain.mutate, operation("trials.schedule_for_lead", { leadId: "simple-crm-lead-scheduled", preferredDate: "2030-08-02", preferredTime: "21:00" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
-    const lead = await sales.mutation(api.domain.mutate, operation("trials.schedule_for_lead", { leadId: "simple-crm-lead-scheduled", preferredDate: "2030-08-02", preferredTime: "18:00" })) as { stage: string; trialBooking?: { status: string; preferredTime: string } };
+    const lead = await sales.mutation(api.domain.mutate, operation("trials.schedule_for_lead", { leadId: "simple-crm-lead-scheduled", preferredDate: "2030-08-02", preferredTime: "18:00", goal: "Try the strength equipment" })) as { stage: string; trialBooking?: { status: string; preferredTime: string }; activities: Array<{ type: string; title: string; body?: string; bodyMessage?: { key: string; params?: Record<string, unknown> } }> };
     expect(lead).toMatchObject({ stage: "trial_booked", trialBooking: { status: "confirmed", preferredTime: "18:00" } });
+    expect(lead.activities).toContainEqual(expect.objectContaining({
+      type: "trial_confirmed",
+      title: "Trial scheduled",
+      body: "2030-08-02 · 18:00 · Try the strength equipment",
+      bodyMessage: { key: "communicationCompletion.timeline.trialScheduledBodyWithGoal", params: { date: { date: "2030-08-02" }, time: { clock: "18:00" }, goal: "Try the strength equipment" } },
+    }));
   });
 
   it("creates the member and an existing-plan membership atomically", async () => {
@@ -64,8 +70,21 @@ describe("simple CRM membership sale", () => {
     });
     expect(result.membership).toMatchObject({ memberId: result.member.id, planId: "simple-crm-plan" });
     expect(result.charge.membershipId).toBeTruthy();
-    const lead = await sales.query(api.domain.query, operation("leads.get", { leadId: "simple-crm-lead-existing" })) as { stage: string; convertedMemberId?: string; trialBooking?: { status: string } };
+    const lead = await sales.query(api.domain.query, operation("leads.get", { leadId: "simple-crm-lead-existing" })) as { stage: string; convertedMemberId?: string; trialBooking?: { status: string }; activities: Array<{ type: string; body?: string; bodyMessage?: { key: string; params?: Record<string, unknown> } }> };
     expect(lead).toMatchObject({ stage: "won", convertedMemberId: result.member.id, trialBooking: { status: "converted" } });
+    expect(lead.activities).toContainEqual(expect.objectContaining({
+      type: "lead_converted",
+      body: expect.stringContaining(" became "),
+      bodyMessage: { key: "communicationCompletion.timeline.leadConvertedNewMemberBody", params: { name: "Lead existing", memberNumber: expect.any(String) } },
+    }));
+
+    const timeline = await t.run(async (ctx) => await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect());
+    expect(timeline.map((row) => row.data as Record<string, unknown>)).toContainEqual(expect.objectContaining({
+      memberId: result.member.id,
+      type: "membership_sold",
+      body: "Term 2026-08-13 → 2026-09-12.",
+      bodyMessage: { key: "communicationCompletion.timeline.membershipTerm", params: { startDate: { date: "2026-08-13" }, endDate: { date: "2026-09-12" } } },
+    }));
   });
 
   it("creates a reusable custom plan with the entered price, duration, and PT sessions", async () => {

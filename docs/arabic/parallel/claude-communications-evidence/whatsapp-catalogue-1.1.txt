@@ -1,0 +1,43 @@
+[renewal_7d v1.1]
+AR: مرحبًا Lina حداد، ينتهي اشتراكك في Forge Fitness بتاريخ 15 تشرين الأول 2026. يمكن تجديد الاشتراك من الاستقبال في فرع Abdoun أو بالرد على هذه الرسالة لنساعدك. — Forge Fitness
+EN: Hi Lina حداد, your Forge Fitness membership ends on 15 Oct 2026. Renew at the Abdoun desk or reply here and we will sort it out. — Forge Fitness
+
+[renewal_3d v1.1]
+AR: Lina حداد، بقيت 3 أيام على انتهاء اشتراكك في Forge Fitness (ينتهي في 15 تشرين الأول 2026). يرجى تجديد الاشتراك قبل انتهائه ليبقى دخولك مستمرًا. — Forge Fitness
+EN: Lina حداد, 3 days left on your Forge Fitness membership (ends 15 Oct 2026). Renew before it ends to keep your access uninterrupted. — Forge Fitness
+
+[renewal_today v1.1]
+AR: Lina حداد، ينتهي اشتراكك في Forge Fitness اليوم. يرجى تجديد الاشتراك من الاستقبال في فرع Abdoun اليوم لمواصلة التمرين غدًا. — Forge Fitness
+EN: Lina حداد, your Forge Fitness membership ends today. Renew at the Abdoun desk today to keep training tomorrow. — Forge Fitness
+
+[renewal_expired_3d v1.1]
+AR: Lina حداد، انتهى اشتراكك في Forge Fitness بتاريخ 15 تشرين الأول 2026. يمكن تجديد الاشتراك في أي وقت من الاستقبال أو بالرد على هذه الرسالة للعودة إلى التمرين. — Forge Fitness
+EN: Lina حداد, your Forge Fitness membership ended on 15 Oct 2026. Renew any time at the desk or reply here to pick up where you left off. — Forge Fitness
+
+[payment_due_3d v1.1]
+AR: Lina حداد، تستحق دفعة بقيمة 45.000 د.أ لصالح Forge Fitness بتاريخ 15 تشرين الأول 2026. يمكن الدفع في الاستقبال أو عبر كليك أو بحوالة بنكية. — Forge Fitness
+EN: Lina حداد, a payment of JOD 45.000 to Forge Fitness is due on 15 Oct 2026. Pay at the desk, by CliQ or bank transfer. — Forge Fitness
+
+[payment_due_today v1.1]
+AR: Lina حداد، تستحق اليوم دفعتك بقيمة 45.000 د.أ لصالح Forge Fitness. شكرًا لتسديدها في الاستقبال أو عبر كليك. — Forge Fitness
+EN: Lina حداد, your payment of JOD 45.000 to Forge Fitness is due today. Thank you for settling it at the desk or by CliQ. — Forge Fitness
+
+[payment_overdue_3d v1.1]
+AR: Lina حداد، مضت 3 أيام على موعد استحقاق دفعة بقيمة 45.000 د.أ لصالح Forge Fitness. يرجى تسديدها في الاستقبال أو الرد على هذه الرسالة إن كان هناك خطأ. — Forge Fitness
+EN: Lina حداد, a payment of JOD 45.000 to Forge Fitness is 3 days overdue. Please settle it at the desk or reply here if something is wrong. — Forge Fitness
+
+[class_booking_confirmation v1.1]
+AR: Lina حداد، تم حجز مكانك في حصة Spin 45 الساعة 6:30 م في فرع Abdoun. يرجى الرد على هذه الرسالة إذا تعذّر الحضور لنتيح المكان لغيرك. — Forge Fitness
+EN: Lina حداد, you are booked for Spin 45 at 18:30, Abdoun. Reply here if you cannot make it so we can free the spot. — Forge Fitness
+
+[class_reminder v1.1]
+AR: Lina حداد، تبدأ حصة Spin 45 اليوم الساعة 6:30 م. بانتظارك. — Forge Fitness
+EN: Lina حداد, Spin 45 starts at 18:30 today. See you there. — Forge Fitness
+
+[entry_pass v1.1]
+AR: Lina حداد، هذا رابط تصريح الدخول إلى Forge Fitness: https://www.rivetjo.com/p/AB12. يرجى إظهاره عند الدخول؛ تنتهي صلاحيته بعد فتحه بوقت قصير. — Forge Fitness
+EN: Lina حداد, here is your Forge Fitness entry pass: https://www.rivetjo.com/p/AB12. Show it at the door; it expires shortly after it is opened. — Forge Fitness
+
+Marketing opt-out footer (request-only; no automatic reply handler):
+AR: لطلب إيقاف هذه الرسائل، يرجى التواصل مع النادي مباشرة.
+EN: To request that these messages stop, contact the gym directly.

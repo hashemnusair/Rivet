@@ -1,4 +1,5 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   assertBranchAccess,
@@ -12,7 +13,7 @@ import {
 } from "./security";
 import { deriveServerMembershipStatus } from "./invariants";
 import { addDays, diffDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
-import { classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
+import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -56,14 +57,14 @@ function optionalText(input: unknown): string | undefined {
 
 function requiredText(input: unknown, field: string, actor: ActorContext): string {
   const value = optionalText(input);
-  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { correlationId: actor.correlationId });
+  if (!value) domainError("VALIDATION_ERROR", `${field} is required.`, { message: { key: "apiErrors.fieldRequired", params: { field: String(field) } }, correlationId: actor.correlationId });
   return value;
 }
 
 function boundedInteger(input: unknown, field: string, min: number, max: number, actor: ActorContext): number {
   const value = typeof input === "number" ? input : Number.NaN;
   if (!Number.isSafeInteger(value) || value < min || value > max) {
-    domainError("VALIDATION_ERROR", `${field} must be a whole number between ${min} and ${max}.`, { correlationId: actor.correlationId });
+    domainError("VALIDATION_ERROR", `${field} must be a whole number between ${min} and ${max}.`, { message: { key: "apiErrors.wholeNumberRange", params: { field: String(field), minimum: String(min), maximum: String(max) } }, correlationId: actor.correlationId });
   }
   return value;
 }
@@ -395,7 +396,7 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
   if (clash) {
     const slot = weeklySlot(clash, actor.organization.timezone || "Asia/Amman");
     const label = `${String(Math.floor(slot.startMinute / 60)).padStart(2, "0")}:${String(slot.startMinute % 60).padStart(2, "0")}`;
-    domainError("VALIDATION_ERROR", `This time overlaps “${clash.name}” at ${label}. Pick another slot.`, { correlationId: actor.correlationId, fieldErrors: { startMinute: ["Overlaps another class"] } });
+    domainError("VALIDATION_ERROR", `This time overlaps “${clash.name}” at ${label}. Pick another slot.`, { message: { key: "apiErrors.classOverlap", params: { className: String(clash.name), time: String(label) } }, correlationId: actor.correlationId, fieldErrors: { startMinute: ["Overlaps another class"] } });
   }
   const existing = requestedId
     ? await ctx.db.query("classSessions").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", requestedId)).unique()
@@ -406,17 +407,17 @@ async function upsertClassSession(ctx: MutationCtx, actor: ActorContext, input: 
       domainError("FORBIDDEN", "Your role cannot manage classes for this branch.", { correlationId: actor.correlationId });
     }
     if (existing.branchId !== branch._id) domainError("VALIDATION_ERROR", "A class cannot move between branches.", { correlationId: actor.correlationId });
-    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { correlationId: actor.correlationId });
+    if (capacity < existing.roster.length) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${existing.roster.length} people already in the class.`, { message: { key: "apiErrors.classCapacity", params: { count: String(existing.roster.length) } }, correlationId: actor.correlationId });
     // Upcoming dated classes already carry bookings against the old numbers;
     // nobody loses a confirmed place because the timetable shrank.
     const scheduled = await scheduledOccurrencesFor(ctx, actor, existing);
     const overbooked = scheduled.find((row) => capacity < row.rostered);
-    if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
+    if (overbooked) domainError("VALIDATION_ERROR", `Capacity cannot drop below the ${overbooked.rostered} people already booked for ${overbooked.occurrence.date}.`, { message: { key: "apiErrors.classCapacityDate", params: { count: String(overbooked.rostered), date: String(overbooked.occurrence.date) } }, correlationId: actor.correlationId, fieldErrors: { capacity: [`${overbooked.rostered} booked on ${overbooked.occurrence.date}`] } });
     // Moving the class to another weekday would strand the dates members
     // already hold; those bookings are commitments, not something to sync.
     if (weeklySlot(existing, actor.organization.timezone || "Asia/Amman").dayOfWeek !== dayOfWeek) {
       const held = scheduled.filter((row) => row.bookings.some((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status)));
-      if (held.length) domainError("VALIDATION_ERROR", `Members are booked on ${held.map((row) => row.occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${DAY_NAMES[dayOfWeek]}.`, { correlationId: actor.correlationId, fieldErrors: { dayOfWeek: ["Members are booked on the current day"] } });
+      if (held.length) domainError("VALIDATION_ERROR", `Members are booked on ${held.map((row) => row.occurrence.date).join(", ")}. Cancel those bookings or wait until the dates pass before moving the class to ${DAY_NAMES[dayOfWeek]}.`, { message: { key: "apiErrors.classDatesHeld", params: { dates: String(held.map((row) => row.occurrence.date).join(", ")), weekday: String(DAY_NAMES[dayOfWeek]) } }, correlationId: actor.correlationId, fieldErrors: { dayOfWeek: ["Members are booked on the current day"] } });
     }
     const before = { name: existing.name, dayOfWeek: existing.dayOfWeek, startMinute: existing.startMinute, durationMinutes: existing.durationMinutes, capacity: existing.capacity, audience: existing.audience, coachName: existing.coachName, imageAssetId: existing.imageAssetId };
     await activateClassImage(ctx, actor, imageAssetId, existing.imageAssetId);
@@ -666,6 +667,7 @@ async function occurrenceView(
     booking: own ? { id: own.publicId, status: own.status, position: own.status === "waitlisted" ? waitlist.findIndex((booking) => booking._id === own._id) + 1 : undefined, fromWaitlist: own.fromWaitlist } : undefined,
     canBook,
     bookingBlockReason,
+    bookingBlockMessage: classBookingBlockMessage(bookingBlockReason),
   };
 }
 
@@ -771,7 +773,7 @@ async function customerClassExperience(ctx: QueryCtx, context: CustomerClassCont
   };
 }
 
-async function insertClassTimeline(ctx: MutationCtx, input: { organization: Organization; branchId: Id<"branches">; memberId: string; actor: User; type: string; title: string; body?: string; meta?: Data }): Promise<void> {
+async function insertClassTimeline(ctx: MutationCtx, input: { organization: Organization; branchId: Id<"branches">; memberId: string; actor: User; type: string; title: string; titleMessage?: SystemMessage; body?: string; bodyMessage?: SystemMessage; meta?: Data }): Promise<void> {
   const now = Date.now();
   const publicId = crypto.randomUUID();
   await ctx.db.insert("domainRecords", {
@@ -782,7 +784,7 @@ async function insertClassTimeline(ctx: MutationCtx, input: { organization: Orga
     memberPublicId: input.memberId,
     createdAt: now,
     updatedAt: now,
-    data: { id: publicId, memberId: input.memberId, branchId: publicBranchId((await ctx.db.get(input.branchId))!), type: input.type, title: input.title, body: input.body, actorId: publicUserId(input.actor), actorName: input.actor.fullName, occurredAt: new Date(now).toISOString(), meta: input.meta },
+    data: { id: publicId, memberId: input.memberId, branchId: publicBranchId((await ctx.db.get(input.branchId))!), type: input.type, title: input.title, ...(input.titleMessage ? { titleMessage: input.titleMessage } : {}), body: input.body, ...(input.bodyMessage ? { bodyMessage: input.bodyMessage } : {}), actorId: publicUserId(input.actor), actorName: input.actor.fullName, occurredAt: new Date(now).toISOString(), meta: input.meta },
   });
 }
 
@@ -809,6 +811,11 @@ async function occurrenceAudit(ctx: MutationCtx, input: { organization: Organiza
   });
 }
 
+/** A class date is a calendar date when it reads as one; anything else stays verbatim. */
+function classDateParam(value: string): string | { date: string } {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? { date: value } : value;
+}
+
 async function notifyPromotedMember(ctx: MutationCtx, organization: Organization, booking: ClassBooking, occurrence: ClassOccurrence): Promise<void> {
   const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", booking.memberPublicId)).unique();
   const profileId = optionalText(valueData(member?.data).customerProfileId);
@@ -826,6 +833,8 @@ async function notifyPromotedMember(ctx: MutationCtx, organization: Organization
     kind: "class_waitlist_promoted",
     title: `You're in ${occurrence.name}`,
     body: `A place opened for the ${occurrence.date} class. Your waitlist booking is now confirmed.`,
+    titleMessage: systemMessage("communicationCompletion.notifications.waitlistPromoted", { className: occurrence.name }),
+    bodyMessage: systemMessage("communicationCompletion.notifications.waitlistPromotedBody", { classDate: classDateParam(occurrence.date) }),
     href: "/customer/my-gyms",
     dedupeKey,
     expiresAt: occurrence.endsAt + 86_400_000,
@@ -846,7 +855,7 @@ async function promoteWaitlist(ctx: MutationCtx, organization: Organization, occ
   await notifyPromotedMember(ctx, organization, updated, occurrence);
   const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", updated.memberPublicId)).unique();
   const actor = member ? await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", optionalText(valueData(member.data).customerUserId))).unique() : null;
-  if (actor) await insertClassTimeline(ctx, { organization, branchId: occurrence.branchId, memberId: updated.memberPublicId, actor, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, body: `A place opened for ${occurrence.date}.`, meta: { occurrenceId: occurrence.publicId, bookingId: updated.publicId } });
+  if (actor) await insertClassTimeline(ctx, { organization, branchId: occurrence.branchId, memberId: updated.memberPublicId, actor, type: "class_waitlist_promoted", title: `Moved into ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromoted", { className: occurrence.name }), body: `A place opened for ${occurrence.date}.`, bodyMessage: systemMessage("communicationCompletion.timeline.classWaitlistPromotedBody", { classDate: classDateParam(occurrence.date) }), meta: { occurrenceId: occurrence.publicId, bookingId: updated.publicId } });
   return updated;
 }
 
@@ -859,16 +868,16 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
     const today = todayISODate(input.organization.timezone || "Asia/Amman");
     const daysAhead = diffDays(today, input.occurrence.date);
     if (input.occurrence.startsAt <= Date.now()) domainError("CONFLICT", "Booking closes when the class starts.", { correlationId: input.correlationId });
-    if (daysAhead < 0 || daysAhead > Number(policy.bookingHorizonDays)) domainError("VALIDATION_ERROR", `Member booking is available up to ${policy.bookingHorizonDays} days ahead.`, { correlationId: input.correlationId });
+    if (daysAhead < 0 || daysAhead > Number(policy.bookingHorizonDays)) domainError("VALIDATION_ERROR", `Member booking is available up to ${policy.bookingHorizonDays} days ahead.`, { message: { key: "apiErrors.classHorizon", params: { days: String(policy.bookingHorizonDays) } }, correlationId: input.correlationId });
   }
   const branch = await ctx.db.get(input.occurrence.branchId);
   if (!branch) domainError("NOT_FOUND", "Class branch not found.", { correlationId: input.correlationId });
   const eligibility = await membershipEligibility(ctx, input.organization, input.member.publicId, input.membership?.publicId, branch, input.occurrence.date, policy);
-  if (!eligibility.membership) domainError("MEMBERSHIP_NOT_ACTIVE", eligibility.reason ?? "An active membership is required.", { correlationId: input.correlationId });
+  if (!eligibility.membership) domainError("MEMBERSHIP_NOT_ACTIVE", eligibility.reason ?? "An active membership is required.", { message: classBookingBlockMessage(eligibility.reason ?? "An active membership is required."), correlationId: input.correlationId });
   const mismatch = !["male", "female"].includes(String(member.gender ?? ""))
     || (input.occurrence.audience === "women" && member.gender !== "female")
     || (input.occurrence.audience === "men" && member.gender !== "male");
-  if (mismatch && input.bookedBy === "member") domainError("VALIDATION_ERROR", !member.gender ? "Add your gender in Profile before booking classes." : `This class is for ${input.occurrence.audience}.`, { correlationId: input.correlationId });
+  if (mismatch && input.bookedBy === "member") domainError("VALIDATION_ERROR", !member.gender ? "Add your gender in Profile before booking classes." : `This class is for ${input.occurrence.audience}.`, { message: !member.gender ? undefined : { key: "apiErrors.classAudience", params: { audience: input.occurrence.audience } }, correlationId: input.correlationId });
   if (mismatch && !optionalText(input.overrideReason)) domainError("VALIDATION_ERROR", "A reason is required to override the class audience rule.", { correlationId: input.correlationId, fieldErrors: { overrideReason: ["Required"] } });
   const existing = (await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", input.organization._id).eq("occurrenceId", input.occurrence._id).eq("memberPublicId", input.member.publicId)).collect())
     .filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status))
@@ -876,7 +885,7 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
   if (existing) return { booking: existing, outcome: existing.status as "booked" | "waitlisted" };
   const memberFuture = await ctx.db.query("classBookings").withIndex("by_member_start", (q) => q.eq("organizationId", input.organization._id).eq("memberPublicId", input.member.publicId).gte("startsAt", Date.now())).collect();
   if (memberFuture.filter((booking) => ACTIVE_BOOKING_STATUSES.has(booking.status)).length >= Number(policy.maxActiveBookingsPerMember) && !optionalText(input.overrideReason)) {
-    domainError("VALIDATION_ERROR", `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`, { correlationId: input.correlationId });
+    domainError("VALIDATION_ERROR", `This member already has ${policy.maxActiveBookingsPerMember} active class bookings. A staff override requires a reason.`, { message: { key: "apiErrors.activeBookingLimit", params: { count: String(policy.maxActiveBookingsPerMember) } }, correlationId: input.correlationId });
   }
   const occurrenceBookings = await ctx.db.query("classBookings").withIndex("by_occurrence", (q) => q.eq("organizationId", input.organization._id).eq("occurrenceId", input.occurrence._id)).collect();
   const rostered = occurrenceBookings.filter((booking) => bookingIsRostered(booking.status)).length;
@@ -906,7 +915,7 @@ async function createBooking(ctx: MutationCtx, input: { organization: Organizati
     updatedAt: now,
   });
   const booking = (await ctx.db.get(id))!;
-  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.member.publicId, actor: input.actor, type: outcome === "booked" ? "class_booked" : "class_waitlisted", title: outcome === "booked" ? `Booked ${input.occurrence.name}` : `Joined the ${input.occurrence.name} waitlist`, body: input.occurrence.date, meta: { occurrenceId: input.occurrence.publicId, bookingId: booking.publicId, bookedBy: input.bookedBy } });
+  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.member.publicId, actor: input.actor, type: outcome === "booked" ? "class_booked" : "class_waitlisted", title: outcome === "booked" ? `Booked ${input.occurrence.name}` : `Joined the ${input.occurrence.name} waitlist`, titleMessage: outcome === "booked" ? systemMessage("communicationCompletion.timeline.classBooked", { className: input.occurrence.name }) : systemMessage("communicationCompletion.timeline.classWaitlisted", { className: input.occurrence.name }), body: input.occurrence.date, bodyMessage: systemMessage("communicationCompletion.timeline.value", { value: classDateParam(input.occurrence.date) }), meta: { occurrenceId: input.occurrence.publicId, bookingId: booking.publicId, bookedBy: input.bookedBy } });
   await occurrenceAudit(ctx, { organization: input.organization, branchId: input.occurrence.branchId, actor: input.actor, actorRole: input.actorRole, correlationId: input.correlationId, action: outcome === "booked" ? "classes.booking.create" : "classes.waitlist.join", occurrence: input.occurrence, summary: `${booking.memberName} ${outcome === "booked" ? "booked" : "joined the waitlist for"} ${input.occurrence.name}`, reason: optionalText(input.overrideReason), after: { memberId: booking.memberPublicId, membershipId: booking.membershipPublicId, status: outcome } });
   return { booking, outcome };
 }
@@ -923,7 +932,7 @@ async function cancelBooking(ctx: MutationCtx, input: { organization: Organizati
   await ctx.db.patch(input.booking._id, { status: outcome, cancelledAt: now, updatedAt: now });
   const updated = (await ctx.db.get(input.booking._id))!;
   const promoted = previousStatus === "booked" ? await promoteWaitlist(ctx, input.organization, input.occurrence) : undefined;
-  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.booking.memberPublicId, actor: input.actor, type: outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${input.occurrence.name}`, body: optionalText(input.reason) ?? (late ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined), meta: { occurrenceId: input.occurrence.publicId, bookingId: input.booking.publicId, late } });
+  await insertClassTimeline(ctx, { organization: input.organization, branchId: input.occurrence.branchId, memberId: input.booking.memberPublicId, actor: input.actor, type: outcome === "late_cancelled" ? "class_cancelled_late" : "class_cancelled", title: `Cancelled ${input.occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classCancelled", { className: input.occurrence.name }), body: optionalText(input.reason) ?? (late ? "Cancelled after the gym's cutoff. No fee or membership penalty was applied." : undefined), ...(!optionalText(input.reason) && late ? { bodyMessage: systemMessage("communicationCompletion.timeline.classCancelledLate") } : {}), meta: { occurrenceId: input.occurrence.publicId, bookingId: input.booking.publicId, late } });
   await occurrenceAudit(ctx, { organization: input.organization, branchId: input.occurrence.branchId, actor: input.actor, actorRole: input.actorRole, correlationId: input.correlationId, action: outcome === "late_cancelled" ? "classes.booking.cancel_late" : "classes.booking.cancel", occurrence: input.occurrence, summary: `${input.booking.memberName} cancelled ${input.occurrence.name}`, reason: optionalText(input.reason), before: { status: previousStatus }, after: { status: outcome, promotedBookingId: promoted?.publicId } });
   return { booking: updated, outcome, promoted };
 }
@@ -1010,7 +1019,7 @@ async function cancelClassOccurrence(ctx: MutationCtx, actor: ActorContext, inpu
   if (actor.branchScope !== "all" && !actor.branchIds.includes(occurrence.branchId)) domainError("FORBIDDEN", "Your role cannot manage this class.", { correlationId: actor.correlationId });
   const bookings = await ctx.db.query("classBookings").withIndex("by_occurrence", q => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id)).collect();
   const block = occurrenceCancellationBlock({ status: occurrence.status, startsAt: occurrence.startsAt, finalized: Boolean(occurrence.attendanceFinalizedAt), hasAttendance: bookings.some(booking => booking.status === "attended" || booking.status === "no_show") });
-  if (block) domainError("CONFLICT", block, { correlationId: actor.correlationId });
+  if (block) domainError("CONFLICT", block, { message: classBookingBlockMessage(block), correlationId: actor.correlationId });
   if (occurrence.status !== "cancelled") {
     const now = Date.now();
     await ctx.db.patch(occurrence._id, { status: "cancelled", cancelReason: reason, updatedAt: now });
@@ -1018,7 +1027,7 @@ async function cancelClassOccurrence(ctx: MutationCtx, actor: ActorContext, inpu
     // late mark nor promotes somebody into a class that will not take place.
     for (const booking of bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status))) {
       await ctx.db.patch(booking._id, { status: "cancelled", cancelledAt: now, updatedAt: now });
-      await insertClassTimeline(ctx, { organization: actor.organization, branchId: occurrence.branchId, memberId: booking.memberPublicId, actor: actor.user, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, body: reason, meta: { occurrenceId: occurrence.publicId, bookingId: booking.publicId, cancelledByGym: true } });
+      await insertClassTimeline(ctx, { organization: actor.organization, branchId: occurrence.branchId, memberId: booking.memberPublicId, actor: actor.user, type: "class_cancelled", title: `Gym cancelled ${occurrence.name}`, titleMessage: systemMessage("communicationCompletion.timeline.classGymCancelled", { className: occurrence.name }), body: reason, meta: { occurrenceId: occurrence.publicId, bookingId: booking.publicId, cancelledByGym: true } });
     }
     await occurrenceAudit(ctx, { organization: actor.organization, branchId: occurrence.branchId, actor: actor.user, actorRole: actor.role, correlationId: actor.correlationId, action: "classes.occurrence.cancel", occurrence, summary: `Cancelled ${occurrence.name} on ${occurrence.date}`, reason, before: { status: occurrence.status }, after: { status: "cancelled", affectedBookings: bookings.filter(booking => ACTIVE_BOOKING_STATUSES.has(booking.status)).length } });
   }
@@ -1139,7 +1148,7 @@ export async function classesQuery(ctx: QueryCtx, actor: ActorContext, operation
     }
     case "classes.occurrences.list": return await staffOccurrences(ctx, actor, input);
     case "classes.coaches.list": return await listCoaches(ctx, actor);
-    default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown classes query ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -1158,7 +1167,7 @@ export async function classesMutation(ctx: MutationCtx, actor: ActorContext, ope
     case "classes.occurrence.coach.substitute": return await substituteOccurrenceCoach(ctx, actor, input);
     case "classes.coach.upsert": return await upsertCoach(ctx, actor, input);
     case "classes.coach.remove": return await removeCoach(ctx, actor, input);
-    default: domainError("NOT_FOUND", `Unknown classes mutation ${operation}.`, { correlationId: actor.correlationId });
+    default: domainError("NOT_FOUND", `Unknown classes mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId: actor.correlationId });
   }
 }
 
@@ -1167,6 +1176,6 @@ export async function customerClassesQuery(ctx: QueryCtx, context: CustomerClass
 }
 
 export async function customerClassesMutation(ctx: MutationCtx, context: CustomerClassContext, operation: string, input: Data, correlationId: string): Promise<unknown> {
-  if (operation !== "customer.classes.book" && operation !== "customer.classes.cancel") domainError("NOT_FOUND", `Unknown customer classes mutation ${operation}.`, { correlationId });
+  if (operation !== "customer.classes.book" && operation !== "customer.classes.cancel") domainError("NOT_FOUND", `Unknown customer classes mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId });
   return await customerBookingMutation(ctx, context, operation, input, correlationId);
 }

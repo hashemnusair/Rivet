@@ -31,6 +31,18 @@ export type SubscriptionBillingProjection = {
 };
 
 /**
+ * A presentation-neutral description of the renewal preview. UI surfaces can
+ * translate each line and format amounts/dates for the active locale without
+ * repeating the server-matched proration calculation.
+ */
+export type SubscriptionBillingLineDescriptor =
+  | { kind: "invoice_unpriced"; plan: SubscriptionBillingInput["plan"]; billingInterval: BillingInterval }
+  | { kind: "invoice"; plan: SubscriptionBillingInput["plan"]; billingInterval: BillingInterval; subtotalMinor: number }
+  | { kind: "credit"; creditDays: number; creditMinor: number; amountMinor: number }
+  | { kind: "term_end"; date: string }
+  | { kind: "void_previous_invoice" };
+
+/**
  * Mirrors the server's billing rules so admin surfaces can show the exact
  * consequence before saving: a material change landing on an active
  * subscription starts a fresh term of one interval today, and the unfinished
@@ -56,6 +68,23 @@ export function projectSubscriptionBilling(input: SubscriptionBillingInput): Sub
     creditDays: input.priceMinor === undefined ? 0 : change.creditDays,
     newPeriodEnd: new Date(change.periodEndsAt),
   };
+}
+
+/** Structured preview lines for locale-aware, exact-minor-unit presentation. */
+export function subscriptionBillingLineDescriptors(input: SubscriptionBillingInput): SubscriptionBillingLineDescriptor[] {
+  const projection = projectSubscriptionBilling(input);
+  const lines: SubscriptionBillingLineDescriptor[] = [
+    projection.subtotalMinor === undefined
+      ? { kind: "invoice_unpriced", plan: input.plan, billingInterval: input.billingInterval }
+      : { kind: "invoice", plan: input.plan, billingInterval: input.billingInterval, subtotalMinor: projection.subtotalMinor },
+  ];
+  if (projection.creditMinor > 0) {
+    // A credit only exists for a paid, priced term, so an amount is known here.
+    lines.push({ kind: "credit", creditDays: projection.creditDays, creditMinor: projection.creditMinor, amountMinor: projection.amountMinor ?? 0 });
+  }
+  lines.push({ kind: "term_end", date: projection.newPeriodEnd.toISOString() });
+  lines.push({ kind: "void_previous_invoice" });
+  return lines;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;

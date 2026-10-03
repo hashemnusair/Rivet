@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/providers/app-providers";
@@ -16,6 +18,8 @@ import { useApp } from "@/lib/providers/app-providers";
  * it preselected, and owners choose.
  */
 export function useCheckoutBranch(onBranchChange: () => void) {
+  const { locale } = useLocale();
+  const t = useT();
   const { session, setBranch } = useApp();
   const searchParams = useSearchParams();
   const visibleBranches = useMemo(() => session?.branches ?? [], [session?.branches]);
@@ -24,7 +28,8 @@ export function useCheckoutBranch(onBranchChange: () => void) {
   const validUrlBranchId = requestedBranchId && visibleBranchIds.has(requestedBranchId) ? requestedBranchId : undefined;
   const globalBranchId = session?.activeBranchId && visibleBranchIds.has(session.activeBranchId) ? session.activeBranchId : undefined;
   const [branchId, setBranchId] = useState("");
-  const [branchSelectionError, setBranchSelectionError] = useState<string>();
+  const [branchCause, setBranchSelectionError] = useState<unknown>();
+  const branchSelectionError = branchCause ? (isApiError(branchCause) ? localizeApiError(branchCause, locale).message : t("salesWorkspace.branchFailed")) : undefined;
   const [branchChanging, setBranchChanging] = useState(false);
   const previousGlobalBranchId = useRef<string | undefined>(undefined);
   const previousUrlBranchId = useRef<string | undefined>(undefined);
@@ -54,7 +59,7 @@ export function useCheckoutBranch(onBranchChange: () => void) {
       setBranchSelectionError(undefined);
       void setBranch(validUrlBranchId).catch((error: unknown) => {
         syncedUrlBranchId.current = undefined;
-        setBranchSelectionError(error instanceof Error ? error.message : "That branch could not be selected.");
+        setBranchSelectionError(error);
       });
     }
     if (!validUrlBranchId) syncedUrlBranchId.current = undefined;
@@ -72,7 +77,7 @@ export function useCheckoutBranch(onBranchChange: () => void) {
     void setBranch(nextBranchId)
       .catch((error: unknown) => {
         setBranchId(previousBranchId);
-        setBranchSelectionError(error instanceof Error ? error.message : "That branch could not be selected.");
+        setBranchSelectionError(error);
       })
       .finally(() => setBranchChanging(false));
   };

@@ -1,11 +1,13 @@
+import { getRequestLocale } from "@/lib/i18n/server";
+import { createTranslator } from "@/lib/i18n/core";
 import type { Metadata } from "next";
 import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { PrivacyPolicy } from "@/features/legal/privacy-policy";
 
-export const metadata: Metadata = {
-  title: "Privacy policy · RIVET",
-  description: "What RIVET collects, why, who it is shared with, how long it is kept, and what you can do about it.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = createTranslator(await getRequestLocale());
+  return { title: t("publicPrivacy.text124"), description: t("publicDocuments.privacyDescription") };
+}
 
 export default function PrivacyPage() {
   return (

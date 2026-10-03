@@ -1,4 +1,6 @@
 "use client";
+import { useLocale, type TKey } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import { Reveal } from "@/components/marketing/reveal";
@@ -6,101 +8,31 @@ import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
 
 export const STACK_ITEMS = [
-  {
-    label: "Sales",
-    copy: "Walk-ins, trials, calls and follow-ups are logged to the staff member who handled them, with a due date instead of a memory.",
-    caps: ["Leads and free trials", "Follow-ups with due dates", "Conversion by staff member"],
-  },
-  {
-    label: "Memberships",
-    copy: "Plans, renewals, freezes and upgrades, with expiries the desk sees before the member asks.",
-    caps: ["Plans and renewals", "Freezes and transfers", "Access ends with the plan"],
-  },
-  {
-    label: "Payments",
-    copy: "Cash, card and CliQ payments, with a receipt for every payment and an outstanding balance on every member.",
-    caps: ["Cash, card, CliQ", "Receipts and balances", "Drawer reconciled every shift"],
-  },
-  {
-    label: "Reception",
-    copy: "Check-in by card, code or phone number, who is inside right now, front-desk sales and a proper handover between shifts.",
-    caps: ["Check-in and access", "Front-desk sales", "Shift open and close"],
-  },
-  {
-    label: "Operations",
-    copy: "Staff, shifts, classes, trainers, maintenance and the daily close, kept in one operating record instead of three notebooks.",
-    caps: ["Staff, shifts and roles", "Classes and capacity", "The daily close"],
-  },
-  {
-    label: "Member activity",
-    copy: "Attendance and engagement per member, so a lapse becomes a conversation before it becomes a cancellation.",
-    caps: ["Attendance history", "Inactivity flags", "Renewal at the right time"],
-  },
+  { key: "sales", caps: ["leadCapture", "followUps", "conversion"] },
+  { key: "memberships", caps: ["plans", "freezes", "access"] },
+  { key: "payments", caps: ["methods", "receipts", "drawer"] },
+  { key: "reception", caps: ["access", "sales", "shifts"] },
+  { key: "operations", caps: ["team", "classes", "close"] },
+  { key: "activity", caps: ["attendance", "inactivity", "renewal"] },
 ] as const;
 
 const DAY_EVENTS = [
-  {
-    time: "06:00",
-    where: "Reception",
-    title: "Doors open.",
-    copy: "Members check in. The desk sees who is active, who expires this week and who still owes a balance, before anyone asks.",
-  },
-  {
-    time: "09:30",
-    where: "Sales desk",
-    title: "A walk-in asks about prices.",
-    copy: "The trial is logged to the person who handled it. If they join next week, the sale is theirs, on record.",
-  },
-  {
-    time: "13:15",
-    where: "Reception",
-    title: "A partial payment, recorded.",
-    copy: "A partial payment is recorded, a receipt is issued, and the remaining balance stays visible on the member account.",
-  },
-  {
-    time: "21:00",
-    where: "Reception",
-    title: "Shift handover.",
-    copy: "The cash in the drawer is counted against what the system says was collected. Any difference has a name next to it.",
-  },
-  {
-    time: "23:00",
-    where: "The office",
-    title: "Daily close.",
-    copy: "The owner sees revenue by method, new members, renewals due and who did what, as the day happened.",
-  },
+  { time: "06:00", key: "doors" },
+  { time: "09:30", key: "walkIn" },
+  { time: "13:15", key: "payment" },
+  { time: "21:00", key: "handover" },
+  { time: "23:00", key: "close" },
 ] as const;
 
 const REGIONAL_SPECS = [
-  ["Currency", "JOD to the fils. Three decimals wherever a number appears."],
-  ["Payments", "Cash, card and CliQ payments, with a receipt for each."],
-  ["Language", "English interface. Arabic names can be recorded; full Arabic and RTL support is planned."],
-  ["Calendar", "Ramadan hours, Friday schedules and public holidays."],
-  ["Memberships", "Plans, renewals, freezes and transfers."],
-  ["Branches", "One account across branches, in Amman or anywhere in the region."],
+  "currency", "payments", "language", "calendar", "memberships", "branches",
 ] as const;
 
 /** One entry's life on the ledger. Roles only, so nothing reads as a real person or amount. */
 const TRAIL = [
-  {
-    key: "Recorded",
-    body: <>Cash, monthly plan, receipt issued at the desk.</>,
-    meta: "Receptionist · shift 2 · 13:15",
-  },
-  {
-    key: "Corrected",
-    body: (
-      <>
-        <s>Monthly plan</s> Quarterly plan. Reason: wrong plan selected at the desk.
-      </>
-    ),
-    meta: "Branch manager · 13:22 · original kept on the record",
-  },
-  {
-    key: "Reviewed",
-    body: <>Drawer counted against the system at close. No unexplained difference.</>,
-    meta: "Owner · daily close",
-  },
+  { id: "recorded" },
+  { id: "corrected" },
+  { id: "reviewed" },
 ] as const;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -388,9 +320,14 @@ function createStackEngine(
   };
 }
 
-const PLATE_KEYS: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
-
 export function StackStory() {
+  const { t, locale } = useLocale();
+  const stackItems = STACK_ITEMS.map((item) => ({
+    key: item.key,
+    label: t(`publicCompletion.story.stack.items.${item.key}.label` as TKey),
+    copy: t(`publicCompletion.story.stack.items.${item.key}.copy` as TKey),
+    caps: item.caps.map((cap) => t(`publicCompletion.story.stack.items.${item.key}.caps.${cap}` as TKey)),
+  }));
   const gridRef = useRef<HTMLDivElement>(null);
   const figureRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef<SVGGElement>(null);
@@ -433,7 +370,7 @@ export function StackStory() {
 
   const onPlateKeyDown = (event: KeyboardEvent<SVGGElement>, index: number) => {
     let next: number | null = null;
-    const delta = PLATE_KEYS[event.key];
+    const delta = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : event.key === "ArrowRight" ? (locale === "ar" ? -1 : 1) : event.key === "ArrowLeft" ? (locale === "ar" ? 1 : -1) : undefined;
     if (delta !== undefined) next = (index + delta + PLATE_COUNT) % PLATE_COUNT;
     else if (event.key === "Home") next = 0;
     else if (event.key === "End") next = PLATE_COUNT - 1;
@@ -468,8 +405,8 @@ export function StackStory() {
     <section id="product" data-landing-theme="dark" className={cn(styles.stackStory, styles.snapStart)} aria-labelledby="stack-title">
       <div ref={gridRef} className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
         <div className={styles.stackHeader}>
-          <StoryMarker label="The stack" dark />
-          <h2 id="stack-title">Six plates. One pin.</h2>
+          <StoryMarker label={t("publicCompletion.header.stack")} dark />
+          <h2 id="stack-title">{t("publicCompletion.story.stack.title")}</h2>
         </div>
 
         <div ref={figureRef} className={styles.stackFigure}>
@@ -507,9 +444,9 @@ export function StackStory() {
 
             {/* each plate's soft shadow on the one beneath, drawn before any face */}
             <g aria-hidden>
-              {STACK_ITEMS.map((item, index) => (
+              {stackItems.map((item, index) => (
                 <rect
-                  key={item.label}
+                  key={item.key}
                   className={styles.rigPlateShadow}
                   x={plate.left + 5}
                   y={plateTop(index) + plate.height - 1}
@@ -528,15 +465,15 @@ export function StackStory() {
             </g>
 
             {/* the plates: each one a tab the pin can be sent to */}
-            <g role="tablist" aria-label="Modules" aria-orientation="vertical">
-              {STACK_ITEMS.map((item, index) => {
+            <g role="tablist" aria-label={t("publicCompletion.story.stack.tabLabel")} aria-orientation="vertical">
+              {stackItems.map((item, index) => {
                 const top = plateTop(index);
                 const right = plateRight(index);
                 const width = right - plate.left;
                 const isSelected = selected === index;
                 return (
                   <g
-                    key={item.label}
+                    key={item.key}
                     ref={(node) => { plateRefs.current[index] = node; }}
                     id={`stack-tab-${index}`}
                     role="tab"
@@ -568,8 +505,8 @@ export function StackStory() {
 
         <div className={styles.stackCopy}>
           <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${selected}`} className={styles.stackStates}>
-            {STACK_ITEMS.map((item, index) => (
-              <div key={item.label} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
+            {stackItems.map((item, index) => (
+              <div key={item.key} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
                 <h3>{item.label}</h3>
                 <p>{item.copy}</p>
                 <ul className={styles.stackCaps}>
@@ -578,9 +515,7 @@ export function StackStory() {
               </div>
             ))}
           </div>
-          <p className={styles.stackNote}>
-            Six modules on one member record: a payment taken at reception is already on the member, in the ledger and in the daily close. Tap a plate, or let the pin work through them.
-          </p>
+          <p className={styles.stackNote}>{t("publicCompletion.story.stack.note")}</p>
         </div>
       </div>
     </section>
@@ -595,6 +530,8 @@ export function StackStory() {
 const clockOffset = () => (window.innerWidth <= 720 ? 68 : 88);
 
 export function OperationalDay() {
+  const { t } = useLocale();
+  const f = useFormat();
   const sectionRef = useRef<HTMLElement>(null);
   const momentRefs = useRef<Array<HTMLLIElement | null>>([]);
   const inPlaceRef = useRef(false);
@@ -654,14 +591,14 @@ export function OperationalDay() {
       <div className={styles.dayGrid}>
         <aside className={styles.dayAside}>
           <div className={styles.daySticky}>
-            <StoryMarker label="A day on RIVET" />
-            <h2 id="day-title" className="sr-only">A day on RIVET</h2>
-            <p className={styles.dayLead}>One ordinary day, as reception and the owner see it.</p>
+            <StoryMarker label={t("publicCompletion.story.day.eyebrow", { brand: "RIVET" })} />
+            <h2 id="day-title" className="sr-only">{t("publicCompletion.story.day.title", { brand: "RIVET" })}</h2>
+            <p className={styles.dayLead}>{t("publicCompletion.story.day.lead")}</p>
             <p className={styles.dayClock} aria-hidden>
               <span className={styles.dayTimeMask}>
-                <span key={`${current.time}-${landed}`} className={styles.dayTime}>{current.time}</span>
+                <span key={`${current.time}-${landed}`} className={styles.dayTime} dir="ltr">{f.clock(current.time)}</span>
               </span>
-              <span key={`${current.where}-${landed}`} className={styles.dayWhere}>{current.where}</span>
+              <span key={`${current.key}-${landed}`} className={styles.dayWhere}>{t(`publicCompletion.story.day.events.${current.key}.where`)}</span>
             </p>
           </div>
         </aside>
@@ -675,9 +612,9 @@ export function OperationalDay() {
               className={cn(styles.dayMoment, active === index && styles.dayMomentActive)}
               onMouseEnter={() => { if (inPlaceRef.current) setActive(index); }}
             >
-              <time className={styles.dayMomentTime}>{event.time}</time>
-              <h3>{event.title}</h3>
-              <p>{event.copy}</p>
+              <time className={styles.dayMomentTime} dateTime={event.time} dir="ltr">{f.clock(event.time)}</time>
+              <h3>{t(`publicCompletion.story.day.events.${event.key}.title`)}</h3>
+              <p>{t(`publicCompletion.story.day.events.${event.key}.copy`)}</p>
             </li>
           ))}
         </ol>
@@ -691,6 +628,27 @@ export function OperationalDay() {
 // ---------------------------------------------------------------------------
 
 export function AccountabilityLedger() {
+  const { t } = useLocale();
+  const f = useFormat();
+  const rows = {
+    recorded: {
+      key: t("publicCompletion.story.accountability.rows.recorded.key"),
+      body: t("publicCompletion.story.accountability.rows.recorded.body"),
+      meta: t("publicCompletion.story.accountability.rows.recorded.meta", { time: f.clock("09:14") }),
+    },
+    corrected: {
+      key: t("publicCompletion.story.accountability.rows.corrected.key"),
+      before: t("publicCompletion.story.accountability.rows.corrected.before"),
+      after: t("publicCompletion.story.accountability.rows.corrected.after"),
+      reason: t("publicCompletion.story.accountability.rows.corrected.reason"),
+      meta: t("publicCompletion.story.accountability.rows.corrected.meta", { time: f.clock("11:36") }),
+    },
+    reviewed: {
+      key: t("publicCompletion.story.accountability.rows.reviewed.key"),
+      body: t("publicCompletion.story.accountability.rows.reviewed.body"),
+      meta: t("publicCompletion.story.accountability.rows.reviewed.meta"),
+    },
+  };
   return (
     <section
       id="accountability"
@@ -700,31 +658,38 @@ export function AccountabilityLedger() {
       className={cn(styles.coverSheet, styles.inkSheet, styles.layer5, styles.accountSection)}
     >
       <div className={styles.accountInner}>
-        <StoryMarker label="Accountability" dark />
+        <StoryMarker label={t("publicCompletion.header.accountability")} dark />
         <div className={styles.accountBody}>
           <div>
             <Reveal>
-              <h2 id="accountability-title" className={styles.accountTitle}>Nothing gets edited quietly.</h2>
+              <h2 id="accountability-title" className={styles.accountTitle}>{t("publicCompletion.story.accountability.title")}</h2>
             </Reveal>
             <Reveal delay={120}>
-              <p className={styles.accountLead}>Every sale, payment, check-in and shift change is recorded under the person who did it. Corrections are allowed. Silent ones are not, and the owner sees the day as it happened.</p>
+              <p className={styles.accountLead}>{t("publicCompletion.story.accountability.body")}</p>
             </Reveal>
           </div>
           <Reveal delay={200} className={styles.trailReveal}>
             <div className={styles.trail}>
               <div className={styles.trailHead}>
-                <span>One payment, as the owner sees it</span>
-                <span>Audit trail</span>
+                <span>{t("publicCompletion.story.accountability.payment")}</span>
+                <span>{t("publicCompletion.preview.dashboard.auditTrail")}</span>
               </div>
-              {TRAIL.map((row, index) => (
-                <div key={row.key} className={styles.trailRow} style={{ "--row-delay": `${260 + index * 220}ms` } as CSSProperties}>
+              {TRAIL.map(({ id }, index) => {
+                const row = rows[id];
+                return (
+                <div key={id} className={styles.trailRow} style={{ "--row-delay": `${260 + index * 220}ms` } as CSSProperties}>
                   <span className={styles.trailKey}>{row.key}</span>
                   <p>
-                    {row.body}
+                    {id === "corrected" ? (
+                      <>
+                        {rows.corrected.reason} <s>{rows.corrected.before}</s> → <strong>{rows.corrected.after}</strong>
+                      </>
+                    ) : id === "recorded" ? rows.recorded.body : rows.reviewed.body}
                     <span className={styles.trailMeta}>{row.meta}</span>
                   </p>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </Reveal>
         </div>
@@ -738,6 +703,7 @@ export function AccountabilityLedger() {
 // ---------------------------------------------------------------------------
 
 export function RegionProof() {
+  const { t, locale } = useLocale();
   return (
     <section
       id="region"
@@ -746,25 +712,25 @@ export function RegionProof() {
       className={cn(styles.coverSheet, styles.paperSheet, styles.layer6, styles.regionSection, styles.snapStart)}
     >
       <div className={styles.regionInner}>
-        <StoryMarker label="Built for here" />
+        <StoryMarker label={t("publicCompletion.story.region.eyebrow")} />
         <div className={styles.regionBilingual}>
           <Reveal>
-            <h2 id="region-title" className={styles.regionEnglish}>Built in<br />Amman.</h2>
+            <h2 id="region-title" className={styles.regionEnglish}>{t("publicCompletion.story.region.title")}</h2>
           </Reveal>
           <Reveal delay={120}>
-            <p lang="ar" dir="rtl" className={styles.regionArabic}>مبنيّ في عمّان.</p>
+            <p lang={locale === "ar" ? "en" : "ar"} dir={locale === "ar" ? "ltr" : "rtl"} className={styles.regionArabic}>{t(locale === "ar" ? "publicCompletion.story.region.titleArabic" : "publicCompletion.story.region.inAmmanArabic")}</p>
           </Reveal>
         </div>
         <div className={styles.regionBody}>
           <Reveal>
-            <p className={styles.regionLead}>For the way gyms run here, not the way a template assumes they do.</p>
+            <p className={styles.regionLead}>{t("publicCompletion.story.region.lead")}</p>
           </Reveal>
           <Reveal delay={120}>
             <dl className={styles.regionSpecs}>
-              {REGIONAL_SPECS.map(([term, detail]) => (
-                <div key={term} className={styles.regionSpec}>
-                  <dt>{term}</dt>
-                  <dd>{detail}</dd>
+              {REGIONAL_SPECS.map((key) => (
+                <div key={key} className={styles.regionSpec}>
+                  <dt>{t(`publicCompletion.story.regional.${key}` as TKey)}</dt>
+                  <dd>{t(`publicCompletion.story.regional.${key}Detail` as TKey)}</dd>
                 </div>
               ))}
             </dl>
