@@ -105,7 +105,8 @@ function money(amount: number, currency: string): MoneyProjection {
   return { amount, currency };
 }
 
-function requireReporting(ctx: QueryCtx, actor: ActorContext): Promise<void> {
+/** Management reporting (Pro and up): the statements and the analytics reports. */
+export function requireReporting(ctx: QueryCtx, actor: ActorContext): Promise<void> {
   return (async () => {
     const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
     const preference = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();

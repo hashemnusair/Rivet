@@ -87,6 +87,8 @@ import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
+import { planLimitViolation, resolvePlanLimits, type PlanLimitKind } from "../../../convex/planLimits";
+import { subscriptionNoticeFrom } from "../../../convex/subscriptionNotice";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
@@ -1350,7 +1352,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getPeakHoursReport(input: T.AnalyticsReportInput): Promise<T.PeakHoursReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const checkIns = this.db.checkIns.filter((checkIn) => visible(checkIn.branchId)).map((checkIn) => ({ occurredAt: checkIn.occurredAt, decision: checkIn.decision }));
       return peakHoursReport(checkIns, { from: input.from, to: input.to }, this.analyticsTimezone());
@@ -1359,7 +1361,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getClassUtilizationReport(input: T.AnalyticsReportInput): Promise<T.ClassUtilizationReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const occurrences = this.classOccurrences.filter((occurrence) => visible(occurrence.branchId));
       const projected = occurrences.map((occurrence) => ({
@@ -1400,7 +1402,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getRetentionReport(input: T.AnalyticsBranchInput): Promise<T.RetentionReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
       const memberships = this.db.memberships
@@ -1412,7 +1414,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getRenewalForecastReport(input: T.AnalyticsBranchInput): Promise<T.RenewalForecastReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
       const names = new Map(this.db.members.map((member) => [member.id, member.fullName]));
@@ -1426,7 +1428,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getCollectionsReport(input: T.AnalyticsReportInput): Promise<T.CollectionsReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
       const charges = this.db.charges
@@ -1441,7 +1443,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getCrmFunnelReport(input: T.AnalyticsReportInput): Promise<T.CrmFunnelReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const leads = this.db.leads
         .filter((lead) => visible(lead.branchId))
@@ -1459,7 +1461,7 @@ export class MockGymOSApi implements GymOSApi {
 
   getControlTrendsReport(input: T.AnalyticsReportInput): Promise<T.ControlTrendsReport> {
     return this.respond(() => {
-      this.require("reports.financial.read");
+      this.requireReportingRead();
       const visible = this.analyticsBranchFilter(input.branchId);
       const branchByMember = new Map(this.db.members.map((member) => [member.id, member.homeBranchId]));
       const audits = this.db.audits
@@ -2205,6 +2207,7 @@ export class MockGymOSApi implements GymOSApi {
           migrationCutoffDate: preview.migrationCutoffDate,
           createdAt: nowISO(),
         };
+        this.assertPlanCapacity("members", this.db.members.filter((item) => item.status !== "archived").length);
         this.db.members.push(member);
         this.activity({ memberId: member.id, type: "member_created", title: "Member imported", actorId: this.actor().id, actorName: this.actor().name });
         this.audit({ category: "members", action: "member.imported", entityType: "member", entityId: member.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Imported from CSV row ${row.rowNumber}` });
@@ -3754,6 +3757,19 @@ export class MockGymOSApi implements GymOSApi {
     this.require("reports.financial.read");
   }
 
+  /** Parity with Convex planLimitEnforcement: a plan's limit only stops additions. */
+  private assertPlanCapacity(kind: PlanLimitKind, used: number, adding = 1) {
+    const plan = this.db.organization.subscriptionPlan;
+    const row = this.platformPlans.find((item) => item.name === plan);
+    const violation = planLimitViolation(resolvePlanLimits(plan, row ? { branches: row.branches, staff: row.staff, members: row.members } : undefined), kind, used, adding);
+    if (violation) throw ApiError.of(ERR.PLAN_LIMIT_REACHED, violation.message, { details: violation.details, message: { key: violation.messageKey, params: violation.params } });
+  }
+
+  /** Staff accounts holding a seat: active and still-pending invitations. */
+  private staffSeatCount(): number {
+    return this.db.users.filter((user) => user.organizationId === this.db.organization.id && user.status !== "deactivated").length;
+  }
+
   private requireReportingRead() {
     const status = this.workspaceAccess().modules.find((module) => module.key === "reporting");
     if (!status?.entitled || !status.enabled) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "The reporting workspace module is not enabled for this organization.");
@@ -4379,6 +4395,29 @@ export class MockGymOSApi implements GymOSApi {
     return this.getSession();
   }
 
+  /** Parity with Convex buildSession: owners and managers see what is owed to RIVET. */
+  private subscriptionNoticeView(role: T.RoleKey): { notice?: T.SubscriptionNotice } {
+    if (role !== "owner" && role !== "manager") return {};
+    const org = this.db.organization;
+    const gym = this.platformGyms.find((item) => this.isProvisionedGym(item));
+    const trialEndsAt = org.trialEndsAt ? Date.parse(org.trialEndsAt) : undefined;
+    const notice = subscriptionNoticeFrom(
+      { status: org.status, trialEndsAt: Number.isFinite(trialEndsAt) ? trialEndsAt : undefined },
+      gym ? this.platformInvoices.filter((invoice) => invoice.gymId === gym.id) : [],
+      Date.now(),
+    );
+    if (!notice) return {};
+    return {
+      notice: {
+        kind: notice.kind,
+        ...(notice.amountMinor === undefined ? {} : { amount: money(notice.amountMinor, notice.currency ?? org.currency) }),
+        ...(notice.dueAt === undefined ? {} : { dueAt: new Date(notice.dueAt).toISOString() }),
+        ...(notice.suspendsAt === undefined ? {} : { suspendsAt: new Date(notice.suspendsAt).toISOString() }),
+        ...(notice.trialEndedAt === undefined ? {} : { trialEndedAt: new Date(notice.trialEndedAt).toISOString() }),
+      },
+    };
+  }
+
   private buildSession(): T.Session {
     const user = this.actor();
     const org = this.db.organization;
@@ -4407,6 +4446,7 @@ export class MockGymOSApi implements GymOSApi {
           billingInterval: org.billingInterval ?? "monthly",
           currentPeriodEndsAt: org.currentPeriodEndsAt,
           trialEndsAt: org.trialEndsAt,
+          ...this.subscriptionNoticeView(user.role),
         },
       },
       branches: visibleBranches.map((b) => ({ id: b.id, name: b.name, code: b.code })),
@@ -5252,6 +5292,7 @@ export class MockGymOSApi implements GymOSApi {
       // created — reception decides whether to merge — but the caller is warned.
       const duplicates = this.findDuplicates({ phone: input.phone, email: input.email });
 
+      this.assertPlanCapacity("members", this.db.members.filter((item) => item.status !== "archived").length);
       this.db.members.push(record);
       this.activity({
         memberId: record.id,
@@ -7369,6 +7410,7 @@ export class MockGymOSApi implements GymOSApi {
       notes: input.notes,
       createdAt: nowISO(),
     };
+    this.assertPlanCapacity("members", this.db.members.filter((item) => item.status !== "archived").length);
     this.db.members.push(record);
     this.activity({
       memberId: record.id,
@@ -9706,6 +9748,7 @@ export class MockGymOSApi implements GymOSApi {
           return [member?.fullName ?? order.memberName, member?.memberNumber, order.packageNameSnapshot ?? order.packageName, order.sessionCountSnapshot, formatMinorUnits(total.amount, total.currency), total.currency, copy.status(order.status), copy.dateTime(order.paidAt, TZ), order.refundedSessions ?? 0, formatMinorUnits(refunded.amount, refunded.currency), copy.dateTime(order.createdAt, TZ), copy.dateTime(order.updatedAt, TZ)];
         });
       } else if (input.kind === "operations") {
+        this.requireOperations();
         title = "Products, suppliers, and inventory activity";
         headers = ["Record type", "Branch", "SKU", "Product or supplier", "Unit", "Status", "Reorder point", "Quantity on hand", "Committed quantity", "Movement type", "Quantity change", "Amount", "Currency", "Contact name", "Phone", "Email", "Reason", "When"];
         const productById = new Map(this.db.products.map((product) => [product.id, product]));
@@ -10189,6 +10232,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.id) {
         const branch = this.db.branches.find((b) => b.id === input.id);
         if (!branch) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
+        if (input.status === "active" && branch.status !== "active") this.assertPlanCapacity("branches", this.db.branches.filter((item) => item.status === "active").length);
         Object.assign(branch, input);
         this.audit({
           category: "settings",
@@ -10210,6 +10254,7 @@ export class MockGymOSApi implements GymOSApi {
         capacity: input.capacity,
         status: input.status,
       };
+      if (branch.status === "active") this.assertPlanCapacity("branches", this.db.branches.filter((item) => item.status === "active").length);
       this.db.branches.push(branch);
       this.audit({
         category: "settings",
@@ -12197,6 +12242,7 @@ export class MockGymOSApi implements GymOSApi {
         status: "invited",
         invitedAt: nowISO(),
       };
+      this.assertPlanCapacity("staff", this.staffSeatCount());
       this.db.users.push(user);
       this.audit({
         category: "users",
@@ -12240,6 +12286,7 @@ export class MockGymOSApi implements GymOSApi {
       if (nextRole !== user.role && permissionsFor(this.db, nextRole).some((permission) => !actorPermissions.includes(permission))) {
         throw ApiError.of(ERR.FORBIDDEN, "You cannot grant permissions your role does not possess.");
       }
+      if (input.status && input.status !== "deactivated" && user.status === "deactivated") this.assertPlanCapacity("staff", this.staffSeatCount());
       const before = { role: user.role, status: user.status, branches: user.branchIds.length };
       Object.assign(user, input);
       this.audit({

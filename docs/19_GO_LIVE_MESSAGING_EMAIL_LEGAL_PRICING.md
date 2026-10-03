@@ -459,16 +459,41 @@ until the table at the end is signed.
 | Branches | 1 | 3 | 8 | 25 |
 | Staff accounts | 8 | 25 | 80 | 250 |
 | Members | 500 | 2,500 | 10,000 | 50,000 |
-| Gym foundation (members, memberships, payments, reception) | ✓ | ✓ | ✓ | ✓ |
+| Gym foundation (members, memberships, payments, reception, cash shifts, daily reconciliation, payments overview) | ✓ | ✓ | ✓ | ✓ |
 | Revenue protection (leads, follow-ups, reminders) | ✓ | ✓ | ✓ | ✓ |
 | Daily operations (stock, purchasing, payables, equipment, maintenance) | — | ✓ | ✓ | ✓ |
-| Financial operating system (shifts, reconciliation, ledger) | — | — | ✓ | ✓ |
-| Management reporting (statements, analytics) | — | — | ✓ | ✓ |
+| Financial operating system (management ledger: journal entries, source postings, periods) | — | — | ✓ | ✓ |
+| Management reporting (statements, analytics reports) | — | — | ✓ | ✓ |
 | Shown on the public site | ✓ | ✓ | ✓ | platform-only |
 
 Source of truth: `convex/planCatalogue.ts` (plan rows and the one annual
 formula, `termPriceMinor`), `convex/workspaceModules.ts` (module
-availability), `convex/subscriptionTerm.ts` (term dates and proration).
+availability), `convex/subscriptionTerm.ts` (term dates and proration),
+`convex/planLimits.ts` (limits).
+
+Cash shifts and the daily reconciliation are on every plan: front-desk cash
+control is core for even a one-branch gym (decided 3 October 2026). The
+analytics reports (peak hours, classes, retention, renewals, collections,
+leads, refunds and discounts) are management reporting, refused by the server
+below Pro; the Reports overview stays on every plan.
+
+### Limits
+
+The server refuses to add a branch, a staff account or a member beyond the
+plan's limit, with an "upgrade your plan" message (`PLAN_LIMIT_REACHED`).
+Nothing a gym already holds is removed, hidden or switched off, so a gym over
+its limit after a downgrade keeps working and simply cannot add more. Numbers
+a platform operator saves on a plan in the platform catalogue take precedence
+over the published ones. A gym with no plan predates billing and is not
+limited.
+
+- **Branches:** active branches. Creating one, or switching an inactive one
+  back on, needs room.
+- **Staff accounts:** active memberships, including pending invitations (a
+  revoked invitation frees its seat). Inviting someone new, or reactivating a
+  deactivated account, needs room; re-sending a pending invitation does not.
+- **Members:** every member not archived. Every creation path (new member,
+  new member with a sale, lead sale, CSV import) needs room.
 
 ### How a term is billed, and what a change costs
 
@@ -506,11 +531,23 @@ The reconciliation cron applies this only while
 `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Recording a payment never moves
 a gym's paid-through date backwards.
 
+A past-due gym keeps full access until it is suspended. Its owner and
+managers see a banner over the workspace with the unpaid amount and the day
+access may be suspended (21 days after the earliest unpaid due date). A trial
+that has ended is billed like any term: the first invoice is raised 3 days
+before the trial ends and is due 14 days later, so an unpaid trial becomes
+past due on that due date and may be suspended 21 days after it. From the day
+the trial ends, owners and managers see a "trial ended" banner with the
+invoice amount and dates, or a prompt to contact RIVET when no invoice exists
+yet. With the cron off, no gym ever moves to past due or suspended, so the
+flag must be on in Production for any of this to happen.
+
 ### Decisions needed
 
 - **[decide]** the three public prices and whether Enterprise is quoted
-- **[decide]** branch, staff and member limits per tier, and what happens
-  when a gym exceeds them (the Terms say RIVET offers the next plan)
+- **[decide]** branch, staff and member limits per tier. What happens at the
+  limit is decided (3 October 2026): new additions are refused, nothing
+  existing is removed.
 - **[decide]** whether message costs are included per tier (section 1)
 - **[decide]** onboarding fee: the agreement says onboarding is included
 - **[decide]** annual discount (20% today) and whether monthly billing needs

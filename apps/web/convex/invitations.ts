@@ -7,6 +7,7 @@ import { domainError, publicOrganizationId, publicUserId, requireActor, requireP
 import { rolePermissions, toFrontendRole } from "./permissions";
 import { INVITATION_REDIRECT_PATH } from "./platformProvisioning";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
+import { assertPlanCapacity, staffSeatCount } from "./planLimitEnforcement";
 
 type Data = Record<string, unknown>;
 
@@ -125,6 +126,10 @@ async function prepareInvitation(ctx: MutationCtx, input: Data, organizationId: 
     .query("organizationMemberships")
     .withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id))
     .unique();
+  // Re-sending to someone who already holds a seat costs nothing; a new or
+  // returning person needs room on the plan.
+  const holdsSeat = Boolean(membership?.active && membership.invitationStatus !== "revoked");
+  if (!holdsSeat) await assertPlanCapacity(ctx, actor, "staff", await staffSeatCount(ctx, actor.organization._id));
   let membershipId: Id<"organizationMemberships">;
   if (membership) {
     membershipId = membership._id;

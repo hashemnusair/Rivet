@@ -2,6 +2,17 @@
 
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 
+## 3 October 2026 — Plan enforcement: analytics, limits, past-due notice
+
+Branch `claude/plan-entitlement-enforcement`. An audit found the tiers were only partly enforced on the server. Decisions taken with Elias on 3 October: cash shifts and the daily reconciliation stay on every plan; analytics are management reporting (Pro and up); limits refuse additions and keep everything existing; a past-due gym gets a banner and keeps access until suspension at day 21.
+
+- **Analytics:** all seven `analytics.*` reports now go through `requireReporting` (`convex/analyticsReports.ts`), so Starter and Growth get `FEATURE_NOT_AVAILABLE`. The Reports overview tab stays on every plan; the analytics tabs show the plan lock (`WorkspaceModuleBoundary`). The stock/supplier CSV export (`exports.request` kind `operations`) now needs the operations module.
+- **Limits:** `convex/planLimits.ts` (pure) and `convex/planLimitEnforcement.ts` refuse with `PLAN_LIMIT_REACHED` and an English/Arabic "upgrade the plan" message. Checked at branch create and switch-on, staff invitation and reactivation (pending invitations hold a seat), and every member creation path (inside `createMemberMutation`). Operator-saved catalogue numbers win over the published ones; legacy gyms without a plan are not limited.
+- **Past due:** `convex/subscriptionNotice.ts` adds `organization.subscription.notice` to the session for owners and managers only: the unpaid total, earliest due date and the day access may be suspended, or "trial ended" once the trial passes. `SubscriptionNoticeBanner` shows it above the workspace (signal red for past due). No access change before suspension.
+- Module descriptions corrected in both catalogues; docs/19 now states what is enforced and records the limit decision. The mock adapter mirrors all of the above.
+
+Still needed outside code: `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1` in Production, or nothing ever becomes past due or suspended. Not changed: platform admins can still grant any module to any tier in the catalogue; the revenue module toggle is still UI-only. Found while testing, not fixed: creating a branch as inactive fails in the audit step (`insertAudit` → `assertBranchAccess`).
+
 ## 3 October 2026 — Arabic landing page parity
 
 The live Arabic landing page diverged from the English one. Fixed on `fix/arabic-landing` without changing approved wording:

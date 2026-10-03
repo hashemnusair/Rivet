@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { WorkspaceModulePlan } from "./workspaceModules";
+import { resolvePlanLimits, type PlanLimits } from "./planLimits";
 
 type ReadContext = QueryCtx | MutationCtx;
 type Data = Record<string, unknown>;
@@ -22,4 +23,18 @@ export async function platformPlanEntitledModules(ctx: ReadContext, plan: Worksp
   });
   const selection = data(row?.data).entitledModules;
   return Array.isArray(selection) ? selection : undefined;
+}
+
+/**
+ * The plan's branch, staff and member limits, with any numbers a platform
+ * operator saved in the catalogue taking precedence over the published ones.
+ */
+export async function platformPlanLimits(ctx: ReadContext, plan: WorkspaceModulePlan | undefined): Promise<PlanLimits | undefined> {
+  if (!plan) return undefined;
+  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
+  const row = rows.find((candidate) => {
+    const value = data(candidate.data);
+    return value.name === plan || candidate.publicId === plan;
+  });
+  return resolvePlanLimits(plan, row ? data(row.data) : undefined);
 }

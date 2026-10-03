@@ -51,4 +51,15 @@ export const shell: typeof EnShell = {
     signOut: "تسجيل الخروج",
     signOutDemo: "تسجيل الخروج من العرض التجريبي",
   },
+  subscriptionNotice: {
+    label: "اشتراك RIVET",
+    pastDueTitle: "تجاوز اشتراك النادي في RIVET موعد الدفع",
+    pastDueAmountSuspend: "المبلغ المستحق لـRIVET هو {amount}. إذا لم يُدفع، قد يُعلَّق الوصول إلى النظام في {date}.",
+    pastDueAmount: "المبلغ المستحق لـRIVET هو {amount}. يُرجى دفعه للحفاظ على الوصول الكامل.",
+    pastDueNoAmount: "تجاوزت فاتورة من RIVET موعد الدفع. يُرجى التواصل مع RIVET لتسويتها والحفاظ على الوصول الكامل.",
+    trialEndedTitle: "انتهت التجربة المجانية في {date}",
+    trialEndedInvoice: "تستحق الفاتورة الأولى بقيمة {amount} في {dueAt}. إذا لم تُدفع، قد يُعلَّق الوصول إلى النظام في {date}.",
+    trialEndedNoInvoice: "يُرجى التواصل مع RIVET لتأكيد الباقة ومواصلة استخدام النظام.",
+    view: "الاشتراك والفواتير",
+  },
 };

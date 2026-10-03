@@ -49,4 +49,15 @@ export const shell = {
     signOut: "Sign out",
     signOutDemo: "Sign out of demo",
   },
+  subscriptionNotice: {
+    label: "RIVET subscription",
+    pastDueTitle: "Your RIVET subscription is past due",
+    pastDueAmountSuspend: "{amount} is owed to RIVET. If it stays unpaid, access may be suspended on {date}.",
+    pastDueAmount: "{amount} is owed to RIVET. Pay it to keep full access.",
+    pastDueNoAmount: "An invoice from RIVET is overdue. Contact RIVET to settle it and keep full access.",
+    trialEndedTitle: "Your free trial ended on {date}",
+    trialEndedInvoice: "Your first invoice of {amount} is due on {dueAt}. If it stays unpaid, access may be suspended on {date}.",
+    trialEndedNoInvoice: "Contact RIVET to confirm your plan and keep using the workspace.",
+    view: "View subscription",
+  },
 };

@@ -26,6 +26,7 @@ import { OperationalReports, OPERATIONAL_REPORT_LABELS, OPERATIONAL_REPORT_QUEST
 import { loadTransactionsInRange, summarizeRange } from "@/features/reports/overview-totals";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import type { TFunction, TKey } from "@/lib/i18n/core";
+import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, type ReportScope } from "@/features/reports/report-scope";
 
 function paymentMethodLabel(method: string, t: TFunction): string {
@@ -44,7 +45,10 @@ function parseView(value: string | null): ReportsView {
 /**
  * Owner/manager reporting workspace. It deliberately composes the same
  * dashboard and transaction contracts used by the operating screens, so an
- * export cannot drift away from the ledger that staff see at the desk.
+ * export cannot drift away from the ledger that staff see at the desk. The
+ * overview is on every plan; the analytics tabs belong to management
+ * reporting (Pro and up), which the server enforces, so on other plans they
+ * show the plan lock instead.
  */
 function ReportsPageInner() {
   const { t, locale } = useLocale();
@@ -195,7 +199,7 @@ function ReportsPageInner() {
           ))}
         </nav>
 
-        {view !== "overview" ? <OperationalReports view={view} scope={scope} branches={branches} onScopeChange={changeScope} /> : <>
+        {view !== "overview" ? <WorkspaceModuleBoundary moduleKey="reporting"><OperationalReports view={view} scope={scope} branches={branches} onScopeChange={changeScope} /></WorkspaceModuleBoundary> : <>
         <ReportScopeBar branches={branches} scope={scope} onChange={changeScope} ranged onRefresh={refresh} refreshing={dashboardQuery.isFetching || rangeQuery.isFetching} note={rangeQuery.data?.truncated ? t("reportsWorkspace.truncated", { count: transactions.length }) : undefined} />
 
         {stale ? <div className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep" role="status" aria-label={t("reportsWorkspace.outdated")}>{t("reportsWorkspace.overviewOutdated")}{" "}<button type="button" className="font-medium underline" onClick={refresh}>{t("common.action.retry")}</button></div> : null}

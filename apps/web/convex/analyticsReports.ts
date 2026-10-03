@@ -1,6 +1,7 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { domainError, requirePermission, publicBranchId, type ActorContext } from "./security";
+import { domainError, publicBranchId, type ActorContext } from "./security";
+import { requireReporting } from "./managementReports";
 import { occurrenceTimes, weeklySlot } from "./classes";
 import { addDays } from "../src/lib/utils/dates";
 import {
@@ -124,11 +125,13 @@ async function memberBranchIndex(ctx: ReadContext, actor: ActorContext): Promise
 
 /**
  * Read-only operational analytics. Every operation checks the reporting
- * permission, restricts rows to the actor's authorized branch scope, works on
+ * module and permission, restricts rows to the actor's authorized branch scope, works on
  * tenant-local calendar boundaries, and writes nothing.
  */
 export async function analyticsQuery(ctx: ReadContext, actor: ActorContext, operation: string, input: Data): Promise<unknown> {
-  requirePermission(actor, "reports.financial.read");
+  // Analytics belong to management reporting with the statements (docs/19),
+  // so a plan without that module is refused here, not only in the UI.
+  await requireReporting(ctx, actor);
   const timezone = actor.organization.timezone || TZ_FALLBACK;
   const scope = await resolveBranchScope(ctx, actor, input.branchId);
 

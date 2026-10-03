@@ -28,7 +28,7 @@ const CODE_KEYS: Readonly<Record<string, keyof typeof apiErrors>> = {
   VALIDATION_ERROR: "validation", FORBIDDEN: "forbidden", UNAUTHENTICATED: "sessionEnded", NOT_FOUND: "notFound", CONFLICT: "conflict", RATE_LIMITED: "rateLimited",
   ORGANIZATION_SELECTION_REQUIRED: "selectOrganization", INVITATION_NOT_ACCEPTED: "invitationNotAccepted", INVITATION_REVOKED: "invitationRevoked", IDENTITY_EMAIL_CONFLICT: "identityConflict",
   DUPLICATE_MEMBER: "duplicateMember", MEMBERSHIP_NOT_ACTIVE: "membershipInactive", NO_OUTSTANDING_BALANCE: "noBalance", PAYMENT_ALREADY_REFUNDED: "alreadyRefunded", PAYMENT_ALREADY_VOIDED: "alreadyVoided", VOID_WINDOW_EXPIRED: "voidWindow", REFUND_EXCEEDS_AMOUNT: "refundAmount",
-  SHIFT_ALREADY_OPEN: "shiftOpen", NO_OPEN_SHIFT: "noShift", FREEZE_ALLOWANCE_EXCEEDED: "freezeAllowance", APPROVAL_REQUIRED: "approval", CONFIGURATION_ERROR: "configuration", FEATURE_NOT_AVAILABLE: "featureUnavailable", EXTERNAL_SERVICE_ERROR: "externalService", ACCOUNT_CHANGED: "accountChanged",
+  SHIFT_ALREADY_OPEN: "shiftOpen", NO_OPEN_SHIFT: "noShift", FREEZE_ALLOWANCE_EXCEEDED: "freezeAllowance", APPROVAL_REQUIRED: "approval", CONFIGURATION_ERROR: "configuration", FEATURE_NOT_AVAILABLE: "featureUnavailable", PLAN_LIMIT_REACHED: "planLimitReached", EXTERNAL_SERVICE_ERROR: "externalService", ACCOUNT_CHANGED: "accountChanged",
   PAYMENT_OUTCOME_UNKNOWN: "unknownPayment", UNKNOWN_PAYMENT_OUTCOME: "unknownPayment",
 };
 export function defaultErrorDescriptor(code: string): ErrorMessageDescriptor { return { key: `apiErrors.${CODE_KEYS[code] ?? "unexpected"}` }; }

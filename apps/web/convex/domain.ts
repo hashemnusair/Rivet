@@ -53,7 +53,7 @@ import {
   type WorkspaceModulePlan,
 } from "./workspaceModules";
 import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex, type BrandPaletteKey } from "./brand";
-import { operationsMutation, operationsQuery } from "./operations";
+import { operationsMutation, operationsQuery, requireOperations } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
 import { resolveEmailMode } from "./emailMode";
@@ -68,6 +68,8 @@ import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from ".
 import { accountingMutation, accountingQuery } from "./accounting";
 import { managementReportQuery } from "./managementReports";
 import { platformPlanEntitledModules } from "./platformPlanCatalog";
+import { activeBranchCount, assertPlanCapacity, staffSeatCount } from "./planLimitEnforcement";
+import { subscriptionNoticeFor } from "./subscriptionNotice";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 import { automationAttentionHref } from "./automations";
 import { deriveLeadProgressFacts, leadProgressStageCompleted } from "../src/lib/crm/lead-progression";
@@ -1698,6 +1700,15 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       });
     }
   }
+  // Money owed to RIVET is the owner's and manager's business, not the desk's.
+  const owed = actor.role === "owner" || actor.role === "manager" ? await subscriptionNoticeFor(ctx, actor.organization, Date.now()) : undefined;
+  const notice = owed ? {
+    kind: owed.kind,
+    ...(owed.amountMinor === undefined ? {} : { amount: { amount: owed.amountMinor, currency: owed.currency ?? actor.organization.currency } }),
+    ...(owed.dueAt === undefined ? {} : { dueAt: utcIso(owed.dueAt) }),
+    ...(owed.suspendsAt === undefined ? {} : { suspendsAt: utcIso(owed.suspendsAt) }),
+    ...(owed.trialEndedAt === undefined ? {} : { trialEndedAt: utcIso(owed.trialEndedAt) }),
+  } : undefined;
   return {
     user: { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email },
     organization: {
@@ -1716,6 +1727,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
         billingInterval: actor.organization.billingInterval ?? "monthly",
         currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
         trialEndsAt: actor.organization.trialEndsAt === undefined ? undefined : utcIso(actor.organization.trialEndsAt),
+        ...(notice ? { notice } : {}),
       },
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
@@ -7256,6 +7268,7 @@ async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input
   const branch = await branchByPublicId(ctx, actor.organization._id, homeBranchId);
   assertBranchAccess(actor, branch);
   const existingMembers = await memberRecords(ctx, actor);
+  await assertPlanCapacity(ctx, actor, "members", existingMembers.filter((record) => stringValue(data(record.data).status) !== "archived").length);
   const duplicates = duplicateMemberMatches(
     existingMembers.map((record) => data(record.data)),
     { phone, email },
@@ -9492,6 +9505,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const locale = exportLocale(input.locale);
       const kind = staffExportKind(input.kind, actor.correlationId);
       requireExportPermission(actor, kind);
+      // Stock and supplier files come from the operations module, so a plan
+      // without it cannot download them either.
+      if (kind === "operations") await requireOperations(ctx, actor);
       const idempotencyKey = stringValue(input.idempotencyKey).trim();
       if (idempotencyKey.length < 8 || idempotencyKey.length > 120) domainError("VALIDATION_ERROR", "A valid export request key is required.", { correlationId: actor.correlationId });
       const filters = data(input.filters);
@@ -11693,11 +11709,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const branch = await branchByPublicId(ctx, actor.organization._id, inputId);
         if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
         const updated = { name: stringValue(input.name), code: stringValue(input.code).toUpperCase(), address: stringValue(input.address), phone: stringValue(input.phone), capacity: numberValue(input.capacity, 120), active: input.status !== "inactive", status: input.status };
+        if (updated.active && !branch.active) await assertPlanCapacity(ctx, actor, "branches", await activeBranchCount(ctx, actor.organization._id));
         await ctx.db.patch(branch._id, { ...updated, updatedAt: Date.now() });
         await insertAudit(ctx, actor, { category: "settings", action: "branch.update", entityType: "branch", entityId: inputId, entityLabel: updated.name, summary: "Branch updated", branchId: inputId });
         const latest = await ctx.db.get(branch._id);
         return branchView(latest ?? branch, publicOrganizationId(actor.organization));
       }
+      if (input.status !== "inactive") await assertPlanCapacity(ctx, actor, "branches", await activeBranchCount(ctx, actor.organization._id));
       const branchId = await ctx.db.insert("branches", { publicId: newPublicId(), organizationId: actor.organization._id, name: stringValue(input.name), code: stringValue(input.code).toUpperCase(), address: stringValue(input.address), phone: stringValue(input.phone), capacity: numberValue(input.capacity, 120), active: input.status !== "inactive", status: stringValue(input.status, "active") === "inactive" ? "inactive" : "active", createdAt: Date.now(), updatedAt: Date.now() });
       const branch = await ctx.db.get(branchId);
       if (!branch) domainError("NOT_FOUND", "Branch could not be created.", { correlationId: actor.correlationId });
@@ -11745,6 +11763,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       const nextActive = input.status ? input.status !== "deactivated" : membership.active;
+      if (nextActive && !membership.active) await assertPlanCapacity(ctx, actor, "staff", await staffSeatCount(ctx, actor.organization._id));
       const nextMembershipValues = { ...membership, role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: nextActive };
       await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
       const beforeStatus = organizationUserStatus(user, membership);

@@ -1373,6 +1373,19 @@ export interface SessionSubscription {
   currentPeriodEndsAt?: string;
   /** The end of the onboarding trial, ISO, while one is running. */
   trialEndsAt?: string;
+  /** Money owed to RIVET, shown to owners and managers only. */
+  notice?: SubscriptionNotice;
+}
+
+export interface SubscriptionNotice {
+  kind: "past_due" | "trial_ended";
+  /** Everything still unpaid on RIVET invoices. */
+  amount?: Money;
+  /** The earliest unpaid due date, ISO. */
+  dueAt?: string;
+  /** When access may be suspended (21 days after that due date), ISO. */
+  suspendsAt?: string;
+  trialEndedAt?: string;
 }
 
 export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";
