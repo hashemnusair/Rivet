@@ -1,5 +1,7 @@
 # Arabic implementation execution record
 
+**Later release status:** Hashem authorized an audit and main-branch release for founder testing on 3 October. See [the release audit](AUDIT_2026-10-03.md) and the newest `CURRENT_STATE.md` entry. The candidate-only status below records the original implementation handoff.
+
 The implementation is integrated on `codex/complete-arabic-support`. This document records implementation and verification, not release approval. Production has not been deployed and no real messages have been sent.
 
 ## Integrated history

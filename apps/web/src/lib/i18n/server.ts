@@ -13,7 +13,7 @@ export const getRequestUiPreference = cache(async (): Promise<UiLocalePreference
   const store = await cookies();
   let owner: string | null = null;
   let savedLocale: Locale | undefined;
-  if (!DEMO_AUTH_BYPASS && process.env.NEXT_PUBLIC_RIVET_DATA_MODE !== "mock" && process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  if (!DEMO_AUTH_BYPASS && process.env.NEXT_PUBLIC_DATA_MODE !== "mock" && process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     try {
       const session = await auth();
       owner = session.userId;

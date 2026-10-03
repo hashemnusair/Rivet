@@ -6,6 +6,7 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { LanguageButton } from "@/components/shared/language-switch";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { useLocale, useT } from "@/lib/i18n/provider";
 import type { Portal } from "./portals";
@@ -61,21 +62,24 @@ export function LoginLayout({
       </div>
 
       <div className="flex flex-col bg-paper px-5 py-8 sm:px-8">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <Link href={publicHref} className="flex min-h-8 items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" aria-hidden /> <bdi dir="ltr">rivet.jo</bdi>
           </Link>
-          {/* Members can create accounts here; gym access is issued by RIVET
-              after an application is reviewed. */}
-          {portal && mode === "sign-up" ? (
-            <Link href={portal.href} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
-              {t("auth.chrome.alreadyHaveAccount")}
-            </Link>
-          ) : portal?.signUpUrl ? (
-            <Link href={portal.signUpUrl} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
-              {t("auth.chrome.createMemberAccount")}
-            </Link>
-          ) : null}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <LanguageButton />
+            {/* Members can create accounts here; gym access is issued by RIVET
+                after an application is reviewed. */}
+            {portal && mode === "sign-up" ? (
+              <Link href={portal.href} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
+                {t("auth.chrome.alreadyHaveAccount")}
+              </Link>
+            ) : portal?.signUpUrl ? (
+              <Link href={portal.signUpUrl} className="flex min-h-8 items-center text-[12.5px] font-medium text-ink-2 transition-colors hover:text-ink">
+                {t("auth.chrome.createMemberAccount")}
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">

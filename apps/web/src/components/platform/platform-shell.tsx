@@ -1,6 +1,7 @@
 "use client";
 import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
+import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
@@ -138,6 +139,7 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           </Button>
           <PlatformSearch />
           <div className="ms-auto flex items-center gap-2 sm:gap-3">
+            <LanguageButton className="shrink-0" />
             <NotificationCenter />
             <div className="hidden text-end sm:block">
               <p className="text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</p>

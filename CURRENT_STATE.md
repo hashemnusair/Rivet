@@ -2,6 +2,18 @@
 
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 
+## 3 October 2026 — Arabic audit and founder-testing release
+
+Hashem authorized auditing Elias's completed branch, repairing regressions and merging to main for founder testing. Source `4b104f5` on `codex/complete-arabic-support` preserves main `7cd509e` and both Arabic histories. See [the release audit](docs/arabic/AUDIT_2026-10-03.md) for scope, findings, commands and limits.
+
+- Added discoverable language controls to the public menu, login header and platform header; fresh-visitor switching and reload are tested. Staff/member controls remain available in their account/profile surfaces.
+- Fixed the disabled-rollout preference path: saved Arabic and storage events cannot bypass the flag, and disabling it preserves saved choices. Corrected the server's mock-mode environment selector.
+- Preserved the live chronological branch index after a production dry run revealed it would otherwise be deleted. Guarded Convex production deployment to `descriptive-meerkat-589` succeeded with no index deletions; schema validation and generated bindings passed. Post-deploy health returned `ok` at `1791042936518`.
+- Validation: 1,999 tests in 319 files plus 14 CLI/environment guards; web/Convex typechecks; lint/secret audit; dependency audit; production mock build; decision lock. The original integrated browser suite passed 211 with 14 credential skips; all 39 affected browser checks passed after repairs. No screenshot references or tolerances changed.
+- The approved 247 decisions and frozen frontend handoff are unchanged. Arabic documents were rendered for visual inspection. No real outbound messages, money writes, votes or historical-data migrations were used for verification.
+
+Frontend release is being published with `NEXT_PUBLIC_RIVET_ARABIC=1`. Real authenticated cross-host/provider flows and founder wording review remain interactive acceptance work; skipped staging checks are not claimed as passed. Existing Meta-template and inbound-opt-out delivery gates remain unchanged. This supersedes the candidate-only release status immediately below; that section is historical implementation evidence.
+
 ## 3 October 2026 — Arabic implementation candidate, local verification
 
 The complete Arabic pass is integrated on `codex/complete-arabic-support` in the attached isolated worktree. This is an implementation candidate; production remains on the previously released runtime below. No production deployment or real outbound message has been performed for Arabic verification.

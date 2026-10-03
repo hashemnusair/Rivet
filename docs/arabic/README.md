@@ -2,7 +2,7 @@
 
 **Start here.** Hashem and Elias approved all **247** language decisions in the live Arabic room. Version 1 records catalog `2026-09-30-v1`, revision **607**, exported on **2026-10-01 at 11:06:41.355 UTC**. Both named approvals are present and `readyForImplementation` is true.
 
-This is a documentation checkpoint on **`arabic-localisation`**, built directly on Elias’s `f98e324`. It does not implement the remaining translations, integrate main, or certify the branch for release.
+The original documentation checkpoint was on **`arabic-localisation`**, built directly on Elias’s `f98e324`. The completed implementation is now integrated from `codex/complete-arabic-support`; read [the 3 October audit](AUDIT_2026-10-03.md) and the newest `CURRENT_STATE.md` release entry for repairs, deployment status and remaining interactive acceptance. The approved standard below is unchanged.
 
 ## Read in order
 

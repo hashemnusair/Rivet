@@ -269,3 +269,27 @@ test("downloads the real Arabic terms PDF with searchable title and embedded Uni
   expect(pdfObjects).toContain("/ToUnicode");
   expect(pdfObjects).toContain("/FontFile2");
 });
+
+
+test("fresh visitors can choose Arabic on public, login and platform surfaces", async ({ page }) => {
+  // No seeded locale: exercise the controls that actual visitors must discover.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to Arabic" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("كل تفاصيل ناديك و مشتركينه في مكان واحد");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await page.goto("/login/admin");
+  await page.getByTestId("language-switch").click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await page.getByTestId("admin-continue").click();
+  await expect(page).toHaveURL(/\/platform$/);
+  await page.getByTestId("language-switch").click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ar");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await page.setViewportSize({ width: 360, height: 800 });
+  await checkNoHorizontalOverflow(page);
+});

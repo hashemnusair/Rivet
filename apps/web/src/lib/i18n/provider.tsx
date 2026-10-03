@@ -49,8 +49,9 @@ function persistBrowser(preference: UiLocalePreference, broadcast = true) {
 export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initialOwner = null, initialPending }: {
   children: ReactNode; initialLocale?: Locale; initialOwner?: string | null; initialPending?: string;
 }) {
-  const initial: UiLocalePreference = { version: 1, locale: initialLocale, owner: initialOwner, ...(initialPending ? { pending: initialPending } : {}) };
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const effectiveInitialLocale = ARABIC_ENABLED ? initialLocale : DEFAULT_LOCALE;
+  const initial: UiLocalePreference = { version: 1, locale: effectiveInitialLocale, owner: initialOwner, ...(initialPending ? { pending: initialPending } : {}) };
+  const [locale, setLocaleState] = useState<Locale>(effectiveInitialLocale);
   const [preferenceStatus, setPreferenceStatus] = useState<PreferenceStatus>(initialPending ? "pending" : initialOwner ? "saved" : "device");
   const preference = useRef(initial);
   const saveLocale = useRef<SaveLocale | undefined>(undefined);
@@ -64,7 +65,7 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
   }, []);
 
   const flush = useCallback(() => {
-    if (syncing.current || !saveLocale.current || !preference.current.owner || !preference.current.pending) return;
+    if (!ARABIC_ENABLED || syncing.current || !saveLocale.current || !preference.current.owner || !preference.current.pending) return;
     syncing.current = true;
     void (async () => {
       try {
@@ -95,6 +96,7 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
   }, [apply, flush]);
 
   const bindAccount = useCallback((owner: string | null, savedLocale?: Locale, save?: SaveLocale) => {
+    if (!ARABIC_ENABLED) return;
     const previous = preference.current;
     saveLocale.current = save;
     if (owner !== previous.owner) {
@@ -110,6 +112,8 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
   }, [apply, flush]);
 
   useEffect(() => {
+    // Keep saved choices intact while a rollout is disabled.
+    if (!ARABIC_ENABLED) return;
     // Server/cookie resolution wins hydration; stale localStorage is only a mirror.
     persistBrowser(preference.current, false);
     const onStorage = (event: StorageEvent) => {

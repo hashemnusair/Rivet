@@ -1,5 +1,13 @@
 # 12 — System Maps and Release Runbook
 
+## Arabic audit rollout — 3 October 2026
+
+Hashem authorized the main-branch release for founder testing. Read `docs/arabic/AUDIT_2026-10-03.md` and the newest `CURRENT_STATE.md` section first. The candidate-only authorization/status below is historical.
+
+The additive Convex production deployment to `descriptive-meerkat-589` succeeded after a guarded dry run. It retains the existing `domainRecords.by_organization_branch_type_created` index; no indexes were deleted. Schema validation, generated bindings and the post-deploy health query passed (`1791042936518`). The matching frontend is being published with `NEXT_PUBLIC_RIVET_ARABIC=1`.
+
+Language selection is available in the public menu, sign-in header, platform header, staff account menu and member profile. A disabled flag now overrides saved Arabic for presentation without erasing the saved preference. Disable the flag and rebuild to hide the feature; retain additive data and signed documents. Local release evidence is 1,999 tests, 14 CLI guards, 211 baseline browser passes and 39 affected browser passes after repairs. The 14 credential-dependent tests remain unrun. No customer messages were sent. Real account/provider acceptance and messaging delivery gates remain as described below.
+
 ## Arabic implementation candidate — 3 October 2026 (not deployed)
 
 The integrated candidate is on `codex/complete-arabic-support`. Arabic history, current main behavior and the approved revision-607 evidence are preserved. See `CURRENT_STATE.md`, `docs/arabic/EXECUTION.md`, the 75-page/offline ledger, and the decision map for the final local evidence. Earlier release SHAs below remain historical production evidence; they do not describe this candidate.

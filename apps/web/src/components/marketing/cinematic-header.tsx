@@ -2,6 +2,7 @@
 import { useLocale } from "@/lib/i18n/provider";
 
 import Image from "next/image";
+import { LanguageToggle } from "@/components/shared/language-toggle";
 import Link from "next/link";
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
@@ -397,6 +398,7 @@ export function CinematicHeader({
               </div>
             )}
             <div className={styles.menuAuth}>
+              <LanguageToggle variant="night" />
               {signedIn ? (
                 <>
                   <button type="button" className={styles.menuSignIn} onClick={() => void signOut()} disabled={signingOut}>

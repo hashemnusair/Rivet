@@ -1806,6 +1806,8 @@ export default defineSchema({
     .index("by_organization_public_id", ["organizationId", "publicId"])
     .index("by_organization_type_public_id", ["organizationId", "entityType", "publicId"])
     .index("by_organization_branch_type", ["organizationId", "branchId", "entityType"])
+    // Retain the live chronological branch index during additive releases.
+    .index("by_organization_branch_type_created", ["organizationId", "branchId", "entityType", "createdAt"])
     .index("by_organization_member_type", ["organizationId", "memberPublicId", "entityType"])
     .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
     .index("by_type_customer_user", ["entityType", "customerUserPublicId"])
