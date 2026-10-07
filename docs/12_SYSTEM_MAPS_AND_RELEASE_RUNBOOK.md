@@ -41,6 +41,17 @@ placement. Resend idempotency covers 24 hours; do not manually replay old
 successful auth events as a substitute for requesting fresh codes/invitations.
 
 
+Release verification: runtime `885ba363600769f9f462c275c83d6b47b1319f2e` is on
+main, Vercel deployment `3gtTR72PfYYnyHN7UfgeRqxZ8P3q` reports success for it,
+and the guarded Convex Production deployment succeeded with no index deletions.
+Health is `ok` (`1791371380873`); the legacy sender is confirmed disabled in
+production. Public and three role-specific sign-in hosts return HTTP 200.
+[CI 37611531668](https://github.com/hashemnusair/Rivet/actions/runs/37611531668)
+passed all 13 jobs. Read CURRENT_STATE.md for the complete evidence and limits.
+The live auth relay deliberately returns 503 until its provider configuration
+is supplied; template delivery has not been switched away from Clerk.
+
+
 
 ## Arabic audit rollout — 3 October 2026
 

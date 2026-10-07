@@ -49,6 +49,39 @@ Arabic implementation and landing improvements. Release verification follows bel
   brief. Provider cutover and fresh inbox verification remain launch work.
 
 
+**Release verified:** application revision `885ba363600769f9f462c275c83d6b47b1319f2e`
+is pushed to `main`. Guarded Convex Production dry run and deploy to
+`descriptive-meerkat-589` passed with no index deletions; final health returned
+`ok` at `1791371380873`. The retired worker returns `{ disabled: true, processed: 0 }`
+on production without sending or leasing anything. Vercel reports successful
+production deployment [3gtTR72PfYYnyHN7UfgeRqxZ8P3q](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/3gtTR72PfYYnyHN7UfgeRqxZ8P3q)
+for that exact revision. The public site and dashboard/member/platform sign-in
+hosts return HTTP 200. All 13 jobs passed in [CI run 37611531668](https://github.com/hashemnusair/Rivet/actions/runs/37611531668),
+including all eight credential-free browser shards. Five focused local
+phone/desktop settings and oversight journeys also passed without changing
+screenshot references or tolerances.
+
+The first CI run caught the existing `source-map-js` 1.2.1 advisory; the lockfile
+now resolves 1.2.2, and the production audit reports no known vulnerabilities.
+No other dependency was changed. The production build passed again after the
+patch. The approved Arabic decision lock and frozen frontend handoff are intact.
+No deployment command remains owed; subsequent evidence-only commits do not
+change the verified application source.
+
+**Remaining launch work:** configure and test the Clerk-to-Resend cutover;
+configure Resend delivery callbacks, global email gates, monitored Reply-To
+and persistent bounce/complaint suppression; verify fresh invitations and
+operational emails in Spacemail Inbox/Junk with receiver headers. The live
+unsigned auth-webhook probe returns `503 Email webhook is not configured`;
+this confirms deployment, not a completed provider cutover. Existing Clerk
+sending remains in place. Finalize packages/pricing and legal entity, name
+counsel and send the prepared English/Arabic review packet, then complete a
+real-account gym pilot and founder wording review. The Mac was locked during
+release verification, so authenticated browser/provider acceptance is not
+claimed. No real email, invitation, payment or signed agreement was created
+for deployment testing. Automated WhatsApp/Meta approval is not a launch gate.
+
+
 
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 

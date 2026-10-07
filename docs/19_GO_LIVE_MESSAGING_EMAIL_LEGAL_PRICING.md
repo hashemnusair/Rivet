@@ -136,9 +136,14 @@ term/30-day notice. Terms omit Enterprise; the agreement contains older
 - `pnpm typecheck`, `pnpm convex:typecheck`, and `pnpm lint` passed, including
   the secret-output audit. `pnpm build` passed and includes the dynamic Clerk
   email webhook route. CLI/environment guard tests: **14 passed**.
-- Production Convex dry run passed with no index deletions. The released
-  Arabic implementation and its email recipient-language tests are retained.
-- These are local fixtures/provider doubles, not fresh provider sends or inbox
+- Production Convex dry run and deployment passed with no index deletions.
+  Runtime `885ba36` is pushed to main and successfully deployed by Vercel.
+  All 13 jobs in [CI 37611531668](https://github.com/hashemnusair/Rivet/actions/runs/37611531668)
+  passed. The released Arabic implementation and its email recipient-language
+  tests are retained. Five focused local browser journeys passed; screenshot
+  references and tolerances are unchanged. The source-map-js dependency was
+  patched to 1.2.2 after the first audit flagged it; the final audit is clean.
+- These are local/CI fixtures and provider doubles, not fresh provider sends or inbox
   tests. Fresh invitation and operational-mail tests still need a named test
   identity/gym and approved destinations. No real gym, payment, agreement or
   invitation was created to manufacture delivery evidence.
