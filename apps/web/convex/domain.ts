@@ -59,9 +59,9 @@ import { agreementSessionState, agreementSummaryForOrganization, legalAgreementM
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
-import { resolveMessagingMode } from "./messagingMode";
+import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
-import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
+import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
@@ -3730,7 +3730,7 @@ function normalizedAutomationActions(raw: unknown[], correlationId: string, requ
     }
     if (key === "queue_message") {
       const channel = stringValue(action.channel, "whatsapp");
-      if (!["email", "sms", "whatsapp"].includes(channel)) domainError("VALIDATION_ERROR", "Message channel is invalid.", { correlationId });
+      if (channel !== "email") domainError("VALIDATION_ERROR", RETIRED_CHANNEL_REASON, { correlationId });
       const templateId = optionalString(action.templateId);
       if (requireMessageTemplate && !templateId) domainError("VALIDATION_ERROR", "Choose a message template before enabling Queue message.", { correlationId });
       return { key, channel, ...(templateId ? { templateId } : {}) };
@@ -5817,14 +5817,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         sandboxConfigured: resolution.sandboxConfigured,
         allowlistSize: resolution.allowlistSize,
         warning: resolution.warning,
-        gymDeliveryMode: stringValue(notifications.automationDeliveryMode, "sandbox"),
+        gymDeliveryMode: "sandbox",
         quietHoursStart: stringValue(notifications.quietHoursStart, "22:00"),
         quietHoursEnd: stringValue(notifications.quietHoursEnd, "08:00"),
         catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION,
       };
     }
     case "messaging.templates.catalogue":
-      return MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] }));
+      return [];
     case "workspace.module": {
       const key = stringValue(input.moduleKey);
       if (!WORKSPACE_MODULE_CATALOG.some((module) => module.key === key)) domainError("VALIDATION_ERROR", "This feature could not be found.", { correlationId: actor.correlationId, details: { module: key } });
@@ -6333,8 +6333,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const statuses = executions.map((execution) => stringValue(execution.status));
       const globallyPaused = automationsGloballyPaused();
       const emailConfigured = Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
-      const messaging = resolveMessagingMode();
-      const whatsappConfigured = messaging.provider === "twilio" && messaging.whatsappReady;
       return {
         globallyPaused,
         pauseReason: globallyPaused ? AUTOMATIONS_PAUSE_REASON : "Automation delivery is enabled for this environment.",
@@ -6359,13 +6357,6 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
             configured: emailConfigured,
             live: !globallyPaused && emailConfigured && process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true",
             detail: emailConfigured ? "Provider credentials are configured; delivery still follows the global and operational-email gates." : "Resend credentials are not configured.",
-          },
-          {
-            key: "sms_whatsapp",
-            label: "WhatsApp",
-            configured: whatsappConfigured,
-            live: !globallyPaused && whatsappConfigured && messaging.mode === "live",
-            detail: whatsappConfigured ? `WhatsApp sender configured; RIVET messaging mode is ${messaging.mode}.` : "No WhatsApp provider is connected. Queued messages cannot leave RIVET.",
           },
         ],
       };
@@ -7751,7 +7742,8 @@ async function executeAutomationCandidate(
       continue;
     }
     if (key === "queue_message") {
-      const suppressionReason = marketingSuppression
+      const suppressionReason = (["whatsapp", "sms"].includes(stringValue(action.channel, "whatsapp")) ? RETIRED_CHANNEL_REASON : undefined)
+        ?? marketingSuppression
         ?? (quiet
           ? "Tenant quiet hours"
           : deliveryMode === "live"
@@ -11590,7 +11582,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "settings.notifications": {
       requirePermission(actor, "settings.manage");
       const settings = await settingsRecord(ctx, actor);
-      const value = { ...(settings ? data(settings.data) : {}), notifications: input.notifications ?? input };
+      const value = { ...(settings ? data(settings.data) : {}), notifications: { ...data(input.notifications ?? input), automationDeliveryMode: "sandbox" } };
       if (settings) await patchRecord(ctx, actor, settings, value);
       else await insertRecord(ctx, actor, "settings", { id: "settings", ...value });
       await insertAudit(ctx, actor, { category: "settings", action: "settings.notifications", entityType: "organization", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: "Notification settings updated" });

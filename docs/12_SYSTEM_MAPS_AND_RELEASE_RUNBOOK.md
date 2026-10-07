@@ -1,5 +1,46 @@
 # 12 — System Maps and Release Runbook
 
+## Messaging topology — 7 October 2026
+
+Confirmed launch scope: **manual WhatsApp; all email transported by Resend**.
+This supersedes the older Twilio/automated WhatsApp setup notes in this runbook.
+No WhatsApp API credentials, template approvals or inbound opt-out webhook are
+needed for this scope. Existing history remains readable.
+
+- **Staff WhatsApp:** profile/follow-up button → editable draft → `wa.me` in the
+  staff member's browser/app. RIVET records only the handoff; staff send manually.
+- **Member and platform email:** Convex jobs/domain actions → durable
+  `operationalEmailDeliveries` → Resend, subject to existing service-email gates.
+  Member renewal/expiry checkpoints are 7/1 days. Staff call tasks are separate.
+- **Auth email after cutover:** Clerk generates invitation/code and emits signed
+  `email.created` → Vercel `POST /api/webhooks/clerk-email` → Resend. Server-only
+  Vercel settings: `CLERK_WEBHOOK_SIGNING_SECRET`, `RESEND_API_KEY`,
+  `RESEND_FROM_EMAIL`, `RIVET_AUTH_EMAIL_PROVIDER=resend`. Operational Convex
+  secrets alone do not configure the Vercel relay. Never paste secret values
+  into tools or logs; set them in provider dashboards outside the transcript.
+- **Resend event callback:** existing Convex `POST /webhooks/resend`, separate
+  from Clerk's email-creation webhook. Its `RESEND_WEBHOOK_SECRET` and provider
+  endpoint are missing at the inspected production baseline. Receiver Inbox
+  checks are required even after an event says Delivered.
+
+Local code removes the sender cron and leaves `messagingWorker.processDue` as
+an inert target for already scheduled invocations. No schema/index deletion.
+Pending historical WhatsApp/SMS renewal rows are cancelled with an event on
+reconciliation; old automation rows are retained without a sender. Removed
+worker internals are not public APIs. Apply via the standard guarded
+`pnpm convex:deploy` workflow when releasing the selected reviewed revision.
+This task has not pushed or deployed the working branch.
+
+Follow the staged auth cutover and rollback in docs/19. Do not disable Clerk
+email delivery before its Resend relay is deployed/configured/tested. Validate
+staff invitations, owner invitations and verification separately from member
+renewal/expiry email; inspect Spacemail Inbox/Junk and headers without retaining
+codes/tokens. A verified domain or provider acceptance does not prove Inbox
+placement. Resend idempotency covers 24 hours; do not manually replay old
+successful auth events as a substitute for requesting fresh codes/invitations.
+
+
+
 ## Arabic audit rollout — 3 October 2026
 
 Hashem authorized the main-branch release for founder testing. Read `docs/arabic/AUDIT_2026-10-03.md` and the newest `CURRENT_STATE.md` section first. The candidate-only authorization/status below is historical.

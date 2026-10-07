@@ -78,6 +78,8 @@ export default function proxy(request: NextRequest, event: NextFetchEvent) {
     destination.pathname = "/arabic-room";
     return NextResponse.redirect(destination, 308);
   }
+  // This endpoint authenticates Clerk's signature, never a browser session.
+  if (request.nextUrl.pathname === "/api/webhooks/clerk-email") return NextResponse.next();
   return DEMO_AUTH_BYPASS ? routeByHost(request) : clerkProxy(request, event);
 }
 

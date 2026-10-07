@@ -44,3 +44,43 @@ describe("membership lifecycle reminder job", () => {
     expect(state.notifications).toHaveLength(2);
   });
 });
+
+async function seedReminder(t: ReturnType<typeof convexTest>, suffix: string, options: { successor?: boolean; inactive?: boolean; legacy?: boolean } = {}) {
+  return t.run(async (ctx) => {
+    const now = Date.UTC(2026, 7, 12, 12);
+    const organizationId = await ctx.db.insert("organizations", { publicId: `org-${suffix}`, name: `Gym ${suffix}`, slug: `gym-${suffix}`, status: "active", timezone: "UTC", currency: "JOD", createdAt: now, updatedAt: now });
+    const ownerId = await ctx.db.insert("users", { publicId: `owner-${suffix}`, authSubject: `owner-${suffix}`, email: "owner@example.test", fullName: "Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("operationalEmailSettings", { organizationId, enabledKinds: ["renewal_reminder", "membership_expiry"], updatedByUserId: ownerId, reason: "Test", ownerConfirmedAt: now, ownerConfirmedByUserId: ownerId, createdAt: now, updatedAt: now });
+    await ctx.db.insert("domainRecords", { organizationId, entityType: "member", publicId: "shared-member-id", createdAt: now, updatedAt: now, data: { id: "shared-member-id", email: `${suffix}@example.test`, status: options.inactive ? "deactivated" : "active" } });
+    await ctx.db.insert("domainRecords", { organizationId, entityType: "membership", publicId: "shared-term-id", createdAt: now, updatedAt: now, data: { id: "shared-term-id", memberId: "shared-member-id", startDate: isoDate(-20), endDate: isoDate(7) } });
+    if (options.successor) await ctx.db.insert("domainRecords", { organizationId, entityType: "membership", publicId: "next-term", createdAt: now, updatedAt: now, data: { id: "next-term", memberId: "shared-member-id", previousMembershipId: "shared-term-id", startDate: isoDate(8), endDate: isoDate(38) } });
+    if (options.legacy) await ctx.db.insert("operationalEmailDeliveries", { publicId: "legacy-email", organizationId, kind: "renewal_reminder", messageClass: "service", templateVersion: "renewal_reminder-v1", language: "en", recipientReference: "shared-member-id", recipientEmail: `${suffix}@example.test`, relatedEntityType: "membership", relatedEntityPublicId: "shared-term-id", dedupeKey: `renewal_reminder:shared-term-id:${isoDate(7)}`, status: "provider_accepted", attempts: [], createdAt: now, updatedAt: now });
+    return organizationId;
+  });
+}
+
+describe("renewal email recipient boundaries", () => {
+  it("queues separately for identical membership IDs in different gyms, while retaining legacy dedupe", async () => {
+    process.env.RIVET_OPERATIONAL_EMAIL_LIVE = "true";
+    process.env.RESEND_API_KEY = "re_test";
+    process.env.RESEND_FROM_EMAIL = "noreply@rivetjo.com";
+    const t = convexTest(schema, modules);
+    await seedReminder(t, "first", { legacy: true });
+    await seedReminder(t, "second");
+    const now = Date.UTC(2026, 7, 12, 12);
+    expect(await t.mutation(internal.membershipJobs.queueLifecycleReminders, { now })).toMatchObject({ queued: 1 });
+    expect(await t.mutation(internal.membershipJobs.queueLifecycleReminders, { now })).toMatchObject({ queued: 0 });
+    const rows = await t.run(async (ctx) => ctx.db.query("operationalEmailDeliveries").collect());
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.recipientEmail === "first@example.test")).toMatchObject({ status: "provider_accepted", publicId: "legacy-email" });
+    expect(rows.find((row) => row.recipientEmail === "second@example.test")).toMatchObject({ status: "queued", kind: "renewal_reminder" });
+  });
+
+  it("does not ask an already-renewed or deactivated member to renew", async () => {
+    const t = convexTest(schema, modules);
+    await seedReminder(t, "renewed", { successor: true });
+    await seedReminder(t, "inactive", { inactive: true });
+    expect(await t.mutation(internal.membershipJobs.queueLifecycleReminders, { now: Date.UTC(2026, 7, 12, 12) })).toMatchObject({ queued: 0, notified: 0 });
+    expect(await t.run(async (ctx) => ctx.db.query("operationalEmailDeliveries").collect())).toEqual([]);
+  });
+});

@@ -85,7 +85,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function FollowUpContextPanel({ memberId, variant = "workspace", className }: { memberId: string; variant?: "workspace" | "renewal"; className?: string }) {
-  const { t, isolate, isolateLtr } = useLocale();
+  const { t, isolate } = useLocale();
   const format = useFormat();
   const { context, isLoading, isError, refetch } = useMemberFollowUpContext(memberId);
   const [showAll, setShowAll] = useState(false);
@@ -114,13 +114,6 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
             <span data-testid="follow-up-consent-in">{t("memberProfile.followUp.consentIn")}{messaging.suppressionReason ? ` · ${isolate(followUpSuppressionReasonLabel(t, messaging.suppressionReason)!)}` : ""}</span>
           ) : (
             <span data-testid="follow-up-consent-unknown">{t("memberProfile.followUp.consentUnknown")}{messaging.suppressionReason ? ` (${isolate(followUpSuppressionReasonLabel(t, messaging.suppressionReason)!)})` : ""}</span>
-          )}
-        </Row>
-        <Row label={t("memberProfile.followUp.rowQuietHours")}>
-          {messaging.quietHours.activeNow ? (
-            <span className="font-medium text-warning-deep" data-testid="follow-up-quiet-hours">{t("memberProfile.followUp.quietNow", { start: isolateLtr(messaging.quietHours.start), end: isolateLtr(messaging.quietHours.end) })}{messaging.quietHours.resumesAt ? ` ${t("memberProfile.followUp.quietUntil", { time: isolateLtr(format.time(messaging.quietHours.resumesAt)) })}` : ""}</span>
-          ) : (
-            t("memberProfile.followUp.quietIdle", { start: isolateLtr(messaging.quietHours.start), end: isolateLtr(messaging.quietHours.end) })
           )}
         </Row>
         {context.callback ? (

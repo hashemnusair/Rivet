@@ -20,6 +20,12 @@ async function request(path: string, host: string) {
 describe("production host proxy", () => {
   beforeEach(() => { state.userId = null; state.calls = 0; });
 
+  it("lets signed email webhooks reach their handler without a Clerk session handshake", async () => {
+    const response = await request("/api/webhooks/clerk-email", "www.rivetjo.com");
+    expect(response?.headers.get("location")).toBeNull();
+    expect(state.calls).toBe(0);
+  });
+
   it("redirects old deep links before starting Clerk and retains the query", async () => {
     const response = await request("/members/123?tab=payments", "www.rivetjo.com");
     expect(response?.status).toBe(308);

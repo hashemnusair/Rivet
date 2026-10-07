@@ -88,7 +88,7 @@ import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpR
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
-import { MESSAGE_TEMPLATE_CATALOGUE, MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
+import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
 import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
@@ -9471,7 +9471,6 @@ export class MockGymOSApi implements GymOSApi {
         providers: [
           { key: "internal_tasks", label: "Internal tasks and manager alerts", configured: true, live: false, detail: "Configured, but held by the global pause." },
           { key: "email", label: "Operational email", configured: false, live: false, detail: "Provider credentials are not configured in preview mode." },
-          { key: "sms_whatsapp", label: "WhatsApp", configured: false, live: false, detail: "No WhatsApp provider is connected in preview mode." },
         ],
       };
     });
@@ -10134,7 +10133,7 @@ export class MockGymOSApi implements GymOSApi {
   updateNotificationSettings(input: T.NotificationSettings): Promise<T.OrganizationSettings> {
     return this.respond(() => {
       this.require("settings.manage");
-      this.db.notificationSettings = input;
+      this.db.notificationSettings = { ...input, automationDeliveryMode: "sandbox" };
       return this.getOrganizationSettingsSync();
     });
   }
@@ -11322,12 +11321,12 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => {
       const resolution = resolveMessagingMode(typeof process === "undefined" ? {} : process.env);
       const notifications = this.db.notificationSettings;
-      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: notifications.automationDeliveryMode, quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
+      return { mode: resolution.mode, provider: resolution.provider, whatsappReady: resolution.whatsappReady, sandboxConfigured: resolution.sandboxConfigured, allowlistSize: resolution.allowlistSize, warning: resolution.warning, gymDeliveryMode: "sandbox", quietHoursStart: notifications.quietHoursStart ?? "22:00", quietHoursEnd: notifications.quietHoursEnd ?? "08:00", catalogueVersion: MESSAGE_TEMPLATE_CATALOGUE_VERSION };
     });
   }
 
   listMessageTemplateCatalogue(): Promise<T.MessageTemplateCatalogueEntry[]> {
-    return this.respond(() => MESSAGE_TEMPLATE_CATALOGUE.map((template) => ({ ...template, channels: [...template.channels], variables: [...template.variables] })));
+    return this.respond(() => []);
   }
 
   getClassCalendarBounds(): Promise<{ startHour?: number; endHour?: number }> {

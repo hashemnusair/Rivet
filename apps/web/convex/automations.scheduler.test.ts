@@ -46,4 +46,22 @@ describe("automation scheduler", () => {
     const owner = t.withIdentity({ subject: "clerk-scheduler-owner" });
     await expect(owner.query(api.domain.query, operation("automations.executions"))).resolves.toMatchObject({ items: [expect.objectContaining({ status: "completed" })] });
   });
+  it.each(["whatsapp", "sms"])("suppresses a retained %s rule even with live settings and opted-in recipients", async (channel) => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query("domainRecords").collect()) {
+        const data = row.data as Record<string, unknown>;
+        if (row.entityType === "settings") await ctx.db.patch(row._id, { data: { ...data, notifications: { automationDeliveryMode: "live" } } });
+        if (row.entityType === "member") await ctx.db.patch(row._id, { data: { ...data, marketingOptIn: true, marketingPreference: { optedIn: true, source: "member_selected" } } });
+        if (row.entityType === "automationRule") await ctx.db.patch(row._id, { data: { ...data, actions: [{ key: "queue_message", channel, templateId: "retained-template" }] } });
+      }
+    });
+    await t.mutation(internal.automations.evaluate, {});
+    const messages = await t.run(async (ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "messageDelivery")).collect());
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.data).toMatchObject({ status: "suppressed", requestedChannel: channel, suppressionReason: expect.stringContaining("Automated WhatsApp and SMS are retired") });
+    expect((messages[0]?.data as Record<string, unknown>).nextAttemptAt).toBeUndefined();
+  });
+
 });

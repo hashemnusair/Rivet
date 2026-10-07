@@ -1,22 +1,18 @@
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
 import { renewalReasonMessage, systemMessage, type SystemMessage, type SystemMessageKey } from "../src/lib/i18n/system-messages";
-import { MESSAGE_TEMPLATE_VERSION } from "./messagingTemplates";
-import { checkpointForDays, consentForRenewalChannel, isRenewalQuietHours as isQuietHours, nextRenewalQuietHoursEnd as nextQuietHoursEnd, renewalDedupeKey, renewalMessageSuppressionReason, renewalStopReason, RENEWAL_CHECKPOINTS, RENEWAL_POLICY_VERSION } from "./renewalPolicy";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
+import { checkpointForDays, renewalDedupeKey, renewalStopReason, RENEWAL_CHECKPOINTS, RENEWAL_POLICY_VERSION } from "./renewalPolicy";
 
 type Data = Record<string, unknown>;
 type DomainRecord = Doc<"domainRecords">;
 type Delivery = Doc<"renewalDeliveries">;
 type DeliveryStatus = Delivery["status"];
-type DeliveryChannel = Delivery["channel"];
-type ConsentStatus = Delivery["consentStatus"];
 type DeliveryEventType = Doc<"renewalDeliveryEvents">["eventType"];
 
 const DAY_MS = 86_400_000;
 const TERMINAL_DELIVERY_STATUSES: DeliveryStatus[] = ["suppressed", "cancelled", "sent", "completed"];
-const ACTIONABLE_DELIVERY_STATUSES: DeliveryStatus[] = ["deferred", "sandboxed", "queued", "failed"];
 
 function value(input: unknown): Data {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Data : {};
@@ -68,19 +64,9 @@ function wallClockUtc(date: string, hour: number, minute: number, timezone: stri
   }
 }
 
-/** Find the first minute after now outside quiet hours, including DST-safe IANA zones. */
-function cleanPhone(input: unknown): string | undefined {
-  const phone = optionalString(input);
-  return phone && phone.length <= 40 ? phone : undefined;
-}
-
 function terminalReason(membership: Data, member: Data | undefined, today: string, hasSuccessor: boolean): string | undefined {
   if (!member) return "member_not_found";
   return renewalStopReason({ membership, member, today, hasSuccessor });
-}
-
-function suppressionReason(consent: ConsentStatus, channel: DeliveryChannel, phone?: string): string | undefined {
-  return channel === "staff_task" || consent === "not_applicable" ? undefined : renewalMessageSuppressionReason(consent, phone);
 }
 
 function asEventType(status: DeliveryStatus): DeliveryEventType {
@@ -299,10 +285,14 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   const membershipById = new Map(memberships.map((record) => [record.publicId, record]));
   const memberById = new Map(members.map((record) => [record.publicId, record]));
   let cancelled = 0;
-  let suppressed = 0;
   let completed = 0;
   for (const delivery of deliveries) {
     if (TERMINAL_DELIVERY_STATUSES.includes(delivery.status)) continue;
+    if (delivery.channel !== "staff_task") {
+      await updateDeliveryStatus(ctx, { delivery, status: "cancelled", now, reason: "automated_messaging_retired" });
+      cancelled += 1;
+      continue;
+    }
     const membershipRecord = membershipById.get(delivery.membershipPublicId);
     const membership = value(membershipRecord?.data);
     const member = memberById.get(delivery.memberPublicId);
@@ -319,16 +309,6 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       cancelled += 1;
       continue;
     }
-    if (delivery.channel !== "staff_task") {
-      const consent = consentForRenewalChannel(memberData, delivery.channel);
-      const reasonForSuppression = suppressionReason(consent.status, delivery.channel, delivery.recipientPhone);
-      if (reasonForSuppression && ACTIONABLE_DELIVERY_STATUSES.includes(delivery.status)) {
-        await updateDeliveryStatus(ctx, { delivery, status: "suppressed", now, reason: reasonForSuppression, consentStatus: consent.status, consentSource: consent.source, consentChangedAt: consent.changedAt, channelOptedOut: consent.channelOptedOut });
-        await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId, branchId: delivery.branchId, memberPublicId: delivery.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: reasonForSuppression, bodyMessage: renewalReasonMessage(reasonForSuppression), occurredAt: now, meta: { deliveryId: delivery.publicId, channel: delivery.channel } });
-        suppressed += 1;
-        continue;
-      }
-    }
     const taskPublicId = delivery.taskPublicId;
     if (taskPublicId) {
       const task = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "task").eq("publicId", taskPublicId)).unique();
@@ -338,200 +318,88 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       }
     }
   }
-  return { cancelled, suppressed, completed };
+  return { cancelled, suppressed: 0, completed };
 }
 
-async function createDelivery(ctx: MutationCtx, input: {
+async function createCallDelivery(ctx: MutationCtx, input: {
   organization: Doc<"organizations">;
   branchId?: Id<"branches">;
   membershipPublicId: string;
   membershipEndDate: string;
   memberPublicId: string;
   memberName: string;
-  member: Data;
+  preferredLanguage?: unknown;
   customerUserId?: string;
   checkpoint: typeof RENEWAL_CHECKPOINTS[number];
-  channel: DeliveryChannel;
   now: number;
-  quiet: boolean;
-  quietUntil?: number;
-  quietStart: string;
-  quietEnd: string;
-  taskDueAt?: number;
-  /** The gym switched external delivery on; the outbound worker will send it. */
-  liveDelivery: boolean;
-}): Promise<{ delivery: Delivery; created: boolean; status: DeliveryStatus }> {
-  const consent = input.channel === "staff_task" ? { status: "not_applicable" as const, channelOptedOut: false } : consentForRenewalChannel(input.member, input.channel);
-  const phone = cleanPhone(input.member.phone);
-  const dedupeKey = renewalDedupeKey({ organizationId: input.organization.publicId ?? input.organization._id, membershipId: input.membershipPublicId, membershipEndDate: input.membershipEndDate, checkpoint: input.checkpoint.key, channel: input.channel });
-  const existing = await ctx.db.query("renewalDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique();
-  if (existing) return { delivery: existing, created: false, status: existing.status };
-  const initialReason = suppressionReason(consent.status, input.channel, phone);
-  const initialStatus: DeliveryStatus = initialReason ? "suppressed" : input.channel === "staff_task" ? "queued" : input.quiet ? "deferred" : input.liveDelivery ? "queued" : "sandboxed";
-  const now = input.now;
-  const deliveryPublicId = `RENEWAL-${crypto.randomUUID()}`;
-  const taskDueAt = input.channel === "staff_task" ? input.taskDueAt : undefined;
-  const deliveryId = await ctx.db.insert("renewalDeliveries", {
-    publicId: deliveryPublicId,
-    organizationId: input.organization._id,
-    branchId: input.branchId,
-    membershipPublicId: input.membershipPublicId,
-    membershipEndDate: input.membershipEndDate,
-    memberPublicId: input.memberPublicId,
-    customerUserId: input.customerUserId,
-    checkpointDaysBefore: input.checkpoint.days,
-    checkpointKey: input.checkpoint.key,
-    channel: input.channel,
-    templateVersion: input.checkpoint.templateVersion,
-    policyVersion: RENEWAL_POLICY_VERSION,
-    dedupeKey,
-    recipientReference: input.memberPublicId,
-    recipientPhone: phone,
-    // The member's own language, then the gym default; captured once here.
-    ...renewalLanguage(input.member.preferredLanguage, input.organization.defaultLanguage),
-    catalogueVersion: MESSAGE_TEMPLATE_VERSION,
-    consentStatus: consent.status,
-    consentSource: "source" in consent ? consent.source : undefined,
-    consentChangedAt: "changedAt" in consent ? consent.changedAt : undefined,
-    channelOptedOut: consent.channelOptedOut,
-    status: initialStatus,
-    suppressionReason: initialStatus === "suppressed" ? initialReason : undefined,
-    deferredUntil: initialStatus === "deferred" ? input.quietUntil : undefined,
-    nextAttemptAt: initialStatus === "queued" && input.channel !== "staff_task" ? now : undefined,
-    attempts: [],
-    createdAt: now,
-    updatedAt: now,
+  taskDueAt: number;
+}): Promise<boolean> {
+  const dedupeKey = renewalDedupeKey({ organizationId: input.organization.publicId ?? input.organization._id, membershipId: input.membershipPublicId, membershipEndDate: input.membershipEndDate, checkpoint: input.checkpoint.key, channel: "staff_task" });
+  if (await ctx.db.query("renewalDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique()) return false;
+  const publicId = `RENEWAL-${crypto.randomUUID()}`;
+  const taskPublicId = await createCallTask(ctx, {
+    organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id,
+    branchId: input.branchId, memberPublicId: input.memberPublicId, memberName: input.memberName,
+    membershipPublicId: input.membershipPublicId, dueAt: input.taskDueAt, deliveryPublicId: publicId, createdAt: input.now,
   });
-  let delivery = (await ctx.db.get(deliveryId))!;
-  await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "created", afterStatus: initialStatus, reason: initialReason, details: { checkpointDaysBefore: input.checkpoint.days, channel: input.channel, templateVersion: input.checkpoint.templateVersion, policyVersion: RENEWAL_POLICY_VERSION, quietHours: input.quiet, quietUntil: input.quietUntil, quietStart: input.quietStart, quietEnd: input.quietEnd }, occurredAt: now });
-  if (input.channel === "staff_task" && initialStatus === "queued") {
-    const taskPublicId = await createCallTask(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, memberName: input.memberName, membershipPublicId: input.membershipPublicId, dueAt: taskDueAt ?? now, deliveryPublicId, createdAt: now });
-    await ctx.db.patch(delivery._id, { taskPublicId, updatedAt: now });
-    delivery = (await ctx.db.get(delivery._id))!;
-    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "task_created", afterStatus: "queued", details: { taskPublicId, dueAt: taskDueAt ?? now }, occurredAt: now });
-    await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_call_task_created", title: "Renewal call task created", body: `Call ${input.memberName} before membership end date.`, bodyMessage: systemMessage("communicationCompletion.timeline.renewalCallTaskBody", { member: input.memberName }), occurredAt: now, meta: { deliveryId, taskPublicId, membershipId: input.membershipPublicId } });
-  } else if (initialStatus === "suppressed") {
-    await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_suppressed", title: "Renewal message suppressed", body: initialReason, bodyMessage: renewalReasonMessage(initialReason), occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
-  } else if (initialStatus === "deferred") {
-    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "deferred", afterStatus: "deferred", reason: "Tenant quiet hours", details: { deferredUntil: input.quietUntil }, occurredAt: now });
-  } else if (initialStatus === "queued") {
-    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "queued", afterStatus: "queued", reason: "Queued for the outbound messaging worker", occurredAt: now });
-  } else if (initialStatus === "sandboxed") {
-    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId, deliveryPublicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId, eventType: "sandboxed", afterStatus: "sandboxed", reason: "External SMS/WhatsApp provider is sandboxed", occurredAt: now });
-    await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id, branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_message_sandboxed", title: "Renewal message prepared in sandbox", body: `A ${input.channel} reminder was prepared but not sent.`, bodyMessage: systemMessage("communicationCompletion.timeline.renewalSandboxedBody", { channel: { enum: "channel", value: input.channel } }), occurredAt: now, meta: { deliveryId, channel: input.channel, checkpointDaysBefore: input.checkpoint.days } });
+  await ctx.db.insert("renewalDeliveries", {
+    publicId, organizationId: input.organization._id, branchId: input.branchId,
+    membershipPublicId: input.membershipPublicId, membershipEndDate: input.membershipEndDate,
+    memberPublicId: input.memberPublicId, customerUserId: input.customerUserId,
+    checkpointDaysBefore: input.checkpoint.days, checkpointKey: input.checkpoint.key,
+    channel: "staff_task", templateVersion: input.checkpoint.templateVersion,
+    policyVersion: RENEWAL_POLICY_VERSION, dedupeKey, recipientReference: input.memberPublicId,
+    ...renewalLanguage(input.preferredLanguage, input.organization.defaultLanguage), consentStatus: "not_applicable", channelOptedOut: false,
+    status: "queued", taskPublicId, attempts: [], createdAt: input.now, updatedAt: input.now,
+  });
+  for (const eventType of ["created", "task_created"] as const) {
+    await appendEvent(ctx, { organizationId: input.organization._id, branchId: input.branchId,
+      deliveryPublicId: publicId, membershipPublicId: input.membershipPublicId, memberPublicId: input.memberPublicId,
+      eventType, afterStatus: "queued", details: { taskPublicId, dueAt: input.taskDueAt }, occurredAt: input.now });
   }
-  return { delivery, created: true, status: initialStatus };
+  await appendTimeline(ctx, { organizationId: input.organization._id, organizationPublicId: input.organization.publicId ?? input.organization._id,
+    branchId: input.branchId, memberPublicId: input.memberPublicId, type: "renewal_call_task_created",
+    title: "Renewal call task created", body: `Call ${input.memberName} before membership end date.`,
+    bodyMessage: systemMessage("communicationCompletion.timeline.renewalCallTaskBody", { member: input.memberName }),
+    occurredAt: input.now, meta: { deliveryId: publicId, taskPublicId, membershipId: input.membershipPublicId } });
+  return true;
 }
 
-async function processOrganization(ctx: MutationCtx, organization: Doc<"organizations">, now: number): Promise<{ memberships: number; created: number; deferred: number; sandboxed: number; queued: number; suppressed: number; cancelled: number; completed: number }> {
-  if (organization.status === "suspended" || organization.status === "cancelled") return { memberships: 0, created: 0, deferred: 0, sandboxed: 0, queued: 0, suppressed: 0, cancelled: 0, completed: 0 };
+async function processOrganization(ctx: MutationCtx, organization: Doc<"organizations">, now: number) {
   const today = todayIn(organization.timezone || "UTC", now);
+  // Settle retained pending messages as cancelled without deleting history or
+  // sending. Staff task completion/cancellation also survives disabling new tasks.
+  const reconciliation = await reconcileOrganization(ctx, organization, now, today);
+  const empty = { memberships: 0, created: 0, deferred: 0, sandboxed: 0, queued: 0, ...reconciliation };
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
   const notifications = value(value(settings?.data).notifications);
-  // Existing organizations have no value for this setting. Treat absence as
-  // disabled so deploying the scheduler cannot create renewal facts or staff
-  // tasks until an authorized operator explicitly enables the journey.
-  if (notifications.renewalRecoveryEnabled !== true) return { memberships: 0, created: 0, deferred: 0, sandboxed: 0, queued: 0, suppressed: 0, cancelled: 0, completed: 0 };
-  const quietStart = stringValue(notifications.quietHoursStart, "22:00");
-  const quietEnd = stringValue(notifications.quietHoursEnd, "08:00");
-  const quiet = isQuietHours(organization.timezone || "UTC", quietStart, quietEnd, new Date(now));
-  const quietUntil = quiet ? nextQuietHoursEnd(now, organization.timezone || "UTC", quietStart, quietEnd) : undefined;
-  const liveDelivery = stringValue(notifications.automationDeliveryMode, "sandbox") === "live";
-  const reconciliation = await reconcileOrganization(ctx, organization, now, today);
+  if (notifications.renewalRecoveryEnabled !== true) return empty;
   const memberships = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect();
   const members = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "member")).collect();
-  const membershipById = new Map(memberships.map((record) => [record.publicId, record]));
   const memberById = new Map(members.map((record) => [record.publicId, record]));
   let created = 0;
-  let deferred = 0;
-  let sandboxed = 0;
-  let queued = 0;
-  let suppressed = reconciliation.suppressed;
-  // Quiet-hour deferral is a delivery decision, not a reason to lose the
-  // threshold when the tenant crosses midnight. Resume a due deferred row
-  // before evaluating today's exact checkpoint.
-  const deferredDeliveries = await ctx.db.query("renewalDeliveries").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).collect();
-  for (const delivery of deferredDeliveries) {
-    if (delivery.status !== "deferred" || (delivery.deferredUntil ?? Number.MAX_SAFE_INTEGER) > now || delivery.channel === "staff_task") continue;
-    const membershipRecord = membershipById.get(delivery.membershipPublicId);
-    const memberRecord = memberById.get(delivery.memberPublicId);
-    const membership = value(membershipRecord?.data);
-    const member = value(memberRecord?.data);
-    const successor = memberships.some((candidate) => value(candidate.data).previousMembershipId === delivery.membershipPublicId && !value(candidate.data).cancelledAt);
-    const stopReason = terminalReason(membership, memberRecord ? member : undefined, today, successor)
-      ?? (stringValue(membership.endDate) !== delivery.membershipEndDate ? "membership_term_changed" : undefined);
-    if (stopReason) {
-      await updateDeliveryStatus(ctx, { delivery, status: "cancelled", now, reason: stopReason, cancellationReason: stopReason });
-      continue;
-    }
-    const consent = consentForRenewalChannel(member, delivery.channel);
-    const reason = suppressionReason(consent.status, delivery.channel, delivery.recipientPhone);
-    const nextStatus: DeliveryStatus = reason ? "suppressed" : liveDelivery ? "queued" : "sandboxed";
-    await updateDeliveryStatus(ctx, { delivery, status: nextStatus, now, reason, consentStatus: consent.status, consentSource: consent.source, consentChangedAt: consent.changedAt, channelOptedOut: consent.channelOptedOut });
-    if (nextStatus === "queued") await ctx.db.patch(delivery._id, { nextAttemptAt: now, updatedAt: now });
-    if (nextStatus === "suppressed") suppressed += 1;
-    else {
-      sandboxed += 1;
-      await appendTimeline(ctx, { organizationId: organization._id, organizationPublicId: organization.publicId ?? organization._id, branchId: delivery.branchId, memberPublicId: delivery.memberPublicId, type: "renewal_message_sandboxed", title: "Renewal message prepared in sandbox", body: `A ${delivery.channel} reminder was prepared but not sent.`, bodyMessage: systemMessage("communicationCompletion.timeline.renewalSandboxedBody", { channel: { enum: "channel", value: delivery.channel } }), occurredAt: now, meta: { deliveryId: delivery.publicId, channel: delivery.channel, checkpointDaysBefore: delivery.checkpointDaysBefore, resumedAfterQuietHours: true } });
-    }
-  }
-  for (const membershipRecord of memberships) {
-    const membership = value(membershipRecord.data);
-    const membershipId = membershipRecord.publicId;
+  for (const record of memberships) {
+    const membership = value(record.data);
     const memberId = optionalString(membership.memberId);
     const endDate = optionalString(membership.endDate);
-    const startDate = optionalString(membership.startDate);
-    if (!memberId || !endDate || !startDate) continue;
+    if (!memberId || !endDate || !optionalString(membership.startDate)) continue;
+    const checkpoint = checkpointForDays(daysBetween(today, endDate));
+    // The 14/7/3 WhatsApp journey is retired. Email checkpoints are owned by
+    // membershipJobs and operationalEmail, with their existing delivery gates.
+    if (checkpoint?.key !== "1_day_call") continue;
     const memberRecord = memberById.get(memberId);
     const member = value(memberRecord?.data);
-    const successor = memberships.some((candidate) => value(candidate.data).previousMembershipId === membershipId && !value(candidate.data).cancelledAt);
+    const successor = memberships.some((candidate) => value(candidate.data).previousMembershipId === record.publicId && !value(candidate.data).cancelledAt);
     if (terminalReason(membership, memberRecord ? member : undefined, today, successor)) continue;
-    const daysLeft = daysBetween(today, endDate);
-    const checkpoint = checkpointForDays(daysLeft);
-    if (!checkpoint) continue;
-    const branchId = await branchForMembership(ctx, organization._id, membershipRecord, membership);
-    const customerUserId = await customerUserIdForMember(ctx, organization._id, memberId);
-    // RIVET sends WhatsApp only; a stored SMS preference no longer picks a channel.
-    const channel = checkpoint.key === "1_day_call" ? "staff_task" as const : "whatsapp" as const;
-    const checkpointRows = await ctx.db.query("renewalDeliveries").withIndex("by_organization_membership", (q) => q.eq("organizationId", organization._id).eq("membershipPublicId", membershipId)).collect();
-    const equivalent = checkpointRows.find((row) => row.checkpointKey === checkpoint.key && row.membershipEndDate === endDate && (checkpoint.key === "1_day_call" ? row.channel === "staff_task" : row.channel === "whatsapp" || row.channel === "sms"));
-    if (equivalent) {
-      if (equivalent.status === "deferred" && (equivalent.deferredUntil ?? Number.MAX_SAFE_INTEGER) <= now) {
-        const consent = consentForRenewalChannel(member, equivalent.channel === "staff_task" ? "whatsapp" : equivalent.channel);
-        const reason = suppressionReason(consent.status, equivalent.channel, equivalent.recipientPhone);
-        const nextStatus: DeliveryStatus = reason ? "suppressed" : "sandboxed";
-        await updateDeliveryStatus(ctx, { delivery: equivalent, status: nextStatus, now, reason, consentStatus: consent.status, consentSource: consent.source, consentChangedAt: consent.changedAt, channelOptedOut: consent.channelOptedOut });
-        if (nextStatus === "suppressed") suppressed += 1; else sandboxed += 1;
-      }
-      continue;
-    }
-    const result = await createDelivery(ctx, {
-      organization,
-      branchId,
-      membershipPublicId: membershipId,
-      membershipEndDate: endDate,
-      memberPublicId: memberId,
-      memberName: stringValue(member.fullName, memberId),
-      member,
-      customerUserId,
-      checkpoint,
-      channel,
-      now,
-      quiet,
-      quietUntil,
-      quietStart,
-      quietEnd,
-      liveDelivery,
+    if (await createCallDelivery(ctx, {
+      organization, branchId: await branchForMembership(ctx, organization._id, record, membership),
+      membershipPublicId: record.publicId, membershipEndDate: endDate, memberPublicId: memberId,
+      memberName: stringValue(member.fullName, memberId), preferredLanguage: member.preferredLanguage,
+      customerUserId: await customerUserIdForMember(ctx, organization._id, memberId), checkpoint, now,
       taskDueAt: wallClockUtc(addDays(endDate, -1), 9, 0, organization.timezone || "UTC"),
-    });
-    if (!result.created) continue;
-    created += 1;
-    if (result.status === "deferred") deferred += 1;
-    else if (result.status === "sandboxed") sandboxed += 1;
-    else if (result.status === "queued") queued += 1;
-    else if (result.status === "suppressed") suppressed += 1;
+    })) created += 1;
   }
-  return { memberships: memberships.length, created, deferred, sandboxed, queued, suppressed, cancelled: reconciliation.cancelled, completed: reconciliation.completed };
+  return { ...empty, memberships: memberships.length, created, queued: created };
 }
 
 type ReleaseAuditRow = { timestamp: number; group: string };
@@ -589,9 +457,8 @@ export const releaseAudit = internalQuery({
 });
 
 /**
- * Tenant-local renewal recovery scan. External channels are intentionally
- * sandboxed until a provider boundary is approved; this job never marks an
- * SMS/WhatsApp action sent by itself.
+ * Tenant-local staff call task scan. Automated WhatsApp/SMS are retired;
+ * member renewal and expiry emails are handled by membershipJobs.
  */
 export const queueRenewalJourney = internalMutation({
   args: { now: v.optional(v.number()) },

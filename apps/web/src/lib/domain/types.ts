@@ -365,12 +365,12 @@ export interface PurchaseOrder {
 }
 
 // ---------------------------------------------------------------------------
-// Outbound messaging (WhatsApp only; the sms channel value survives on
-// historical rows and is refused by the router)
+// Historical outbound messaging contracts. Automated WhatsApp/SMS retired
+// 7 October 2026; manual staff WhatsApp handoffs remain available.
 // ---------------------------------------------------------------------------
 export type MessagingMode = "off" | "sandbox" | "allowlist" | "live";
 
-/** Global provider state plus this gym's own delivery switch; never carries secrets. */
+/** Compatibility status: always off with no provider; never carries secrets. */
 export interface MessagingStatus {
   mode: MessagingMode;
   provider: "twilio" | "none";
@@ -3740,10 +3740,11 @@ export interface NotificationSettings {
     discountApproval: boolean;
   };
   /**
-   * The scheduled renewal journey is opt-in. Missing legacy values are false
-   * so a backend deploy cannot silently create member timelines or staff tasks.
+   * Opt-in staff call task one day before expiry. Member email reminders are
+   * controlled separately by the operational email preferences.
    */
   renewalRecoveryEnabled?: boolean;
+  /** Legacy stored field; writes normalize to sandbox and cannot enable WhatsApp. */
   automationDeliveryMode: "sandbox" | "live";
   quietHoursStart?: string;
   quietHoursEnd?: string;

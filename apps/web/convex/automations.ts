@@ -1,3 +1,4 @@
+import { RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { nextRenewalQuietHoursEnd } from "./renewalPolicy";
 import { systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 import { resolveRecipientLanguage } from "../src/lib/i18n/communication";
@@ -240,17 +241,16 @@ export const evaluate = internalMutation({
             } else if (action === "queue_message") {
               const messageId = newId();
               const marketingRecipient = await marketingPreferenceForCandidate(ctx, organization._id, entityType, candidate, memberId);
-              // Sandbox gyms keep the retained ledger. Live gyms queue a real
-              // channel for the outbound worker; quiet hours defer the send to
-              // the end of the window instead of dropping it.
+              // Retained WhatsApp/SMS rules are auditable suppressed attempts.
+              // They cannot enqueue work for an external sender.
               const live = deliveryMode === "live";
-              const suppressionReason = marketingSuppressionReason(marketingRecipient);
+              const requestedChannel = normalizeMarketingChannel(actionItem.channel);
+              const suppressionReason = (["whatsapp", "sms"].includes(requestedChannel) ? RETIRED_CHANNEL_REASON : undefined) ?? marketingSuppressionReason(marketingRecipient);
               const messageStatus = suppressionReason ? "suppressed" : "queued";
               // Quiet hours defer, they never drop: in the sandbox ledger as
               // well, so a gym previewing its rules sees the same decision a
               // live gym would get instead of a "suppressed" it would not.
               const deferredUntil = !suppressionReason && quiet && quietUntil ? new Date(quietUntil).toISOString() : undefined;
-              const requestedChannel = normalizeMarketingChannel(actionItem.channel);
               const message = { id: messageId, organizationId: organization.publicId ?? organization._id, status: messageStatus, messageClass: "marketing", channel: live ? requestedChannel : "sandbox", requestedChannel, ...queuedMessageLanguage(candidate.preferredLanguage, organization.defaultLanguage), ...(actionItem.templateKey && !actionItem.templateId ? { catalogueVersion: MESSAGE_TEMPLATE_VERSION } : {}), templateId: actionItem.templateId, templateKey: actionItem.templateKey, recipientPhone: stringValue(candidate.phone) || undefined, memberId, leadId, queuedAt: isoNow(), suppressionReason, deferredUntil, nextAttemptAt: messageStatus === "queued" ? (deferredUntil ?? isoNow()) : undefined, retryPolicy: { maxAttempts: 3, backoffMinutes: [1, 5, 30] }, attempts: [{ attempt: 1, status: messageStatus, occurredAt: isoNow(), reason: suppressionReason ?? (deferredUntil ? `Deferred until quiet hours end (${quietEnd})` : undefined) }], automationExecutionId: executionId };
               await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "messageDelivery", publicId: messageId, branchId: candidateRecord.branchId, memberPublicId: memberId, leadPublicId: leadId, createdAt: now, updatedAt: now, data: message });
               const attemptId = newId();

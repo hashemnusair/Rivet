@@ -1,9 +1,9 @@
 "use client";
-import type { TFunction } from "@/lib/i18n/core";
 import { permissionCopy, roleDescription } from "@/lib/i18n/permissions";
 import { paymentMethodLabel, roleLabel } from "@/lib/i18n/labels";
 import { useLocale, useT } from "@/lib/i18n/provider";
 
+import Link from "next/link";
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -1101,6 +1101,7 @@ export function NotificationsSection() {
       ...notifications,
       managerAlerts: { ...notifications.managerAlerts },
       renewalRecoveryEnabled: notifications.renewalRecoveryEnabled === true,
+      automationDeliveryMode: "sandbox",
       quietHoursStart: notifications.quietHoursStart ?? "22:00",
       quietHoursEnd: notifications.quietHoursEnd ?? "07:00",
     };
@@ -1126,7 +1127,6 @@ export function NotificationsSection() {
     { key: "discountApproval", label: t("settingsCore.text132"), hint: t("settingsCore.text133") },
   ];
   const update = (patch: Partial<NotificationSettings>) => setForm((current) => current ? { ...current, ...patch } : current);
-  const quietInvalid = !form.quietHoursStart || !form.quietHoursEnd;
   const commit = async () => {
     await save.mutateAsync(form);
     setBaseline(form);
@@ -1150,41 +1150,21 @@ export function NotificationsSection() {
         </SettingsPanel>
 
         <SettingsPanel title={t("settingsCore.text136")} description={t("settingsCore.text137")} bodyClassName="px-4 py-1 sm:px-5">
-          <MessagingStatusPanel />
-          <div className="divide-y divide-line">
-            <SettingsToggleRow
-              label={t("settingsCore.text138")}
-              hint={t("settingsCore.text139")}
-              checked={form.renewalRecoveryEnabled === true}
-              onCheckedChange={(enabled) => update({ renewalRecoveryEnabled: enabled })}
-            />
-            <SettingsToggleRow
-              label={t("settingsCore.text140")}
-              hint={form.automationDeliveryMode === "live" ? t("settingsCore.text141") : t("settingsCore.text142")}
-              checked={form.automationDeliveryMode === "live"}
-              onCheckedChange={(enabled) => update({ automationDeliveryMode: enabled ? "live" : "sandbox" })}
-            />
+          <SettingsToggleRow
+            label={t("settingsCore.text138")}
+            hint={t("settingsCore.text139")}
+            checked={form.renewalRecoveryEnabled === true}
+            onCheckedChange={(enabled) => update({ renewalRecoveryEnabled: enabled })}
+          />
+          <div className="border-t border-line py-4 text-[13px] leading-5 text-ink-2">
+            <p>{t("settingsCore.memberEmailNote")}</p>
+            <Link href="/settings?section=email" className="mt-2 inline-flex min-h-9 items-center font-medium text-accent underline underline-offset-4">{t("settingsCore.memberEmailLink")}</Link>
           </div>
-          <div className="border-t border-line py-4">
-            <p className="text-[13.5px] font-medium text-ink">{t("settingsCore.text143")}</p>
-            <p className="mt-0.5 text-[12px] leading-5 text-ink-3">{t("settingsCore.text144")}</p>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label={t("common.label.from")}>
-                <Input type="time" value={form.quietHoursStart ?? ""} aria-label={t("settingsCore.text145")} onChange={(e) => update({ quietHoursStart: e.target.value })} />
-              </Field>
-              <Field label={t("common.label.to")}>
-                <Input type="time" value={form.quietHoursEnd ?? ""} aria-label={t("settingsCore.text146")} onChange={(e) => update({ quietHoursEnd: e.target.value })} />
-              </Field>
-            </div>
-          </div>
-          <MessageTemplateCatalogue />
         </SettingsPanel>
       </div>
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
-        saveDisabled={quietInvalid}
-        saveDisabledReason={quietInvalid ? t("settingsCore.text147") : undefined}
         error={save.isError ? errorMessage(save.error, t("settingsCore.text148")) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}
@@ -1195,68 +1175,7 @@ export function NotificationsSection() {
   );
 }
 
-
-
-function MessagingStatusPanel() {
-  const t = useT();
-  const MESSAGING_MODE_LABELS: Record<string, string> = { off: t("settingsCore.text151"), sandbox: t("settingsCore.text152"), allowlist: t("settingsCore.text153"), live: t("settingsCore.text154") };
-
-  const status = useApiQuery(["settings", "messaging-status"], (api) => api.getMessagingStatus());
-  if (!status.data) return null;
-  const value = status.data;
-  return (
-    <div className="my-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-sunken/60 px-3 py-2 text-[12.5px] text-ink-2" data-testid="messaging-status">
-      <span className="text-ink-3">{t("settingsCore.text155")}</span>
-      <Badge variant={value.mode === "live" ? "success" : value.mode === "off" ? "neutral" : "warning"} dot>{MESSAGING_MODE_LABELS[value.mode] ?? value.mode}</Badge>
-      <span className="text-ink-3">{value.provider === "twilio" ? (value.whatsappReady ? t("settingsCore.text156") : t("settingsCore.text157")) : t("settingsCore.text158")}</span>
-      {value.warning ? <span className="text-warning-deep">{t("settingsCore.messagingModeWarning")}</span> : null}
-    </div>
-  );
-}
-
-
-const CHANNEL_LABELS: Record<string, string> = { whatsapp: "WhatsApp", sms: "SMS" };
-
-function MessageTemplateCatalogue() {
-  const t = useT();
-  const TEMPLATE_FAMILY_LABELS: Record<string, string> = { renewal: t("settingsCore.text159"), payment: t("settingsCore.text160"), class: t("settingsCore.text161"), entry: t("settingsCore.text162") };
-
-  const catalogue = useApiQuery(["settings", "message-template-catalogue"], (api) => api.listMessageTemplateCatalogue());
-  const [open, setOpen] = useState(false);
-  if (!catalogue.data?.length) return null;
-  return (
-    <div className="border-t border-line py-3">
-      <button type="button" className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-3 text-start text-[13.5px] font-medium text-ink" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
-        <span>{t("settingsCore.text163")}{" "}<span className="font-normal text-ink-3">· {t("settingsCore.templateCount", { count: catalogue.data.length })}</span></span>
-        <span className="text-[12.5px] font-normal text-ink-3">{open ? t("settingsCore.text164") : t("settingsCore.text165")}</span>
-      </button>
-      {open ? (
-        <ul className="mt-2 divide-y divide-line" data-testid="message-template-catalogue">
-          {catalogue.data.map((template) => (
-            <li key={template.key} className="py-3 text-[12.5px]">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-ink">{templateName(t, template.key, template.name)}</span><span className="text-[12px] text-ink-3">{TEMPLATE_FAMILY_LABELS[template.family] ?? template.family} · {template.channels.map((channel) => CHANNEL_LABELS[channel] ?? channel).join(", ")}</span></div>
-              <p className="mt-1.5 leading-5 text-ink-2">{template.bodyEn}</p>
-              <p className="mt-1 leading-5 text-ink-2" dir="rtl">{template.bodyAr}</p>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Operational rules and hours
 // ---------------------------------------------------------------------------
 export { HoursAndTrialsSection, OperationalRulesSection, normalizeOperationalPolicies } from "@/features/settings/operational-settings-sections";
-
-function templateName(t: TFunction, key: string, fallback: string): string {
-  const names: Record<string, string> = {
-    renewal_7d: t("settingsCore.templateRenewal7"), renewal_3d: t("settingsCore.templateRenewal3"),
-    renewal_today: t("settingsCore.templateRenewalToday"), renewal_expired_3d: t("settingsCore.templateRenewalExpired"),
-    payment_due_3d: t("settingsCore.templatePayment3"), payment_due_today: t("settingsCore.templatePaymentToday"),
-    payment_overdue_3d: t("settingsCore.templatePaymentOverdue"), class_booking_confirmation: t("settingsCore.templateClassConfirmation"),
-    class_reminder: t("settingsCore.templateClassReminder"), entry_pass: t("settingsCore.templateEntry"),
-  };
-  return names[key] ?? fallback;
-}

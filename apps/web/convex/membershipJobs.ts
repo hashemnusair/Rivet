@@ -41,9 +41,11 @@ async function notifyMemberOnce(ctx: MutationCtx, input: {
   membershipId: string;
   endDate: string;
 }) {
-  const dedupeKey = `${input.kind}:${input.membershipId}:${input.endDate}`;
+  const dedupeKey = `${input.kind}:${input.organizationId}:${input.membershipId}:${input.endDate}`;
   const existing = await ctx.db.query("operationalNotifications").withIndex("by_recipient_dedupe", (q) => q.eq("recipientUserId", input.user._id).eq("dedupeKey", dedupeKey)).unique();
   if (existing) return false;
+  const legacy = await ctx.db.query("operationalNotifications").withIndex("by_recipient_dedupe", (q) => q.eq("recipientUserId", input.user._id).eq("dedupeKey", `${input.kind}:${input.membershipId}:${input.endDate}`)).unique();
+  if (legacy?.organizationId === input.organizationId) return false;
   await ctx.db.insert("operationalNotifications", {
     publicId: `NOT-${crypto.randomUUID()}`,
     recipientUserId: input.user._id,
@@ -86,16 +88,24 @@ export const queueLifecycleReminders = internalMutation({
         const endDate = stringValue(membership.endDate);
         const startDate = stringValue(membership.startDate);
         if (!memberId || !endDate || !startDate || membership.cancelledAt || startDate > today || endDate < today) continue;
+        // A bought successor already covers renewal; do not ask the member to
+        // renew the old term again. Cancelled successors do not cover it.
+        if (memberships.some((candidate) => {
+          const successor = value(candidate.data);
+          return successor.previousMembershipId === record.publicId && !successor.cancelledAt && successor.status !== "cancelled";
+        })) continue;
         scanned += 1;
         const daysLeft = daysBetween(today, endDate);
         const kind = daysLeft === 7 ? "renewal_reminder" as const : daysLeft === 1 ? "membership_expiry" as const : null;
         if (!kind) continue;
         const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
         const memberData = value(member?.data);
-        const dedupeKey = `${kind}:${record.publicId}:${endDate}`;
+        if (!member || ["deactivated", "cancelled", "inactive"].includes(String(memberData.status))) continue;
+        const dedupeKey = `${kind}:${organization._id}:${record.publicId}:${endDate}`;
         const existed = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", dedupeKey)).unique();
         const recipient = resolveRecipientLanguage(memberData.preferredLanguage, organization.defaultLanguage);
-        await enqueueOperationalEmail(ctx, {
+        const legacy = await ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", `${kind}:${record.publicId}:${endDate}`)).unique();
+        if (!legacy || legacy.organizationId !== organization._id) await enqueueOperationalEmail(ctx, {
           organizationId: organization._id,
           branchId: record.branchId,
           kind,
@@ -109,7 +119,7 @@ export const queueLifecycleReminders = internalMutation({
           relatedEntityPublicId: record.publicId,
           dedupeKey,
         });
-        if (!existed) queued += 1;
+        if (!existed && (!legacy || legacy.organizationId !== organization._id)) queued += 1;
         const user = await customerUserForMember(ctx, organization._id, memberId);
         if (user && user.status !== "deactivated" && await notifyMemberOnce(ctx, { user, organizationId: organization._id, branchId: record.branchId, kind, membershipId: record.publicId, endDate })) notified += 1;
       }

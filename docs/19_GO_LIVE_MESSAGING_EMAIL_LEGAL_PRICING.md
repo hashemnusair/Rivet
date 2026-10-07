@@ -1,143 +1,172 @@
 # Go-live decisions: messaging, operational email, legal documents, pricing
 
-Written 3 September 2026. This is the working sheet for the four items that
-were "live but provisional" in RIVET: WhatsApp/SMS reminders, operational
-email, the legal documents and e-signature, and the pricing tiers. Each
-section says what the product does today, what must be decided, and what
-must be true before the switch is flipped. Decisions marked **[decide]**
-need Elias or Hashem to sign the table at the end. Keep secret values,
-provider credentials and applicant details out of this file.
+## Verification update — 7 October 2026
 
-### Decisions recorded on 14 September 2026 (Elias)
+This is a readiness review, **not an incident investigation** (Elias's
+clarification). Use **Spacemail**, `elias@rivetjo.com`, for the delivery
+evidence below. Source inspected: local `arabic-foundation`, `9fbd53c`.
+Code presence, provider acceptance, recipient-server delivery, and inbox
+placement are separate findings. No email was sent and nothing was deployed, activated or purchased during
+this review. Local implementation changes are listed below; no provider
+configuration or DNS was changed.
 
-- **Channel: WhatsApp only.** RIVET does not send SMS. The sender is RIVET's
-  own business number, +962 77 837 8608 (`RIVET_CONTACT.phoneE164`), which
-  is registered with WhatsApp Business. The code retired the SMS channel the
-  same day (section 1).
-- **Operational email sends from `noreply@rivetjo.com`.** Clerk keeps
-  sending its own sign-in and invitation emails from its configured sender;
-  every RIVET operational email uses the Resend sender above (section 2).
-- **Convex capacity is resolved** as reported by Elias; the earlier
-  Free-plan warning is no longer a launch gate.
-- **The Production test gym is to be removed** and Production started
-  fresh. The guarded purge procedure is in
-  `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`; nothing was deleted by the
-  session that recorded this decision.
-- Still open from the lists below: who pays message costs per tier, the
-  Friday prayer window, the pricing table in section 4, and the WhatsApp
-  Business Platform steps (Meta verification, template approval, inbound
-  STOP webhook).
+### Email inventory verified against executable triggers
 
-## 1. WhatsApp reminders
+All operational rows below use `operationalEmail.ts` → Resend, with the
+configured `RESEND_FROM_EMAIL`. Observed production agreement copies use
+`noreply@rivetjo.com`. At the inspected live baseline, authentication mail is delivered by Clerk.
+The 7 October implementation adds a signed Clerk → Resend relay; its deployment
+and template cutover are pending. Clerk continues to own authentication.
+The relay does not use tenant operational-email preferences or redirect codes
+to an operational sandbox mailbox.
 
-### What the product does today
-
-- Reminders run in a **sandbox ledger**. Automation rules and the renewal
-  journey create `messageDelivery` and `renewalDeliveries` rows with the
-  channel the gym asked for, the language of the member, consent facts,
-  quiet-hour decisions, and an attempt history, and nothing leaves RIVET.
-- Two switches now exist and **both must be on** before a member receives
-  anything:
-  1. `RIVET_MESSAGING_MODE` on the server (`off` by default; `sandbox`
-     redirects every message to `RIVET_MESSAGING_SANDBOX_TO`; `allowlist`
-     sends only to `RIVET_MESSAGING_ALLOWLIST`; `live` sends to members).
-  2. The gym's own **Settings → Notifications → External delivery** switch.
-- The provider seam is **Twilio's WhatsApp sender** (`RIVET_MESSAGING_PROVIDER=twilio`,
-  `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, which
-  should be `whatsapp:+962778378608` once the number is registered as an API
-  sender). A minute worker leases due rows for live gyms, renders the body,
-  calls Twilio, and records the provider id, the mode and the number actually
-  used. Transient failures retry at 1, 5 and 30 minutes; a final failure
-  notifies the gym's managers.
-- **WhatsApp only, since 14 September 2026.** There is no SMS sender and no
-  `TWILIO_MESSAGING_SERVICE_SID`. The catalogue templates are WhatsApp-only,
-  the renewal journey always picks WhatsApp (or the one-day staff call task),
-  and any row still queued on the `sms` channel from before that date is
-  leased, refused with the recorded reason "SMS was retired on 14 September
-  2026; RIVET sends WhatsApp only", and written to the member's timeline as
-  not sent. Staff can still record by hand that they texted someone from a
-  phone; that is a contact note, not a RIVET message.
-- **Quiet hours** are per gym (default 22:00–08:00, gym timezone). A
-  message that falls inside the window is deferred to the end of the window,
-  never dropped, for live and sandbox gyms alike, so the sandbox ledger shows
-  the decision a live gym would get (7 September 2026; earlier sandbox rows
-  read "suppressed: Tenant quiet hours").
-- **What the member record shows.** When the worker gets a terminal answer it
-  writes a `message` timeline event on the member (or lead): *accepted by the
-  provider* (never "delivered"; sandbox mode says the message went to the
-  sandbox number), *failed* after the retry budget, or *not sent* with the
-  suppression reason. A final failure on either queue notifies the gym's
-  owners and managers with a link to the person, not to Settings.
-- Phone numbers are normalised to E.164 with Jordan (+962) as the default.
-- Every message names the gym. The current marketing-class footer is request-only:
-  "To request that these messages stop, contact the gym directly." / "لطلب إيقاف
-  هذه الرسائل، يرجى التواصل مع النادي مباشرة." It does not claim that STOP or
-  إيقاف is handled automatically.
-
-### Template catalogue (code-owned, `convex/messagingTemplates.ts`)
-
-| Key | Family | Channels | Variables |
+| Implemented email | Trigger / recipient | Source under `apps/web` | Inbox evidence in this review |
 |---|---|---|---|
-| `renewal_7d` | Renewal, 7 days before | WhatsApp | member_name, gym_name, end_date, branch_name |
-| `renewal_3d` | Renewal, 3 days before | WhatsApp | member_name, gym_name, end_date |
-| `renewal_today` | Renewal, ends today | WhatsApp | member_name, gym_name, branch_name |
-| `renewal_expired_3d` | Renewal, 3 days after expiry | WhatsApp | member_name, gym_name, end_date |
-| `payment_due_3d` | Payment due in 3 days | WhatsApp | member_name, gym_name, amount, due_date |
-| `payment_due_today` | Payment due today | WhatsApp | member_name, gym_name, amount |
-| `payment_overdue_3d` | Payment 3 days overdue | WhatsApp | member_name, gym_name, amount |
-| `class_booking_confirmation` | Class booked | WhatsApp | member_name, gym_name, class_name, class_time, branch_name |
-| `class_reminder` | Class in 2 hours | WhatsApp | member_name, gym_name, class_name, class_time |
-| `entry_pass` | Entry pass | WhatsApp | member_name, gym_name, pass_link |
+| Owner organization invitation | Approved application is provisioned; owner is invited to the Clerk organization | `convex/platformProvisioningAction.ts`, `createOrFindClerkInvitation` | No matching invitation found by Spacemail all-mail search; fresh test pending |
+| Staff account invitation | Authorized staff invitation action, with Clerk `notify: true` | `convex/invitations.ts` | Fresh test pending; distinct from owner organization invitation |
+| Account verification / sign-in email challenge | Clerk sign-up email verification or a required email challenge during sign-in | `src/app/login/`, Clerk | Rivet verification message visible in Spacemail Inbox dated 6 October; no fresh challenge generated |
+| Application received: applicant + internal team | Gym application submission; applicant and configured application recipients | `convex/gymApplications.ts` | Not verified in Spacemail |
+| Application approved / rejected | Platform application decision; applicant | `convex/gymApplications.ts` | Not verified in Spacemail |
+| Signed, countersigned and re-sent agreement copies | Owner signing, platform countersigning or explicit resend; signer plus founder copies; PDF attached | `convex/legalAgreement.ts` | Signed and countersigned founder copies dated 27 September in Spacemail Inbox; countersigned copy opened and attachment presence checked |
+| Member payment receipt notification | Successful payment collection; member email; deduped by receipt ID | `convex/domain.ts`, `payment_receipt` | Code-confirmed only. This is a link to the receipt, not a promised emailed receipt PDF |
+| Renewal and expiry reminders | Hourly job; respectively 7 and 1 tenant-local days before a current membership ends; member email | `convex/membershipJobs.ts`, `convex/crons.ts` | Code-confirmed and locally tested; inbox delivery pending |
+| Trial request confirmation / status | Member trial request, then staff trial-status change; requester | `convex/domain.ts` | Inbox delivery pending |
+| Support acknowledgement / reply / resolution | Case creation, platform reply, platform resolution; case creator/contact | `convex/domain.ts` | Inbox delivery pending |
+| Platform invoice issued / paid / past due | Platform invoice actions and subscription changes; gym owner; invoice PDF | `convex/domain.ts` | Resend shows issued and paid examples delivered to a test-owner mailbox; that recipient inbox was not inspected |
+| Platform upcoming-invoice / overdue / suspension notice | Hourly subscription reconciliation, only when its explicit enable flag is on; gym owner | `convex/subscriptionReconciliation.ts` | Production reconciliation flag absent; automated reconciliation is off |
+| Platform subscription suspended / cancelled | Explicit platform subscription-status transition; gym owner | `convex/domain.ts` | Inbox delivery pending |
+| PT package paid | Full package payment activates credits; member | `convex/domain.ts` | Inbox delivery pending |
+| PT booking confirmation / update | Booking; cancellation, reschedule or no-show; member | `convex/domain.ts` | Inbox delivery pending |
+| PT booking reminder | 15-minute job finds sessions around 24 hours away; member | `convex/ptJobs.ts` | Locally tested; inbox delivery pending |
+| PT low balance | PT completion/outcome reduces available credits to the low-balance threshold | `convex/domain.ts` | Inbox delivery pending |
 
-The catalogue classifies all ten as Meta **utility** templates (operational, no
-marketing consent needed) in Arabic and English. The current code catalogue is
-`1.1 · 3 October 2026` (Arabic 1.0 bodies remain archived for queued history).
-The utility category and internal catalogue version do not establish Meta
-submission or approval; the current Arabic 1.1 bodies still need approval.
+Receipts and renewal reminders were examples in the call, not evidence of
+implementation. The rows above are now supported by their actual queueing
+code. They must still pass recipient-inbox tests before being called verified
+live features. No additional Clerk security/password-reset email is claimed
+as verified merely because Clerk supports it.
 
-### Decisions needed
+### Provider and inbox findings
 
-- **Provider: decided 14 September 2026.** WhatsApp only, through the
-  implemented Twilio WhatsApp sender; no SMS aggregator. The Meta Cloud API
-  stays available as a later swap behind the same seam (one more `send`
-  function; the ledger does not change).
-- **[decide] WhatsApp Business Platform onboarding.** The number is already a
-  WhatsApp Business account. Sending through Twilio or the Cloud API means
-  registering it as a WhatsApp Business *Platform* sender under Meta business
-  verification of the RIVET legal entity, with the display name and template
-  approval for the ten catalogue templates (submit both languages). Check
-  first whether Meta's app-and-API coexistence is available to the account;
-  without it, API registration moves the number off the WhatsApp Business
-  app on the phone. Budget two to three weeks.
-- **[blocking] Inbound opt-out for WhatsApp.** WhatsApp is the only channel, so
-  an inbound handler for STOP / إيقاف is required before `live`; it is not built
-  yet. The current footer only asks recipients to contact the gym. Staff can
-  record an explicit opt-out on a member, but there is no supported staff lead
-  preference control before conversion; unknown-consent leads remain suppressed.
-  There is no SMS opt-out to configure.
-- **[decide] Who pays message costs** per tier (included, capped, or passed
-  through). The Terms say "included or passed through as stated in the
-  subscription agreement"; the agreement quote must state it.
-- **[decide] Friday prayer window.** The privacy policy no longer promises
-  it; if RIVET wants it, it becomes a second per-gym quiet window.
+- **Spacemail:** countersigned copy at `/mail/INBOX/36/`, subject
+  `Test Gym · agreement RVT-20260927-CU4U6 countersigned`, received
+  27 September at 19:47 Amman time, from `noreply@rivetjo.com` to
+  `elias@rivetjo.com`. Its source shows return-path `send.rivetjo.com`,
+  DKIM selector `resend` for `rivetjo.com`, a second Amazon SES signature,
+  and SES delivery. A DKIM signature being present alone is not a verified
+  authentication pass. The source view inspected did not establish full
+  receiver SPF/DKIM/DMARC results. The signed copy is also visible in Inbox.
+- **Correct Resend workspace resolved:** the browser now has access to
+  team **`rivetjo`**. Domain `rivetjo.com` is Verified, sending enabled,
+  Ireland (`eu-west-1`), DKIM and sending SPF/MX Verified. Its email list
+  shows the two founder copies and signer copies, plus invoice issued/paid
+  examples, as Delivered. This is receiver-server evidence, not proof that
+  every recipient saw an Inbox placement. Only Elias's Spacemail was checked.
+- **No Resend webhooks:** the workspace's Webhooks page says “No webhooks
+  yet.” Production names-only inspection confirms `RESEND_WEBHOOK_SECRET`
+  is absent. The existing verified-signature endpoint is
+  `/webhooks/resend`; provider events cannot reach the app until configured.
+- **Public DNS checked:** root SPF uses `spf.spacemail.com`; Resend's
+  `send` return-path SPF uses `amazonses.com`, with SES MX and a published
+  `resend._domainkey`. Clerk's `clk` / `clk2` DKIM selectors and `clkmail`
+  point to Clerk-managed records. DMARC is `v=DMARC1; p=none;`.
+  A monitoring policy is not evidence of a delivery incident. Review all
+  legitimate senders before changing enforcement; no automatic DNS change.
+- **Production configuration names:** Resend API key/from, email mode and
+  email allowlist are present. Names-only inspection does not reveal their
+  values. `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` is absent, so the current
+  code suppresses no-organization application emails at the global-kind
+  gate. `RESEND_REPLY_TO_EMAIL` is absent; application mail falls back to
+  `sales@rivetjo.com`, while other kinds currently do not set Reply-To.
+- **Further code gaps:** bounce events mark an individual delivery failed
+  but do not persist an address-level exclusion for future emails. Complaint
+  events are stored but do not change delivery status or suppress the address.
+  Resolve and test these before broad rollout.
+- **Allowlist caveat:** `routeEmail` also permits trusted recipients belonging
+  to subscribed gyms. This mode is not a strict “only these test addresses”
+  boundary. Use isolated staging plus `sandbox` for a catch-all test; never
+  run the shared production worker merely to send a test.
 
-### Before flipping `RIVET_MESSAGING_MODE` to `live`
+### Confirmed channel decision — 7 October 2026
 
-- [ ] Twilio production account and the approved WhatsApp sender
-  (+962 77 837 8608); credentials in the Convex environment, never in the
-  repository
-- [ ] Current catalogue templates approved by Meta in Arabic and English; the
-      revised Arabic 1.1 bodies must be submitted (catalogue version is not an
-      approval status)
-- [ ] `sandbox` for one week against RIVET's own numbers, then `allowlist`
-  with RIVET staff plus one pilot gym for two weeks with zero unexplained
-  failures in the delivery ledger
-- [ ] Inbound WhatsApp STOP handling live
-- [ ] Twilio status webhook (delivered / failed) wired to the attempt
-  history, or accept "accepted by provider" as the final state (documented)
-- [ ] Pilot gym has consent facts on its members and has switched External
-  delivery on knowingly
-- [ ] Runbook: how to set the mode back to `allowlist` in under five minutes
+Elias explicitly removed **automated WhatsApp** from the product scope.
+Keep staff-initiated WhatsApp for contacting a member/lead. **All email
+transport is Resend**, including authentication after its separate cutover.
+This supersedes the 14 September WhatsApp/Twilio plan and the earlier request
+for Meta approvals, STOP/إيقاف automation, number registration and API pilots.
+No Twilio account, paid provider setup or WhatsApp API launch is needed.
+
+Local implementation removes the sender and its cron, makes the old worker
+an inert compatibility target, ignores old messaging environment flags,
+suppresses retained WhatsApp/SMS automation actions, removes the activation
+controls, and preserves message history. The renewal job creates only the
+opt-in one-day staff call task; the 7-day and 1-day **emails** stay in
+`membershipJobs`. Manual WhatsApp opens an editable draft in the staff
+member's WhatsApp. RIVET records a handoff, not proof that it was sent.
+These changes have not been deployed.
+
+### Commercial/legal review status and next actions
+
+Pricing still needs founder sign-off: Starter JOD 79/month, Growth 149,
+Pro 249, Enterprise base 500; annual is currently 20% off. Tier limits and
+modules are in section 4. A catalogue override can change an actual quote;
+these code defaults do not establish an approved commercial decision.
+`BRAND_LEGAL` is empty: legal entity, registration, address and tax treatment
+must be provided by the founders and verified with counsel/accountant.
+
+The review brief, human-readable source snapshot and outreach draft are in
+[`legal-review/2026-10-07/REVIEW_BRIEF.md`](legal-review/2026-10-07/REVIEW_BRIEF.md).
+Start review before these facts are all settled; counsel can flag open fields
+and prepare Arabic in parallel. The lawyer's name/email has been requested
+but not supplied, so **no external request has been sent and review has not
+started**. This is a recipient blocker, not a requirement to delay preparation.
+The Terms' twelve-month default conflicts with the agreement's continuing
+term/30-day notice. Terms omit Enterprise; the agreement contains older
+`rivet.jo` links. Preserve signed versions and issue a new reviewed version.
+
+### Validation completed
+
+- Full unit/component/Convex suite: **277 files, 1,738 tests passed**
+  (`pnpm --filter web exec vitest run --maxWorkers=3`). Covers retired sender
+  behavior under old live flags, retained rule suppression/history, staff call
+  tasks, manual WhatsApp handoff, 7/1-day email reminders, tenant dedupe and
+  renewal guards, plus signed Clerk→Resend forwarding, invalid signatures,
+  provider failures and Clerk-owned-template duplicate prevention.
+- `pnpm typecheck`, `pnpm convex:typecheck`, and `pnpm lint` passed, including
+  the secret-output audit. `pnpm build` passed and includes the dynamic Clerk
+  email webhook route. CLI/environment guard tests: **14 passed**.
+- A fixed September date in an existing mock billing test had expired; it now
+  selects relative future dates. No billing implementation changed.
+- These are local fixtures/provider doubles, not fresh provider sends or inbox
+  tests. Fresh invitation and operational-mail tests still need a named test
+  identity/gym and approved destinations. No real gym, payment, agreement or
+  invitation was created to manufacture delivery evidence.
+
+Originally written 3 September 2026; updated for the explicit 7 October
+channel decision. Commercial decisions below still require founder sign-off.
+Keep provider credentials and personal applicant/signatory details out of
+this file.
+
+## 1. Manual WhatsApp
+
+Staff use the WhatsApp button on member/lead follow-up screens, review the
+prefilled draft and send it themselves in WhatsApp. The contact history
+labels opening WhatsApp as a handoff with delivery unconfirmed. It retains
+manual contact outcomes and existing historical provider records.
+
+There is no RIVET WhatsApp API sender, automated renewal journey, launch
+allowlist, Meta template approval work or STOP webhook to activate. Do not
+restore a provider by setting old environment flags. Historical schema/types
+and bilingual wording remain only for reading old records and suggesting
+manual drafts. `getMessagingStatus` returns off/none and the automated
+catalogue endpoint returns an empty list.
+
+Settings → Notifications offers manager alerts and opt-in **Renewal call
+tasks** one day before expiry. Member renewal/expiry emails are controlled
+under Settings → Emails. The job cancels pending historical WhatsApp/SMS
+renewal records with an event; it preserves sent/terminal history. The old
+worker never leases or sends retained automation rows. No historical tables
+or indexes are removed.
 
 ## 2. Operational email
 
@@ -147,8 +176,9 @@ submission or approval; the current Arabic 1.1 bodies still need approval.
   server. `off` is the default and the fallback for any unrecognised value.
   `sandbox` sends everything to `RIVET_EMAIL_SANDBOX_TO` with the original
   recipient in the subject. `allowlist` sends only to
-  `RIVET_EMAIL_ALLOWLIST` (addresses or `@domain`s) and suppresses the rest
-  with a visible reason. The old `RIVET_OPERATIONAL_EMAIL_LIVE=true` counts
+  `RIVET_EMAIL_ALLOWLIST` (addresses or `@domain`s), **plus trusted recipients
+  belonging to subscribed gyms**, and suppresses the rest with a visible
+  reason. It is not a strict pilot-only boundary. The old `RIVET_OPERATIONAL_EMAIL_LIVE=true` counts
   as `live` only while the new variable is unset.
 - Gym-controlled member service kinds still require the owner's confirmed
   preferences; RIVET-controlled platform kinds (invoices, subscription
@@ -160,13 +190,11 @@ submission or approval; the current Arabic 1.1 bodies still need approval.
 ### Before flipping `RIVET_EMAIL_MODE` to `live`
 
 - [x] **Decided 14 September 2026:** the sending address is
-  `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). Clerk's own sign-in and
-  invitation emails stay on Clerk's configured sender.
-- [ ] SPF, DKIM and DMARC published and verified. Public DNS on 14 September
-  2026 showed the Resend DKIM selector (`resend._domainkey`) and the
-  `send.rivetjo.com` return-path records published, the root SPF pointing at
-  the mailbox provider, and DMARC still at `p=none`; raise it to
-  `p=quarantine` at minimum before `live`.
+  `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). **Updated 7 October:**
+  authentication emails also move to Resend using the separate cutover below.
+- [x] Resend sending domain verified in the correct `rivetjo` workspace on
+  7 October. DMARC is monitoring-only; review legitimate senders and receiver
+  results before any enforcement change. Do not replace Spacemail root SPF.
 - [ ] Resend production key in the Convex environment; webhook secret set
 - [ ] Bounce and complaint webhooks handled (already recorded as delivery
   events); a hard bounce must mark the address bad before go-live
@@ -176,6 +204,47 @@ submission or approval; the current Arabic 1.1 bodies still need approval.
   unexplained failures
 - [ ] Runbook: how to switch back to `allowlist` in under five minutes
 
+### Authentication email cutover (separate from operational mail)
+
+Implementation: `src/app/api/webhooks/clerk-email/route.ts`, public POST at
+`https://www.rivetjo.com/api/webhooks/clerk-email`. It verifies the Clerk
+signature via `verifyWebhook`, handles `email.created`, forwards Clerk's
+rendered HTML/plain text to Resend using the configured sender, and uses
+`clerk-email/<email-id>` as its retry key. Events already delivered by Clerk
+are acknowledged without a duplicate send. Missing configuration returns
+503; provider failures return 502 for webhook retry. No OTP, invitation link
+or rendered auth body is logged or stored in the staff-visible email ledger.
+
+1. Deploy the web handler. In Vercel server configuration, set
+   `CLERK_WEBHOOK_SIGNING_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and
+   `RIVET_AUTH_EMAIL_PROVIDER=resend`. Keep values out of Git, commands, chat
+   and diagnostics. These are separate from the Convex operational secrets.
+2. In the correct Clerk production application, add a webhook for
+   `email.created` at the exact URL above. Use its signing secret. Test the
+   endpoint/signature and email routing in staging first.
+3. Cut over each applicable Clerk email template by disabling **Delivered by
+   Clerk** only after the relay is ready. Cover owner organization invites,
+   staff account invites, verification and each enabled sign-in/security
+   email. Keep Clerk's invitation `notify: true` so it emits the email event.
+4. Trigger fresh tests to the approved identity/mailbox; inspect **Spacemail
+   Inbox and Junk**, sender, headers and working invitation/verification
+   flow. Resend Accepted/Delivered alone is insufficient. Record evidence
+   without storing auth codes or invitation tokens. No fresh send is claimed
+   by the current local tests.
+5. Check Clerk webhook failures and Resend delivery/bounce/complaint events.
+   Resend idempotency lasts 24 hours; avoid replaying old successful auth
+   events after that window. Generate a fresh invite/code when needed.
+6. Roll back a template by restoring Delivered by Clerk, then reconcile any
+   outstanding custom-delivery events before disabling the relay. Do not
+   leave both senders disabled for an active template.
+
+Live cutover is **pending**; no Clerk dashboard setting has been changed.
+Official references: [Clerk email delivery settings](https://clerk.com/docs/guides/customizing-clerk/email-sms-templates),
+[Clerk deliverability and email.created](https://clerk.com/docs/guides/development/troubleshooting/email-deliverability),
+[Resend retry keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
+The installed Clerk SDK event type is singular `email.created`; the template
+page currently contains a plural spelling in its prose.
+
 ## 3. Legal documents and the e-signature
 
 ### What exists
@@ -184,13 +253,12 @@ submission or approval; the current Arabic 1.1 bodies still need approval.
 |---|---|---|
 | Privacy policy | `/privacy` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
 | Terms of service with the data processing addendum | `/terms` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
-| Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Draft 1.1 · 3 September 2026 |
+| Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Version 1.2 · 4 September 2026; counsel review outstanding |
 
-All three are consistent with each other (14-day payment terms, 7-day
-suspension notice, 30-day notice to end, 60-day fee-change notice, 99.5%
-availability target, support 09:00–21:00 Saturday to Thursday, liability
-capped at twelve months of fees, Jordanian law, courts of Amman) and with
-what the platform actually records.
+These are existing draft commitments, not verified legal approval. The Terms'
+12-month default and agreement's continuing term/30-day notice need review,
+as do the removed automated-messaging wording and complete Arabic versions.
+See the dated review packet; preserve already signed agreement versions.
 
 ### How the e-signature works
 
@@ -265,7 +333,7 @@ signature block no longer carries a quote number or a fixed initial term, so
 section 02 points to RIVET's written quote or published prices and section
 03 runs the agreement until ended with 30 days' notice.
 
-### Before a lawyer sees them
+### Open facts for the lawyer — start review while these are being settled
 
 - RIVET's legal entity name, legal form, commercial registration number and
   registered address (the documents say "RIVET, Amman, Jordan")
@@ -464,7 +532,7 @@ until the table at the end is signed.
 | Daily operations (stock, purchasing, payables, equipment, maintenance) | — | ✓ | ✓ | ✓ |
 | Financial operating system (shifts, reconciliation, ledger) | — | — | ✓ | ✓ |
 | Management reporting (statements, analytics) | — | — | ✓ | ✓ |
-| Shown on the public site | ✓ | ✓ | ✓ | platform-only |
+| Shown on the public site | ✓ | ✓ | ✓ | ✓ (contact/quote presentation) |
 
 Source of truth: `convex/planCatalogue.ts` (plan rows and the one annual
 formula, `termPriceMinor`), `convex/workspaceModules.ts` (module
@@ -508,13 +576,14 @@ a gym's paid-through date backwards.
 
 ### Decisions needed
 
-- **[decide]** the three public prices and whether Enterprise is quoted
+- **[decide]** the four plan prices and whether Enterprise is quoted
 - **[decide]** branch, staff and member limits per tier, and what happens
   when a gym exceeds them (the Terms say RIVET offers the next plan)
-- **[decide]** whether message costs are included per tier (section 1)
+- **[decide]** whether Resend email costs are included per tier; there is no automated WhatsApp add-on
 - **[decide]** onboarding fee: the agreement says onboarding is included
 - **[decide]** annual discount (20% today) and whether monthly billing needs
-  a minimum term (the agreement's initial term is 12 or 24 months)
+  a minimum term. The Terms default to twelve months; agreement 1.2 instead
+  continues until ended with 30 days' notice. Counsel must reconcile them.
 
 ### Sign-off
 
@@ -522,7 +591,7 @@ a gym's paid-through date backwards.
 |---|---|---|---|
 | Public prices (Starter / Growth / Pro) | | | |
 | Tier limits | | | |
-| Message costs per tier | | | |
+| Email costs per tier | | | |
 | Onboarding fee | | | |
 | Annual discount and minimum term | | | |
 

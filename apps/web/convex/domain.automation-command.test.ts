@@ -44,7 +44,8 @@ describe("exported Convex automation command center", () => {
     const owner = t.withIdentity({ subject: "clerk-owner-a" });
     const summary = await owner.query(api.domain.query, operation("automations.monitoring")) as { globallyPaused: boolean; ruleCount: number; persistedEnabledCount: number; failureCount: number; providers: Array<{ key: string; live: boolean }> };
     expect(summary).toMatchObject({ globallyPaused: true, ruleCount: 1, persistedEnabledCount: 1, failureCount: 1 });
-    expect(summary.providers).toEqual(expect.arrayContaining([expect.objectContaining({ key: "internal_tasks", live: false }), expect.objectContaining({ key: "sms_whatsapp", live: false })]));
+    expect(summary.providers).toEqual(expect.arrayContaining([expect.objectContaining({ key: "internal_tasks", live: false }), expect.objectContaining({ key: "email", live: false })]));
+    expect(summary.providers.some((provider) => provider.key === "sms_whatsapp")).toBe(false);
     await expectCode(owner.mutation(api.domain.mutate, operation("automations.run", { ruleId: "rule-a", reason: "Should remain paused" })), "FEATURE_NOT_AVAILABLE");
   });
 
@@ -69,7 +70,7 @@ describe("exported Convex automation command center", () => {
     expect(persisted.executions).toHaveLength(1);
     expect(persisted.tasks).toHaveLength(1);
     expect(persisted.notifications).toHaveLength(1);
-    expect(persisted.messages).toEqual([expect.objectContaining({ data: expect.objectContaining({ messageClass: "marketing", status: "suppressed", suppressionReason: "Recipient marketing preference is unknown" }) })]);
+    expect(persisted.messages).toEqual([expect.objectContaining({ data: expect.objectContaining({ messageClass: "marketing", status: "suppressed", suppressionReason: expect.stringContaining("Automated WhatsApp and SMS are retired") }) })]);
     expect(persisted.executions[0]?.data).toMatchObject({ actionResults: expect.arrayContaining([expect.objectContaining({ key: "queue_message", status: "suppressed" })]) });
     expect(persisted.audit).toHaveLength(2);
     expect(persisted.audit[0]).toMatchObject({ reason: "Pilot operator verification", after: { created: 1, skippedDuplicates: 0 } });

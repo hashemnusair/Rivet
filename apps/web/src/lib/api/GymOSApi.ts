@@ -1219,7 +1219,7 @@ export interface GymOSApi {
   receivePurchaseOrder(input: import("@/lib/domain/types").ReceivePurchaseOrderInput): Promise<import("@/lib/domain/types").PurchaseOrder>;
   notifyPurchaseOrderSupplier(input: { purchaseOrderId: UUID; channel?: "supplier_email" | "supplier_sms"; reason: string }): Promise<import("@/lib/domain/types").SupplierNotificationResult>;
 
-  // Outbound messaging (WhatsApp / SMS)
+  // Retired outbound-messaging compatibility: off status and empty catalogue.
   getMessagingStatus(): Promise<import("@/lib/domain/types").MessagingStatus>;
   listMessageTemplateCatalogue(): Promise<import("@/lib/domain/types").MessageTemplateCatalogueEntry[]>;
 

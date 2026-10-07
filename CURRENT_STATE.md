@@ -1,5 +1,52 @@
 # GymOS / RIVET current implementation state
 
+## 7 October 2026 — manual WhatsApp and Resend email
+
+**Confirmed by Elias:** remove automated WhatsApp; keep staff-initiated manual
+WhatsApp; route all email through Resend. No Twilio/Meta API launch is planned.
+This supersedes earlier automated-messaging go-live notes. These are local
+changes on `arabic-foundation`; nothing was pushed, deployed or enabled live.
+
+- Removed the outbound WhatsApp/SMS provider implementation and cron. The old
+  worker is an inert compatibility endpoint and old environment/settings values
+  cannot reactivate it. Retained automation actions are suppressed, new
+  WhatsApp/SMS rules are rejected, and historical tables/indexes remain.
+- The renewal job now only creates opt-in staff call tasks one day before expiry.
+  It cancels pending historical external renewal messages with an event and
+  retains terminal history. Settings replaces delivery controls with staff
+  follow-up and a link to Emails; manual WhatsApp handoff/recording is preserved.
+- Existing Resend renewal/expiry emails run at 7/1 tenant-local days before expiry
+  through the operational queue and owner preferences. Added successor-member
+  guards and tenant-scoped dedupe, respecting old same-tenant delivery keys.
+- Added signed Clerk `email.created` → Resend delivery at
+  `/api/webhooks/clerk-email`. Clerk owns invitations/codes; the relay sends the
+  rendered content, skips Clerk-delivered events, retries failures and supplies
+  a stable Resend idempotency key. Auth content is never logged or placed in the
+  staff email outbox. Dedicated Vercel configuration and per-template Clerk
+  cutover are still pending; live auth still uses the previously configured
+  Clerk sender until then. Read docs/19 before changing template delivery.
+- Correct Resend `rivetjo` team access was resolved; sending domain verified.
+  Existing signed/countersigned copies were found in Elias's **Spacemail Inbox**.
+  No fresh invitation/renewal test or full receiver authentication-pass claim.
+  Resend delivery webhook/Convex secret and global application-email kinds are
+  absent at the inspected production baseline. No provider settings changed.
+- Prepared `docs/legal-review/2026-10-07/REVIEW_BRIEF.md` and
+  `SOURCE_SNAPSHOT.html` (34 privacy/terms/DPA sections plus canonical agreement).
+  External review has not started: recipient not supplied. Entity, pricing,
+  terms conflict and Arabic legal review remain open. Signed text was preserved.
+- Validation: 277 suites / 1,738 tests passed via
+  `pnpm --filter web exec vitest run --maxWorkers=3`; `pnpm typecheck`,
+  `pnpm convex:typecheck`, `pnpm lint`, `pnpm build` and 14 CLI/environment
+  guards passed. The production build registers the new dynamic webhook route.
+  A stale fixed-date
+  billing test was adjusted to future dates; no billing implementation changed.
+- Read first: `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`,
+  `apps/web/src/app/api/webhooks/clerk-email/route.ts`,
+  `apps/web/convex/{messagingWorker,renewalJobs,membershipJobs}.ts`, and the review
+  brief. Provider cutover and fresh inbox verification remain release work.
+
+
+
 See [the Arabic execution record](docs/arabic/EXECUTION.md) for current implementation progress, validation and unresolved package gates.
 
 ## 3 October 2026 — Arabic landing page parity

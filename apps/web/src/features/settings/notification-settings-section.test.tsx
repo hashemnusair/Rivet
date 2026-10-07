@@ -13,13 +13,16 @@ vi.mock("next/navigation", () => ({
 afterEach(() => resetApiForTests());
 
 describe("NotificationsSection", () => {
-  it("keeps renewal reminders off until an authorized user turns them on and saves", async () => {
+  it("keeps renewal call tasks off until an authorized user turns them on and saves", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(<NotificationsSection />);
     const update = vi.spyOn(api, "updateNotificationSettings");
-    const renewalRecovery = await screen.findByRole("switch", { name: "Renewal reminders" });
+    const renewalRecovery = await screen.findByRole("switch", { name: "Renewal call tasks" });
 
     expect(renewalRecovery).toHaveAttribute("data-state", "unchecked");
+    expect(screen.queryByRole("switch", { name: "Send reminders to members" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("messaging-status")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Manage member emails" })).toHaveAttribute("href", "/settings?section=email");
     expect(screen.queryByRole("button", { name: "Save notifications" })).not.toBeInTheDocument();
     await user.click(renewalRecovery);
 

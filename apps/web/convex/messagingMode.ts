@@ -1,32 +1,9 @@
-/**
- * WhatsApp go-live flag and provider seam.
- *
- *   RIVET_MESSAGING_MODE = off | sandbox | allowlist | live   (default off)
- *   RIVET_MESSAGING_PROVIDER = twilio                          (only provider)
- *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN
- *   TWILIO_WHATSAPP_FROM           "whatsapp:+962..." the RIVET WhatsApp Business sender
- *   RIVET_MESSAGING_SANDBOX_TO     E.164 number that receives every sandbox message
- *   RIVET_MESSAGING_ALLOWLIST      comma list of E.164 numbers or prefixes
- *
- * RIVET sends WhatsApp only (decision of 14 September 2026). The `sms`
- * channel value survives on rows queued before that date so the ledger
- * stays readable, but the router refuses it with a recorded reason and no
- * SMS sender is configured anywhere.
- *
- * Two switches must both be on before a member receives a message: this
- * global mode, and the gym's own "External delivery" setting
- * (`automationDeliveryMode = live`). Messages keep the sandbox ledger shape
- * in every mode, so nothing about the audit trail changes when a provider
- * is switched on. No Convex imports: shared by the mock adapter and tests.
- */
+/** Compatibility types for historical deliveries. Automated WhatsApp/SMS were
+ * retired on 7 October 2026. Staff use the manual WhatsApp handoff instead. */
 export const MESSAGING_MODES = ["off", "sandbox", "allowlist", "live"] as const;
 export type MessagingMode = (typeof MESSAGING_MODES)[number];
 export type MessagingChannel = "whatsapp" | "sms";
-/** The only channel RIVET offers. Rows on any other channel are refused, never sent. */
-export const OFFERED_MESSAGING_CHANNEL: MessagingChannel = "whatsapp";
-export const RETIRED_CHANNEL_REASON = "SMS was retired on 14 September 2026; RIVET sends WhatsApp only";
-
-type Env = Record<string, string | undefined>;
+export const RETIRED_CHANNEL_REASON = "Automated WhatsApp and SMS are retired. Use the manual WhatsApp handoff or operational email.";
 
 export interface MessagingModeResolution {
   mode: MessagingMode;
@@ -37,25 +14,9 @@ export interface MessagingModeResolution {
   warning?: string;
 }
 
-export function resolveMessagingMode(env: Env = process.env): MessagingModeResolution {
-  const raw = env.RIVET_MESSAGING_MODE?.trim().toLowerCase();
-  let mode: MessagingMode = "off";
-  let warning: string | undefined;
-  if (raw) {
-    if ((MESSAGING_MODES as readonly string[]).includes(raw)) mode = raw as MessagingMode;
-    else warning = `RIVET_MESSAGING_MODE "${raw}" is not one of ${MESSAGING_MODES.join(", ")}; messaging stays off.`;
-  }
-  const providerName = env.RIVET_MESSAGING_PROVIDER?.trim().toLowerCase();
-  const twilioAuth = Boolean(env.TWILIO_ACCOUNT_SID?.trim() && env.TWILIO_AUTH_TOKEN?.trim());
-  const provider = providerName === "twilio" && twilioAuth ? "twilio" : "none";
-  return {
-    mode,
-    provider,
-    whatsappReady: provider === "twilio" && Boolean(env.TWILIO_WHATSAPP_FROM?.trim()),
-    sandboxConfigured: Boolean(env.RIVET_MESSAGING_SANDBOX_TO?.trim()),
-    allowlistSize: parseMessagingAllowlist(env.RIVET_MESSAGING_ALLOWLIST).length,
-    warning,
-  };
+/** Old environment variables cannot reactivate the removed sender. */
+export function resolveMessagingMode(_env: Record<string, string | undefined> = {}): MessagingModeResolution {
+  return { mode: "off", provider: "none", whatsappReady: false, sandboxConfigured: false, allowlistSize: 0, warning: RETIRED_CHANNEL_REASON };
 }
 
 /**
@@ -76,64 +37,7 @@ export function toE164(input: string | undefined, defaultCountryCode = "962"): s
   return /^\d{7,12}$/.test(digits) ? `+${defaultCountryCode}${digits}` : undefined;
 }
 
-export function parseMessagingAllowlist(value: string | undefined): string[] {
-  return (value ?? "").split(",").map((item) => toE164(item.trim()) ?? item.trim()).filter(Boolean);
-}
-
-export function phoneAllowed(recipient: string, allowlist: readonly string[]): boolean {
-  const number = toE164(recipient);
-  if (!number) return false;
-  return allowlist.some((entry) => number === entry || (entry.endsWith("*") && number.startsWith(entry.slice(0, -1))));
-}
-
-export type MessageRoute =
-  | { decision: "send"; to: string }
-  | { decision: "redirect"; to: string; originalRecipient: string }
-  | { decision: "drop"; reason: string };
-
-export function routeMessage(input: { mode: MessagingMode; channel: MessagingChannel; recipient: string | undefined; sandboxTo?: string; allowlist?: readonly string[]; resolution: Pick<MessagingModeResolution, "whatsappReady"> }): MessageRoute {
-  // A retired channel is refused before anything else so the ledger names
-  // the real reason, whatever the mode or the recipient.
-  if (input.channel !== OFFERED_MESSAGING_CHANNEL) return { decision: "drop", reason: RETIRED_CHANNEL_REASON };
-  const to = toE164(input.recipient);
-  if (!to) return { decision: "drop", reason: "Recipient phone number is missing or not a valid number" };
-  const ready = input.resolution.whatsappReady;
-  switch (input.mode) {
-    case "off":
-      return { decision: "drop", reason: "Messaging mode is off (RIVET_MESSAGING_MODE)" };
-    case "sandbox": {
-      const sandboxTo = toE164(input.sandboxTo);
-      if (!sandboxTo) return { decision: "drop", reason: "Messaging mode is sandbox but RIVET_MESSAGING_SANDBOX_TO is not set" };
-      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
-      return { decision: "redirect", to: sandboxTo, originalRecipient: to };
-    }
-    case "allowlist":
-      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
-      if (!phoneAllowed(to, input.allowlist ?? [])) return { decision: "drop", reason: "Recipient is not on RIVET_MESSAGING_ALLOWLIST (allowlist mode)" };
-      return { decision: "send", to };
-    case "live":
-      if (!ready) return { decision: "drop", reason: "The WhatsApp sender is not configured" };
-      return { decision: "send", to };
-  }
-}
-
-export const MESSAGE_RETRY_MINUTES = [1, 5, 30] as const;
-export const MESSAGE_MAX_ATTEMPTS = MESSAGE_RETRY_MINUTES.length + 1;
-
-/** Twilio request body for one WhatsApp message; the worker adds credentials. */
-export function twilioMessageParams(input: { to: string; body: string; env?: Env }): URLSearchParams {
-  const env = input.env ?? process.env;
-  const params = new URLSearchParams();
-  params.set("To", `whatsapp:${input.to}`);
-  params.set("From", env.TWILIO_WHATSAPP_FROM?.trim() ?? "");
-  params.set("Body", input.body);
-  return params;
-}
-
-export function twilioMessagesUrl(accountSid: string): string {
-  return `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json`;
-}
-
-export function twilioRetryable(status: number): boolean {
-  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+/** Kept for callers compiled before retirement; never returns a send route. */
+export function routeMessage(_input: { mode: MessagingMode; channel: MessagingChannel; recipient: string | undefined; sandboxTo?: string; allowlist?: readonly string[]; resolution: Pick<MessagingModeResolution, "whatsappReady"> }): { decision: "drop"; reason: string } {
+  return { decision: "drop", reason: RETIRED_CHANNEL_REASON };
 }

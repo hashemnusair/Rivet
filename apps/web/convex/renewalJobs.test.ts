@@ -30,141 +30,67 @@ async function addOrganization(t: TestConvex<typeof schema>, input: {
   });
 }
 
-describe("renewal recovery job", () => {
-  it("does nothing until the organization explicitly enables renewal recovery", async () => {
+describe("renewal staff call tasks", () => {
+  it("does nothing until the organization enables staff call tasks", async () => {
     const t = convexTest(schema, modules);
-    await addOrganization(t, { publicId: "disabled-org", memberId: "disabled-member", membershipId: "disabled-membership", endDate: "2026-08-26", member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") })).toMatchObject({ organizations: 1, memberships: 0, created: 0, sandboxed: 0, queued: 0 });
-    const state = await t.run(async (ctx) => ({
-      deliveries: await ctx.db.query("renewalDeliveries").collect(),
-      tasks: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect(),
-      events: await ctx.db.query("renewalDeliveryEvents").collect(),
-      timeline: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect(),
-    }));
-    expect(state).toEqual({ deliveries: [], tasks: [], events: [], timeline: [] });
+    await addOrganization(t, { publicId: "disabled", memberId: "member", membershipId: "term", endDate: "2026-08-26" });
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-25") })).toMatchObject({ created: 0, queued: 0 });
+    expect(await t.run(async (ctx) => ctx.db.query("renewalDeliveries").collect())).toEqual([]);
   });
 
-  it("exposes only aggregate counts and timestamps through the internal release audit", async () => {
+  it("skips old 14/7/3 messages and creates one call task even without message consent", async () => {
     const t = convexTest(schema, modules);
-    await addOrganization(t, { publicId: "audit-disabled-org", memberId: "audit-disabled-member", membershipId: "audit-disabled-membership", endDate: "2026-08-26", member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") });
-    const disabled = await t.query(internal.renewalJobs.releaseAudit, {});
-    expect(disabled).toMatchObject({ scope: "renewal-records-only", deliveries: { count: 0 }, deliveryEvents: { count: 0 }, memberTimeline: { count: 0 }, staffCallTasks: { count: 0 } });
-    expect(disabled).not.toHaveProperty("memberPublicId");
-    expect(disabled).not.toHaveProperty("organizationId");
-
-    await addOrganization(t, { publicId: "audit-enabled-org", memberId: "audit-enabled-member", membershipId: "audit-enabled-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    const now = atUtc("2026-08-12");
-    await t.mutation(internal.renewalJobs.queueRenewalJourney, { now });
-    const enabled = await t.query(internal.renewalJobs.releaseAudit, { since: now });
-    expect(enabled.deliveries).toMatchObject({ count: 1, groups: { sandboxed: 1 }, firstAt: now, lastAt: now });
-    expect(enabled.deliveryEvents).toMatchObject({ count: 2, groups: { created: 1, sandboxed: 1 }, firstAt: now, lastAt: now });
-    expect(enabled.memberTimeline).toMatchObject({ count: 1, groups: { renewal_message_sandboxed: 1 }, firstAt: now, lastAt: now });
-    expect(enabled.staffCallTasks).toMatchObject({ count: 0 });
-  });
-
-  it("creates exact 14/7/3 reminders and one 1-day call, then deduplicates", async () => {
-    const t = convexTest(schema, modules);
-    await addOrganization(t, { publicId: "renewal-org", memberId: "renewal-member", membershipId: "renewal-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") })).toMatchObject({ created: 1, sandboxed: 1, queued: 0 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-19") })).toMatchObject({ created: 1, sandboxed: 1 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-23") })).toMatchObject({ created: 1, sandboxed: 1 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-25") })).toMatchObject({ created: 1, queued: 1 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-25", 13) })).toMatchObject({ created: 0 });
-
-    const state = await t.run(async (ctx) => ({
-      deliveries: await ctx.db.query("renewalDeliveries").collect(),
-      tasks: await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect(),
-      events: await ctx.db.query("renewalDeliveryEvents").collect(),
-    }));
-    expect(state.deliveries).toHaveLength(4);
-    expect(state.deliveries.map((delivery) => delivery.checkpointKey).sort()).toEqual(["14_day", "1_day_call", "3_day", "7_day"]);
-    expect(state.deliveries.filter((delivery) => delivery.status === "sent")).toHaveLength(0);
-    expect(state.deliveries.filter((delivery) => delivery.channel === "staff_task")).toHaveLength(1);
-    expect(state.tasks).toHaveLength(1);
-    expect(state.events.some((event) => event.eventType === "task_created")).toBe(true);
-  });
-
-  it("suppresses unknown consent and defers an opted-in message through quiet hours", async () => {
-    const t = convexTest(schema, modules);
-    await addOrganization(t, { publicId: "quiet-org", memberId: "quiet-member", membershipId: "quiet-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } }, quietHours: { start: "22:00", end: "08:00" } });
-    await addOrganization(t, { publicId: "unknown-org", memberId: "unknown-member", membershipId: "unknown-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true });
-
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12", 23) })).toMatchObject({ created: 2, deferred: 1, suppressed: 1 });
-    await t.run(async (ctx) => {
-      const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "quiet-org")).unique();
-      if (!organization) throw new Error("quiet organization fixture missing");
-      const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "member").eq("publicId", "quiet-member")).unique();
-      if (!member) throw new Error("quiet member fixture missing");
-      await ctx.db.patch(member._id, { data: { ...(member.data as Record<string, unknown>), marketingPreference: { optedIn: false, source: "member_selected", status: "explicit_opt_out" }, marketingPreferenceStatus: "explicit_opt_out", marketingPreferenceSource: "member_selected" }, updatedAt: atUtc("2026-08-12", 23) });
-    });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12", 23) })).toMatchObject({ created: 0, suppressed: 1 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-13", 8) })).toMatchObject({ created: 0, sandboxed: 0 });
-    const deliveries = await t.run(async (ctx) => await ctx.db.query("renewalDeliveries").collect());
-    expect(deliveries.find((delivery) => delivery.dedupeKey.includes("quiet-membership"))).toMatchObject({ status: "suppressed", suppressionReason: "Recipient opted out of renewal messages" });
-    expect(deliveries.find((delivery) => delivery.dedupeKey.includes("unknown-membership"))).toMatchObject({ status: "suppressed", suppressionReason: "Explicit consent is required for renewal messages" });
-    const suppressedTimeline = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>));
-    expect(suppressedTimeline.find((event) => event.memberId === "unknown-member" && event.type === "renewal_message_suppressed")).toMatchObject({
-      body: "Explicit consent is required for renewal messages",
-      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { enum: "renewalReason", value: "Explicit consent is required for renewal messages" } } },
-    });
-  });
-
-  it("cancels the old term on an end-date change, creates the new term action, and keeps one call task", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await addOrganization(t, { publicId: "term-org", memberId: "term-member", membershipId: "term-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") })).toMatchObject({ created: 1, sandboxed: 1 });
-    await t.run(async (ctx) => {
-      const membership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", ids.organization).eq("entityType", "membership").eq("publicId", "term-membership")).unique();
-      if (!membership) throw new Error("term membership fixture missing");
-      await ctx.db.patch(membership._id, { data: { ...(membership.data as Record<string, unknown>), endDate: "2026-08-27" }, updatedAt: atUtc("2026-08-13") });
-    });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-13") })).toMatchObject({ cancelled: 1, created: 1, sandboxed: 1 });
-    const rowsAfterTermChange = await t.run(async (ctx) => await ctx.db.query("renewalDeliveries").collect());
-    expect(rowsAfterTermChange).toHaveLength(2);
-    expect(rowsAfterTermChange.find((row) => row.membershipEndDate === "2026-08-26")).toMatchObject({ status: "cancelled", cancellationReason: "membership_term_changed" });
-    expect(rowsAfterTermChange.find((row) => row.membershipEndDate === "2026-08-27")).toMatchObject({ status: "sandboxed" });
-    const cancellation = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect()).map((record) => record.data as Record<string, unknown>).find((event) => event.type === "renewal_journey_cancelled"));
-    expect(cancellation).toMatchObject({
-      body: "membership term changed",
-      bodyMessage: { key: "communicationCompletion.timeline.value", params: { value: { enum: "renewalReason", value: "membership_term_changed" } } },
-    });
-
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-26") })).toMatchObject({ created: 1, queued: 1 });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-26", 13) })).toMatchObject({ created: 0 });
-    const finalState = await t.run(async (ctx) => ({
-      deliveries: await ctx.db.query("renewalDeliveries").collect(),
-      tasks: await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", ids.organization).eq("entityType", "task")).collect(),
-    }));
-    expect(finalState.tasks).toHaveLength(1);
-    expect(finalState.deliveries.filter((row) => row.channel === "staff_task")).toHaveLength(1);
-    expect(finalState.deliveries.find((row) => row.channel === "staff_task")).toMatchObject({ membershipEndDate: "2026-08-27", status: "queued" });
-  });
-
-  it("cancels outstanding actions when a successor membership is created", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await addOrganization(t, { publicId: "stop-org", memberId: "stop-member", membershipId: "old-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") });
-    await t.run(async (ctx) => {
-      await ctx.db.insert("domainRecords", { organizationId: ids.organization, entityType: "membership", publicId: "new-membership", branchId: ids.branch, memberPublicId: "stop-member", createdAt: atUtc("2026-08-12"), updatedAt: atUtc("2026-08-12"), data: { id: "new-membership", memberId: "stop-member", homeBranchId: "stop-org-branch", startDate: "2026-08-27", endDate: "2026-09-26", previousMembershipId: "old-membership" } });
-    });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12", 13) })).toMatchObject({ cancelled: 1 });
-    const deliveries = await t.run(async (ctx) => await ctx.db.query("renewalDeliveries").collect());
+    await addOrganization(t, { publicId: "enabled", memberId: "member", membershipId: "term", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { preferredLanguage: "ar" } });
+    for (const date of ["2026-08-12", "2026-08-19", "2026-08-23"]) {
+      expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc(date) })).toMatchObject({ created: 0 });
+    }
+    const now = atUtc("2026-08-25");
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now })).toMatchObject({ created: 1, queued: 1 });
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now })).toMatchObject({ created: 0 });
+    const deliveries = await t.run(async (ctx) => ctx.db.query("renewalDeliveries").collect());
     expect(deliveries).toHaveLength(1);
-    expect(deliveries[0]).toMatchObject({ membershipPublicId: "old-membership", status: "cancelled", cancellationReason: "membership_renewed" });
-    expect(await t.run(async (ctx) => (await ctx.db.query("renewalDeliveryEvents").collect()).some((event) => event.eventType === "cancelled" && event.reason === "membership_renewed"))).toBe(true);
+    expect(deliveries[0]).toMatchObject({ channel: "staff_task", checkpointKey: "1_day_call", consentStatus: "not_applicable", language: "ar", languageSource: "recipient" });
+    const timeline = await t.run(async (ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).first());
+    expect(timeline?.data).toMatchObject({ titleMessage: { key: "communicationCompletion.timeline.renewalCallTask" }, bodyMessage: { key: "communicationCompletion.timeline.renewalCallTaskBody" } });
+    const audit = await t.query(internal.renewalJobs.releaseAudit, { since: now });
+    expect(audit.deliveries).toMatchObject({ count: 1, groups: { queued: 1 } });
+    expect(audit.staffCallTasks).toMatchObject({ count: 1, groups: { open: 1 } });
+    expect(audit).not.toHaveProperty("memberPublicId");
   });
 
-  it("keeps identical public IDs isolated across tenants", async () => {
+  it("cancels pending historical WhatsApp rows with an event while preserving sent history", async () => {
     const t = convexTest(schema, modules);
-    await addOrganization(t, { publicId: "tenant-a", memberId: "same-member", membershipId: "same-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    await addOrganization(t, { publicId: "tenant-b", memberId: "same-member", membershipId: "same-membership", endDate: "2026-08-26", renewalRecoveryEnabled: true, member: { marketingPreference: { optedIn: true, source: "member_selected" } } });
-    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-12") })).toMatchObject({ organizations: 2, created: 2 });
-    expect(await t.run(async (ctx) => (await ctx.db.query("renewalDeliveries").collect()).map((delivery) => delivery.dedupeKey).sort())).toEqual([
-      "renewal:tenant-a:same-membership:2026-08-26:14_day:whatsapp:renewal-policy-v1",
-      "renewal:tenant-b:same-membership:2026-08-26:14_day:whatsapp:renewal-policy-v1",
-    ]);
+    const { organization } = await addOrganization(t, { publicId: "legacy", memberId: "member", membershipId: "term", endDate: "2026-08-26" });
+    await t.run(async (ctx) => {
+      for (const status of ["queued", "deferred", "sandboxed", "failed", "sent"] as const) {
+        await ctx.db.insert("renewalDeliveries", { organizationId: organization, publicId: status, membershipPublicId: "term", membershipEndDate: "2026-08-26", memberPublicId: "member", checkpointDaysBefore: 7, checkpointKey: "7_day", channel: "whatsapp", templateVersion: "v1", policyVersion: "v1", dedupeKey: status, recipientReference: "member", language: "en", consentStatus: "explicit_opt_in", channelOptedOut: false, status, attempts: [], createdAt: 1, updatedAt: 1 });
+      }
+    });
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-19") })).toMatchObject({ created: 0, cancelled: 4 });
+    const rows = await t.run(async (ctx) => ctx.db.query("renewalDeliveries").collect());
+    expect(rows).toHaveLength(5);
+    expect(rows.filter((row) => row.status === "cancelled")).toHaveLength(4);
+    expect(rows.find((row) => row.publicId === "sent")).toMatchObject({ status: "sent", updatedAt: 1 });
+    expect(rows.find((row) => row.publicId === "queued")).toMatchObject({ cancellationReason: "automated_messaging_retired" });
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now: atUtc("2026-08-19") })).toMatchObject({ cancelled: 0 });
+    expect(await t.run(async (ctx) => ctx.db.query("renewalDeliveryEvents").collect())).toHaveLength(4);
+  });
+
+  it.each(["term_changed", "renewed"])("cancels an open call task when %s, without touching the other tenant", async (reason) => {
+    const t = convexTest(schema, modules);
+    const { organization } = await addOrganization(t, { publicId: "first", memberId: "member", membershipId: "term", endDate: "2026-08-26", renewalRecoveryEnabled: true });
+    await addOrganization(t, { publicId: "second", memberId: "member", membershipId: "term", endDate: "2026-08-26", renewalRecoveryEnabled: true });
+    const now = atUtc("2026-08-25");
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now })).toMatchObject({ created: 2 });
+    await t.run(async (ctx) => {
+      const term = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization).eq("entityType", "membership").eq("publicId", "term")).unique();
+      if (!term) throw new Error("Missing fixture");
+      if (reason === "term_changed") await ctx.db.patch(term._id, { data: { ...term.data as Record<string, unknown>, endDate: "2026-09-26" } });
+      else await ctx.db.insert("domainRecords", { organizationId: organization, entityType: "membership", publicId: "successor", createdAt: now, updatedAt: now, data: { id: "successor", memberId: "member", previousMembershipId: "term", startDate: "2026-08-27", endDate: "2026-09-26" } });
+    });
+    expect(await t.mutation(internal.renewalJobs.queueRenewalJourney, { now })).toMatchObject({ created: 0, cancelled: 1 });
+    const tasks = await t.run(async (ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "task")).collect());
+    expect(tasks.find((row) => row.organizationId === organization)?.data).toMatchObject({ status: "cancelled" });
+    expect(tasks.find((row) => row.organizationId !== organization)?.data).toMatchObject({ status: "open" });
   });
 });
