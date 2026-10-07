@@ -1,6 +1,28 @@
 # GymOS / RIVET current implementation state
 
-## 7 October 2026 — nonlegal launch-readiness candidate
+## 7 October 2026 — nonlegal launch release deployed
+
+**Release verified at 18:46 Asia/Amman:** [PR #6](https://github.com/hashemnusair/Rivet/pull/6)
+merged as `b95150b18d330ef77dd04351018238077c297f89`. Its tree exactly matches
+candidate `d74eb80`, which passed all 13 jobs in
+[CI 37645426531](https://github.com/hashemnusair/Rivet/actions/runs/37645426531).
+Guarded Convex Production deploy to `descriptive-meerkat-589` succeeded with two
+additive indexes and no deletions; post-deploy health returned `ok` at
+`1791387841611`. Vercel Production deployment `9pAjghspDCDRtRjZLByTUPdYanqk`
+completed successfully at the merge SHA. Public pricing now renders 39/89/199 JOD,
+75/150/300 JOD onboarding, 1/2/5 branches and 150/300/1,000 active members.
+Public/signup and all three role-specific sign-in hosts returned HTTP 200.
+The production catalogue preview reported `default` for all three plans with
+`applied: false`; no catalogue data migration was needed.
+
+The user explicitly approved the private production database/file-storage export.
+Backup `/private/tmp/rivet-prelaunch-2026-10-07.zip` exists with mode `0600`,
+6,360,429 bytes and 177 ZIP entries; archive integrity passed. SHA-256:
+`f04f6a64adb54fb70232b0d5c2a8b260331311f5b114da9df2589f98f8e35abc`.
+This verifies the export, not a restore rehearsal. The previous automatic-review
+block and GitHub push errors are resolved. No deployment commands remain owed.
+Provider/inbox and real-role staging acceptance below remain unverified; legal
+text is unchanged and no messaging/job enablement settings were changed.
 
 **Scope:** implement the commercial launch packages and close accessible technical
 launch gaps. Legal text, signed agreements, the entity decision and external
@@ -64,11 +86,10 @@ Elias's request; the primary reviewed and integrated their changes.
   two new indexes, no deletions. It did **not** apply a production deployment.
   Initial automatic review queried the generic push prompt; the CLI source proved
   `dryRun` reaches finalization, and the evidence-backed retry was approved.
-- Production export was rejected by automatic approval review because a full
-  database/file-storage ZIP is a sensitive local copy. Exact backup approval is
-  pending; no export/restore is claimed. The recorded September archive is absent
-  from its documented path. Do not mutate Production without the approved backup.
-- Candidate pushed in [draft PR #6](https://github.com/hashemnusair/Rivet/pull/6).
+- Production export initially required explicit approval for the sensitive local
+  copy; the user approved it and the verified backup is recorded above. The
+  previously recorded September archive is absent from its documented path.
+- Candidate released through [PR #6](https://github.com/hashemnusair/Rivet/pull/6).
   CI runs 37639745896 and 37641843343 passed 12/13 jobs; the only failure was a
   390px Linux support screenshot. Its test now anchors the request panel beneath
   the sticky topbar. Visual review of the second run confirmed the remaining
@@ -76,11 +97,10 @@ Elias's request; the primary reviewed and integrated their changes.
   versus existing main's "Urgent — we cannot work" / "Creation time not recorded".
   That one inspected Linux reference was refreshed at the deterministic position;
   no tolerance was increased. The focused macOS owner/manager journey passed.
-  GitHub rejected three pushes of the reviewed reference commit with an Internal
-  Server Error; PR #6 remains at `1ca43d8` and its 12/13 CI result. The reference
-  fix is committed locally and still needs a successful push and CI rerun.
-- Candidate branch: `codex/launch-readiness`. Production remains the previously
-  verified release below until this candidate is explicitly released.
+  GitHub initially rejected three pushes with Internal Server Error; the retry
+  succeeded and final CI passed all 13 jobs before release.
+- Release branch: `codex/launch-readiness`; merged to main and deployed as recorded
+  above. Earlier release evidence below is historical.
 
 ### Still blocked or external
 

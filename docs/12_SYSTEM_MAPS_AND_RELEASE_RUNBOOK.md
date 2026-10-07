@@ -1,6 +1,16 @@
 # 12 — System Maps and Release Runbook
 
-## Nonlegal launch candidate — 7 October 2026
+## Nonlegal launch release — 7 October 2026
+
+**Deployed:** PR #6 merged as `b95150b18d330ef77dd04351018238077c297f89`, with
+the same tree as candidate `d74eb80` (all 13 CI jobs passed in run 37645426531).
+Convex Production deploy succeeded with two additive indexes, no deletions and
+healthy post-deploy response. Vercel Production `9pAjghspDCDRtRjZLByTUPdYanqk`
+completed at that merge SHA. Live pricing matches the launch catalogue; public,
+signup and three role-specific sign-in hosts return HTTP 200. The catalogue
+preview required no migration. See CURRENT_STATE.md for the approved mode-0600
+backup path, hash and integrity evidence. Backup approval and GitHub push errors
+are resolved; provider/inbox, real-role staging and restore acceptance remain open.
 
 Read the newest CURRENT_STATE.md entry before the historical release evidence below.
 The candidate adds enforced commercial capacities, one-time onboarding billing,
@@ -11,7 +21,7 @@ Release sequence:
 
 1. Run unit/component suites, web/Convex types, lint/secret audit, production build and focused mock-browser journeys. Validate the unchanged Arabic decision lock.
 2. Run `pnpm convex:deploy -- --dry-run --yes`; inspect index changes. The installed CLI asks the same generic push prompt in dry-run mode; `--yes` only removes that prompt and `--dry-run` is passed through to finalization.
-3. Verify a current approved production backup before production mutation. A requested full export was blocked by automatic approval review because it copies sensitive database/file data to a local ZIP; explicit approval is pending. No export or restore is claimed.
+3. Verify a current approved production backup before production mutation. For this release the user explicitly approved the database/file-storage export to `/private/tmp/rivet-prelaunch-2026-10-07.zip`; owner-only permissions and ZIP integrity passed. This is export evidence, not restore acceptance.
 4. Deploy the reviewed source through `pnpm convex:deploy`, release the same frontend revision, verify exact deployed revision/health/CI, and preview `launchCatalogue:migrateDefaults` with `apply` omitted before an authorized apply. It migrates only untouched old defaults, preserves custom rows, and audits each update. The current read-only Production query returned no platformPlan rows, so no data migration is needed at that inspected state. Never overwrite custom packages to make a release check pass.
 5. Configure the signed Resend callback and Clerk relay in their respective provider environments. Operational mail defaults to the configured Reply-To or `sales@rivetjo.com`; verify that inbox is monitored. Keep explicit pilot recipients in the strict allowlist. Reconciliation remains off unless `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`; activating a job affecting real subscriptions needs a reviewed preview and approved targets.
 6. Validate fresh owner/staff/auth mail separately from operational triggers in Spacemail Inbox/Junk, including receiver headers. Provider acceptance or delivery events do not prove Inbox placement. Run an isolated real-role operating day and restore rehearsal before claiming those gates complete.
