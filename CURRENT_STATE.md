@@ -58,8 +58,8 @@ Elias's request; the primary reviewed and integrated their changes.
   focused capacity suite; no timeout or assertion was weakened.
 - `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` (including secret audit),
   `pnpm build`, `git diff --check` and `python3 docs/arabic/verify-lock.py` passed.
-  Focused mock Playwright pricing/signup journeys: **2/2 passed**. No screenshot
-  baseline or tolerance was changed; temporary Next test-path changes were removed.
+  Focused mock Playwright pricing/signup journeys: **2/2 passed**. Pricing screenshot
+  baselines and all tolerances are unchanged; temporary Next test-path changes were removed.
 - Guarded Production dry run via `pnpm convex:deploy -- --dry-run --yes` passed:
   two new indexes, no deletions. It did **not** apply a production deployment.
   Initial automatic review queried the generic push prompt; the CLI source proved
@@ -69,10 +69,16 @@ Elias's request; the primary reviewed and integrated their changes.
   pending; no export/restore is claimed. The recorded September archive is absent
   from its documented path. Do not mutate Production without the approved backup.
 - Candidate pushed in [draft PR #6](https://github.com/hashemnusair/Rivet/pull/6).
-  Initial CI passed every gate except a 390px support screenshot with an
-  inconsistent scroll offset. Its test now measures and anchors the request
-  panel beneath the sticky topbar; the complete focused owner/manager journey
-  passed locally with unchanged baseline/tolerance. CI rerun is pending.
+  CI runs 37639745896 and 37641843343 passed 12/13 jobs; the only failure was a
+  390px Linux support screenshot. Its test now anchors the request panel beneath
+  the sticky topbar. Visual review of the second run confirmed the remaining
+  difference was the reference's pre-October-3 copy ("Urgent" / "Not recorded")
+  versus existing main's "Urgent — we cannot work" / "Creation time not recorded".
+  That one inspected Linux reference was refreshed at the deterministic position;
+  no tolerance was increased. The focused macOS owner/manager journey passed.
+  GitHub rejected three pushes of the reviewed reference commit with an Internal
+  Server Error; PR #6 remains at `1ca43d8` and its 12/13 CI result. The reference
+  fix is committed locally and still needs a successful push and CI rerun.
 - Candidate branch: `codex/launch-readiness`. Production remains the previously
   verified release below until this candidate is explicitly released.
 
