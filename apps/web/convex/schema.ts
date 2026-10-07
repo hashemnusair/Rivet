@@ -164,6 +164,9 @@ export default defineSchema({
     status: organizationStatus,
     subscriptionPlan: v.optional(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"))),
     billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("annual"))),
+    // Captured only for newly provisioned gyms; no retroactive setup charges.
+    onboardingFeeMinor: v.optional(v.number()),
+    commercialTermsVersion: v.optional(v.string()),
     subscriptionStartedAt: v.optional(v.number()),
     trialEndsAt: v.optional(v.number()),
     currentPeriodEndsAt: v.optional(v.number()),
@@ -1248,6 +1251,11 @@ export default defineSchema({
     dedupeKey: v.string(),
     providerId: v.optional(v.string()),
     providerEventAt: v.optional(v.number()),
+    providerEventType: v.optional(v.string()),
+    /** One reservation per member-facing message, reused by all retries. */
+    quotaReservationMonth: v.optional(v.string()),
+    quotaReservedAt: v.optional(v.number()),
+    quotaDeferredUntil: v.optional(v.number()),
     attempts: v.array(v.object({ attemptedAt: v.number(), outcome: v.union(v.literal("accepted"), v.literal("retryable_failure"), v.literal("terminal_failure"), v.literal("suppressed")), statusCode: v.optional(v.number()), errorCode: v.optional(v.string()), mode: v.optional(v.string()), deliveredTo: v.optional(v.string()) })),
     status: v.union(v.literal("queued"), v.literal("leased"), v.literal("provider_accepted"), v.literal("delivered"), v.literal("retrying"), v.literal("failed"), v.literal("suppressed")),
     suppressionReason: v.optional(v.string()),
@@ -1363,6 +1371,31 @@ export default defineSchema({
     occurredAt: v.number(),
     receivedAt: v.number(),
   }).index("by_webhook_id", ["webhookId"]),
+
+  // Provider-wide suppression is keyed only by normalized address. It is not
+  // mirrored into tenant records, so one gym cannot inspect another gym's
+  // delivery history. Hard bounces and complaints are permanent safeguards.
+  operationalEmailSuppressions: defineTable({
+    email: v.string(),
+    reason: v.union(v.literal("hard_bounce"), v.literal("complaint")),
+    sourceWebhookId: v.string(),
+    providerId: v.optional(v.string()),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_email", ["email"]),
+
+  // One transactional counter per tenant and Asia/Amman calendar month.
+  // Deliveries keep their own reservation marker so retries cannot increment
+  // this row a second time.
+  operationalEmailQuotaUsage: defineTable({
+    organizationId: v.id("organizations"),
+    periodKey: v.string(),
+    reservedCount: v.number(),
+    monthlyLimit: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization_month", ["organizationId", "periodKey"]),
 
   // Provider-neutral renewal journey ledger. A row represents one
   // membership/checkpoint/policy decision, not an optimistic provider send.

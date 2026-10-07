@@ -5,10 +5,10 @@ const DAY_MS = 86_400_000;
 const NOW = Date.parse("2026-08-27T12:00:00.000Z");
 
 describe("projectSubscriptionBilling", () => {
-  it("prices annual as twelve months with the published 20% saving", () => {
+  it("prices annual as twelve months with the published 5% saving", () => {
     const projection = projectSubscriptionBilling({ currentStatus: "active", plan: "Growth", billingInterval: "annual", priceMinor: 149_000, now: NOW });
-    expect(projection.amountMinor).toBe(Math.round(149_000 * 12 * 0.8));
-    expect(projection.subtotalMinor).toBe(Math.round(149_000 * 12 * 0.8));
+    expect(projection.amountMinor).toBe(Math.round(149_000 * 12 * 0.95));
+    expect(projection.subtotalMinor).toBe(Math.round(149_000 * 12 * 0.95));
   });
 
   it("credits the remaining paid days as money and still bills one interval", () => {
@@ -16,6 +16,7 @@ describe("projectSubscriptionBilling", () => {
       currentStatus: "active",
       currentPeriodEndsAt: new Date(NOW + 16 * DAY_MS).toISOString(),
       currentPlanPriceMinor: 149_000,
+      currentTermValueMinor: 149_000,
       currentBillingInterval: "monthly",
       plan: "Pro",
       billingInterval: "annual",
@@ -47,6 +48,7 @@ describe("projectSubscriptionBilling", () => {
       currentStatus: "active",
       currentPeriodEndsAt: new Date(NOW + 15 * DAY_MS).toISOString(),
       currentPlanPriceMinor: 149_000,
+      currentTermValueMinor: 149_000,
       currentBillingInterval: "monthly",
       plan: "Pro",
       billingInterval: "monthly",
@@ -63,6 +65,7 @@ describe("projectSubscriptionBilling", () => {
       currentStatus: "active" as const,
       currentPeriodEndsAt: new Date(NOW + 15 * DAY_MS).toISOString(),
       currentPlanPriceMinor: 149_000,
+      currentTermValueMinor: 149_000,
       currentBillingInterval: "monthly" as const,
       plan: "Pro" as const,
       billingInterval: "monthly" as const,

@@ -87,7 +87,7 @@ import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
-import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd } from "../../../convex/subscriptionTerm";
+import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
@@ -2335,7 +2335,10 @@ export class MockGymOSApi implements GymOSApi {
         delete cloned.logoUrl;
         const tenant = this.tenantForGym(gym);
         const logoUrl = this.isProvisionedGym(gym) ? (tenant ? safeMockGymLogoUrl(gym, tenant.organization.id) : this.platformGymLogoUrl(gym)) : undefined;
-        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym) };
+        const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
+        const termInvoice = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && invoice.periodEnd === organization?.currentPeriodEndsAt);
+        const setupAlreadyPaid = this.platformInvoices.some(invoice => invoice.gymId === gym.id && invoice.status === "paid" && (invoice.onboardingFeeMinor ?? 0) > 0);
+        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym), currentTermValueMinor: termInvoice ? fundedSubscriptionValue(termInvoice) : undefined, pendingOnboardingFeeMinor: setupAlreadyPaid ? 0 : organization?.onboardingFeeMinor ?? 0 };
       }),
       bookings: this.trialBookings.map((booking) => ({ ...booking })),
       invoices: this.platformInvoices.map((invoice) => ({ ...invoice })),
@@ -2392,12 +2395,14 @@ export class MockGymOSApi implements GymOSApi {
     let invoicesCreated = 0;
     if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
       const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
-      const amountMinor = termPriceMinor(plan, billingInterval);
+      const onboardingFeeMinor = this.platformInvoices.some(item => item.gymId === gym.id && item.status !== "void" && (item.onboardingFeeMinor ?? 0) > 0) ? 0 : organization.onboardingFeeMinor ?? 0;
+      const amountMinor = termPriceMinor(plan, billingInterval) + onboardingFeeMinor;
       invoice = {
         id: `INV-${crypto.randomUUID()}`,
         gymId: gym.id,
         gym: gym.name,
         amountMinor,
+        ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor, subtotalMinor: amountMinor } : {}),
         amount: `JOD ${(amountMinor / 1_000).toFixed(3)}`,
         currency: "JOD",
         date: new Date(now).toISOString(),
@@ -2820,6 +2825,7 @@ export class MockGymOSApi implements GymOSApi {
         name: application.gymName,
         slug: `${application.gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "gym"}-${application.id.slice(0, 8)}`,
         subscriptionPlan: application.plan,
+        onboardingFeeMinor: this.platformPlans.find(plan => plan.name === application.plan)?.onboardingFeeMinor ?? 0,
         billingInterval: application.billingInterval ?? "monthly",
         status: "trial",
         subscriptionStartedAt: startedAt,
@@ -2981,6 +2987,8 @@ export class MockGymOSApi implements GymOSApi {
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
       const outgoingMonthlyPrice = this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0;
+      const fundedTerm = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === storedCurrentPeriodEndsAt);
+      const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
       const change = startsNewPaidTerm
         ? termChange({
             now: nowTimestamp,
@@ -2988,8 +2996,8 @@ export class MockGymOSApi implements GymOSApi {
             monthlyPriceMinor: this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0,
             // Only a paid, running term is worth anything back; an overdue
             // term was never paid for, so its invoice is voided instead.
-            ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingMonthlyPrice > 0
-              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingBillingInterval } }
+            ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingValue !== undefined
+              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingBillingInterval } }
               : {}),
           })
         : undefined;
@@ -3081,7 +3089,8 @@ export class MockGymOSApi implements GymOSApi {
         const termInvoice = periodBoundaryChanged || !change
           ? { subtotalMinor: termPriceMinor(priceMinor, billingInterval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(priceMinor, billingInterval) }
           : change;
-        const amountMinor = termInvoice.amountMinor;
+        const onboardingFeeMinor = this.platformInvoices.some(item => item.gymId === gym.id && item.status !== "void" && (item.onboardingFeeMinor ?? 0) > 0) ? 0 : organization.onboardingFeeMinor ?? 0;
+        const amountMinor = termInvoice.amountMinor + onboardingFeeMinor;
         issuedTermInvoiceId = `INV-${crypto.randomUUID()}`;
         this.platformInvoices.unshift({
           id: issuedTermInvoiceId,
@@ -3097,7 +3106,8 @@ export class MockGymOSApi implements GymOSApi {
           periodEnd: new Date(nextCurrentPeriodEndsAt).toISOString(),
           cycleKey: `change:${organization.id}:${nowTimestamp}`,
           billingInterval,
-          ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
+          ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor } : {}),
+          ...(termInvoice.creditMinor > 0 || onboardingFeeMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor + onboardingFeeMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
           // Parity with Convex: a credit that covers the term settles it.
           ...(amountMinor === 0
             ? { status: "paid" as const, paidAt: nowIso, paymentReference: "Settled by the credit from the previous term" }
@@ -3205,6 +3215,12 @@ export class MockGymOSApi implements GymOSApi {
       if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
       if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
       if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      for (const key of ["onboardingFeeMinor", "operationalEmails"] as const) {
+        const value = input[key];
+        if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw ApiError.of(ERR.VALIDATION, "Plan fees and email limits must be nonnegative integers.");
+      }
+      if (input.onboardingFeeMinor !== undefined) plan.onboardingFeeMinor = input.onboardingFeeMinor;
+      if (input.operationalEmails !== undefined) plan.operationalEmails = input.operationalEmails;
       plan.entitledModules = entitledModules;
       if (this.db.organization.subscriptionPlan === plan.name) {
         const previousOrganizationEntitled = this.db.organizationEntitlements.entitledModules;

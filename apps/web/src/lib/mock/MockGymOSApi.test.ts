@@ -271,7 +271,7 @@ describe("workspace entitlement and preference boundary", () => {
     expect(forgeDetail.subscription.startedAt).toEqual({ state: "available", value: forge!.subscriptionStartedAt });
     expect(forgeDetail.subscription.currentPeriodEndsAt).toEqual({ state: "available", value: forge!.currentPeriodEndsAt });
     expect(forgeDetail.subscription.trialEndsAt).toEqual({ state: "not_configured" });
-    expect(snapshot.overview.activeMrr).toEqual({ amount: 249_000, currency: "JOD" });
+    expect(snapshot.overview.activeMrr).toEqual({ amount: 199_000, currency: "JOD" });
     expect(cleanupRows.length).toBeGreaterThan(0);
     for (const gym of cleanupRows) {
       expect(gym).toMatchObject({ subscriptionStatus: "suspended", isPublic: false, isProvisioned: false, subscriptionStatusReason: "Organization is not provisioned." });
@@ -484,7 +484,7 @@ describe("platform subscription controls", () => {
     expect(reminder).toMatchObject({ invoicesCreated: 1, markedPastDue: 0, suspended: 0 });
     expect(await api.reconcilePlatformSubscriptions(boundary - 3 * 86_400_000)).toMatchObject({ invoicesCreated: 0 });
     const invoice = (await api.getPlatformSnapshot()).invoices.find((item) => item.cycleKey);
-    expect(invoice).toMatchObject({ billingInterval: "annual", amountMinor: 2_390_400, status: "open" });
+    expect(invoice).toMatchObject({ billingInterval: "annual", amountMinor: 2_268_600, status: "open" });
     // Raised three days early and payable within fourteen days of that.
     const dueAt = Date.parse(invoice!.dueAt!);
     expect(dueAt).toBe(boundary - 3 * 86_400_000 + 14 * 86_400_000);
@@ -560,7 +560,7 @@ describe("platform subscription controls", () => {
     expect(snapshot.invoices.length).toBe(invoicesBefore + 1);
     const termInvoice = snapshot.invoices.find((invoice) => invoice.cycleKey?.startsWith("change:"));
     const tenantPlanPrice = snapshot.plans.find((plan) => plan.name === reactivated.rivetPlan)!.priceMinor;
-    expect(termInvoice).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(tenantPlanPrice * 12 * 0.8) });
+    expect(termInvoice).toMatchObject({ status: "open", billingInterval: "annual", amountMinor: Math.round(tenantPlanPrice * 12 * 0.95) });
 
     const cancelled = await api.updatePlatformGym({ gymId: "forge-fitness", status: "cancelled", reason: "Cancel the subscription." });
     expect(cancelled).toMatchObject({ subscriptionStatus: "cancelled", cancelledAt: expect.any(String) });

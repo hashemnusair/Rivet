@@ -213,14 +213,17 @@ test.describe("RIVET gym applications", () => {
     await pricing.scrollIntoViewIfNeeded();
 
     await expect(pricing.getByText("Enterprise", { exact: true })).toBeVisible();
-    await expect(pricing.getByText("JD 500.000", { exact: true })).toBeVisible();
+    await expect(pricing.getByText("Custom quote", { exact: true }).first()).toBeVisible();
+    await expect(pricing.getByText("JD 500.000", { exact: true })).toHaveCount(0);
     await expect(pricing.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
 
     await pricing.getByRole("tab", { name: /Annual/ }).click();
     await expect(pricing.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    await expect(pricing.getByText("Save 20%", { exact: true }).first()).toBeVisible();
-    await expect(pricing.getByText("JD 63.200", { exact: true })).toBeVisible();
-    await expect(pricing.getByText("JD 758.400 billed annually", { exact: false }).first()).toBeVisible();
+    await expect(pricing.getByText("Save 5%", { exact: true }).first()).toBeVisible();
+    await expect(pricing.getByText("JD 37.050", { exact: true })).toBeVisible();
+    await expect(pricing.getByText(/444\.600/).first()).toBeVisible();
+    await expect(pricing.getByText(/One-time onboarding fee:.*75\.000/).first()).toBeVisible();
+    await expect(pricing.getByText(/First payment subtotal before applicable tax, including onboarding:.*519\.600/).first()).toBeVisible();
 
     // The carrying contract lives in the link itself: the Starter card must
     // encode the selected plan and billing interval before any navigation.

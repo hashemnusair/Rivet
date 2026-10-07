@@ -29,7 +29,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, role
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
-import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange } from "./subscriptionTerm";
+import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange, fundedSubscriptionValue } from "./subscriptionTerm";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
@@ -59,6 +59,8 @@ import { agreementSessionState, agreementSummaryForOrganization, legalAgreementM
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
+import { pendingOnboardingFee } from "./onboardingBilling";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -1101,6 +1103,10 @@ async function insertRecord(
   if (branch) assertBranchAccess(actor, branch);
   const now = Date.now();
   const enriched: Data = { ...value, id, organizationId: publicOrganizationId(actor.organization) };
+  if (entityType === "membership") {
+    const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+    await enforceMembershipCapacity(ctx, actor.organization._id, plan, enriched, { today: todayIn(actor.organization.timezone || TZ_FALLBACK), correlationId: actor.correlationId });
+  }
   await ctx.db.insert("domainRecords", {
     organizationId: actor.organization._id,
     entityType,
@@ -1118,6 +1124,20 @@ async function insertRecord(
 
 async function patchRecord(ctx: MutationCtx, actor: ActorContext, record: DomainRecord, value: Data): Promise<Data> {
   const enriched = { ...data(record.data), ...value, id: record.publicId, organizationId: publicOrganizationId(actor.organization) };
+  if (record.entityType === "membership") {
+    const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+    await enforceMembershipCapacity(ctx, actor.organization._id, plan, enriched, { existingPublicId: record.publicId, today: todayIn(actor.organization.timezone || TZ_FALLBACK), correlationId: actor.correlationId });
+  }
+  if (record.entityType === "member") {
+    const before = data(record.data);
+    const after = enriched as Data;
+    const wasArchived = before.status === "archived" || Boolean(before.archivedAt);
+    const willBeArchived = after.status === "archived" || Boolean(after.archivedAt);
+    if (wasArchived && !willBeArchived) {
+      const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+      await enforceMemberRestoreCapacity(ctx, actor.organization._id, plan, record.publicId, { today: todayIn(actor.organization.timezone || TZ_FALLBACK), correlationId: actor.correlationId });
+    }
+  }
   await ctx.db.patch(record._id, { data: enriched, updatedAt: Date.now() });
   return enriched;
 }
@@ -5397,8 +5417,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", sameTenantOrganization._id)).unique()
         : null;
       const logoUrl = sameTenantOrganization ? await platformGymLogoUrl(ctx, sameTenantOrganization, listing) : undefined;
+      const termInvoices = sameTenantOrganization ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", sameTenantOrganization._id).eq("entityType", "platformInvoice")).collect() : [];
+      const termInvoice = termInvoices.filter(row => data(row.data).status !== "void" && Date.parse(stringValue(data(row.data).periodEnd)) === sameTenantOrganization?.currentPeriodEndsAt).sort((a, b) => b.createdAt - a.createdAt)[0];
+      // Subscription changes replace unpaid cycle invoices, carrying setup forward.
+      const setupAlreadyPaid = termInvoices.some(row => data(row.data).status === "paid" && numberValue(data(row.data).onboardingFeeMinor) > 0);
       return {
-        view: marketplaceView(platformMarketplaceProjection({ ...listing, logoUrl }, sameTenantOrganization, entitlement), true),
+        view: { ...marketplaceView(platformMarketplaceProjection({ ...listing, logoUrl }, sameTenantOrganization, entitlement), true),
+          currentTermValueMinor: termInvoice ? fundedSubscriptionValue(data(termInvoice.data)) : undefined,
+          pendingOnboardingFeeMinor: setupAlreadyPaid ? 0 : sameTenantOrganization?.onboardingFeeMinor ?? 0,
+        } as Data,
         provisioned: Boolean(sameTenantOrganization),
         organizationId: sameTenantOrganization ? String(sameTenantOrganization._id) : undefined,
       };
@@ -5453,6 +5480,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         cycleKey: optionalString(invoice.cycleKey),
         billingInterval: invoice.billingInterval === "annual" || invoice.billingInterval === "monthly" ? invoice.billingInterval : undefined,
         subtotalMinor: typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : undefined,
+        onboardingFeeMinor: typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : undefined,
         creditMinor: typeof invoice.creditMinor === "number" ? invoice.creditMinor : undefined,
         creditDays: typeof invoice.creditDays === "number" ? invoice.creditDays : undefined,
         status: optionalString(invoice.status),
@@ -8811,6 +8839,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const catalog = await platformPlans(ctx);
     const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
     const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan);
+    const priorInvoices = startsNewPaidTerm && organization
+      ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
+      : [];
+    const fundedTerm = priorInvoices.map(row => data(row.data)).filter(invoice => invoice.status !== "void" && Date.parse(stringValue(invoice.periodEnd)) === storedPeriodEndsAt).sort((a, b) => Date.parse(stringValue(b.createdAt)) - Date.parse(stringValue(a.createdAt)))[0];
+    const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
     const change = startsNewPaidTerm
       ? termChange({
           now: nowMs,
@@ -8819,8 +8852,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           // Only a paid, running term is worth anything back. An overdue term
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
-          ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingMonthlyPrice > 0
-            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, interval: existingInterval } }
+          ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingValue !== undefined
+            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingInterval } }
             : {}),
         })
       : undefined;
@@ -8957,7 +8990,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const termInvoice = periodBoundaryChanged || !change
           ? { subtotalMinor: termPriceMinor(catalogPrice, interval), creditMinor: 0, creditDays: 0, amountMinor: termPriceMinor(catalogPrice, interval) }
           : change;
-        const amountMinor = termInvoice.amountMinor;
+        const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
+        const amountMinor = termInvoice.amountMinor + onboardingFeeMinor;
         const invoiceId = `INV-${newPublicId()}`;
         const periodEndIso = new Date(nextCurrentPeriodEndsAt).toISOString();
         await ctx.db.insert("domainRecords", {
@@ -8980,7 +9014,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             periodEnd: periodEndIso,
             cycleKey: `change:${targetOrganizationId}:${nowMs}`,
             billingInterval: interval,
-            ...(termInvoice.creditMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
+            ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor } : {}),
+            ...(termInvoice.creditMinor > 0 || onboardingFeeMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor + onboardingFeeMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
             // A credit large enough to cover the whole term leaves nothing to
             // collect, so the invoice is settled rather than left to chase.
             ...(amountMinor === 0
@@ -9089,7 +9124,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const branches = numeric("branches", numberValue(current.branches));
     const staff = numeric("staff", numberValue(current.staff));
     const members = numeric("members", numberValue(current.members));
-    if (![priceMinor, branches, staff, members].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
+    const onboardingFeeMinor = numeric("onboardingFeeMinor", numberValue(current.onboardingFeeMinor));
+    const operationalEmails = numeric("operationalEmails", numberValue(current.operationalEmails));
+    if (![priceMinor, branches, staff, members, onboardingFeeMinor, operationalEmails].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
     const modulePlan = workspacePlan(name);
@@ -9109,7 +9146,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: admin.correlationId });
       }
     }
-    const updated = { ...current, name, priceMinor, branches, staff, members, entitledModules };
+    const updated = { ...current, name, priceMinor, branches, staff, members, onboardingFeeMinor, operationalEmails, entitledModules };
     const updatedAt = Date.now();
     const planRecord = record ?? await (async () => {
       const organization = await ctx.db.query("organizations").first();
@@ -11685,11 +11722,15 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         const branch = await branchByPublicId(ctx, actor.organization._id, inputId);
         if (!branch) domainError("NOT_FOUND", "Branch not found.", { correlationId: actor.correlationId });
         const updated = { name: stringValue(input.name), code: stringValue(input.code).toUpperCase(), address: stringValue(input.address), phone: stringValue(input.phone), capacity: numberValue(input.capacity, 120), active: input.status !== "inactive", status: input.status };
+        const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+        await enforceBranchCapacity(ctx, actor.organization._id, plan, branch.active && branch.status !== "inactive", updated.active, actor.correlationId);
         await ctx.db.patch(branch._id, { ...updated, updatedAt: Date.now() });
         await insertAudit(ctx, actor, { category: "settings", action: "branch.update", entityType: "branch", entityId: inputId, entityLabel: updated.name, summary: "Branch updated", branchId: inputId });
         const latest = await ctx.db.get(branch._id);
         return branchView(latest ?? branch, publicOrganizationId(actor.organization));
       }
+      const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+      await enforceBranchCapacity(ctx, actor.organization._id, plan, null, input.status !== "inactive", actor.correlationId);
       const branchId = await ctx.db.insert("branches", { publicId: newPublicId(), organizationId: actor.organization._id, name: stringValue(input.name), code: stringValue(input.code).toUpperCase(), address: stringValue(input.address), phone: stringValue(input.phone), capacity: numberValue(input.capacity, 120), active: input.status !== "inactive", status: stringValue(input.status, "active") === "inactive" ? "inactive" : "active", createdAt: Date.now(), updatedAt: Date.now() });
       const branch = await ctx.db.get(branchId);
       if (!branch) domainError("NOT_FOUND", "Branch could not be created.", { correlationId: actor.correlationId });
@@ -11737,6 +11778,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       const nextActive = input.status ? input.status !== "deactivated" : membership.active;
+      const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+      await enforceStaffCapacity(ctx, actor.organization._id, plan, staffMembershipCounts(membership), nextActive && membership.invitationStatus !== "revoked", actor.correlationId);
       const nextMembershipValues = { ...membership, role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: nextActive };
       await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
       const beforeStatus = organizationUserStatus(user, membership);

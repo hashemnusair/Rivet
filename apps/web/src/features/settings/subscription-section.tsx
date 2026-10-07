@@ -6,6 +6,7 @@ import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogu
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
+import { useExperience } from "@/lib/providers/experience-provider";
 import { useFormat } from "@/lib/i18n/format";
 import { money } from "@/lib/utils/money";
 import { formatBillingDate } from "@/lib/platform/subscription-billing";
@@ -32,16 +33,26 @@ function SubscriptionSummary() {
 };
 
   const { session } = useApp();
+  const { saasPlans } = useExperience();
   const f = useFormat(session?.organization.timezone);
   const subscription = session?.organization?.subscription;
   if (!subscription) return null;
   const status = PLAN_STATUS[subscription.status] ?? { label: subscription.status, variant: "neutral" as const };
-  const plan = findPlan(subscription.plan);
+  // Gym users read only the safe public plan projection. Fall back to the
+  // shared launch catalogue until that projection has loaded or for legacy
+  // plan names; never request the platform-admin plan editor here.
+  const plan = saasPlans.find((candidate) => candidate.name === subscription.plan) ?? findPlan(subscription.plan);
+  const cadence = subscription.billingInterval ?? "monthly";
   const term = subscription.status === "trial" ? subscription.trialEndsAt : subscription.currentPeriodEndsAt;
+  const fee = subscription.plan === "Enterprise"
+    ? t("publicCompletion.landing.pricing.customQuote")
+    : plan
+      ? t("settingsDetails.feeWithTax", { fee: locale === "en" ? feeLabel(plan.priceMinor, cadence) : t(cadence === "annual" ? "settingsDetails.annualFee" : "settingsDetails.monthlyFee", { amount: f.money(money(termPriceMinor(plan.priceMinor, cadence), "JOD")) }) })
+      : undefined;
   const rows: Array<{ label: string; value: string }> = [
     { label: t("renewFlow.adjust.planChange.rowPlan"), value: subscription.plan ?? "—" },
-    { label: t("settingsDetails.text128"), value: subscription.billingInterval === "annual" ? t("settingsDetails.text129") : t("settingsDetails.text130") },
-    ...(plan ? [{ label: t("settingsDetails.text131"), value: t("settingsDetails.feeWithTax", { fee: locale === "en" ? feeLabel(plan.priceMinor, subscription.billingInterval) : t(subscription.billingInterval === "annual" ? "settingsDetails.annualFee" : "settingsDetails.monthlyFee", { amount: f.money(money(termPriceMinor(plan.priceMinor, subscription.billingInterval ?? "monthly"), "JOD")) }) }) }] : []),
+    { label: t("settingsDetails.text128"), value: cadence === "annual" ? t("settingsDetails.text129") : t("settingsDetails.text130") },
+    ...(fee ? [{ label: t("settingsDetails.text131"), value: fee }] : []),
     { label: subscription.status === "trial" ? t("settingsDetails.text132") : t("settingsDetails.text133"), value: term ? (locale === "en" ? formatBillingDate(new Date(term)) : f.date(term)) : "—" },
   ];
   return (

@@ -395,6 +395,8 @@ export interface PlatformBillingInvoice {
   billingInterval?: BillingInterval;
   /** The term at list price, before any credit is applied. */
   subtotalMinor?: number;
+  /** One-time setup fee included in the first term invoice, when applicable. */
+  onboardingFeeMinor?: number;
   /** What the unfinished part of a replaced term was worth, deducted from the amount. */
   creditMinor?: number;
   /** Unused paid days behind that credit. */
@@ -662,6 +664,10 @@ export interface PlatformSaasPlan {
   branches: number;
   staff: number;
   members: number;
+  /** One-time gym setup fee in JOD minor units; absent on older API payloads. */
+  onboardingFeeMinor?: number;
+  /** Monthly allowance for operational emails; absent on older API payloads. */
+  operationalEmails?: number;
   tone: "paper" | "signal" | "night";
   /** Server-owned workspace modules included in this tier. */
   entitledModules?: WorkspaceModuleKey[];
@@ -845,6 +851,8 @@ export interface UpdatePlatformPlanInput {
   branches?: number;
   staff?: number;
   members?: number;
+  onboardingFeeMinor?: number;
+  operationalEmails?: number;
   entitledModules?: WorkspaceModuleKey[];
   reason: string;
 }

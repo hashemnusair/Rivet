@@ -65,8 +65,15 @@ export function validateStagingEnvironment(env: Record<string, string | undefine
   if (!productionConvex) throw new Error("PLAYWRIGHT_PRODUCTION_CONVEX_URL must be configured so the staging suite can prove it is not targeting Production.");
   if (productionConvex === actualConvex) throw new Error("The staging suite refuses to target the configured Production Convex deployment.");
   const hostname = new URL(baseUrl).hostname.toLowerCase();
-  const productionHosts = (env.PLAYWRIGHT_PRODUCTION_HOSTS ?? "rivetjo.com,www.rivetjo.com").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
-  if (productionHosts.includes(hostname)) throw new Error(`The staging suite refuses to write to Production host ${hostname}.`);
+  // Keep the canonical Production domains protected even when an operator
+  // supplies extra domains for a custom deployment. An empty override must
+  // never turn this safety check off.
+  const productionHosts = new Set([
+    "rivetjo.com",
+    "www.rivetjo.com",
+    ...(env.PLAYWRIGHT_PRODUCTION_HOSTS ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean),
+  ]);
+  if (productionHosts.has(hostname)) throw new Error(`The staging suite refuses to write to Production host ${hostname}.`);
   const requested = (env.PLAYWRIGHT_STAGING_JOURNEYS ?? "all").split(",").map((item) => item.trim()).filter(Boolean);
   const selectedJourneys = (requested.length ? requested : ["all"]).map((requestedJourney) => {
     if (requestedJourney === "all") return "all" as const;

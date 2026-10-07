@@ -54,7 +54,7 @@ const HERO_STEP = {
 } as const;
 
 export default function LandingPage() {
-  const { t, locale } = useLocale();
+  const { t, locale, isolateLtr } = useLocale();
   const f = useFormat();
   const { saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
   const marketplaceGyms = useMarketplaceGyms();
@@ -385,21 +385,37 @@ export default function LandingPage() {
                           <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">{t("marketing.pricing.mostPopular")}</span>
                         ) : isEnterprise ? (
                           <span className="rounded-sm border border-night-line px-2 py-1 text-[11px] font-medium leading-none text-night-ink-2">
-                            {t("publicCompletion.landing.pricing.multiSite")}
+                            {t("publicCompletion.landing.pricing.customQuote")}
                           </span>
                         ) : null}
                       </div>
                       <p className="mt-6">
-                        <span className="text-[34px] font-semibold tabular">{formatPublicJod(price.effectiveMonthlyMinor, f, locale)}</span>
-                        <span className={isNight ? "text-night-ink-3" : "text-ink-3"}>{" "}{t("marketing.pricing.perMonth")}</span>
+                        {isEnterprise ? (
+                          <span className="text-[25px] font-semibold">{t("publicCompletion.landing.pricing.customQuote")}</span>
+                        ) : (
+                          <>
+                            <span className="text-[34px] font-semibold tabular"><bdi dir="ltr">{isolateLtr(formatPublicJod(price.effectiveMonthlyMinor, f, locale))}</bdi></span>
+                            <span className={isNight ? "text-night-ink-3" : "text-ink-3"}>{" "}{t("marketing.pricing.perMonth")}</span>
+                          </>
+                        )}
                       </p>
-                      {billingInterval === "annual" ? (
+                      {isEnterprise ? (
                         <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
-                          {formatPublicJod(price.annualTotalMinor, f, locale)} {t("publicCompletion.landing.pricing.billedAnnually")} · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>{t("publicCompletion.landing.pricing.savePercent", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}</strong>
+                          {t("publicCompletion.landing.pricing.customQuoteCadence", { cadence: t(billingInterval === "annual" ? "publicCompletion.signup.annualCadence" : "publicCompletion.signup.monthlyCadence") })}. {t("publicCompletion.landing.pricing.customQuotePriceDetails")}
+                        </div>
+                      ) : billingInterval === "annual" ? (
+                        <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>
+                          <bdi dir="ltr">{isolateLtr(formatPublicJod(price.annualTotalMinor, f, locale))}</bdi> {t("publicCompletion.landing.pricing.billedAnnually")} · <strong className={isNight ? "text-night-ink-2" : "text-ink-2"}>{t("publicCompletion.landing.pricing.savePercent", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}</strong>
                         </div>
                       ) : (
                         <div className={isNight ? "mt-1 text-[11px] text-night-ink-3" : "mt-1 text-[11px] text-ink-3"}>{t("publicCompletion.landing.pricing.billedMonthlyCancel")}</div>
                       )}
+                      {!isEnterprise ? (
+                        <div className={isNight ? "mt-2 space-y-1 text-[11px] text-night-ink-3" : "mt-2 space-y-1 text-[11px] text-ink-3"}>
+                          <p>{t("publicCompletion.landing.pricing.oneTimeOnboarding", { amount: isolateLtr(formatPublicJod(price.onboardingFeeMinor ?? 0, f, locale)) })}</p>
+                          <p className={isNight ? "font-medium text-night-ink-2" : "font-medium text-ink-2"}>{t("publicCompletion.landing.pricing.firstPayment", { amount: isolateLtr(formatPublicJod(price.firstPaymentMinor, f, locale)) })}</p>
+                        </div>
+                      ) : null}
                       <ul className={`mt-7 grid gap-2.5 text-[13px] ${isNight ? "text-night-ink-2" : "text-ink-2"}`}>
                         {features.map((line) => (
                           <li key={line} className="flex items-start gap-2.5">
@@ -426,6 +442,7 @@ export default function LandingPage() {
                   );
                 })}
             </div>
+            <p className="mt-4 text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.activeMemberAllowanceNote")}</p>
           </div>
         </section>
 

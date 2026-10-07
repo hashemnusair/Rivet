@@ -305,7 +305,9 @@ test("the gym application validates before sending and ends on a receipt", async
   await page.getByLabel("Gym address").fill("12 Airport Road, Amman");
   await page.getByRole("tab", { name: /Annual/ }).click();
   await page.getByRole("radio", { name: /Starter/ }).click();
-  await expect(page.getByText(/JD 758\.400 billed annually/)).toBeVisible();
+  await expect(page.getByText(/444\.600/).first()).toBeVisible();
+  await expect(page.getByText(/One-time onboarding fee:.*75\.000/).first()).toBeVisible();
+  await expect(page.getByText(/First payment subtotal before applicable tax, including onboarding:.*519\.600/).first()).toBeVisible();
   await submit.click();
   await expect(page.getByRole("heading", { level: 1, name: /be in touch soon/ })).toBeVisible();
   await expect(page.getByText("omar.qa@example.com")).toBeVisible();

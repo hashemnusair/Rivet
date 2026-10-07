@@ -49,6 +49,10 @@ function previewLine(line: ReturnType<typeof subscriptionBillingLineDescriptors>
         plan: line.plan,
         cadence: t(line.billingInterval === "annual" ? "platformFinance.wizard.preview.annualCadence" : "platformFinance.wizard.preview.monthlyCadence"),
       });
+    case "onboarding_fee":
+      return t("platformFinance.wizard.preview.onboardingFee", {
+        amount: f.money(money(line.amountMinor, "JOD")),
+      });
     case "credit":
       return t("platformFinance.wizard.preview.credit", {
         credit: f.money(money(line.creditMinor, "JOD")),
@@ -236,7 +240,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                 <div className="rounded-md border border-line bg-sunken/60 px-4 py-3 text-[12.5px] leading-relaxed" role="note" aria-label={t("platformFinance.wizard.previewAria")}>
                   <p className="flex items-start gap-2 font-semibold text-ink"><Receipt className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />{t("platformFinance.wizard.whenSaved")}</p>
                   <ul className="mt-2 grid gap-1 text-ink-2">
-                    {subscriptionBillingLineDescriptors({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice, currentBillingInterval: currentCadence }).map((line, index) => <li key={`${line.kind}-${index}`}>{previewLine(line, f, t)}</li>)}
+                    {subscriptionBillingLineDescriptors({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, currentTermValueMinor: gym.currentTermValueMinor, pendingOnboardingFeeMinor: gym.pendingOnboardingFeeMinor, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice, currentBillingInterval: currentCadence }).map((line, index) => <li key={`${line.kind}-${index}`}>{previewLine(line, f, t)}</li>)}
                   </ul>
                 </div>
               ) : null}

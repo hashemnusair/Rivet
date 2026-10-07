@@ -55,6 +55,10 @@ export class StagingCleanupLedger {
     }));
     await testInfo.attach(`staging-cleanup-${this.journey}-${this.runId}.json`, { body: Buffer.from(JSON.stringify({ runId: this.runId, journey: this.journey, generatedAt: new Date().toISOString(), entries: this.entries }, null, 2)), contentType: "application/json" });
     const incomplete = this.entries.filter((entry) => entry.status !== "completed").map(({ targetType, action, status, error }) => ({ targetType, action, status, error }));
-    expect(incomplete, `${this.journey} must complete every planned cleanup action`).toEqual([]);
+    // Cleanup runs in `finally`; a hard assertion here would replace the
+    // journey's original failure. A soft assertion still fails a successful
+    // journey when cleanup is incomplete, while preserving any earlier
+    // assertion as the primary failure.
+    expect.soft(incomplete, `${this.journey} must complete every planned cleanup action`).toEqual([]);
   }
 }

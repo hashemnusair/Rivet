@@ -89,7 +89,7 @@ describe("landing-page pricing", () => {
     expect(screen.getByRole("link", { name: "Find a gym" })).toHaveAttribute("href", "/customer/discover");
   });
 
-  it("shows all four tiers and defaults to monthly billing", () => {
+  it("shows the fixed launch tiers plus quote-only Enterprise and defaults to monthly billing", () => {
     render(<LandingPage />);
 
     const pricing = document.querySelector("#pricing")!;
@@ -97,7 +97,18 @@ describe("landing-page pricing", () => {
     expect(screen.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByText("Enterprise")).toBeInTheDocument();
-    expect(screen.getByText("JD 500.000")).toBeInTheDocument();
+    expect(screen.getByText("JD 39.000")).toBeInTheDocument();
+    expect(screen.getByText("JD 89.000")).toBeInTheDocument();
+    expect(screen.getByText("JD 199.000")).toBeInTheDocument();
+    expect(screen.getAllByText("Custom quote")).toHaveLength(2);
+    expect(screen.queryByText("JD 500.000")).not.toBeInTheDocument();
+    const starterCard = screen.getByText("Starter").closest("div.rounded-lg");
+    expect(starterCard).not.toBeNull();
+    if (!(starterCard instanceof HTMLElement)) throw new Error("Starter pricing card was not rendered as an element.");
+    expect(within(starterCard).getByText(/One-time onboarding fee:/)).toBeInTheDocument();
+    expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("75.000") === true)).toBeInTheDocument();
+    expect(within(starterCard).getByText(/First payment subtotal before applicable tax, including onboarding:/)).toBeInTheDocument();
+    expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("114.000") === true)).toBeInTheDocument();
   });
 
   it("renders the public landing in Arabic with RTL navigation and JOD prices", async () => {
@@ -105,7 +116,8 @@ describe("landing-page pricing", () => {
     render(<LocaleProvider initialLocale="ar"><PublicDirectionBoundary><LandingPage /></PublicDirectionBoundary></LocaleProvider>);
 
     expect(await screen.findByRole("heading", { name: "كل تفاصيل ناديك و مشتركينه في مكان واحد" })).toBeInTheDocument();
-    expect(screen.getByText(/79\.000 د\.أ/)).toBeInTheDocument();
+    const starterPrice = screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("39.000 د.أ") === true);
+    expect(starterPrice).toBeInTheDocument();
     expect(screen.getByTestId("public-direction")).toHaveAttribute("dir", "rtl");
 
     const menuButton = screen.getByRole("button", { name: "القائمة" });
@@ -123,14 +135,16 @@ describe("landing-page pricing", () => {
     await user.click(screen.getByRole("tab", { name: /Annual/ }));
 
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getAllByText("Save 20%")).toHaveLength(4);
-    expect(screen.getByText("JD 63.200")).toBeInTheDocument();
-    expect(screen.getByText("JD 758.400 billed annually", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText("Save 5%")).toHaveLength(3);
+    expect(screen.getByText("JD 37.050")).toBeInTheDocument();
+    expect(screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("444.600") === true)).toBeInTheDocument();
+    expect(screen.getAllByText(/billed annually/)).toHaveLength(3);
+    expect(screen.getByText("First payment subtotal before applicable tax, including onboarding: JD 519.600")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Send gym application" })[0]).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
   });
 
-  it("renders the live catalog module selection on the matching public card", () => {
-    state.saasPlans = [{ name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal", entitledModules: ["foundation", "revenue"] }];
+  it("uses live admin module selections and the launch package defaults", () => {
+    state.saasPlans = [{ name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, tone: "signal", entitledModules: ["foundation", "revenue"] }];
     render(<LandingPage />);
 
     const growthCard = screen.getByText("Growth").closest("div.rounded-lg");
@@ -139,5 +153,11 @@ describe("landing-page pricing", () => {
     expect(within(growthCard).getByText("Gym foundation")).toBeInTheDocument();
     expect(within(growthCard).getByText("Revenue protection")).toBeInTheDocument();
     expect(within(growthCard).queryByText("Daily operations")).not.toBeInTheDocument();
+
+    const starterCard = screen.getByText("Starter").closest("div.rounded-lg");
+    expect(starterCard).not.toBeNull();
+    if (!(starterCard instanceof HTMLElement)) throw new Error("Starter pricing card was not rendered as an element.");
+    expect(within(starterCard).getByText("Gym foundation")).toBeInTheDocument();
+    expect(within(starterCard).getByText("Revenue protection")).toBeInTheDocument();
   });
 });

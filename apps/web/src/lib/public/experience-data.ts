@@ -63,6 +63,10 @@ export interface MarketplaceGym {
   trialEndsAt?: string;
   subscriptionStartedAt?: string;
   currentPeriodEndsAt?: string;
+  /** Platform-only value of the latest invoice's funded subscription term. */
+  currentTermValueMinor?: number;
+  /** Platform-only onboarding amount still due on the next subscription invoice. */
+  pendingOnboardingFeeMinor?: number;
   cancelledAt?: string;
   subscriptionStatusReason?: string;
   /** Platform-only archive marker. Archived tenants remain auditable but are

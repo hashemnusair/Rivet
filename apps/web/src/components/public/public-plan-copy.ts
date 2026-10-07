@@ -18,12 +18,21 @@ const MODULE_MESSAGES = {
 /** Keep the plan contract intact while presenting its counts in the active locale. */
 export function localizedPublicPlanFeatures(plan: PublicPricingPlan, f: Formatters, t: TFunction): string[] {
   const modules = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
+  const moduleFeatures = modules.map((key) => t(MODULE_MESSAGES[key]));
+  if (plan.name === "Enterprise") {
+    return [
+      t("publicCompletion.landing.pricing.customScope"),
+      ...moduleFeatures,
+      t("publicCompletion.landing.pricing.memberApp"),
+      t("publicCompletion.landing.pricing.staffPermissions"),
+    ];
+  }
   return [
     t("publicCompletion.landing.pricing.branchLimit", { count: plan.branches, formatted: f.number(plan.branches) }),
-    t("publicCompletion.landing.pricing.staffLimit", { count: plan.staff, formatted: f.number(plan.staff) }),
     t("publicCompletion.landing.pricing.memberLimit", { count: plan.members, formatted: f.number(plan.members) }),
-    ...modules.map((key) => t(MODULE_MESSAGES[key])),
-    ...(plan.name === "Enterprise" ? [t("publicCompletion.landing.pricing.prioritySupport")] : []),
+    t("publicCompletion.landing.pricing.staffLimit", { count: plan.staff, formatted: f.number(plan.staff) }),
+    t("publicCompletion.landing.pricing.operationalEmailsLimit", { count: plan.operationalEmails ?? 0, formatted: f.number(plan.operationalEmails ?? 0) }),
+    ...moduleFeatures,
     t("publicCompletion.landing.pricing.memberApp"),
     t("publicCompletion.landing.pricing.staffPermissions"),
   ];

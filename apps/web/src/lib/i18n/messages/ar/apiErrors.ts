@@ -1,6 +1,7 @@
 import type { apiErrors as EnApiErrors } from "../en/apiErrors";
 
 export const apiErrors: typeof EnApiErrors = {
+  planCapacity: "تم الوصول إلى الحد المتاح في باقة {plan} ({limit}). اختر باقة أعلى أو وفّر سعة متاحة للمتابعة.",
   paymentSettingsPartial: "تعذّر حفظ بعض إعدادات الدفعات.",
   "unexpected": "حدث خطأ. يرجى المحاولة مجددًا.",
   "validation": "يرجى مراجعة الحقول المحدّدة والمحاولة مجددًا.",

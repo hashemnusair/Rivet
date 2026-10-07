@@ -18,6 +18,7 @@ export function invoicePdfBytes(invoice: PlatformBillingInvoice, customer: Invoi
     periodEnd: invoice.periodEnd,
     billingInterval: invoice.billingInterval,
     subtotalMinor: invoice.subtotalMinor,
+    onboardingFeeMinor: invoice.onboardingFeeMinor,
     creditMinor: invoice.creditMinor,
     creditDays: invoice.creditDays,
     status: invoice.status === "trial" ? "draft" : invoice.status,

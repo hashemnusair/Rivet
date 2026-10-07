@@ -8,9 +8,9 @@ describe("plan catalogue", () => {
     expect(planSummary("Growth")).toBe("Growth");
     expect(planSummary("starter")).toBe("Starter");
     expect(planSummary("Unknown")).toBe("Unknown");
-    expect(planFee("Growth")).toBe("JOD 149.000 per month");
-    expect(planFee("Pro", "annual")).toBe("JOD 2,390.400 per year");
+    expect(planFee("Growth")).toBe("JOD 89.000 per month");
+    expect(planFee("Pro", "annual")).toBe("JOD 2,268.600 per year");
     expect(planFee("Unknown")).toBeUndefined();
-    expect(findPlan(" growth ")?.members).toBe(2_500);
+    expect(findPlan(" growth ")?.members).toBe(300);
   });
 });

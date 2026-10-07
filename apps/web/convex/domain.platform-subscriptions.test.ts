@@ -162,6 +162,7 @@ describe("exported Convex platform subscription lifecycle", () => {
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "org-sub")).unique();
       await ctx.db.patch(organization!._id, { subscriptionStartedAt: startedAt, currentPeriodEndsAt: storedBoundary, billingInterval: "monthly" });
+      await ctx.db.insert("domainRecords", { organizationId: organization!._id, entityType: "platformInvoice", publicId: "historical-paid", createdAt: startedAt, updatedAt: startedAt, data: { status: "paid", amountMinor: 149_000, periodEnd: new Date(storedBoundary).toISOString(), createdAt: new Date(startedAt).toISOString() } });
     });
 
     // 14 days into a monthly term, the tenant moves to annual: the server
@@ -182,8 +183,8 @@ describe("exported Convex platform subscription lifecycle", () => {
     expect(annualEnd).toBeLessThanOrEqual(oneYear.getTime() + DAY_MS);
 
     // The 16 unused monthly days come back as money off the annual invoice.
-    const annualList = Math.round(149_000 * 12 * 0.8);
-    const afterAnnual = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    const annualList = Math.round(149_000 * 12 * 0.95);
+    const afterAnnual = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).filter(row => row.publicId !== "historical-paid").map((row) => row.data as Record<string, unknown>));
     expect(afterAnnual).toHaveLength(1);
     expect(afterAnnual[0]).toMatchObject({ status: "open", billingInterval: "annual", subtotalMinor: annualList, creditDays: 16 });
     const credit = Number(afterAnnual[0]?.creditMinor);
@@ -200,18 +201,17 @@ describe("exported Convex platform subscription lifecycle", () => {
       reason: "Owner downgraded to Starter.",
     })) as Record<string, unknown>;
     expect(downgrade).toMatchObject({ subscriptionStatus: "active", rivetPlan: "Starter", billingInterval: "annual" });
-    const afterDowngrade = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    const afterDowngrade = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).filter(row => row.publicId !== "historical-paid").map((row) => row.data as Record<string, unknown>));
     expect(afterDowngrade).toHaveLength(2);
     const voided = afterDowngrade.find((invoice) => invoice.status === "void");
     const open = afterDowngrade.find((invoice) => invoice.status === "open");
     expect(voided).toMatchObject({ billingInterval: "annual", subtotalMinor: annualList });
-    // A downgrade a day into a paid annual term is worth more in credit than
-    // the cheaper term costs, so the credit is capped and the term is settled
-    // rather than billed at a negative amount or left open for nothing.
-    const settled = afterDowngrade.find((invoice) => invoice.status === "paid");
-    expect(open).toBeUndefined();
-    expect(settled).toMatchObject({ billingInterval: "annual", subtotalMinor: Math.round(79_000 * 12 * 0.8), amountMinor: 0, paymentReference: "Settled by the credit from the previous term" });
-    expect(settled?.creditMinor).toBe(Math.round(79_000 * 12 * 0.8));
+    // The annual invoice was never paid. Only its previously funded monthly
+    // credit carries over; the unpaid annual list price cannot buy a free term.
+    expect(open).toMatchObject({ billingInterval: "annual", subtotalMinor: 444_600 });
+    expect(Number(open?.creditMinor)).toBeLessThanOrEqual(credit);
+    expect(Number(open?.amountMinor)).toBeGreaterThan(0);
+    expect(open?.amountMinor).toBe(444_600 - Number(open?.creditMinor));
 
     // Reactivating a suspended tenant bills a fresh term with no credit.
     await t.withIdentity({ subject: "clerk-platform" }).mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "subscription-gym", status: "suspended", reason: "Pause while payment is arranged." }));
@@ -222,10 +222,10 @@ describe("exported Convex platform subscription lifecycle", () => {
       reason: "Reactivate on monthly billing.",
     })) as Record<string, unknown>;
     expect(reactivated).toMatchObject({ subscriptionStatus: "active", billingInterval: "monthly" });
-    const final = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).map((row) => row.data as Record<string, unknown>));
+    const final = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect()).filter(row => row.publicId !== "historical-paid").map((row) => row.data as Record<string, unknown>));
     expect(final).toHaveLength(3);
     const reactivationInvoice = final.find((invoice) => invoice.status === "open");
-    expect(reactivationInvoice).toMatchObject({ billingInterval: "monthly", amountMinor: 79_000 });
+    expect(reactivationInvoice).toMatchObject({ billingInterval: "monthly", amountMinor: 39_000 });
     expect(reactivationInvoice?.creditDays).toBeUndefined();
 
     const audits = await t.run(async (ctx) => await ctx.db.query("platformAuditEvents").collect());
@@ -583,7 +583,7 @@ describe("exported Convex platform subscription lifecycle", () => {
       priceMinor: 89_000,
       reason: "Launch pricing approved.",
     })) as Record<string, unknown>;
-    expect(updated).toMatchObject({ id: "Starter", name: "Starter", priceMinor: 89_000, branches: 1, staff: 8, members: 500 });
+    expect(updated).toMatchObject({ id: "Starter", name: "Starter", priceMinor: 89_000, branches: 1, staff: 3, members: 150 });
     const persisted = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => row.publicId === "Starter"));
     expect(persisted?.data).toMatchObject({ name: "Starter", priceMinor: 89_000 });
     const catalog = await t.query(api.domain.query, operation("public.catalog")) as Array<{ name: string }>;

@@ -1,5 +1,104 @@
 # GymOS / RIVET current implementation state
 
+## 7 October 2026 — nonlegal launch-readiness candidate
+
+**Scope:** implement the commercial launch packages and close accessible technical
+launch gaps. Legal text, signed agreements, the entity decision and external
+lawyer review are deliberately unchanged. Manual WhatsApp remains the only
+WhatsApp flow. Agents used for this pass were switched to GPT-6 Luna Max at
+Elias's request; the primary reviewed and integrated their changes.
+
+### Implemented
+
+- Starter/Growth/Pro: **39 / 89 / 199 JOD per month**, **1 / 2 / 5 branches**,
+  **150 / 300 / 1,000 active members pooled organization-wide**, **3 / 8 / 20
+  owner/staff seats**, and **600 / 1,500 / 5,000 member-facing operational email
+  reservations per Amman calendar month**. Onboarding is **75 / 150 / 300 JOD**
+  once; the annual subscription discount is **5%**. Enterprise is quote-only
+  publicly; legacy configuration remains compatible. Public/signup, tenant
+  subscription display, platform billing preview and English/Arabic copy agree.
+- Server-side capacity checks cover sales, imports, date changes, active branch
+  creation/reactivation, archived-member restores and staff invitations/reactivation. Pending invitations
+  reserve staff seats; member counts include future/frozen terms without counting
+  a person twice. Existing excess remains readable and non-increasing corrections
+  are allowed; a new excess interval is rejected. No automatic upgrades or
+  overage billing were invented.
+- Newly provisioned gyms capture onboarding fees; first subscription invoices
+  print a separate setup line. Replaced unpaid invoices carry setup forward;
+  renewals never charge it again after payment. Existing gyms without a captured
+  fee get no retroactive setup charge. Setup is excluded from discounts/credits.
+- Fixed unearned proration: an active flag or an unpaid invoice no longer creates
+  paid-term credit. The backend, mock and billing wizard use the recorded funded
+  current-term value and preserve carried paid credits. Historic invoices are not
+  recalculated from the current catalogue. A preview-first, audited migration
+  exists for untouched legacy default catalogue rows, preserving custom rows.
+  A read-only production query found **no persisted platformPlan rows**, so no
+  catalogue data migration is needed for that inspected state.
+- Hard bounces/complaints persist address-level suppression; signed callbacks
+  dedupe and preserve event ordering. Provider suppression/complaints are terminal,
+  not delivered. Sandbox callbacks target the actual catch-all address rather
+  than suppressing the original recipient. Allowlist mode now requires explicit
+  recipient/domain membership; subscribed-gym trust no longer bypasses it.
+- All operational mail sets the configured Reply-To or sales@rivetjo.com. Monthly
+  member-email reservations are transactional and retry/dedupe-safe; excess jobs
+  defer visibly to next month. Sandbox/drop routes do not consume allowance.
+  Auth and platform billing/agreement/support/admin mail are exempt. Usage rows
+  are tenant-purgeable; provider-wide suppression remains private and persistent.
+- Staging protection cannot be disabled through a custom/empty Production host
+  override. Cleanup failures no longer mask a journey's original assertion.
+  Added synthetic concurrent collection/refund/void/shift tests and an Amman
+  business-day boundary test; these do not claim live operating-day acceptance.
+
+### Validation and release state
+
+- Full bounded Vitest run: **325 files / 2,035 tests passed**. Fourteen Node CLI/
+  environment guards passed in `pnpm test`. An earlier full parallel run hit one
+  5-second payables timeout while build/lint ran; the unchanged test passed alone
+  and in the full bounded rerun. Final archive-restore regression passed in the
+  focused capacity suite; no timeout or assertion was weakened.
+- `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` (including secret audit),
+  `pnpm build`, `git diff --check` and `python3 docs/arabic/verify-lock.py` passed.
+  Focused mock Playwright pricing/signup journeys: **2/2 passed**. No screenshot
+  baseline or tolerance was changed; temporary Next test-path changes were removed.
+- Guarded Production dry run via `pnpm convex:deploy -- --dry-run --yes` passed:
+  two new indexes, no deletions. It did **not** apply a production deployment.
+  Initial automatic review queried the generic push prompt; the CLI source proved
+  `dryRun` reaches finalization, and the evidence-backed retry was approved.
+- Production export was rejected by automatic approval review because a full
+  database/file-storage ZIP is a sensitive local copy. Exact backup approval is
+  pending; no export/restore is claimed. The recorded September archive is absent
+  from its documented path. Do not mutate Production without the approved backup.
+- Candidate branch: `codex/launch-readiness`. Production remains the previously
+  verified release below until this candidate is explicitly released.
+
+### Still blocked or external
+
+- **Mac locked:** signed-in Resend, Clerk and Spacemail inspection unavailable.
+  Production names-only check confirms API key/from, mode and allowlist names;
+  callback secret, Reply-To override, global application-email gate and subscription
+  reconciliation enablement names are absent. No values were printed. Resend
+  activation alone does not configure the Clerk relay or receipt callbacks.
+- Configure/test the Clerk-to-Resend cutover and Resend signed callbacks; verify
+  monitored Reply-To, explicit pilot recipients, application-email gate and job
+  enablement deliberately. Keep existing Clerk delivery until its relay is tested.
+  Fresh invitations and operational Inbox/Junk delivery plus full receiver headers
+  remain unverified. No real customer email, invitation or money mutation ran.
+- Real-role staging sessions/target guards are unavailable, so the complete
+  operating-day pilot and an isolated backup restore are not verified.
+- Implementation assumptions: setup is collected with the first subscription
+  invoice after trial; prices shown are subtotals without invented tax; no automatic
+  excess-capacity charge; email reservations remain charged to their original month
+  on retries. Deferred time-sensitive email can become stale and requires outbox
+  review. These are documented policies/limits, not claims of legal approval.
+- Legal conflict remains intentionally unresolved: the current agreement says
+  onboarding is included; counsel must reconcile it with the new commercial fee.
+
+Read first: `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`,
+`docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, `convex/planCapacity.ts`,
+`convex/onboardingBilling.ts`, `convex/operationalEmail.ts` (code paths are under
+`apps/web`). Frozen FRONTEND_HANDOFF.md and all approved Arabic decisions remain intact.
+
+
 ## 7 October 2026 — manual WhatsApp and Resend email
 
 **Confirmed by Elias:** remove automated WhatsApp; keep staff-initiated manual

@@ -20,6 +20,7 @@ vi.mock("@/lib/hooks/use-api", () => ({
 const DAY_MS = 86_400_000;
 
 function gym(overrides: Partial<MarketplaceGym>): MarketplaceGym {
+  const subscriptionStatus = overrides.subscriptionStatus ?? "active";
   return {
     id: "gym-active",
     name: "Forge Fitness",
@@ -36,10 +37,11 @@ function gym(overrides: Partial<MarketplaceGym>): MarketplaceGym {
     amenities: [],
     accent: "#111111",
     featured: false,
-    subscriptionStatus: "active",
+    subscriptionStatus,
     rivetPlan: "Pro",
     billingInterval: "monthly",
     currentPeriodEndsAt: new Date(Date.now() + 16 * DAY_MS).toISOString(),
+    currentTermValueMinor: subscriptionStatus === "active" ? 199_000 : undefined,
     joinedAt: "",
     lastActiveAt: "",
     monthlyRevenueMinor: 0,
@@ -57,10 +59,10 @@ const gyms: MarketplaceGym[] = [
 ];
 
 const plans: PlatformSaasPlan[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500, tone: "paper" },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000, tone: "night" },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, tone: "night" },
+  { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600, tone: "paper" },
+  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500, tone: "signal" },
+  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000, tone: "night" },
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000, tone: "night" },
 ] as PlatformSaasPlan[];
 
 function renderWizard() {
@@ -104,11 +106,12 @@ describe("Bill a gym wizard", () => {
     expect(screen.getByText(/is currently/)).toHaveTextContent("Forge Fitness is currently active on Pro · monthly.");
     expect(within(screen.getByRole("radio", { name: /Pro/ })).getByText("Current")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: /Annual · saves 20%/ }));
+    await user.click(screen.getByRole("radio", { name: /Annual · saves 5%/ }));
     await user.click(screen.getByRole("button", { name: /Review/ }));
 
-    expect(screen.getByText(/An invoice for JOD.2,390\.400 \(Pro · annual, saves 20%\) is issued today\./)).toBeInTheDocument();
-    expect(screen.getByText(/A credit of JOD.132\.800 for 16 days remaining in the current paid term will reduce the invoice, leaving JOD.2,257\.600 to pay\./)).toBeInTheDocument();
+    expect(screen.getByText(/An invoice for JOD.2,268\.600 \(Pro · annual, saves 5%\) is issued today\./)).toBeInTheDocument();
+    const creditPreview = screen.getByText((_content, element) => element?.tagName === "LI" && element.textContent?.startsWith("A credit of") === true);
+    expect(creditPreview.textContent?.replaceAll("\u00a0", " ")).toMatch(/A credit of JOD \d+\.\d{3} for 16 days remaining in the current paid term will reduce the invoice, leaving JOD [\d,]+\.\d{3} to pay\./);
     expect(screen.getByText(/no need to wait for the current term to end/)).toBeInTheDocument();
 
     const confirm = screen.getByRole("button", { name: /Confirm & bill/ });
@@ -130,13 +133,13 @@ describe("Bill a gym wizard", () => {
     render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillGymWizard open onOpenChange={vi.fn()} gyms={gyms} plans={plans} /></LocaleProvider>);
 
     await user.click(screen.getByRole("option", { name: /Forge Fitness/ }));
-    await user.click(screen.getByRole("radio", { name: /Annual · saves 20%/ }));
+    await user.click(screen.getByRole("radio", { name: /Annual · saves 5%/ }));
     await user.click(screen.getByRole("button", { name: /Review/ }));
     await user.type(screen.getByLabelText("Reason for this change"), "Owner approved annual billing.");
 
     fireEvent.click(screen.getByTestId("locale-switch"));
 
-    expect(screen.getByText(/فاتورة بقيمة/)).toHaveTextContent("سنوي مع توفير 20٪");
+    expect(screen.getByText(/فاتورة بقيمة/)).toHaveTextContent("سنوي مع توفير 5٪");
     expect(screen.getByLabelText("سبب التغيير")).toHaveValue("Owner approved annual billing.");
     expect(screen.getByRole("button", { name: "تأكيد الفاتورة" })).toBeEnabled();
     expect(screen.queryByText(/An invoice for JOD/i)).not.toBeInTheDocument();
@@ -153,7 +156,7 @@ describe("Bill a gym wizard", () => {
     await user.click(screen.getByRole("button", { name: /Review/ }));
 
     expect(screen.getByText(/reactivates Iron Temple/)).toBeInTheDocument();
-    expect(screen.getByText(/An invoice for JOD.149\.000 \(Growth · monthly\) is issued today\./)).toBeInTheDocument();
+    expect(screen.getByText(/An invoice for JOD.89\.000 \(Growth · monthly\) is issued today\./)).toBeInTheDocument();
     expect(screen.queryByText(/are credited/)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Reason for this change"), "Reactivate after payment plan agreed.");
@@ -173,6 +176,18 @@ describe("Bill a gym wizard", () => {
 
     expect(screen.queryByRole("listbox", { name: "Billable gyms" })).not.toBeInTheDocument();
     expect(screen.getByText(/is currently/)).toHaveTextContent("Iron Temple is currently suspended on Growth · monthly.");
+  });
+
+  it("shows the captured one-time onboarding fee in the first invoice preview", async () => {
+    const user = userEvent.setup();
+    const trialGym = gym({ id: "gym-first-term", name: "New Gym", rivetPlan: "Starter", subscriptionStatus: "trial", currentPeriodEndsAt: undefined, pendingOnboardingFeeMinor: 75_000 });
+    render(<BillGymWizard open onOpenChange={vi.fn()} gyms={[trialGym]} plans={plans} />);
+
+    await user.click(screen.getByRole("option", { name: /New Gym/ }));
+    await user.click(screen.getByRole("button", { name: /Review/ }));
+
+    expect(screen.getByText(/An invoice for JOD.114\.000 \(Starter · monthly\) is issued today\./)).toBeInTheDocument();
+    expect(screen.getByText(/One-time onboarding fee: JOD.75\.000\. It is included in the invoice above\./)).toBeInTheDocument();
   });
 
   it("refuses to bill an active gym for the exact plan and cadence it already has", async () => {
