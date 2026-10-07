@@ -137,7 +137,7 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     const plan = organization.subscriptionPlan ?? organization.entitlementPlan;
     if (!plan) return total;
     const monthlyPrice = planPrices.get(plan) ?? 0;
-    // Annual tenants pay twelve months with the published 20% saving, so
+    // Annual tenants pay twelve months with the published annual saving, so
     // their effective monthly revenue is the discounted rate — not the
     // headline monthly price.
     return total + (organization.billingInterval === "annual" ? Math.round(termPriceMinor(monthlyPrice, "annual") / 12) : monthlyPrice);

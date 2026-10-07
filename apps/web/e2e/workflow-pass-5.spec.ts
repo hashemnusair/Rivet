@@ -57,6 +57,21 @@ async function capture(page: Page, name: string, width: number) {
   await expect(page).toHaveScreenshot(reference(name, width), { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.04 });
 }
 
+async function alignRequestsBelowTopbar(page: Page) {
+  await page.getByRole("complementary", { name: "Your requests" }).evaluate((requests) => {
+    const topbar = document.querySelector<HTMLElement>('[data-testid="app-topbar"]');
+    if (!topbar) throw new Error("The app topbar is missing from the support page.");
+    const scrollTop = window.scrollY + requests.getBoundingClientRect().top - topbar.getBoundingClientRect().bottom;
+    window.scrollTo({ top: scrollTop, behavior: "instant" });
+  });
+  await expect.poll(() => page.evaluate(() => {
+    const topbar = document.querySelector('[data-testid="app-topbar"]');
+    const requests = document.querySelector('[aria-label="Your requests"]');
+    if (!topbar || !requests) return Number.NaN;
+    return Math.round(requests.getBoundingClientRect().top - topbar.getBoundingClientRect().bottom);
+  })).toBe(0);
+}
+
 type Route = { path: string; slug: string; heading: RegExp; ready: (page: Page) => Promise<void> };
 
 const OWNER_ROUTES: Route[] = [
@@ -87,6 +102,9 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
     for (const route of OWNER_ROUTES) {
       await visit(page, route.path, route.heading);
       await route.ready(page);
+      // Keep the long mobile support conversation anchored below the sticky
+      // utility bar; browser scroll restoration otherwise varies by runner.
+      if (route.slug === "support" && width === 390) await alignRequestsBelowTopbar(page);
       await fits(page);
       if (shoot) await capture(page, `pass-5-${route.slug}-${width}.png`, width);
     }

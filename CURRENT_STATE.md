@@ -68,6 +68,11 @@ Elias's request; the primary reviewed and integrated their changes.
   database/file-storage ZIP is a sensitive local copy. Exact backup approval is
   pending; no export/restore is claimed. The recorded September archive is absent
   from its documented path. Do not mutate Production without the approved backup.
+- Candidate pushed in [draft PR #6](https://github.com/hashemnusair/Rivet/pull/6).
+  Initial CI passed every gate except a 390px support screenshot with an
+  inconsistent scroll offset. Its test now measures and anchors the request
+  panel beneath the sticky topbar; the complete focused owner/manager journey
+  passed locally with unchanged baseline/tolerance. CI rerun is pending.
 - Candidate branch: `codex/launch-readiness`. Production remains the previously
   verified release below until this candidate is explicitly released.
 
