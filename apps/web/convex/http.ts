@@ -6,7 +6,7 @@ import { httpAction } from "./_generated/server";
 type ResendEvent = {
   type?: string;
   created_at?: string;
-  data?: { email_id?: string };
+  data?: { email_id?: string; created_at?: string; to?: string[]; bounce?: { type?: string } };
 };
 
 const http = httpRouter();
@@ -34,12 +34,14 @@ http.route({
     }
     const eventType = event.type?.trim();
     if (!eventType) return new Response("Invalid event", { status: 400 });
-    const occurredAt = Date.parse(event.created_at ?? "");
+    const occurredAt = Date.parse(event.created_at ?? event.data?.created_at ?? "");
     await ctx.runMutation(internal.operationalEmail.recordWebhook, {
       webhookId,
       providerId: event.data?.email_id,
       eventType,
       occurredAt: Number.isFinite(occurredAt) ? occurredAt : Date.now(),
+      recipientEmails: Array.isArray(event.data?.to) ? event.data.to.filter((value): value is string => typeof value === "string") : [],
+      bounceType: event.data?.bounce?.type,
     });
     return new Response("ok", { status: 200 });
   }),

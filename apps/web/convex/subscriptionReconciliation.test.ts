@@ -131,13 +131,13 @@ describe("subscription reconciliation lifecycle", () => {
     expect(suspendedAudit).toMatchObject({ before: expect.objectContaining({ organizationStatus: "past_due" }), after: expect.objectContaining({ organizationStatus: "suspended", subscriptionStatus: "suspended", isPublic: false }) });
   });
 
-  it("prices annual cycles at the 20% discount and payment reactivates the tenant for the next period", async () => {
+  it("prices annual cycles at the 5% discount and payment reactivates the tenant for the next period", async () => {
     const t = convexTest(schema, modules);
     const boundary = Date.parse("2026-09-30T12:00:00.000Z");
     await seed(t, { interval: "annual", status: "active", boundary });
     await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary - 3 * 86_400_000 });
     const invoice = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).unique())!);
-    expect(invoice.data).toMatchObject({ amountMinor: 2_390_400, billingInterval: "annual", status: "open" });
+    expect(invoice.data).toMatchObject({ amountMinor: 2_838_600, billingInterval: "annual", status: "open" });
     const admin = t.withIdentity({ subject: "clerk-admin-reconcile" });
     await admin.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: invoice.publicId, reference: "BANK-ANNUAL-1", reason: "Annual transfer received." }));
     const state = await t.run(async (ctx) => ({

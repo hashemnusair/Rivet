@@ -1,4 +1,5 @@
 export const apiErrors = {
+  planCapacity: "The {plan} plan limit ({limit}) has been reached. Upgrade the plan or free capacity before continuing.",
   paymentSettingsPartial: "Some payment settings could not be saved.",
   "unexpected": "Something went wrong. Please try again.",
   "validation": "Check the highlighted fields and try again.",

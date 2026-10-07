@@ -1,6 +1,7 @@
 import type { documents as EnDocuments } from "../en/documents";
 
 export const documents: typeof EnDocuments = {
+  onboardingFee: "رسوم الإعداد لمرة واحدة",
   csvTitle: "تصدير RIVET",
   csvRowCount: "عدد صفوف البيانات",
   csvNoRecords: "لا توجد سجلات مطابقة لهذا التصدير.",

@@ -1282,6 +1282,8 @@ export interface Organization {
   slug: string;
   subscriptionPlan?: WorkspaceModulePlan;
   billingInterval?: "monthly" | "annual";
+  onboardingFeeMinor?: number;
+  commercialTermsVersion?: string;
   /** Platform subscription state mirrored by the preview adapter. */
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionStartedAt?: ISODateTime;

@@ -4,7 +4,7 @@ import { addCalendarMonths, daysBetween, DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_A
 const NOW = Date.parse("2026-09-04T12:00:00.000Z");
 const GROWTH = 149_000;
 const PRO = 249_000;
-const annual = (monthly: number) => Math.round(monthly * 12 * 0.8);
+const annual = (monthly: number) => Math.round(monthly * 12 * 0.95);
 
 describe("term dates", () => {
   it("keeps the day of the month and never spills into the next one", () => {

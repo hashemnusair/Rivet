@@ -44,6 +44,8 @@ async function seedTwoGyms() {
     const storageId = await ctx.storage.store(new NodeBlob(["logo"], { type: "image/png" }) as unknown as Blob);
     await ctx.db.insert("mediaAssets", { organizationId: forge._id, publicId: "forge-media", ownerType: "gym_logo", ownerPublicId: forge.publicId, storageId, contentType: "image/png", sizeBytes: 4, visibility: "public", status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("operationalNotifications", { publicId: "forge-note", recipientUserId: forgeOwnerId, organizationId: forge._id, kind: "shift_variance", title: "Variance", body: "Review the drawer", href: "/finance", dedupeKey: "forge-note", createdAt: now });
+    await ctx.db.insert("operationalEmailQuotaUsage", { organizationId: forge._id, periodKey: "2026-10", reservedCount: 1, monthlyLimit: 600, createdAt: now, updatedAt: now });
+    await ctx.db.insert("operationalEmailSuppressions", { email: "former-member@example.test", reason: "hard_bounce", sourceWebhookId: "purge-test-event", providerId: "resend", occurredAt: now, createdAt: now, updatedAt: now });
     await ctx.db.insert("userOnboardingProgress", { userId: forgeOwnerId, organizationId: forge._id, audience: "owner", version: 1, completedStepKeys: [], createdAt: now, updatedAt: now });
     const profile = await ctx.db.insert("ptTrainerProfiles", { organizationId: forge._id, publicId: "forge-trainer", userId: forgeOwnerId, displayName: "Coach", specialties: ["Strength"], languages: ["en"], branchIds: [forgeBranch._id], status: "published", createdAt: now, updatedAt: now });
     await ctx.db.insert("ptAvailabilityRules", { organizationId: forge._id, publicId: "forge-rule", trainerProfileId: profile, branchId: forgeBranch._id, weekday: "mon", startMinute: 540, endMinute: 720, active: true, createdAt: now, updatedAt: now });
@@ -52,6 +54,7 @@ async function seedTwoGyms() {
     await ctx.db.insert("gymApplications", { publicId: "app-pending", applicationKey: "key-pending", gymName: "Someone Else", ownerName: "Nobody", email: "nobody@example.com", contactNumber: "0790000001", plan: "Starter", status: "pending", notificationStatus: "sent", submittedAt: now, updatedAt: now });
 
     const other = await ctx.db.insert("organizations", { publicId: "other-org", name: "Other Gym", slug: "other-gym", status: "active", timezone: "Asia/Amman", currency: "JOD", clerkOrganizationId: "org_other123", createdAt: now, updatedAt: now });
+    await ctx.db.insert("operationalEmailQuotaUsage", { organizationId: other, periodKey: "2026-10", reservedCount: 2, monthlyLimit: 1_500, createdAt: now, updatedAt: now });
     const otherBranch = await ctx.db.insert("branches", { organizationId: other, publicId: "other-branch", name: "Main", code: "MAIN", active: true, createdAt: now, updatedAt: now });
     const otherOwner = await ctx.db.insert("users", { publicId: "other-owner", authSubject: "user_other_owner", email: "owner@other.example", fullName: "Other Owner", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
     await ctx.db.insert("organizationMemberships", { organizationId: other, userId: otherOwner, role: "owner", branchIds: [otherBranch], branchScope: "all", active: true, createdAt: now, updatedAt: now });
@@ -98,7 +101,7 @@ describe("tenant purge", () => {
     const inventory = await t.action(internal.tenantPurge.inventory, { slug: "forge-fitness", batch: 2 });
     if (!inventory.found) throw new Error("expected the seeded tenant");
     expect(inventory.organization).toMatchObject({ slug: "forge-fitness", name: "Forge Fitness Club", clerkOrganizationId: null });
-    expect(inventory.tables).toMatchObject({ branches: before, auditEvents: 3, mediaAssets: 1, operationalNotifications: 1, userOnboardingProgress: 1, ptAvailabilityRules: 1, idempotencyRecords: 1, organizationMemberships: expect.any(Number) });
+    expect(inventory.tables).toMatchObject({ branches: before, auditEvents: 3, mediaAssets: 1, operationalNotifications: 1, operationalEmailQuotaUsage: 1, userOnboardingProgress: 1, ptAvailabilityRules: 1, idempotencyRecords: 1, organizationMemberships: expect.any(Number) });
     expect(inventory.rows).toBe(Object.values(inventory.tables).reduce((sum, count) => sum + count, 0));
     expect(inventory.linkedApplications).toEqual([{ publicId: "app-forge", gymName: "Forge Fitness", status: "approved" }]);
     expect(await rowsFor(t, "branches", forgeId)).toBe(before);
@@ -109,7 +112,7 @@ describe("tenant purge", () => {
 
   it("removes one gym completely, in small pages, and leaves the other gym, its files and the platform trail alone", async () => {
     const { t, forgeId, forgePublicId, storageId, otherId } = await seedTwoGyms();
-    const otherBefore = { branches: await rowsFor(t, "branches", otherId), memberships: await rowsFor(t, "organizationMemberships", otherId), records: await rowsFor(t, "domainRecords", otherId), audits: await rowsFor(t, "auditEvents", otherId), notes: await rowsFor(t, "operationalNotifications", otherId) };
+    const otherBefore = { branches: await rowsFor(t, "branches", otherId), memberships: await rowsFor(t, "organizationMemberships", otherId), records: await rowsFor(t, "domainRecords", otherId), audits: await rowsFor(t, "auditEvents", otherId), notes: await rowsFor(t, "operationalNotifications", otherId), emailQuota: await rowsFor(t, "operationalEmailQuotaUsage", otherId) };
     const inventory = await t.action(internal.tenantPurge.inventory, { slug: "forge-fitness" });
 
     const result = await t.action(internal.tenantPurge.purge, { ...PURGE_ARGS, batch: 2 });
@@ -127,12 +130,15 @@ describe("tenant purge", () => {
       expect(await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", "app-forge")).unique()).toBeNull();
       expect(await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", "app-pending")).unique()).not.toBeNull();
       expect(await ctx.db.get(otherId)).not.toBeNull();
+      // Suppression is deliberately provider-wide and has no tenant link:
+      // it must survive a gym purge to prevent a future cross-gym send.
+      expect(await ctx.db.query("operationalEmailSuppressions").withIndex("by_email", (q) => q.eq("email", "former-member@example.test")).unique()).toMatchObject({ reason: "hard_bounce", sourceWebhookId: "purge-test-event" });
       const trail = (await ctx.db.query("platformAuditEvents").withIndex("by_entity", (q) => q.eq("entityType", "organization").eq("entityPublicId", forgePublicId)).collect()).sort((a, b) => a.occurredAt - b.occurredAt);
       expect(trail.map((event) => event.action)).toEqual(["organization.purge.started", "organization.purge.completed", "organization.purge.clerk"]);
       expect(trail[0]).toMatchObject({ reason: PURGE_ARGS.reason, actorPublicId: "system:tenant-purge", correlationId: result.correlationId });
       expect(trail[1]?.after).toMatchObject({ tables: result.tables, storageFiles: 1, linkedApplications: ["app-forge"] });
     });
-    expect({ branches: await rowsFor(t, "branches", otherId), memberships: await rowsFor(t, "organizationMemberships", otherId), records: await rowsFor(t, "domainRecords", otherId), audits: await rowsFor(t, "auditEvents", otherId), notes: await rowsFor(t, "operationalNotifications", otherId) }).toEqual(otherBefore);
+    expect({ branches: await rowsFor(t, "branches", otherId), memberships: await rowsFor(t, "organizationMemberships", otherId), records: await rowsFor(t, "domainRecords", otherId), audits: await rowsFor(t, "auditEvents", otherId), notes: await rowsFor(t, "operationalNotifications", otherId), emailQuota: await rowsFor(t, "operationalEmailQuotaUsage", otherId) }).toEqual(otherBefore);
     await expect(t.action(internal.tenantPurge.purge, PURGE_ARGS)).rejects.toThrow(/No organization has the slug "forge-fitness"/);
   });
 

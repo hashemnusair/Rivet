@@ -17,7 +17,7 @@ async function seed(t: TestConvex<typeof schema>) {
     const now = Date.now();
     const today = new Date(now).toISOString().slice(0, 10);
     const organization = async (publicId: string, name: string) => await ctx.db.insert("organizations", {
-      publicId, name, slug: publicId, status: "active", timezone: "UTC", currency: "JOD", receiptPrefix: publicId === "org-a" ? "A" : "B", nextReceiptNumber: 1001, createdAt: now, updatedAt: now,
+      publicId, name, slug: publicId, status: "active", subscriptionPlan: publicId === "org-a" ? "Pro" : undefined, timezone: "UTC", currency: "JOD", receiptPrefix: publicId === "org-a" ? "A" : "B", nextReceiptNumber: 1001, createdAt: now, updatedAt: now,
     });
     const orgA = await organization("org-a", "Authorization Gym A");
     const orgB = await organization("org-b", "Authorization Gym B");

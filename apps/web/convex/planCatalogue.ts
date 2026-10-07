@@ -2,7 +2,7 @@
  * RIVET's published plans: the launch prices and the limits each plan
  * carries. Configuration, not tenant data, and free of Convex imports so the
  * agreement, the invoice and the browser describe a plan in the same words.
- * The numbers stay provisional until the pricing sheet in docs/19 is signed.
+ * Commercial launch configuration. Existing signed documents remain immutable.
  */
 export interface PlanDefinition {
   name: "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -10,17 +10,22 @@ export interface PlanDefinition {
   branches: number;
   staff: number;
   members: number;
+  onboardingFeeMinor: number;
+  operationalEmails: number;
 }
 
 export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
-  { name: "Starter", priceMinor: 79_000, branches: 1, staff: 8, members: 500 },
-  { name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500 },
-  { name: "Pro", priceMinor: 249_000, branches: 8, staff: 80, members: 10_000 },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000 },
+  { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600 },
+  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 },
+  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000 },
+  // Retained for negotiated/legacy contracts; public Enterprise remains quote-only.
+  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000 },
 ];
 
-/** A year is twelve months billed once, at 20% off. */
-export const ANNUAL_DISCOUNT = 0.8;
+/** A year is twelve months billed once, at 5% off. */
+export const ANNUAL_DISCOUNT_PERCENT = 5 as const;
+export const ANNUAL_DISCOUNT = 0.95;
+export const COMMERCIAL_TERMS_VERSION = "2026-10-07";
 
 /** How each plan is drawn on a pricing card. Presentation, not pricing. */
 export const PLAN_TONE: Readonly<Record<PlanDefinition["name"], "paper" | "signal" | "night">> = {

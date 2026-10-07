@@ -12,6 +12,8 @@ export type SubscriptionBillingInput = {
   priceMinor?: number;
   /** The plan the tenant is leaving, when it differs from the new one. */
   currentPlanPriceMinor?: number;
+  currentTermValueMinor?: number;
+  pendingOnboardingFeeMinor?: number;
   /** The cadence the outgoing term was billed at. */
   currentBillingInterval?: BillingInterval;
   now?: number;
@@ -38,6 +40,7 @@ export type SubscriptionBillingProjection = {
 export type SubscriptionBillingLineDescriptor =
   | { kind: "invoice_unpriced"; plan: SubscriptionBillingInput["plan"]; billingInterval: BillingInterval }
   | { kind: "invoice"; plan: SubscriptionBillingInput["plan"]; billingInterval: BillingInterval; subtotalMinor: number }
+  | { kind: "onboarding_fee"; amountMinor: number }
   | { kind: "credit"; creditDays: number; creditMinor: number; amountMinor: number }
   | { kind: "term_end"; date: string }
   | { kind: "void_previous_invoice" };
@@ -57,13 +60,13 @@ export function projectSubscriptionBilling(input: SubscriptionBillingInput): Sub
     interval: input.billingInterval,
     monthlyPriceMinor: input.priceMinor ?? 0,
     // Only a paid, running term is worth anything back.
-    ...(input.currentStatus === "active" && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && outgoingPrice
-      ? { outgoing: { periodEndsAt: storedPeriodEnd, monthlyPriceMinor: outgoingPrice, interval: input.currentBillingInterval ?? input.billingInterval } }
+    ...(input.currentStatus === "active" && storedPeriodEnd !== undefined && Number.isFinite(storedPeriodEnd) && input.currentTermValueMinor !== undefined
+      ? { outgoing: { periodEndsAt: storedPeriodEnd, monthlyPriceMinor: outgoingPrice ?? 0, amountMinor: input.currentTermValueMinor, interval: input.currentBillingInterval ?? input.billingInterval } }
       : {}),
   });
   return {
-    amountMinor: input.priceMinor === undefined ? undefined : change.amountMinor,
-    subtotalMinor: input.priceMinor === undefined ? undefined : change.subtotalMinor,
+    amountMinor: input.priceMinor === undefined ? undefined : change.amountMinor + (input.pendingOnboardingFeeMinor ?? 0),
+    subtotalMinor: input.priceMinor === undefined ? undefined : change.subtotalMinor + (input.pendingOnboardingFeeMinor ?? 0),
     creditMinor: input.priceMinor === undefined ? 0 : change.creditMinor,
     creditDays: input.priceMinor === undefined ? 0 : change.creditDays,
     newPeriodEnd: new Date(change.periodEndsAt),
@@ -78,6 +81,9 @@ export function subscriptionBillingLineDescriptors(input: SubscriptionBillingInp
       ? { kind: "invoice_unpriced", plan: input.plan, billingInterval: input.billingInterval }
       : { kind: "invoice", plan: input.plan, billingInterval: input.billingInterval, subtotalMinor: projection.subtotalMinor },
   ];
+  if (input.pendingOnboardingFeeMinor !== undefined && input.pendingOnboardingFeeMinor > 0) {
+    lines.push({ kind: "onboarding_fee", amountMinor: input.pendingOnboardingFeeMinor });
+  }
   if (projection.creditMinor > 0) {
     // A credit only exists for a paid, priced term, so an amount is known here.
     lines.push({ kind: "credit", creditDays: projection.creditDays, creditMinor: projection.creditMinor, amountMinor: projection.amountMinor ?? 0 });
@@ -99,7 +105,7 @@ const dinars = (minor: number) => `JOD ${(minor / 1_000).toFixed(3)}`;
 /** Plain-language consequence lines for a change that lands on an active subscription. */
 export function subscriptionBillingLines(input: SubscriptionBillingInput): string[] {
   const projection = projectSubscriptionBilling(input);
-  const cadence = input.billingInterval === "annual" ? "annual, saves 20%" : "monthly";
+  const cadence = input.billingInterval === "annual" ? "annual, saves 5%" : "monthly";
   return [
     projection.subtotalMinor === undefined
       ? `${input.billingInterval === "annual" ? "An annual" : "A monthly"} invoice for the new ${input.plan} term is issued today.`

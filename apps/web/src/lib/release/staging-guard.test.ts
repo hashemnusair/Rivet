@@ -15,6 +15,12 @@ describe("staging write guard", () => {
     [{ ...safe, PLAYWRIGHT_PRODUCTION_CONVEX_URL: safe.NEXT_PUBLIC_CONVEX_URL }, "Production Convex"],
   ])("refuses an unsafe environment", (env, message) => expect(() => validateStagingEnvironment(env, "http://127.0.0.1:3100")).toThrow(message));
   it("refuses a Production web host independently of its name", () => expect(() => validateStagingEnvironment(safe, "https://www.rivetjo.com")).toThrow("Production host"));
+  it.each(["", " preview.example.test "]) ("keeps canonical Production hosts blocked with an optional host override of %j", (override) => {
+    expect(() => validateStagingEnvironment({ ...safe, PLAYWRIGHT_PRODUCTION_HOSTS: override }, "https://rivetjo.com")).toThrow("Production host");
+  });
+  it("allows additional Production hosts without replacing canonical protections", () => {
+    expect(() => validateStagingEnvironment({ ...safe, PLAYWRIGHT_PRODUCTION_HOSTS: "custom-production.example.test" }, "https://custom-production.example.test")).toThrow("Production host");
+  });
   it("supports individual workflow dispatch and role-specific storage keys", () => {
     expect(stagingJourneySelected(["finance-reconciliation", "personal-training"], "personal-training")).toBe(true);
     expect(stagingJourneySelected(["finance-reconciliation"], "personal-training")).toBe(false);

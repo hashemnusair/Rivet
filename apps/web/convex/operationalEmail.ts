@@ -13,10 +13,34 @@ import { communicationCompletion as enCommunication } from "../src/lib/i18n/mess
 import { domain as enDomain } from "../src/lib/i18n/messages/en/domain";
 import { resolveBrandColor } from "./brand";
 import { BRAND_CONTACT } from "./brandTokens";
+import { findPlan } from "./planCatalogue";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
 const LEASE_MS = 2 * 60 * 1000;
+const OPERATIONAL_EMAIL_QUOTA_TIME_ZONE = "Asia/Amman";
+const MEMBER_OPERATIONAL_EMAIL_QUOTA_KINDS = new Set([
+  "trial_request_confirmation",
+  "trial_status",
+  "payment_receipt",
+  "renewal_reminder",
+  "membership_expiry",
+  "pt_package_paid",
+  "pt_booking_confirmation",
+  "pt_booking_update",
+  "pt_booking_reminder",
+  "pt_low_balance",
+]);
+const AMMAN_DATE_TIME_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: OPERATIONAL_EMAIL_QUOTA_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
 
 type Language = "en" | "ar";
 type MessageClass = "service" | "marketing";
@@ -68,6 +92,66 @@ function utcIso(value: number): string {
 function cleanEmail(value: string | undefined): string | undefined {
   const email = value?.trim().toLowerCase();
   return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
+}
+
+function acceptedProviderRecipient(delivery: Delivery | null): string | undefined {
+  if (!delivery) return undefined;
+  const acceptedAttempt = [...delivery.attempts].reverse().find((attempt) => attempt.outcome === "accepted");
+  if (!acceptedAttempt) return undefined;
+  return cleanEmail(acceptedAttempt.deliveredTo)
+    ?? (acceptedAttempt.mode === "live" || acceptedAttempt.mode === "allowlist" ? cleanEmail(delivery.recipientEmail) : undefined);
+}
+
+type EmailSuppressionReason = "hard_bounce" | "complaint";
+
+async function findEmailSuppression(ctx: MutationCtx, email: string | undefined) {
+  if (!email) return null;
+  return await ctx.db.query("operationalEmailSuppressions").withIndex("by_email", (q) => q.eq("email", email)).unique();
+}
+
+function publicSuppressionReason(_reason: EmailSuppressionReason): string {
+  // Avoid exposing provider records or activity associated with another gym.
+  return "This email address is suppressed after a delivery issue";
+}
+
+function isHardBounce(bounceType: string | undefined): boolean {
+  const type = bounceType?.trim().toLowerCase();
+  return type === "permanent" || type === "hard" || type === "hard_bounce";
+}
+
+function providerEventRank(eventType: string | undefined): number {
+  if (eventType === "email.bounced" || eventType === "email.failed" || eventType === "email.suppressed") return 3;
+  if (eventType === "email.complained") return 2;
+  if (eventType === "email.delivered") return 1;
+  return 0;
+}
+
+function ammanDateTimeParts(timestamp: number) {
+  const parts = Object.fromEntries(AMMAN_DATE_TIME_FORMAT.formatToParts(new Date(timestamp)).map((part) => [part.type, Number(part.value)]));
+  return { year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0, hour: parts.hour ?? 0, minute: parts.minute ?? 0, second: parts.second ?? 0 };
+}
+
+function ammanMonthWindow(timestamp: number): { periodKey: string; nextPeriodStartAt: number; nextPeriodKey: string } {
+  const current = ammanDateTimeParts(timestamp);
+  const periodKey = `${current.year}-${String(current.month).padStart(2, "0")}`;
+  const nextMonth = current.month === 12 ? 1 : current.month + 1;
+  const nextYear = current.month === 12 ? current.year + 1 : current.year;
+  const targetWallClockAsUtc = Date.UTC(nextYear, nextMonth - 1, 1);
+  let nextPeriodStartAt = targetWallClockAsUtc;
+  // Convert local Asia/Amman midnight to UTC without assuming a fixed offset.
+  // The second pass accounts for timezone transitions at the month boundary.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const local = ammanDateTimeParts(nextPeriodStartAt);
+    const representedAsUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+    const correction = targetWallClockAsUtc - representedAsUtc;
+    if (correction === 0) break;
+    nextPeriodStartAt += correction;
+  }
+  return { periodKey, nextPeriodStartAt, nextPeriodKey: `${nextYear}-${String(nextMonth).padStart(2, "0")}` };
+}
+
+function validQuotaLimit(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 type ServiceKind = keyof typeof enCommunication.email.kinds;
@@ -191,6 +275,9 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
     relatedEntityPublicId: delivery.relatedEntityPublicId,
     dedupeKey: delivery.dedupeKey,
     providerId: delivery.providerId,
+    quotaReservationMonth: delivery.quotaReservationMonth,
+    quotaReservedAt: delivery.quotaReservedAt ? utcIso(delivery.quotaReservedAt) : undefined,
+    quotaDeferredUntil: delivery.quotaDeferredUntil ? utcIso(delivery.quotaDeferredUntil) : undefined,
     attempts: delivery.attempts.map((attempt) => ({
       attemptedAt: utcIso(attempt.attemptedAt),
       outcome: attempt.outcome,
@@ -204,6 +291,7 @@ async function mirrorDelivery(ctx: MutationCtx, delivery: Delivery) {
     nextAttemptAt: delivery.nextAttemptAt ? utcIso(delivery.nextAttemptAt) : undefined,
     status: delivery.status,
     suppressionReason: delivery.suppressionReason,
+    lastErrorCode: delivery.lastErrorCode,
     queuedAt: utcIso(delivery.createdAt),
     updatedAt: utcIso(delivery.updatedAt),
   };
@@ -235,6 +323,10 @@ export async function enqueueOperationalEmail(ctx: MutationCtx, input: QueueOper
   const content = operationalEmailContent(input.kind, language, { gymName: organization?.name, accent: brand?.primaryColor, siteUrl: process.env.RIVET_SITE_URL, timeZone: organization?.timezone }, input.attachments, input.facts);
   const recipientEmail = cleanEmail(input.recipientEmail);
   let suppressionReason = input.suppressionReason ?? (!recipientEmail ? "A valid recipient email is not available" : undefined);
+  if (!suppressionReason && recipientEmail) {
+    const addressSuppression = await findEmailSuppression(ctx, recipientEmail);
+    if (addressSuppression) suppressionReason = publicSuppressionReason(addressSuppression.reason);
+  }
   if (!suppressionReason) {
     if (!deliveryEnabled()) suppressionReason = resolveEmailMode().mode === "off" ? "Operational email mode is off (RIVET_EMAIL_MODE)" : "The email provider is not configured";
     else if (input.organizationId && !MANDATORY_PLATFORM_KINDS.has(input.kind)) {
@@ -329,27 +421,6 @@ export const enqueue = internalMutation({
   },
 });
 
-/**
- * Whether the message belongs to a subscribed gym: one in trial, active or
- * past-due status. Mail addressed to the gym must go to an active member of
- * its team; mail addressed to a member goes to whatever address the gym's own
- * records hold for that person. Such mail goes out in allowlist mode without
- * a list entry, so a subscribed gym and its members are served from day one
- * while nothing else is.
- */
-async function belongsToSubscribedGym(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
-  const email = delivery.recipientEmail?.trim().toLowerCase();
-  if (!email || !delivery.organizationId) return false;
-  const organization = await ctx.db.get(delivery.organizationId);
-  if (!organization || !["trial", "active", "past_due"].includes(organization.status)) return false;
-  const audience = KIND_AUDIENCE[delivery.kind]?.audience ?? "gym";
-  if (audience === "member") return true;
-  const user = await ctx.db.query("users").withIndex("by_email", (q) => q.eq("email", email)).first();
-  if (!user || user.status === "deactivated") return false;
-  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", delivery.organizationId!)).collect();
-  return memberships.some((membership) => membership.active && String(membership.userId) === String(user._id));
-}
-
 async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolean> {
   if (MANDATORY_PLATFORM_KINDS.has(delivery.kind)) return true;
   if (!delivery.organizationId) {
@@ -360,19 +431,96 @@ async function kindEnabled(ctx: MutationCtx, delivery: Delivery): Promise<boolea
   return Boolean(settings?.ownerConfirmedAt && settings.enabledKinds.includes(delivery.kind));
 }
 
+async function persistedOperationalEmailLimits(ctx: MutationCtx): Promise<Map<string, number>> {
+  const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
+  const limits = new Map<string, number>();
+  for (const row of rows) {
+    const value = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data as Record<string, unknown> : {};
+    const name = typeof value.name === "string" ? value.name : row.publicId;
+    if (validQuotaLimit(value.operationalEmails)) limits.set(name, value.operationalEmails);
+  }
+  return limits;
+}
+
+async function organizationOperationalEmailLimit(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  persistedLimits: ReadonlyMap<string, number>,
+  cache: Map<string, number>,
+): Promise<number> {
+  const key = String(organizationId);
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  const organization = await ctx.db.get(organizationId);
+  const entitlement = organization?.subscriptionPlan
+    ? null
+    : await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+  const planName = organization?.subscriptionPlan ?? entitlement?.subscriptionPlan ?? "Starter";
+  const starterLimit = findPlan("Starter")?.operationalEmails ?? 600;
+  const monthlyLimit = persistedLimits.get(planName) ?? findPlan(planName)?.operationalEmails ?? starterLimit;
+  cache.set(key, monthlyLimit);
+  return monthlyLimit;
+}
+
+async function reserveOperationalEmailQuota(
+  ctx: MutationCtx,
+  delivery: Delivery,
+  now: number,
+  monthlyLimit: number,
+): Promise<{ allowed: true } | { allowed: false; nextAttemptAt: number; reason: string }> {
+  if (!delivery.organizationId || delivery.quotaReservationMonth) return { allowed: true };
+  const { periodKey, nextPeriodStartAt, nextPeriodKey } = ammanMonthWindow(now);
+  const usage = await ctx.db.query("operationalEmailQuotaUsage").withIndex("by_organization_month", (q) =>
+    q.eq("organizationId", delivery.organizationId!).eq("periodKey", periodKey),
+  ).unique();
+  const reservedCount = usage?.reservedCount ?? 0;
+  if (reservedCount >= monthlyLimit) {
+    if (usage && usage.monthlyLimit !== monthlyLimit) await ctx.db.patch(usage._id, { monthlyLimit, updatedAt: now });
+    return {
+      allowed: false,
+      nextAttemptAt: nextPeriodStartAt,
+      reason: `Monthly member-email limit of ${monthlyLimit} reached; delivery deferred until ${nextPeriodKey} (Asia/Amman).`,
+    };
+  }
+  if (usage) {
+    await ctx.db.patch(usage._id, { reservedCount: reservedCount + 1, monthlyLimit, updatedAt: now });
+  } else {
+    await ctx.db.insert("operationalEmailQuotaUsage", { organizationId: delivery.organizationId, periodKey, reservedCount: 1, monthlyLimit, createdAt: now, updatedAt: now });
+  }
+  await ctx.db.patch(delivery._id, {
+    quotaReservationMonth: periodKey,
+    quotaReservedAt: now,
+    ...(delivery.quotaDeferredUntil !== undefined ? { quotaDeferredUntil: undefined, suppressionReason: undefined, lastErrorCode: undefined } : {}),
+  });
+  return { allowed: true };
+}
+
 export const leaseDue = internalMutation({
-  args: { limit: v.number() },
+  args: { limit: v.number(), now: v.optional(v.number()) },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    const now = Date.now();
+    const now = args.now ?? Date.now();
     const queued = await ctx.db.query("operationalEmailDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "queued")).collect();
     const retrying = await ctx.db.query("operationalEmailDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "retrying")).collect();
     const expiredLeases = await ctx.db.query("operationalEmailDeliveries").withIndex("by_status_next_attempt", (q) => q.eq("status", "leased")).collect();
     const candidates = [...queued, ...retrying, ...expiredLeases]
       .filter((delivery) => (delivery.nextAttemptAt ?? 0) <= now && (delivery.status !== "leased" || (delivery.leaseExpiresAt ?? 0) <= now))
       .sort((left, right) => (left.nextAttemptAt ?? left.createdAt) - (right.nextAttemptAt ?? right.createdAt));
+    const quotaLimits = await persistedOperationalEmailLimits(ctx);
+    const quotaLimitByOrganization = new Map<string, number>();
+    const mode = resolveEmailMode().mode;
+    const sandboxTo = process.env.RIVET_EMAIL_SANDBOX_TO;
+    const allowlist = parseEmailAllowlist(process.env.RIVET_EMAIL_ALLOWLIST);
     const leased: Delivery[] = [];
     for (const delivery of candidates.slice(0, Math.max(0, Math.min(args.limit, 50)))) {
+      const addressSuppression = await findEmailSuppression(ctx, cleanEmail(delivery.recipientEmail));
+      if (addressSuppression) {
+        await ctx.db.patch(delivery._id, { status: "suppressed", suppressionReason: publicSuppressionReason(addressSuppression.reason), nextAttemptAt: undefined, leaseToken: undefined, leaseExpiresAt: undefined, updatedAt: now });
+        const suppressed = (await ctx.db.get(delivery._id))!;
+        await mirrorDelivery(ctx, suppressed);
+        await syncRelatedApplicationStatus(ctx, suppressed);
+        continue;
+      }
       if (!await kindEnabled(ctx, delivery)) {
         await ctx.db.patch(delivery._id, { status: "suppressed", suppressionReason: "This operational email type was disabled before delivery", nextAttemptAt: undefined, leaseToken: undefined, leaseExpiresAt: undefined, updatedAt: now });
         const suppressed = (await ctx.db.get(delivery._id))!;
@@ -380,10 +528,34 @@ export const leaseDue = internalMutation({
         await syncRelatedApplicationStatus(ctx, suppressed);
         continue;
       }
+      if (delivery.organizationId && MEMBER_OPERATIONAL_EMAIL_QUOTA_KINDS.has(delivery.kind) && delivery.recipientEmail) {
+        const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist });
+        // Sandbox mail goes to RIVET; dropped allowlist mail will not reach a
+        // member. Neither consumes the gym's production message allowance.
+        if (route.decision === "send") {
+          const monthlyLimit = await organizationOperationalEmailLimit(ctx, delivery.organizationId, quotaLimits, quotaLimitByOrganization);
+          const reservation = await reserveOperationalEmailQuota(ctx, delivery, now, monthlyLimit);
+          if (!reservation.allowed) {
+            await ctx.db.patch(delivery._id, {
+              status: "retrying",
+              nextAttemptAt: reservation.nextAttemptAt,
+              leaseToken: undefined,
+              leaseExpiresAt: undefined,
+              quotaDeferredUntil: reservation.nextAttemptAt,
+              suppressionReason: reservation.reason,
+              lastErrorCode: reservation.reason,
+              updatedAt: now,
+            });
+            const deferred = (await ctx.db.get(delivery._id))!;
+            await mirrorDelivery(ctx, deferred);
+            await syncRelatedApplicationStatus(ctx, deferred);
+            continue;
+          }
+        }
+      }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(delivery._id, { status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
-      const trusted = await belongsToSubscribedGym(ctx, delivery);
-      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now, trusted } as Delivery);
+      leased.push({ ...delivery, status: "leased", leaseToken, leaseExpiresAt: now + LEASE_MS, updatedAt: now });
     }
     return leased;
   },
@@ -408,6 +580,9 @@ export const recordAttempt = internalMutation({
     if (!delivery || delivery.status !== "leased" || delivery.leaseToken !== args.leaseToken) return null;
     const now = Date.now();
     const suppressed = Boolean(args.suppressionReason);
+    const addressSuppression = !args.accepted && args.retryable && !suppressed
+      ? await findEmailSuppression(ctx, cleanEmail(delivery.recipientEmail))
+      : null;
     const attempts = [...delivery.attempts, {
       attemptedAt: now,
       outcome: suppressed ? "suppressed" as const : args.accepted ? "accepted" as const : args.retryable ? "retryable_failure" as const : "terminal_failure" as const,
@@ -417,7 +592,15 @@ export const recordAttempt = internalMutation({
       deliveredTo: args.deliveredTo,
     }];
     const exhausted = attempts.length >= MAX_ATTEMPTS;
-    const status = suppressed ? "suppressed" as const : args.accepted ? "provider_accepted" as const : args.retryable && !exhausted ? "retrying" as const : "failed" as const;
+    const status = suppressed
+      ? "suppressed" as const
+      : args.accepted
+        ? "provider_accepted" as const
+        : args.retryable && !exhausted && !addressSuppression
+          ? "retrying" as const
+          : addressSuppression
+            ? "suppressed" as const
+            : "failed" as const;
     const nextAttemptAt = status === "retrying" ? now + (RETRY_MINUTES[Math.min(attempts.length - 1, RETRY_MINUTES.length - 1)] ?? RETRY_MINUTES[RETRY_MINUTES.length - 1] ?? 30) * 60_000 : undefined;
     await ctx.db.patch(delivery._id, {
       attempts,
@@ -427,7 +610,7 @@ export const recordAttempt = internalMutation({
       leaseToken: undefined,
       leaseExpiresAt: undefined,
       lastErrorCode: args.errorCode,
-      ...(suppressed ? { suppressionReason: args.suppressionReason } : {}),
+      ...((suppressed || addressSuppression) ? { suppressionReason: args.suppressionReason ?? publicSuppressionReason(addressSuppression!.reason) } : {}),
       updatedAt: now,
     });
     const updated = (await ctx.db.get(delivery._id))!;
@@ -458,19 +641,65 @@ export const recordWebhook = internalMutation({
     providerId: v.optional(v.string()),
     eventType: v.string(),
     occurredAt: v.number(),
+    recipientEmails: v.optional(v.array(v.string())),
+    bounceType: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
     const duplicate = await ctx.db.query("operationalEmailWebhookEvents").withIndex("by_webhook_id", (q) => q.eq("webhookId", args.webhookId)).unique();
     if (duplicate) return null;
-    await ctx.db.insert("operationalEmailWebhookEvents", { ...args, receivedAt: Date.now() });
-    if (!args.providerId) return null;
-    const delivery = await ctx.db.query("operationalEmailDeliveries").withIndex("by_provider_id", (q) => q.eq("providerId", args.providerId)).unique();
+    const receivedAt = Date.now();
+    await ctx.db.insert("operationalEmailWebhookEvents", { webhookId: args.webhookId, providerId: args.providerId, eventType: args.eventType, occurredAt: args.occurredAt, receivedAt });
+    const delivery = args.providerId
+      ? await ctx.db.query("operationalEmailDeliveries").withIndex("by_provider_id", (q) => q.eq("providerId", args.providerId)).unique()
+      : null;
+
+    const suppressionReason: EmailSuppressionReason | undefined = args.eventType === "email.complained"
+      ? "complaint"
+      : args.eventType === "email.bounced" && isHardBounce(args.bounceType)
+        ? "hard_bounce"
+        : undefined;
+    if (suppressionReason) {
+      const recipients = new Set((args.recipientEmails ?? []).map(cleanEmail).filter((email): email is string => Boolean(email)));
+      if (recipients.size === 0) {
+        const acceptedRecipient = acceptedProviderRecipient(delivery);
+        if (acceptedRecipient) recipients.add(acceptedRecipient);
+      }
+      for (const email of recipients) {
+        const existing = await findEmailSuppression(ctx, email);
+        const shouldUpgrade = existing?.reason === "hard_bounce" && suppressionReason === "complaint";
+        if (existing && !shouldUpgrade) continue;
+        if (existing) {
+          await ctx.db.patch(existing._id, { reason: suppressionReason, sourceWebhookId: args.webhookId, providerId: args.providerId, occurredAt: args.occurredAt, updatedAt: receivedAt });
+        } else {
+          await ctx.db.insert("operationalEmailSuppressions", { email, reason: suppressionReason, sourceWebhookId: args.webhookId, providerId: args.providerId, occurredAt: args.occurredAt, createdAt: receivedAt, updatedAt: receivedAt });
+        }
+      }
+    }
     if (!delivery) return null;
-    if ((delivery.providerEventAt ?? 0) > args.occurredAt) return null;
-    const nextStatus = args.eventType === "email.delivered" ? "delivered" : ["email.bounced", "email.failed", "email.suppressed"].includes(args.eventType) ? "failed" : undefined;
+    const nextStatus = args.eventType === "email.delivered"
+      ? "delivered" as const
+      : args.eventType === "email.complained" || args.eventType === "email.suppressed"
+        ? "suppressed" as const
+        : ["email.bounced", "email.failed"].includes(args.eventType)
+          ? "failed" as const
+          : undefined;
     if (!nextStatus) return null;
-    await ctx.db.patch(delivery._id, { status: nextStatus, providerEventAt: args.occurredAt, lastErrorCode: nextStatus === "failed" ? args.eventType : undefined, updatedAt: Date.now() });
+    const latestEventAt = delivery.providerEventAt;
+    const olderEvent = latestEventAt !== undefined && args.occurredAt < latestEventAt;
+    const losesTimestampTie = latestEventAt === args.occurredAt && providerEventRank(args.eventType) <= providerEventRank(delivery.providerEventType);
+    const followsTerminalSuppression = (delivery.providerEventType === "email.complained" || delivery.providerEventType === "email.suppressed") && args.eventType === "email.delivered";
+    if (olderEvent || losesTimestampTie || followsTerminalSuppression) return null;
+    await ctx.db.patch(delivery._id, {
+      status: nextStatus,
+      providerEventAt: args.occurredAt,
+      providerEventType: args.eventType,
+      lastErrorCode: nextStatus === "failed" ? args.eventType : undefined,
+      suppressionReason: nextStatus === "suppressed"
+        ? args.eventType === "email.complained" ? "Recipient reported this email as spam" : "The email provider suppressed delivery"
+        : undefined,
+      updatedAt: receivedAt,
+    });
     const updated = (await ctx.db.get(delivery._id))!;
     await mirrorDelivery(ctx, updated);
     await syncRelatedApplicationStatus(ctx, updated);
@@ -508,7 +737,7 @@ export const processDue = internalAction({
       // The mode decides where the message may go. Sandbox never reaches the
       // real inbox; allowlist drops with a reason the gym can read; both are
       // recorded on the attempt so an audit shows exactly what happened.
-      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist, trusted: (delivery as Delivery & { trusted?: boolean }).trusted === true });
+      const route = routeEmail({ mode, kind: delivery.kind, recipient: delivery.recipientEmail, sandboxTo, allowlist });
       if (route.decision === "drop") {
         await ctx.runMutation(internal.operationalEmail.recordAttempt, { deliveryId: delivery._id, leaseToken: delivery.leaseToken, accepted: false, retryable: false, mode, suppressionReason: route.reason });
         processed += 1;
@@ -531,11 +760,9 @@ export const processDue = internalAction({
             subject,
             html: delivery.html,
             text: delivery.text,
-            ...(delivery.kind.startsWith("gym_application_") ? {
-              // Keep applicant replies with the RIVET team even when this
-              // message is sent from the provider-managed noreply identity.
-              reply_to: process.env.RESEND_REPLY_TO_EMAIL?.trim() || BRAND_CONTACT.email,
-            } : {}),
+            // Operational messages use a no-reply sender, so route replies
+            // to RIVET's monitored address unless an environment override is set.
+            reply_to: process.env.RESEND_REPLY_TO_EMAIL?.trim() || BRAND_CONTACT.email,
             ...(delivery.attachments?.length ? { attachments: delivery.attachments.map((attachment) => ({ filename: attachment.filename, content: attachment.contentBase64, content_type: attachment.contentType })) } : {}),
           }),
         });

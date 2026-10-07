@@ -82,6 +82,7 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "pinnedWorkspaceItems", scan: true },
   { table: "operationalNotifications", scan: true },
   { table: "operationalEmailDeliveries", index: "by_organization_created" },
+  { table: "operationalEmailQuotaUsage", index: "by_organization_month" },
   { table: "subscriptionAgreements", index: "by_organization" },
   { table: "operationalEmailSettings", index: "by_organization" },
   { table: "renewalDeliveries", index: "by_organization" },

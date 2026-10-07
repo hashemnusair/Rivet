@@ -64,9 +64,9 @@ describe("buildPlatformOverview", () => {
       branches: [], members: [], staffMemberships: [], bookings: [], applications: [], invoices: [], supportCases: [],
     });
 
-    // Annual = 12 months at the published 20% saving, so the effective
-    // monthly rate is price × 0.8 — never the headline monthly price.
-    expect(overview.activeMrr).toEqual({ amount: 149_000 + Math.round(149_000 * 0.8), currency: "JOD" });
+    // Annual = 12 months at the published 5% saving, so the effective
+    // monthly rate is price × 0.95 — never the headline monthly price.
+    expect(overview.activeMrr).toEqual({ amount: 149_000 + Math.round(149_000 * 0.95), currency: "JOD" });
   });
 
   it("does not manufacture totals or queue entries for an empty deployment", () => {

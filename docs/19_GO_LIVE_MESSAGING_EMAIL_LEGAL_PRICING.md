@@ -78,15 +78,9 @@ as verified merely because Clerk supports it.
   values. `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` is absent, so the current
   code suppresses no-organization application emails at the global-kind
   gate. `RESEND_REPLY_TO_EMAIL` is absent; application mail falls back to
-  `sales@rivetjo.com`, while other kinds currently do not set Reply-To.
-- **Further code gaps:** bounce events mark an individual delivery failed
-  but do not persist an address-level exclusion for future emails. Complaint
-  events are stored but do not change delivery status or suppress the address.
-  Resolve and test these before broad rollout.
-- **Allowlist caveat:** `routeEmail` also permits trusted recipients belonging
-  to subscribed gyms. This mode is not a strict “only these test addresses”
-  boundary. Use isolated staging plus `sandbox` for a catch-all test; never
-  run the shared production worker merely to send a test.
+  `sales@rivetjo.com`. The current candidate applies that Reply-To to every operational kind; monitored mailbox acceptance remains unverified.
+- **Current candidate repairs:** persistent hard-bounce/complaint address suppression, signature-verified callback replay/order handling, terminal provider suppression, and strict recipient-level allowlist checks. These are local code/test results until the candidate is deployed and provider callbacks are configured.
+- **Allowlist:** subscribed-gym trust no longer bypasses explicit addresses/domains in the candidate. Inspect the configured pilot list before releasing this stricter behavior. Sandbox still redirects to its configured RIVET catch-all.
 
 ### Confirmed channel decision — 7 October 2026
 
@@ -517,90 +511,32 @@ Two limits worth knowing:
 - The ID number is not field-level encrypted; access control and audit stand
   in for it in this release.
 
-## 4. Pricing tiers: sign-off sheet
+## 4. Commercial launch catalogue — 7 October 2026
 
-Starter, Growth, Pro and Enterprise are live in the product as tier names,
-feature gates and prices. The platform pricing page and this sheet say they
-are **provisional**. Nothing goes into a quote or a signed agreement as final
-until the table at the end is signed.
+Implemented in the current candidate under the request to fix nonlegal launch issues. Deployment and provider acceptance are separate release gates; see CURRENT_STATE.md. Legal wording and signed history are unchanged.
 
-### What the product enforces today
-
-| | Starter | Growth | Pro | Enterprise |
-|---|---|---|---|---|
-| Monthly price (JOD) | 79.000 | 149.000 | 249.000 | 500.000 |
-| Annual price (JOD, 20% off) | 758.400 | 1,430.400 | 2,390.400 | 4,800.000 |
-| Branches | 1 | 3 | 8 | 25 |
-| Staff accounts | 8 | 25 | 80 | 250 |
-| Members | 500 | 2,500 | 10,000 | 50,000 |
-| Gym foundation (members, memberships, payments, reception) | ✓ | ✓ | ✓ | ✓ |
-| Revenue protection (leads, follow-ups, reminders) | ✓ | ✓ | ✓ | ✓ |
-| Daily operations (stock, purchasing, payables, equipment, maintenance) | — | ✓ | ✓ | ✓ |
-| Financial operating system (shifts, reconciliation, ledger) | — | — | ✓ | ✓ |
-| Management reporting (statements, analytics) | — | — | ✓ | ✓ |
-| Shown on the public site | ✓ | ✓ | ✓ | ✓ (contact/quote presentation) |
-
-Source of truth: `convex/planCatalogue.ts` (plan rows and the one annual
-formula, `termPriceMinor`), `convex/workspaceModules.ts` (module
-availability), `convex/subscriptionTerm.ts` (term dates and proration).
-
-### How a term is billed, and what a change costs
-
-One module, `convex/subscriptionTerm.ts`, answers every question about a term,
-and the server, the mock API and the admin preview all read it, so the figure
-an operator sees before saving is the figure that reaches the invoice.
-
-- **A term is one interval.** A monthly term is one calendar month, an annual
-  term twelve, taken from the day it starts. A term is never lengthened.
-- **A change of plan or cadence starts a new term that day.** The gym is
-  invoiced for the new term at list price.
-- **The unfinished part of the term it replaces comes back as money**, valued
-  at the rate the gym actually paid: the outgoing term's price times its
-  unused days over its whole length. The invoice prints it as a credit line
-  between the subtotal and the total. The credit never exceeds the invoice, so
-  no invoice is ever negative, and there is no stored credit balance: a
-  downgrade with more credit than the new term costs simply pays nothing.
-- **Only a paid, running term earns a credit.** An overdue term was never paid
-  for; its unpaid invoice is voided instead, and the new term is billed in
-  full.
-- **An operator who types an explicit end date** overrides the derived term,
-  and no credit is applied to it.
-
-The enforcement clock follows the signed agreement, and the constants live
-beside the rules in `convex/subscriptionTerm.ts`:
-
-| Step | When |
-|---|---|
-| Invoice raised | 3 days before the term begins |
-| Payment due | 14 days after it is raised |
-| Marked past due, with notice | the day after it is due |
-| Access may be suspended | 21 days past due (14 overdue plus 7 days' notice) |
-
-The reconciliation cron applies this only while
-`RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`. Recording a payment never moves
-a gym's paid-through date backwards.
-
-### Decisions needed
-
-- **[decide]** the four plan prices and whether Enterprise is quoted
-- **[decide]** branch, staff and member limits per tier, and what happens
-  when a gym exceeds them (the Terms say RIVET offers the next plan)
-- **[decide]** whether Resend email costs are included per tier; there is no automated WhatsApp add-on
-- **[decide]** onboarding fee: the agreement says onboarding is included
-- **[decide]** annual discount (20% today) and whether monthly billing needs
-  a minimum term. The Terms default to twelve months; agreement 1.2 instead
-  continues until ended with 30 days' notice. Counsel must reconcile them.
-
-### Sign-off
-
-| Item | Decision | Signed by | Date |
+| | Starter | Growth | Pro |
 |---|---|---|---|
-| Public prices (Starter / Growth / Pro) | | | |
-| Tier limits | | | |
-| Email costs per tier | | | |
-| Onboarding fee | | | |
-| Annual discount and minimum term | | | |
+| Monthly price (JOD) | 39.000 | 89.000 | 199.000 |
+| Annual subscription (JOD, 5% saving) | 444.600 | 1,014.600 | 2,268.600 |
+| One-time onboarding (JOD) | 75.000 | 150.000 | 300.000 |
+| First monthly invoice subtotal (JOD) | 114.000 | 239.000 | 499.000 |
+| Branches | 1 | 2 | 5 |
+| Owner and staff accounts, including pending invitations | 3 | 8 | 20 |
+| Active members pooled across branches | 150 | 300 | 1,000 |
+| Member-facing operational email allowance per Amman calendar month | 600 | 1,500 | 5,000 |
+| Foundation and revenue workflows | Yes | Yes | Yes |
+| Operations | — | Yes | Yes |
+| Finance and reporting | — | — | Yes |
 
-When the table is signed, remove the provisional notice from the platform
-pricing page (`src/app/platform/subscriptions/page.tsx`) and record the
-decision in docs/09.
+Enterprise is quote-only on public surfaces; its legacy numeric configuration is retained for existing records. Valid operator catalogue overrides remain authoritative. The release migration previews by default and updates only exact former Starter/Growth/Pro defaults; customized rows remain unchanged and require review. No existing invoice or signed agreement is rewritten.
+
+Capacity checks run inside server mutations, including branch activation, staff invitation/reactivation, membership sale/import/date changes. Membership capacity counts distinct people with overlapping current or future terms across the organization; frozen terms reserve capacity. Existing excess is not deleted or automatically billed: corrections that do not increase an over-limit interval remain allowed, and new over-limit increases require freeing capacity or changing plan.
+
+Newly provisioned gyms capture their one-time onboarding fee. It is added as a separate line on the first subscription invoice, outside the annual discount and proration. An unpaid replacement carries it forward; a paid fee is never charged at renewal. Existing gyms without the captured fee remain uncharged. This collection timing is the implementation assumption; no new upfront payment gateway or mandatory minimum term was invented.
+
+Plan/cadence changes retain the existing one-interval date rules. Credits now use the current term's recorded funded subscription value rather than its current catalogue price or active status alone. Paid invoices contribute subscription value excluding setup; unpaid invoices contribute only a carried paid credit. An unpaid invoice cannot fund a free upgrade. Credits stay capped at the new subscription subtotal. The existing explicit-end-date override and payment/enforcement windows are unchanged.
+
+Member-facing email sends reserve allowance transactionally before provider submission. Dedupe and retries reuse the reservation. Sandbox/allowlist-dropped messages do not consume it. Excess mail remains visibly deferred to the next Amman month; it is not reported as delivered. Authentication, platform invoice/account/legal notices and support/admin mail are outside this member-email allowance. Deferred notices can become stale, so operators must review the outbox before increasing allowance or retrying old notices; no automatic overage charge is implemented.
+
+**Legal decisions remain excluded and open.** The existing agreement says onboarding is included. The Terms' twelve-month default and agreement's termination provisions still require counsel reconciliation, as does tax treatment. The public first payment is explicitly a subtotal; no tax amount or legal approval is implied by this engineering change.

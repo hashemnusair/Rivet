@@ -43,11 +43,15 @@ describe("gym application pricing selection", () => {
 
     expect(await screen.findByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText(/JD 4800\.000 billed annually/)).toBeInTheDocument();
+    expect(screen.getByText(/Custom quote for annual billing/)).toBeInTheDocument();
+    expect(screen.getByText(/The onboarding fee will be included in the custom quote\. The first payment will be included in the custom quote\./)).toBeInTheDocument();
+    expect(screen.queryByText(/JD 4800\.000 billed annually/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: /Starter/ }));
     expect(screen.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText(/JD 444\.600/)).toBeInTheDocument();
+    expect(screen.getByText(/First payment subtotal before applicable tax, including onboarding: JD 519\.600/)).toBeInTheDocument();
   });
 
   it("submits the selected annual cadence with the application", async () => {

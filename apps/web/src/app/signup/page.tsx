@@ -14,7 +14,9 @@ import { getApi } from "@/lib/api/client";
 import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
 import {
+  ANNUAL_DISCOUNT_PERCENT,
   calculatePlanPrice,
+  isPublicQuotePlan,
   isBillingInterval,
   isPublicPricingPlanName,
   resolvePublicPricingPlans,
@@ -172,7 +174,11 @@ export default function GymApplicationPage() {
                             data-touch-target
                             className={cn("rounded-sm px-3 py-2 text-[12.5px] font-medium transition-colors", selected ? "bg-ink text-paper" : "text-ink-2 hover:text-ink")}
                           >
-                            {interval === "monthly" ? t("publicCompletion.landing.pricing.monthly") : t("publicCompletion.landing.pricing.annualSave", { percent: f.number(20) })}
+                            {interval === "monthly"
+                              ? t("publicCompletion.landing.pricing.monthly")
+                              : plan === "Enterprise"
+                                ? t("publicCompletion.signup.annualQuoteTab")
+                                : t("publicCompletion.landing.pricing.annualSave", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}
                           </button>
                         );
                       })}
@@ -190,16 +196,33 @@ export default function GymApplicationPage() {
                       const selected = plan === item.name;
                       const price = calculatePlanPrice(item, billingInterval);
                       const featureList = localizedPublicPlanFeatures(item, f, t);
-                      const capacitySummary = featureList.slice(0, 3).join(" · ");
-                      const capabilitySummary = featureList.slice(3, featureList.length - 2).join(" · ");
+                      const quoteOnly = isPublicQuotePlan(item);
+                      const cadence = t(billingInterval === "annual" ? "publicCompletion.signup.annualCadence" : "publicCompletion.signup.monthlyCadence");
+                      const capacitySummary = quoteOnly ? (featureList[0] ?? "") : featureList.slice(0, 4).join(" · ");
+                      const capabilitySummary = quoteOnly ? featureList.slice(1, featureList.length - 2).join(" · ") : featureList.slice(4, featureList.length - 2).join(" · ");
                       return (
                         <button key={item.name} type="button" role="radio" aria-checked={selected} onClick={() => setPlan(item.name)} disabled={!hydrated} className={cn("flex items-center gap-3 rounded-md border p-3.5 text-start transition-colors disabled:pointer-events-none disabled:opacity-60", selected ? "border-ink bg-sunken/60" : "border-line-2 hover:border-line-3")}>
                           <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border", selected ? "border-ink bg-ink text-paper" : "border-line-3")} aria-hidden>{selected ? <Check className="size-3" /> : null}</span>
-                          <span className="min-w-0 flex-1"><span className="block text-[13.5px] font-semibold"><bdi dir="ltr">{item.name}</bdi></span><span className="mt-0.5 block text-[12.5px] text-ink-2">{t("publicCompletion.signup.monthlyPrice", { amount: isolateLtr(formatPublicJod(price.effectiveMonthlyMinor, f, locale)) })}{billingInterval === "annual" ? ` · ${t("publicCompletion.signup.annualPrice", { amount: isolateLtr(formatPublicJod(price.annualTotalMinor, f, locale)) })}` : ""}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span><span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.signup.included")} {capabilitySummary}</span></span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13.5px] font-semibold"><bdi dir="ltr">{item.name}</bdi></span>
+                            {quoteOnly ? (
+                              <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("publicCompletion.landing.pricing.customQuoteCadence", { cadence })}. {t("publicCompletion.landing.pricing.customQuotePriceDetails")}</span>
+                            ) : (
+                              <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("publicCompletion.signup.monthlyPrice", { amount: isolateLtr(formatPublicJod(price.effectiveMonthlyMinor, f, locale)) })}{billingInterval === "annual" ? ` · ${t("publicCompletion.signup.annualPrice", { amount: isolateLtr(formatPublicJod(price.annualTotalMinor, f, locale)) })}` : ""}</span>
+                            )}
+                            {capacitySummary ? <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{capacitySummary}</span> : null}
+                            <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.signup.included")} {capabilitySummary}</span>
+                            {quoteOnly ? (
+                              <span className="mt-1 block text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.signup.customOnboarding")} {t("publicCompletion.signup.customFirstPayment")}</span>
+                            ) : (
+                              <span className="mt-1 block text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.oneTimeOnboarding", { amount: isolateLtr(formatPublicJod(price.onboardingFeeMinor ?? 0, f, locale)) })} · {t("publicCompletion.landing.pricing.firstPayment", { amount: isolateLtr(formatPublicJod(price.firstPaymentMinor, f, locale)) })}</span>
+                            )}
+                          </span>
                         </button>
                       );
                     })}
                   </div>
+                  <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.activeMemberAllowanceNote")}</p>
                   <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">{t("publicCompletion.signup.noImmediatePayment")}</p>
                   {formError ? <p className="mt-4 rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                   <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="mt-6 w-full">{t("marketing.actions.applyShort")}{" "}<ArrowRight /></Button>

@@ -5,7 +5,9 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { SubscriptionSection } from "./subscription-section";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
+const experienceMock = vi.hoisted(() => ({ saasPlans: [{ name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, tone: "signal" }] }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock, usePathname: () => "/settings", useSearchParams: () => new URLSearchParams(), useParams: () => ({}) }));
+vi.mock("@/lib/providers/experience-provider", () => ({ useExperience: () => experienceMock }));
 
 afterEach(() => { resetApiForTests(); vi.unstubAllGlobals(); });
 
@@ -31,7 +33,7 @@ describe("subscription and invoices", () => {
     await renderWithApp(<SubscriptionSection />, { role: "owner" });
     const summary = await screen.findByTestId("subscription-summary");
     expect(within(summary).getByText("Plan")).toBeInTheDocument();
-    expect(within(summary).getByText(/per (month|year), plus any tax/)).toBeInTheDocument();
+    expect(within(summary).getByText("JOD 199.000 per month, plus any tax")).toBeInTheDocument();
     expect(within(summary).getByText(/Monthly|Yearly, paid once a year/)).toBeInTheDocument();
     expect(within(summary).getByText(/Paid until|Trial ends/)).toBeInTheDocument();
     // The change rule is stated where the owner can read it.

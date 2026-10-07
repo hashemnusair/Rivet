@@ -7,6 +7,7 @@ import { domainError, publicBranchId, publicOrganizationId, publicUserId, requir
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 import { seedAccountingMetadata } from "./accounting";
+import { COMMERCIAL_TERMS_VERSION, findPlan } from "./planCatalogue";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -480,6 +481,10 @@ export const createWorkspace = internalMutation({
       .unique();
     const requestedBillingInterval: BillingInterval = application.billingInterval === "annual" ? "annual" : "monthly";
     if (!organization) {
+      const catalogRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", q => q.eq("entityType", "platformPlan")).collect();
+      const storedPlan = catalogRows.map(row => row.data as Record<string, unknown>).find(row => row.name === application.plan);
+      const setupFee = storedPlan?.onboardingFeeMinor ?? findPlan(application.plan)?.onboardingFeeMinor ?? 0;
+      if (typeof setupFee !== "number" || !Number.isSafeInteger(setupFee) || setupFee < 0) domainError("CONFIGURATION_ERROR", "The plan onboarding fee is invalid.", { correlationId: args.correlationId });
       const organizationId = await ctx.db.insert("organizations", {
         publicId: ids.organizationPublicId,
         name: application.gymName,
@@ -487,6 +492,8 @@ export const createWorkspace = internalMutation({
         status: "trial",
         subscriptionPlan: application.plan,
         billingInterval: requestedBillingInterval,
+        onboardingFeeMinor: setupFee,
+        commercialTermsVersion: COMMERCIAL_TERMS_VERSION,
         subscriptionStartedAt: now,
         trialEndsAt: addCalendarMonth(now),
         clerkOrganizationId: args.clerkOrganizationId,

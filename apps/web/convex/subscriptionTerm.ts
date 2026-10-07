@@ -62,6 +62,8 @@ export interface OutgoingTerm {
   periodEndsAt: number;
   /** The plan's monthly list price during that term, in minor units. */
   monthlyPriceMinor: number;
+  /** Historical subscription value, excluding setup fees; never reprice paid history. */
+  amountMinor?: number;
   /** The cadence that term was billed at. */
   interval: BillingInterval;
 }
@@ -74,6 +76,17 @@ export interface TermChangeInput {
   monthlyPriceMinor: number;
   /** The term being replaced, when it was paid and still running. */
   outgoing?: OutgoingTerm;
+}
+
+/** Only collected money or a carried paid credit can fund the next term. */
+export function fundedSubscriptionValue(invoice: { status?: unknown; subtotalMinor?: unknown; amountMinor?: unknown; onboardingFeeMinor?: unknown; creditMinor?: unknown }): number | undefined {
+  if (invoice.status === "void") return undefined;
+  const setup = typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : 0;
+  const gross = invoice.status === "paid"
+    ? (typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : invoice.amountMinor)
+    : invoice.creditMinor;
+  const value = typeof gross === "number" ? gross - (invoice.status === "paid" ? setup : 0) : 0;
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 export interface TermChange {
@@ -108,7 +121,7 @@ export function termChange(input: TermChangeInput): TermChange {
   const outgoingStart = termStart(outgoing.periodEndsAt, outgoing.interval);
   const termDays = daysBetween(outgoingStart, outgoing.periodEndsAt);
   const creditDays = Math.min(daysBetween(input.now, outgoing.periodEndsAt), termDays);
-  const outgoingPrice = termPriceMinor(outgoing.monthlyPriceMinor, outgoing.interval);
+  const outgoingPrice = outgoing.amountMinor ?? termPriceMinor(outgoing.monthlyPriceMinor, outgoing.interval);
   const worth = termDays === 0 ? 0 : Math.round((outgoingPrice * creditDays) / termDays);
   const creditMinor = Math.max(0, Math.min(subtotalMinor, worth));
   return { periodEndsAt, subtotalMinor, creditMinor, creditDays: creditMinor > 0 ? creditDays : 0, amountMinor: subtotalMinor - creditMinor };

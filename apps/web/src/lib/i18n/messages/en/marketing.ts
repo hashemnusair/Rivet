@@ -253,18 +253,19 @@ export const marketing = {
 
   pricing: {
     eyebrow: "Pricing",
-    title: "One branch or eight. Same system.",
+    title: "One, two or five branches. Choose your plan.",
     description:
-      "Every plan includes the marketplace listing, the member app, staff permissions, audit history and the complete revenue loop. Change plans any time before the trial ends.",
+      "Starter, Growth and Pro include the modules listed below. Every plan includes the member app, staff permissions and audit history; Enterprise is priced by custom quote.",
     emptyTitle: "Pricing is being prepared",
     emptyDescription: "RIVET pricing is not available from the live catalog yet.",
     mostPopular: "Most popular",
     perMonth: "/ month",
     price: "JD {amount}",
     branches: plural({ one: "{count} branch", other: "{count} branches" }),
-    staff: plural({ one: "Up to {formatted} staff account", other: "Up to {formatted} staff accounts" }),
-    members: plural({ one: "Up to {formatted} member", other: "Up to {formatted} members" }),
-    included: "Member app and marketplace included",
+    staff: plural({ one: "Up to {formatted} owner and staff account", other: "Up to {formatted} owner and staff accounts" }),
+    members: plural({ one: "Up to {formatted} active member across all branches", other: "Up to {formatted} active members across all branches" }),
+    operationalEmails: plural({ one: "Up to {formatted} operational email per month", other: "Up to {formatted} operational emails per month" }),
+    included: "Member app, staff permissions and audit history included",
   },
 
   cta: {

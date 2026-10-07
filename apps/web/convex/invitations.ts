@@ -7,6 +7,7 @@ import { domainError, publicOrganizationId, publicUserId, requireActor, requireP
 import { rolePermissions, toFrontendRole } from "./permissions";
 import { INVITATION_REDIRECT_PATH } from "./platformProvisioning";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
+import { effectiveOrganizationPlan, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 
 type Data = Record<string, unknown>;
 
@@ -125,6 +126,8 @@ async function prepareInvitation(ctx: MutationCtx, input: Data, organizationId: 
     .query("organizationMemberships")
     .withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id))
     .unique();
+  const plan = await effectiveOrganizationPlan(ctx, actor.organization);
+  await enforceStaffCapacity(ctx, actor.organization._id, plan, staffMembershipCounts(membership), true, correlationId);
   let membershipId: Id<"organizationMemberships">;
   if (membership) {
     membershipId = membership._id;

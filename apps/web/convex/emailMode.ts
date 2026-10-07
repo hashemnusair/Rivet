@@ -42,13 +42,6 @@ export function resolveEmailMode(env: Env = process.env): EmailModeResolution {
   return { mode: "off", source: "default" };
 }
 
-/**
- * Kinds that may reach a real recipient even in allowlist mode. RIVET has no
- * password-reset or security-alert email of its own today (Clerk sends
- * those), so the set is empty; it exists so the exemption is deliberate.
- */
-export const ALLOWLIST_EXEMPT_KINDS: ReadonlySet<string> = new Set<string>();
-
 export function parseEmailAllowlist(value: string | undefined): string[] {
   return (value ?? "").split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
 }
@@ -67,14 +60,10 @@ export type EmailRoute =
 /**
  * Decide where one queued email goes under the current mode.
  *
- * In allowlist mode a recipient is sent to when they are on the list, or
- * when the worker has established that the message belongs to a subscribed
- * gym (`trusted`): its team for gym-facing mail, its members for
- * member-facing mail. A subscribed gym and its members are served without
- * anyone editing an environment variable; everything else waits for the list
- * or for live mode.
+ * Allowlist mode is a strict recipient-level gate. Subscription, message kind,
+ * and worker trust never bypass the configured addresses or domains.
  */
-export function routeEmail(input: { mode: EmailMode; kind: string; recipient: string; sandboxTo?: string; allowlist?: readonly string[]; trusted?: boolean }): EmailRoute {
+export function routeEmail(input: { mode: EmailMode; kind: string; recipient: string; sandboxTo?: string; allowlist?: readonly string[] }): EmailRoute {
   const recipient = input.recipient.trim().toLowerCase();
   switch (input.mode) {
     case "live":
@@ -85,8 +74,8 @@ export function routeEmail(input: { mode: EmailMode; kind: string; recipient: st
       return { decision: "redirect", to: sandboxTo, originalRecipient: recipient };
     }
     case "allowlist":
-      if (input.trusted || ALLOWLIST_EXEMPT_KINDS.has(input.kind) || recipientAllowed(recipient, input.allowlist ?? [])) return { decision: "send", to: recipient };
-      return { decision: "drop", reason: "Recipient is not on RIVET_EMAIL_ALLOWLIST and the message does not belong to a subscribed gym (allowlist mode)" };
+      if (recipientAllowed(recipient, input.allowlist ?? [])) return { decision: "send", to: recipient };
+      return { decision: "drop", reason: "Recipient is not on RIVET_EMAIL_ALLOWLIST (allowlist mode)" };
     default:
       return { decision: "drop", reason: "Email mode is off" };
   }

@@ -4,6 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { pendingOnboardingFee } from "./onboardingBilling";
 import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -188,7 +189,8 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   const recipient = await ownerRecipient(ctx, organization._id);
   if (decision.shouldCreate && !invoiceRow) {
     const plan = planPrice({ subscriptionPlan: organization.subscriptionPlan }, planPrices);
-    const amountMinor = termPriceMinor(plan, interval);
+    const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
+    const amountMinor = termPriceMinor(plan, interval) + onboardingFeeMinor;
     const invoiceId = `INV-${crypto.randomUUID()}`;
     const createdAt = Date.now();
     const invoice = {
@@ -196,6 +198,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       gymId: listing?.publicId,
       gym: organization.name,
       amountMinor,
+      ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor, subtotalMinor: amountMinor } : {}),
       amount: amountLabel(amountMinor),
       currency: "JOD",
       date: iso(now),

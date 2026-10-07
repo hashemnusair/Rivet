@@ -1,4 +1,5 @@
 export const documents = {
+  onboardingFee: "One-time onboarding",
   csvTitle: "RIVET export",
   csvRowCount: "Data rows",
   csvNoRecords: "No records matched this export.",
