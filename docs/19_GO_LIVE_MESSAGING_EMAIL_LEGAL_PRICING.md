@@ -4,11 +4,12 @@
 
 This is a readiness review, **not an incident investigation** (Elias's
 clarification). Use **Spacemail**, `elias@rivetjo.com`, for the delivery
-evidence below. Source inspected: local `arabic-foundation`, `9fbd53c`.
+evidence below. Initial audit baseline: `9fbd53c`; release integration includes
+current main `4fe7be1`, including the completed Arabic implementation.
 Code presence, provider acceptance, recipient-server delivery, and inbox
-placement are separate findings. No email was sent and nothing was deployed, activated or purchased during
-this review. Local implementation changes are listed below; no provider
-configuration or DNS was changed.
+placement are separate findings. No email was sent, provider activated or service purchased during this review.
+Implementation changes are listed below; see CURRENT_STATE.md for release
+evidence. No provider configuration or DNS was changed.
 
 ### Email inventory verified against executable triggers
 
@@ -16,7 +17,7 @@ All operational rows below use `operationalEmail.ts` → Resend, with the
 configured `RESEND_FROM_EMAIL`. Observed production agreement copies use
 `noreply@rivetjo.com`. At the inspected live baseline, authentication mail is delivered by Clerk.
 The 7 October implementation adds a signed Clerk → Resend relay; its deployment
-and template cutover are pending. Clerk continues to own authentication.
+is part of this release; configuration and template cutover remain pending. Clerk continues to own authentication.
 The relay does not use tenant operational-email preferences or redirect codes
 to an operational sandbox mailbox.
 
@@ -96,14 +97,14 @@ This supersedes the 14 September WhatsApp/Twilio plan and the earlier request
 for Meta approvals, STOP/إيقاف automation, number registration and API pilots.
 No Twilio account, paid provider setup or WhatsApp API launch is needed.
 
-Local implementation removes the sender and its cron, makes the old worker
+The implementation removes the sender and its cron, makes the old worker
 an inert compatibility target, ignores old messaging environment flags,
 suppresses retained WhatsApp/SMS automation actions, removes the activation
 controls, and preserves message history. The renewal job creates only the
 opt-in one-day staff call task; the 7-day and 1-day **emails** stay in
 `membershipJobs`. Manual WhatsApp opens an editable draft in the staff
 member's WhatsApp. RIVET records a handoff, not proof that it was sent.
-These changes have not been deployed.
+Deployment evidence is recorded in CURRENT_STATE.md.
 
 ### Commercial/legal review status and next actions
 
@@ -117,7 +118,7 @@ must be provided by the founders and verified with counsel/accountant.
 The review brief, human-readable source snapshot and outreach draft are in
 [`legal-review/2026-10-07/REVIEW_BRIEF.md`](legal-review/2026-10-07/REVIEW_BRIEF.md).
 Start review before these facts are all settled; counsel can flag open fields
-and prepare Arabic in parallel. The lawyer's name/email has been requested
+and review the existing Arabic documents in parallel. The lawyer's name/email has been requested
 but not supplied, so **no external request has been sent and review has not
 started**. This is a recipient blocker, not a requirement to delay preparation.
 The Terms' twelve-month default conflicts with the agreement's continuing
@@ -126,7 +127,7 @@ term/30-day notice. Terms omit Enterprise; the agreement contains older
 
 ### Validation completed
 
-- Full unit/component/Convex suite: **277 files, 1,738 tests passed**
+- Full unit/component/Convex suite: **321 files, 2,006 tests passed** after integration with current main
   (`pnpm --filter web exec vitest run --maxWorkers=3`). Covers retired sender
   behavior under old live flags, retained rule suppression/history, staff call
   tasks, manual WhatsApp handoff, 7/1-day email reminders, tenant dedupe and
@@ -135,8 +136,8 @@ term/30-day notice. Terms omit Enterprise; the agreement contains older
 - `pnpm typecheck`, `pnpm convex:typecheck`, and `pnpm lint` passed, including
   the secret-output audit. `pnpm build` passed and includes the dynamic Clerk
   email webhook route. CLI/environment guard tests: **14 passed**.
-- A fixed September date in an existing mock billing test had expired; it now
-  selects relative future dates. No billing implementation changed.
+- Production Convex dry run passed with no index deletions. The released
+  Arabic implementation and its email recipient-language tests are retained.
 - These are local fixtures/provider doubles, not fresh provider sends or inbox
   tests. Fresh invitation and operational-mail tests still need a named test
   identity/gym and approved destinations. No real gym, payment, agreement or

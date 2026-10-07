@@ -71,7 +71,7 @@ const SECTIONS: Section[] = [
   { id: "roles", label: "Roles & access", ready: async (page) => { await expect(page.getByRole("switch").first()).toBeVisible(); } },
   { id: "payments", label: "Payments", ready: async (page) => { await expect(page.getByRole("switch", { name: "Cash" })).toBeVisible(); await expect(page.getByLabel("Manager discount limit")).toHaveValue(/./); } },
   { id: "receipts", label: "Receipts & tax", ready: async (page) => { await expect(page.getByLabel("Receipt prefix")).toHaveValue(/./); } },
-  { id: "notifications", label: "Notifications", ready: async (page) => { await expect(page.getByRole("switch", { name: "Renewal reminders" })).toBeVisible(); await expect(page.getByTestId("messaging-status")).toBeVisible(); } },
+  { id: "notifications", label: "Notifications", ready: async (page) => { await expect(page.getByRole("switch", { name: "Renewal call tasks" })).toBeVisible(); await expect(page.locator('a[href="/settings?section=email"]')).toBeVisible(); await expect(page.getByTestId("messaging-status")).toHaveCount(0); } },
   { id: "email", label: "Emails", ready: async (page) => { await expect(page.getByTestId("email-delivery-mode")).toBeVisible(); await expect(page.getByRole("checkbox", { name: "Payment receipt" })).toBeVisible(); } },
   { id: "operations", label: "Gym rules", ready: async (page) => { await expect(page.getByRole("textbox", { name: "Ending soon warning, days" })).toHaveValue(/./); } },
   { id: "hours", label: "Hours & trials", ready: async (page) => { await expect(page.getByRole("checkbox", { name: "Sunday open" })).toBeVisible(); } },
@@ -235,20 +235,20 @@ test("payment methods and discount limits save as one draft", async ({ page }) =
   await expect(sales).toHaveValue("15.000");
 });
 
-test("notifications and quiet hours save together and discard together", async ({ page }) => {
+test("staff renewal call tasks require saving and can be discarded", async ({ page }) => {
   await fixClock(page);
   await signIn(page);
   await visit(page, "/settings?section=notifications", "Notifications", 2);
 
-  const renewal = page.getByRole("switch", { name: "Renewal reminders" });
+  const renewal = page.getByRole("switch", { name: "Renewal call tasks" });
   await expect(renewal).toHaveAttribute("data-state", "unchecked");
   await renewal.click();
-  await page.getByLabel("Quiet hours from").fill("21:30");
+  await expect(page.getByLabel("Quiet hours from")).toHaveCount(0);
   const bar = page.getByTestId("settings-save-bar");
   await expect(bar).toContainText("Unsaved changes");
   await bar.getByRole("button", { name: "Discard" }).click();
   await expect(renewal).toHaveAttribute("data-state", "unchecked");
-  await expect(page.getByLabel("Quiet hours from")).toHaveValue("22:00");
+  await expect(page.getByTestId("messaging-status")).toHaveCount(0);
   await expect(page.getByTestId("settings-save-bar")).toHaveCount(0);
 
   await renewal.click();

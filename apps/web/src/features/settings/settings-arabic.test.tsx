@@ -40,15 +40,15 @@ describe("Arabic staff settings", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ name: "نادي الأبطال", phoneCountryCallingCode: "962", defaultLanguage: original.defaultLanguage, locale: original.locale })));
   });
 
-  it("requires the same explicit save to enable reminder delivery", async () => {
+  it("requires the same explicit save to enable staff renewal call tasks", async () => {
     const user = userEvent.setup();
     const { api } = await renderWithApp(arabic(<NotificationsSection />));
     const update = vi.spyOn(api, "updateNotificationSettings");
-    const toggle = await screen.findByRole("switch", { name: "تذكيرات التجديد" });
+    const toggle = await screen.findByRole("switch", { name: "مهام اتصال للتجديد" });
     await user.click(toggle);
     expect(update).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /English/ }));
-    expect(screen.getByRole("switch", { name: "Renewal reminders" })).toHaveAttribute("data-state", "checked");
+    expect(screen.getByRole("switch", { name: "Renewal call tasks" })).toHaveAttribute("data-state", "checked");
     expect(update).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save notifications" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ renewalRecoveryEnabled: true })));

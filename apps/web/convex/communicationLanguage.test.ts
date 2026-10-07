@@ -7,7 +7,7 @@ import { enqueueOperationalEmail, operationalEmailContent, OPERATIONAL_EMAIL_COP
 import { utf16Hex } from "./pdfUnicode";
 import { createTranslator } from "../src/lib/i18n/core";
 import { makeFormatters } from "../src/lib/i18n/formatters";
-import { presentNotification, presentTimelineEvent } from "../src/lib/i18n/system-messages";
+import { presentNotification } from "../src/lib/i18n/system-messages";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -146,101 +146,5 @@ describe("platform invoice notices", () => {
     const shown = presentNotification(stored, AR);
     expect(shown.title).toBe("تجاوزت فاتورة RIVET موعد الدفع");
     expect(strip(shown.body)).toMatch(/^INV-.+ · 149\.000 د\.أ$/);
-  });
-});
-
-async function seedMessaging(options: { memberLanguage?: "en" | "ar"; gymLanguage?: "en" | "ar" } = {}) {
-  const t = convexTest(schema, modules);
-  const ids = await t.run(async (ctx) => {
-    const now = Date.now();
-    const organizationId = await ctx.db.insert("organizations", { publicId: "wa-org", name: "Forge Fitness", slug: "forge", status: "active", timezone: "Asia/Amman", currency: "JOD", ...(options.gymLanguage ? { defaultLanguage: options.gymLanguage } : {}), createdAt: now, updatedAt: now });
-    const branchId = await ctx.db.insert("branches", { organizationId, publicId: "wa-branch", name: "Abdoun", code: "ABD", active: true, status: "active", createdAt: now, updatedAt: now });
-    await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { notifications: { automationDeliveryMode: "live", quietHoursStart: "22:00", quietHoursEnd: "08:00" } } });
-    await ctx.db.insert("domainRecords", { organizationId, entityType: "member", publicId: "member-1", branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: "member-1", fullName: "Lina حداد", phone: "079 555 0101", ...(options.memberLanguage ? { preferredLanguage: options.memberLanguage } : {}), status: "active", marketingOptIn: true, marketingPreference: { status: "explicit_opt_in", source: "member_selected" } } });
-    return { organizationId, branchId };
-  });
-  return { t, ...ids };
-}
-
-async function setMemberLanguage(t: TestConvex<typeof schema>, language: "en" | "ar") {
-  await t.run(async (ctx) => {
-    const member = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "member")).first();
-    await ctx.db.patch(member!._id, { data: { ...(member!.data as Record<string, unknown>), preferredLanguage: language, fullName: "Renamed Member" } });
-  });
-}
-
-describe("WhatsApp retries", () => {
-  it("keeps an automation message's queued language and exact body across retries after the member changes preference", async () => {
-    vi.useFakeTimers();
-    const { t, organizationId, branchId } = await seedMessaging({ memberLanguage: "en" });
-    const id = await t.run(async (ctx) => {
-      const now = Date.now();
-      const publicId = "msg-retry";
-      await ctx.db.insert("domainRecords", { organizationId, entityType: "messageDelivery", publicId, branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: publicId, status: "queued", messageClass: "service", channel: "whatsapp", requestedChannel: "whatsapp", language: "en", languageSource: "recipient", catalogueVersion: "1.1", templateKey: "renewal_today", memberId: "member-1", nextAttemptAt: new Date(now).toISOString(), attempts: [] } });
-      return publicId;
-    });
-    const first = (await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 }))[0]!;
-    expect(first.language).toBe("en");
-    expect(first.body).toContain("Lina حداد, your Forge Fitness membership ends today.");
-    await t.mutation(internal.messagingWorker.recordAttempt, { source: "automation", id: first.id, leaseToken: first.leaseToken, accepted: false, retryable: true, mode: "live", errorCode: "provider_http_500" });
-    await setMemberLanguage(t, "ar");
-    vi.setSystemTime(Date.now() + 2 * 60_000);
-    const second = (await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 }))[0]!;
-    expect(second.publicId).toBe(id);
-    expect(second.language).toBe("en");
-    expect(second.body).toBe(first.body);
-  });
-
-  it("captures a renewal reminder on first lease and resends those bytes after a preference change", async () => {
-    vi.useFakeTimers();
-    const { t, organizationId, branchId } = await seedMessaging({ memberLanguage: "ar" });
-    await t.run(async (ctx) => {
-      const now = Date.now();
-      await ctx.db.insert("renewalDeliveries", { organizationId, branchId, publicId: "renewal-1", membershipPublicId: "ms-1", membershipEndDate: "2026-09-15", memberPublicId: "member-1", checkpointDaysBefore: 7, checkpointKey: "7_day", channel: "whatsapp", templateVersion: "renewal-7-day-v1", policyVersion: "renewal-policy-v1", dedupeKey: "renewal-1", recipientReference: "member-1", recipientPhone: "0795550101", language: "ar", languageSource: "recipient", catalogueVersion: "1.1", consentStatus: "explicit_opt_in", channelOptedOut: false, status: "queued", attempts: [], nextAttemptAt: now - 1, createdAt: now, updatedAt: now });
-    });
-    const first = (await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 }))[0]!;
-    expect(first.body).toBe("مرحبًا Lina حداد، ينتهي اشتراكك في Forge Fitness بتاريخ 15 أيلول 2026. يمكن تجديد الاشتراك من الاستقبال في فرع Forge Fitness أو بالرد على هذه الرسالة لنساعدك. — Forge Fitness");
-    await t.mutation(internal.messagingWorker.recordAttempt, { source: "renewal", id: first.id, leaseToken: first.leaseToken, accepted: false, retryable: true, mode: "live", errorCode: "provider_http_503" });
-    await setMemberLanguage(t, "en");
-    vi.setSystemTime(Date.now() + 2 * 60_000);
-    const second = (await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 }))[0]!;
-    expect(second).toMatchObject({ publicId: "renewal-1", language: "ar", body: first.body });
-    const row = await t.run((ctx) => ctx.db.query("renewalDeliveries").first());
-    expect(row).toMatchObject({ renderedBody: first.body, renderedTemplateKey: "renewal_7d" });
-  });
-
-  it("renders a legacy row with the wording it was queued under and keeps an explicit English choice", async () => {
-    const { t, organizationId, branchId } = await seedMessaging({ memberLanguage: "ar" });
-    await t.run(async (ctx) => {
-      const now = Date.now();
-      // Queued before versions were recorded: Arabic 1.0 wording, no snapshot.
-      await ctx.db.insert("domainRecords", { organizationId, entityType: "messageDelivery", publicId: "legacy-ar", branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: "legacy-ar", status: "queued", channel: "whatsapp", requestedChannel: "whatsapp", language: "ar", templateKey: "renewal_today", memberId: "member-1", nextAttemptAt: new Date(now).toISOString(), attempts: [] } });
-      // Queued in English for a member who has since switched to Arabic.
-      await ctx.db.insert("domainRecords", { organizationId, entityType: "messageDelivery", publicId: "legacy-en", branchId, memberPublicId: "member-1", createdAt: now + 1, updatedAt: now, data: { id: "legacy-en", status: "queued", channel: "whatsapp", requestedChannel: "whatsapp", language: "en", templateKey: "renewal_today", memberId: "member-1", nextAttemptAt: new Date(now).toISOString(), attempts: [] } });
-    });
-    const leased = await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 });
-    const byId = Object.fromEntries(leased.map((item) => [item.publicId, item]));
-    // The 1.0 wording, including its visible gap for a branch the record never had.
-    expect(byId["legacy-ar"]!.body).toBe("Lina حداد، عضويتك في Forge Fitness تنتهي اليوم. جدّد من كاونتر فرع {{branch_name}} اليوم لتواصل تمرينك غداً. — Forge Fitness");
-    expect(byId["legacy-en"]!).toMatchObject({ language: "en" });
-    expect(byId["legacy-en"]!.body).toContain("your Forge Fitness membership ends today");
-  });
-
-  it("falls back to the gym default for a member without a stored language, and records it on the timeline outcome", async () => {
-    const { t, organizationId, branchId } = await seedMessaging({ gymLanguage: "ar" });
-    await t.run(async (ctx) => {
-      const now = Date.now();
-      await ctx.db.insert("domainRecords", { organizationId, entityType: "messageDelivery", publicId: "fallback", branchId, memberPublicId: "member-1", createdAt: now, updatedAt: now, data: { id: "fallback", status: "queued", channel: "whatsapp", requestedChannel: "whatsapp", templateKey: "renewal_today", catalogueVersion: "1.1", memberId: "member-1", nextAttemptAt: new Date(now).toISOString(), attempts: [] } });
-    });
-    const leased = (await t.mutation(internal.messagingWorker.leaseDue, { limit: 5 }))[0]!;
-    expect(leased.language).toBe("ar");
-    expect(leased.body).toContain("ينتهي اشتراكك في Forge Fitness اليوم");
-    await t.mutation(internal.messagingWorker.recordAttempt, { source: "automation", id: leased.id, leaseToken: leased.leaseToken, accepted: false, retryable: false, mode: "live", errorCode: "provider_http_400" });
-    const timeline = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "timeline")).collect());
-    const event = timeline[0]!.data as { type: string; title: string; body: string; titleMessage: unknown; bodyMessage: unknown };
-    expect(event.title).toBe("WhatsApp message failed");
-    expect(presentTimelineEvent(event, AR)).toEqual({ title: "الرسالة عبر واتساب: فشل الإرسال", body: expect.stringContaining("فشل الإرسال بعد محاولة واحدة") });
-    const notification = await t.run((ctx) => ctx.db.query("operationalNotifications").collect());
-    expect(notification).toHaveLength(0); // no supervisors seeded in this tenant
   });
 });

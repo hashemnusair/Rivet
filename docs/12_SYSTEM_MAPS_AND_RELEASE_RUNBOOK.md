@@ -23,13 +23,14 @@ needed for this scope. Existing history remains readable.
   endpoint are missing at the inspected production baseline. Receiver Inbox
   checks are required even after an event says Delivered.
 
-Local code removes the sender cron and leaves `messagingWorker.processDue` as
+This release removes the sender cron and leaves `messagingWorker.processDue` as
 an inert target for already scheduled invocations. No schema/index deletion.
 Pending historical WhatsApp/SMS renewal rows are cancelled with an event on
 reconciliation; old automation rows are retained without a sender. Removed
 worker internals are not public APIs. Apply via the standard guarded
 `pnpm convex:deploy` workflow when releasing the selected reviewed revision.
-This task has not pushed or deployed the working branch.
+See the 7 October section in CURRENT_STATE.md for the selected release revision
+and production verification evidence.
 
 Follow the staged auth cutover and rollback in docs/19. Do not disable Clerk
 email delivery before its Resend relay is deployed/configured/tested. Validate

@@ -7,17 +7,19 @@ engagement terms or legal text have been approved by this preparation.
 
 ## Material ready to review
 
-Open [SOURCE_SNAPSHOT.html](SOURCE_SNAPSHOT.html) in a browser or print it.
-It renders all 34 current privacy/terms sections, including the DPA in Terms
-section 09, and the canonical subscription agreement clause body. It contains
-no customer/signatory records. It is a snapshot of the existing source, not a
+Open the [English snapshot](SOURCE_SNAPSHOT.html) and [Arabic snapshot](SOURCE_SNAPSHOT_AR.html) in a browser or print them.
+Each renders all 34 current privacy/terms sections, including the DPA in Terms
+section 09, and the canonical subscription agreement clause body. They contain
+no customer/signatory records. Each is a snapshot of the existing source, not a
 rewritten contract; the contract's signature fields are described below.
 
-Source baseline `9fbd53c`:
+Legal source baseline `4fe7be1` (current main; legal source unchanged by the channel retirement):
 
 - Privacy: `apps/web/src/features/legal/privacy-policy.tsx`, v1.1, 14 September.
 - Terms and DPA: `apps/web/src/features/legal/terms-of-service.tsx`, same date.
 - Agreement: `apps/web/convex/legalAgreementText.ts`, v1.2, 4 September.
+- Arabic: `src/lib/i18n/messages/ar/publicPrivacy.ts`, `publicTerms.ts` and
+  `convex/legalAgreementArabic.ts` (agreement v1.2-ar, 2 October).
 - E-signature flow: `subscription-agreement-signing.tsx`, `convex/legalAgreement.ts`.
 - Current pricing/limits: `convex/platformPlanCatalog.ts`, `convex/workspaceModules.ts`.
 
@@ -60,8 +62,7 @@ Source baseline `9fbd53c`:
 8. **E-signature and Arabic.** Review signatory identity, authority, consent,
    typed/drawn signatures, timestamp/hash evidence, countersignatures and
    immutable version retention. Signer fields include gym details, name/role,
-   ID/passport, contact details, contract start date and selected plan. Supply
-   or review full Arabic privacy/terms/DPA/agreement with language precedence
+   ID/passport, contact details, contract start date and selected plan. Review the existing full Arabic privacy/terms/DPA/agreement with language precedence
    and matching numbered clauses. Arabic UI/email copy is not legal review.
 9. **Consistency corrections.** Terms omit Enterprise. Agreement 1.2 uses
    older `rivet.jo` legal links; current public host is `www.rivetjo.com`.
@@ -80,7 +81,7 @@ Hello,
 
 We are preparing RIVET, a gym management platform based in Amman, for launch.
 Please review the attached current privacy policy, terms including DPA, and
-subscription agreement, and provide/review equivalent Arabic versions.
+subscription agreement, and the attached existing Arabic versions.
 
 The attached brief lists our open entity/pricing decisions and specific
 consistency questions. Please begin the review with these points flagged;
@@ -94,5 +95,5 @@ changes needed before launch. We have not treated these drafts as approved.
 Thank you,
 RIVET
 
-Attachments: REVIEW_BRIEF.md and SOURCE_SNAPSHOT.html. No real signed customer
+Attachments: REVIEW_BRIEF.md, SOURCE_SNAPSHOT.html and SOURCE_SNAPSHOT_AR.html. No real signed customer
 agreement, identity number or production export is included.

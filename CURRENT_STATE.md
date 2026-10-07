@@ -4,8 +4,9 @@
 
 **Confirmed by Elias:** remove automated WhatsApp; keep staff-initiated manual
 WhatsApp; route all email through Resend. No Twilio/Meta API launch is planned.
-This supersedes earlier automated-messaging go-live notes. These are local
-changes on `arabic-foundation`; nothing was pushed, deployed or enabled live.
+This supersedes earlier automated-messaging go-live notes. Integrated onto
+current main `4fe7be1` on `codex/manual-whatsapp-resend`, preserving the released
+Arabic implementation and landing improvements. Release verification follows below.
 
 - Removed the outbound WhatsApp/SMS provider implementation and cron. The old
   worker is an inert compatibility endpoint and old environment/settings values
@@ -31,19 +32,21 @@ changes on `arabic-foundation`; nothing was pushed, deployed or enabled live.
   Resend delivery webhook/Convex secret and global application-email kinds are
   absent at the inspected production baseline. No provider settings changed.
 - Prepared `docs/legal-review/2026-10-07/REVIEW_BRIEF.md` and
-  `SOURCE_SNAPSHOT.html` (34 privacy/terms/DPA sections plus canonical agreement).
+  `SOURCE_SNAPSHOT.html` and `SOURCE_SNAPSHOT_AR.html` (34 privacy/terms/DPA
+  sections plus the canonical agreement in each language).
   External review has not started: recipient not supplied. Entity, pricing,
   terms conflict and Arabic legal review remain open. Signed text was preserved.
-- Validation: 277 suites / 1,738 tests passed via
+- Validation after integration: 321 suites / 2,006 tests passed via
   `pnpm --filter web exec vitest run --maxWorkers=3`; `pnpm typecheck`,
   `pnpm convex:typecheck`, `pnpm lint`, `pnpm build` and 14 CLI/environment
   guards passed. The production build registers the new dynamic webhook route.
-  A stale fixed-date
-  billing test was adjusted to future dates; no billing implementation changed.
+  The guarded production dry run passed with no index deletions. Obsolete
+  automated-sender tests were retired in favor of the worker-disable tests;
+  email recipient-language and manual-contact tests remain.
 - Read first: `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`,
   `apps/web/src/app/api/webhooks/clerk-email/route.ts`,
   `apps/web/convex/{messagingWorker,renewalJobs,membershipJobs}.ts`, and the review
-  brief. Provider cutover and fresh inbox verification remain release work.
+  brief. Provider cutover and fresh inbox verification remain launch work.
 
 
 
