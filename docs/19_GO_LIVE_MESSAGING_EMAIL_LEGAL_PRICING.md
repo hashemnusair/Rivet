@@ -102,10 +102,12 @@ Deployment evidence is recorded in CURRENT_STATE.md.
 
 ### Commercial/legal review status and next actions
 
-Pricing still needs founder sign-off: Starter JOD 79/month, Growth 149,
-Pro 249, Enterprise base 500; annual is currently 20% off. Tier limits and
-modules are in section 4. A catalogue override can change an actual quote;
-these code defaults do not establish an approved commercial decision.
+Implemented launch defaults are Starter JOD 39/month, Growth 89 and Pro 199,
+with one-time onboarding of JOD 75/150/300 respectively and a 5% annual
+subscription discount. Enterprise is publicly quote-only; its JOD 500 base
+is retained for negotiated/legacy configuration. Current limits, allowances
+and modules are in section 4. A catalogue override can change an actual quote;
+these implementation facts do not establish founder sign-off or legal approval.
 `BRAND_LEGAL` is empty: legal entity, registration, address and tax treatment
 must be provided by the founders and verified with counsel/accountant.
 
@@ -539,4 +541,4 @@ Plan/cadence changes retain the existing one-interval date rules. Credits now us
 
 Member-facing email sends reserve allowance transactionally before provider submission. Dedupe and retries reuse the reservation. Sandbox/allowlist-dropped messages do not consume it. Excess mail remains visibly deferred to the next Amman month; it is not reported as delivered. Authentication, platform invoice/account/legal notices and support/admin mail are outside this member-email allowance. Deferred notices can become stale, so operators must review the outbox before increasing allowance or retrying old notices; no automatic overage charge is implemented.
 
-**Legal decisions remain excluded and open.** The existing agreement says onboarding is included. The Terms' twelve-month default and agreement's termination provisions still require counsel reconciliation, as does tax treatment. The public first payment is explicitly a subtotal; no tax amount or legal approval is implied by this engineering change.
+**Legal decisions remain excluded and open.** Terms section 05 says "Onboarding is included"; counsel must reconcile that wording with the implemented fee. Agreement 1.2 section 4 refers to written quotes or published pricing, and section 6 describes onboarding services without explicitly promising free onboarding. The Terms' twelve-month default and agreement's termination provisions still require counsel reconciliation, as does tax treatment. The public first payment is explicitly a subtotal; no tax amount or legal approval is implied by this engineering change. See the refreshed [review brief](legal-review/2026-10-07/REVIEW_BRIEF.md).
