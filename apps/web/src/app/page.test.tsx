@@ -23,7 +23,6 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 vi.mock("@/components/public/public-footer", () => ({ PublicFooter: () => <footer aria-label="Public footer" /> }));
 
-vi.mock("@/components/marketing/hero-devices", () => ({ HeroDevices: () => <div aria-hidden /> }));
 vi.mock("@/components/marketing/reveal", () => ({ Reveal: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/components/marketing/scroll-progress", () => ({ ScrollProgress: () => <div aria-hidden /> }));
 vi.mock("@/components/public/experience-data-state", () => ({ ExperienceDataState: () => <div role="status" /> }));
@@ -49,7 +48,8 @@ describe("landing-page pricing", () => {
     // The member section's own "Sign in" leads straight to the member door.
     expect(screen.getAllByRole("link", { name: "Sign in" }).map((link) => link.getAttribute("href"))).toEqual(["/login", "/login/member"]);
     for (const link of screen.getAllByRole("link", { name: "Apply for access" })) expect(link).toHaveAttribute("href", "/signup");
-    for (const link of screen.getAllByRole("link", { name: /Send a gym application/ })) expect(link).toHaveAttribute("href", "/signup");
+    // The opening film carries no buttons; the bar and the pricing cards hold the application.
+    expect(screen.queryByRole("link", { name: /Send a gym application/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Create a free account/ })).toHaveAttribute("href", "/login/member/create");
     await user.click(screen.getByRole("button", { name: "Menu" }));
 
@@ -66,7 +66,7 @@ describe("landing-page pricing", () => {
     render(<LandingPage />);
 
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-    expect(screen.getAllByRole("link", { name: /Open your dashboard/ }).length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByRole("link", { name: /Open your dashboard/ }).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByRole("link", { name: /sign in/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Apply for access" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Send (a )?gym application/ })).not.toBeInTheDocument();
@@ -87,6 +87,17 @@ describe("landing-page pricing", () => {
 
     expect(screen.getByRole("link", { name: "My gyms" })).toHaveAttribute("href", "/customer/my-gyms");
     expect(screen.getByRole("link", { name: "Find a gym" })).toHaveAttribute("href", "/customer/discover");
+  });
+
+  it("opens on the film with the name and the promise, and lets the visitor stop it", async () => {
+    const user = userEvent.setup();
+    render(<LandingPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "RIVET Jordan’s first operating system for gyms" })).toBeInTheDocument();
+    expect(screen.getByText(/A short film of RIVET at work/)).toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Pause the film" });
+    await user.click(toggle);
+    expect(toggle).toHaveAccessibleName("Play the film");
   });
 
   it("shows the fixed launch tiers plus quote-only Enterprise and defaults to monthly billing", () => {
@@ -115,7 +126,7 @@ describe("landing-page pricing", () => {
     const user = userEvent.setup();
     render(<LocaleProvider initialLocale="ar"><PublicDirectionBoundary><LandingPage /></PublicDirectionBoundary></LocaleProvider>);
 
-    expect(await screen.findByRole("heading", { name: "كل تفاصيل ناديك و مشتركينه في مكان واحد" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "RIVET أول نظام تشغيل للأندية الرياضية في الأردن" })).toBeInTheDocument();
     const starterPrice = screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("39.000 د.أ") === true);
     expect(starterPrice).toBeInTheDocument();
     expect(screen.getByTestId("public-direction")).toHaveAttribute("dir", "rtl");

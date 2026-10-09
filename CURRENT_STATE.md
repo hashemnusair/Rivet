@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — landing opens on a product film (local, not deployed)
+
+**Scope:** at Elias's request the landing's first section is now a Palantir-style
+film of the product: a full-bleed dark loop with **RIVET** centred and
+"Jordan’s first operating system for gyms" under it, both white. Nothing else on
+the page moved; nothing is committed, pushed or deployed yet.
+
+- `apps/web/scripts/hero-film/` holds the film: `film.html`/`film.js` draw six
+  scenes from a clock (QR check-in at reception → classes timetable → collect
+  payment by CliQ with a receipt → a lead carried to "Membership sold" → one
+  member timeline → the owner's dashboard over a map of both Amman branches),
+  and `render.mjs` photographs it frame by frame into
+  `apps/web/public/marketing/rivet-film{,-portrait}.mp4` plus posters (H.264 only;
+  grain is a page overlay, since per-frame noise nearly doubled the file).
+  The shot list and render commands are in that folder's `README.md`. Screens are
+  traced from the real routes with the mock tenant's demo names, in night tokens.
+- `HeroFilm` (`components/marketing/hero-film.tsx`) plays the portrait cut on
+  square/portrait screens, only while on screen, and not at all until pressed for
+  reduced-motion visitors. Captions under the film follow its chapters
+  (`hero-film-chapters.ts`, unit tested); a pause/play button is always present.
+  The title and captions are page text in English and Arabic, not burned in.
+- The bar is clear with light type while the film is under it, then returns to the
+  persistent paper bar. The wordmark keeps Archivo and letter gaps in Arabic.
+- Removed with the old hero: the "Every member. Every dinar. Every shift." headline
+  (and its approved Arabic promise) from the landing, the hero's apply/see-how
+  buttons, the fact rail, and the laptop/phone mockups (`hero-devices`,
+  `device-frames`, `scaled-screen`, the unused owner-dashboard/member-home
+  replicas). The bar's "Apply for access" remains; on phones it is in the menu.
+- New Arabic copy follows `docs/arabic/STANDARD.md` (النادي الرياضي, سجل المشترك,
+  تسجيل الدخول للنادي, مسار المبيعات, وصل دفع, كاش, CliQ in Latin).
+- **Whole landing in the same Palantir-style night look** (Elias, same day): one
+  dark surface from the film down. `.nightPage` in `landing-cinematic.module.css`
+  re-points the design tokens for the landing only (paper/surface/ink/line,
+  radii, tenant-brand primary), so utilities and buttons turn night: primary is
+  square white with dark text, secondary a thin outline. Sheets are square with a
+  hairline top edge; headlines dropped from 650–900 to regular weight (the 06:00
+  clock to 300); pricing tiers are dark panels with Growth's red border; the bar
+  stays dark after the film (`headerNight`). Every section's layout, copy and
+  motion is unchanged. The Entry QR card keeps the member app's light tokens
+  (`.lightTokens`). Terms/privacy keep the paper bar. Sentence-case labels stay
+  (no Palantir-style uppercase/mono eyebrows, per the September feedback).
+
 ## 7 October 2026 — nonlegal launch release deployed
 
 **Release verified at 18:46 Asia/Amman:** [PR #6](https://github.com/hashemnusair/Rivet/pull/6)

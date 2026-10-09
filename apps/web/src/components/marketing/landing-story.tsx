@@ -66,8 +66,8 @@ export function StoryMarker({ label, dark = false, drawn = false }: { label: str
 }
 
 /** Lays the previous section's colour under a rounded sheet's corners. */
-export function SheetUnder({ tone }: { tone: "paper" | "sunken" | "stack" }) {
-  const toneClass = tone === "sunken" ? styles.sheetUnderSunken : tone === "stack" ? styles.sheetUnderStack : styles.sheetUnderPaper;
+export function SheetUnder({ tone }: { tone: "paper" | "sunken" | "stack" | "film" }) {
+  const toneClass = { paper: styles.sheetUnderPaper, sunken: styles.sheetUnderSunken, stack: styles.sheetUnderStack, film: styles.sheetUnderFilm }[tone];
   return <div aria-hidden className={cn(styles.sheetUnder, toneClass)} />;
 }
 
