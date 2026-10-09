@@ -1,6 +1,7 @@
 "use client";
 
 import { Pause, Play } from "lucide-react";
+import { Mona_Sans } from "next/font/google";
 import { useEffect, useRef, useState } from "react";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
@@ -8,6 +9,13 @@ import { FILM_CHAPTERS, chapterAt } from "./hero-film-chapters";
 import styles from "./landing-cinematic.module.css";
 
 const WORDMARK = ["R", "I", "V", "E", "T"] as const;
+
+/**
+ * The name and the promise are set in Mona Sans (GitHub with Degarism, the
+ * studio behind Palantir's Alliance): the name in its expanded width, the
+ * promise at normal width. Loaded here so only the landing pays for it.
+ */
+const monaSans = Mona_Sans({ subsets: ["latin"], axes: ["wdth"], variable: "--font-mona", display: "swap" });
 
 /**
  * The landing's opening section: a looping film of the product (rendered by
@@ -80,7 +88,7 @@ export function HeroFilm() {
       data-landing-snap="start"
       data-landing-theme="dark"
       aria-labelledby="film-title"
-      className={cn(styles.film, styles.layer1)}
+      className={cn(styles.film, styles.layer1, monaSans.variable)}
     >
       <div aria-hidden className={styles.filmMedia}>
         <div className={styles.filmPoster} />

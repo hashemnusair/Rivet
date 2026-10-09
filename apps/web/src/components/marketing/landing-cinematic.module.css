@@ -846,10 +846,11 @@
 .filmWord {
   display: flex;
   justify-content: center;
-  gap: 0.3em;
-  font-family: var(--font-archivo), sans-serif;
-  font-size: clamp(4rem, 14.5vw, 12rem);
-  font-weight: 600;
+  gap: 0.2em;
+  font-family: var(--font-mona), var(--font-archivo), sans-serif;
+  font-size: clamp(3.6rem, 19vw, 11.5rem);
+  font-stretch: 125%;
+  font-weight: 500;
   line-height: 0.92;
   color: #fff;
   text-shadow: 0 2px 40px rgb(0 0 0 / 0.35);
@@ -864,14 +865,21 @@
   display: block;
   max-width: 22em;
   margin-top: clamp(1.1rem, 2.6vh, 1.9rem);
-  font-family: var(--font-marketing);
-  font-size: clamp(1.05rem, 2vw, 1.55rem);
-  font-weight: 500;
+  font-family: var(--font-mona), var(--font-marketing);
+  font-size: clamp(1.05rem, 1.4vw + 0.55rem, 1.6rem);
+  font-weight: 450;
   line-height: 1.35;
   letter-spacing: -0.01em;
   color: #fff;
   text-shadow: 0 1px 24px rgb(0 0 0 / 0.45);
   animation: film-rise 1.3s cubic-bezier(0.22, 1, 0.36, 1) 560ms both;
+}
+
+/* Mona Sans has no Arabic, and its metric fallback is Arial, which does: the
+   Arabic promise goes straight to the page's Arabic face instead. */
+.filmTagline:lang(ar) {
+  font-family: var(--font-marketing);
+  font-weight: 500;
 }
 
 @keyframes film-rise {

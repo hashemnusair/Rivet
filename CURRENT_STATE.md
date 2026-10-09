@@ -41,6 +41,12 @@ the page moved; nothing is committed, pushed or deployed yet.
   motion is unchanged. The Entry QR card keeps the member app's light tokens
   (`.lightTokens`). Terms/privacy keep the paper bar. Sentence-case labels stay
   (no Palantir-style uppercase/mono eyebrows, per the September feedback).
+- **Hero type:** "RIVET" and the tagline are set in Mona Sans (OFL; GitHub with
+  Degarism, the studio behind Palantir's Alliance), loaded only by `hero-film.tsx`:
+  the name at width 125 / weight 500, the tagline at normal width / 450. The
+  Arabic tagline stays IBM Plex Sans Arabic (Mona has no Arabic and its Arial
+  fallback would steal the glyphs). `vitest.setup.ts` now stubs `next/font/google`
+  so components can scope their own fonts under test.
 
 ## 7 October 2026 — nonlegal launch release deployed
 
