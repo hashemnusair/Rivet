@@ -3,7 +3,7 @@
 import { AuthFlowError, authErrorText } from "@/lib/auth/messages";
 import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { useAction } from "convex/react";
-import { ArrowRight, CircleAlert, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
+import { ArrowRight, CircleAlert, LockKeyhole, MailCheck } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { LoginLayout } from "../login-chrome";
+import loginStyles from "../login.module.css";
+import { cn } from "@/lib/utils/cn";
 import { PORTALS } from "../portals";
 import { api } from "../../../../convex/_generated/api";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
@@ -210,9 +212,9 @@ function InvitationFlow({ ticket, status, onSignInStarted }: { ticket: string; s
     return (
       <InvitationFrame>
         <div className="animate-fade-up">
-          <div className="flex items-start gap-3.5">
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden><ShieldCheck className="size-5" /></span>
-            <div><h1 className="font-display text-[23px] font-semibold leading-tight tracking-tight">{t("auth.invitation.form.title")}</h1><p className="mt-1 text-[13px] leading-snug text-ink-2">{t("auth.invitation.form.intro")}</p></div>
+          <div>
+            <h1 className={loginStyles.heading}>{t("auth.invitation.form.title")}</h1>
+            <p className={cn(loginStyles.blurb, "text-ink-2")}>{t("auth.invitation.form.intro")}</p>
           </div>
           <form className="mt-7 grid gap-4" onSubmit={(event) => void submit(event)} noValidate>
             <div className="grid gap-4 sm:grid-cols-2">

@@ -1,0 +1,217 @@
+/*
+  Sign-in pages share the landing's night look. On wide screens the left half
+  plays the RIVET film behind the name; the form sits alone in the right half.
+  Phones get the form only.
+*/
+
+.frame {
+  display: grid;
+  min-height: 100svh;
+}
+
+@media (min-width: 1024px) {
+  .frame { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+/* --------------------------------------------------------------- the film */
+
+.panel {
+  position: relative;
+  isolation: isolate;
+  display: none;
+  overflow: hidden;
+  background: #090806;
+  color: #fff;
+}
+
+@media (min-width: 1024px) {
+  .panel { display: block; }
+}
+
+.poster,
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster {
+  background: #090806 url("/marketing/rivet-film-portrait-poster.jpg") center / cover no-repeat;
+}
+
+.video {
+  opacity: 0;
+  transition: opacity 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.videoOn { opacity: 1; }
+
+.panelBrand {
+  position: absolute;
+  top: 2rem;
+  inset-inline-start: 2.5rem;
+  z-index: 2;
+}
+
+.panelBrand:focus-visible {
+  outline-color: #fff;
+  outline-offset: 6px;
+}
+
+.panelTitle {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2rem 4rem;
+  text-align: center;
+}
+
+.panel .panelWord { font-size: clamp(3rem, 6.4vw, 7rem); }
+.panel .panelTagline { font-size: clamp(0.98rem, 1.15vw, 1.2rem); }
+
+.panelCaption {
+  position: absolute;
+  inset-inline: 2.5rem;
+  bottom: 2.25rem;
+  z-index: 2;
+  max-width: 30rem;
+}
+
+.panelCaption p:first-child {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.panelCaption p + p {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: rgb(255 255 255 / 0.68);
+}
+
+.panelEdge {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 2;
+  width: 1px;
+  background: rgb(242 240 230 / 0.08);
+}
+
+/* --------------------------------------------------------------- the form */
+
+.column {
+  display: flex;
+  min-height: 100svh;
+  flex-direction: column;
+  padding: 1.5rem 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .column { padding: 2rem 2.5rem; }
+}
+
+.bar {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.barLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem 1.25rem;
+  margin-inline-start: auto;
+}
+
+.barLink {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgb(242 240 230 / 0.7);
+  transition: color 200ms ease;
+}
+
+.barLink:hover,
+.barLink:focus-visible {
+  color: #f2f0e6;
+}
+
+.barLink:lang(ar) {
+  font-family: var(--font-plex-arabic), sans-serif;
+}
+
+.main {
+  display: flex;
+  width: 100%;
+  max-width: 25rem;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  margin-inline: auto;
+  padding-block: 3rem;
+}
+
+.footer {
+  width: 100%;
+  max-width: 25rem;
+  margin-inline: auto;
+  border-top: 1px solid rgb(242 240 230 / 0.08);
+  padding-top: 1rem;
+}
+
+/* The door's heading: the name's family at normal width, regular weight. */
+.heading {
+  font-family: var(--font-mona), var(--font-display);
+  font-size: clamp(1.75rem, 3vw, 2.1rem);
+  font-weight: 450;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+.heading:lang(ar) {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.blurb {
+  margin-top: 0.6rem;
+  max-width: 22rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* A door on the chooser: a hairline row, the arrow carries the motion. */
+.door {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid var(--color-line-2);
+  padding: 1.1rem 1.15rem;
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.door:hover,
+.door:focus-visible {
+  border-color: var(--color-ink-3);
+  background: var(--color-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video { transition: none; }
+}

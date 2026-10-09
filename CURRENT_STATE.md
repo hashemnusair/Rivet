@@ -47,6 +47,18 @@ the page moved; nothing is committed, pushed or deployed yet.
   Arabic tagline stays IBM Plex Sans Arabic (Mona has no Arabic and its Arial
   fallback would steal the glyphs). `vitest.setup.ts` now stubs `next/font/google`
   so components can scope their own fonts under test.
+- **Sign-in pages in the same night look** (Elias: "ugly and sloppy"). `LoginLayout`
+  (`login-chrome.tsx`, `login.module.css`) frames `/login`, the gym/member/admin
+  doors, member sign-up, invitations and profile steps: on ≥1024px the left half
+  plays the portrait film (video only when that half is shown and motion is
+  allowed; poster otherwise) behind RIVET + tagline, with the door's own line as
+  the caption; the form sits alone on the right, phones get the form only. The
+  palette is the shared `night-tokens` class (moved from the landing module into
+  `globals.css`, with `light-tokens` for the Entry QR). Removed: the icon boxes,
+  the decorative Arabic line, the "rivet.jo" back link and the bordered language
+  chip (now a text link like the landing's, same test id). Fields are 44px with a
+  quiet focus; an unfilled form's submit is an outline, not a grey slab (unlayered
+  `[data-login]` rules in `globals.css`). Behaviour and copy are unchanged.
 
 ## 7 October 2026 — nonlegal launch release deployed
 

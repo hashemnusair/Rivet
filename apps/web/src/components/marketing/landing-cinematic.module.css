@@ -19,72 +19,14 @@
     filter 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/*
-  The landing is one dark surface from the film down (Palantir-style). The
-  design tokens are re-pointed here, so every utility on the page (bg-paper,
-  text-ink, border-line, the buttons, the radii) turns night without each
-  section restating it. Square corners; hairlines instead of shadows.
-*/
+/* The landing is one dark surface from the film down; the palette itself is
+   the global `night-tokens` class on the same wrapper (globals.css). */
 .nightPage {
-  color-scheme: dark;
-  --color-paper: #0b0a08;
-  --color-surface: #13120e;
-  --color-sunken: #0f0e0b;
-  --color-sunken-2: #1a1914;
-  --color-ink: #f2f0e6;
-  --color-ink-2: #aeab9d;
-  --color-ink-3: #85826f;
-  --color-ink-4: #5b584c;
-  --color-line: #25231d;
-  --color-line-2: #36332a;
-  --color-line-3: #4d493c;
-  --color-signal-bg: #2b1312;
-  --color-success: #4cbb83;
-  --color-success-deep: #7fd6a6;
-  --color-success-bg: #12241a;
-  --color-warning: #dba84a;
-  --color-warning-deep: #edc77a;
-  --color-warning-bg: #2a2111;
-  --color-danger: #f0736c;
-  --color-danger-bg: #2c1513;
-  --radius-xs: 1px;
-  --radius-sm: 2px;
-  --radius-md: 2px;
-  --radius-lg: 3px;
-  --shadow-pop: 0 0 0 1px rgb(242 240 230 / 0.08), 0 18px 40px -18px rgb(0 0 0 / 0.85);
-  --shadow-dialog: 0 0 0 1px rgb(242 240 230 / 0.08), 0 24px 64px -12px rgb(0 0 0 / 0.85);
-  /* The primary button is the tenant-brand one: white on night, like Palantir's. */
-  --tenant-brand-primary: #f2f0e6;
-  --tenant-brand-primary-hover: #ffffff;
-  --tenant-brand-primary-foreground: #0b0a08;
-  --tenant-brand-primary-soft: #1a1914;
-  --tenant-brand-primary-soft-foreground: #f2f0e6;
-  --tenant-brand-focus: #f2f0e6;
   background: #0b0a08;
 }
 
 .nightPage .pageSheet {
   background: #0b0a08;
-}
-
-/* The member app is light; its Entry QR keeps the product's own paper tokens. */
-.lightTokens {
-  color-scheme: light;
-  --color-paper: #f5f4ef;
-  --color-surface: #ffffff;
-  --color-sunken: #edece5;
-  --color-sunken-2: #e4e2d8;
-  --color-ink: #1b1a15;
-  --color-ink-2: #565449;
-  --color-ink-3: #8b887b;
-  --color-ink-4: #b6b3a6;
-  --color-line: #e3e1d6;
-  --color-line-2: #d2cfc2;
-  --color-line-3: #bdb9a9;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --shadow-dialog: 0 2px 4px rgb(0 0 0 / 0.2), 0 30px 80px -12px rgb(0 0 0 / 0.75);
 }
 
 :global(html.landing-nav-open) .pageSheet {

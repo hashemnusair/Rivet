@@ -34,6 +34,7 @@ import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
+import loginStyles from "./login.module.css";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
 type StaffRole = "owner" | "manager" | "salesperson" | "receptionist";
@@ -249,16 +250,14 @@ function DoorChooser({ next }: { next: string | null }) {
           <Link
             key={id}
             href={`${portal.href}${query}`}
-            className="group flex items-center gap-4 rounded-lg border border-line-2 bg-surface p-4 transition-colors hover:border-ink"
+            className={cn("group", loginStyles.door)}
           >
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden>
-              <portal.icon className="size-5" />
-            </span>
+            <portal.icon className="size-5 shrink-0 text-ink-3 transition-colors group-hover:text-ink" strokeWidth={1.6} aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-medium text-ink">{t(`auth.portal.${id}.title` as const)}</span>
+              <span className="block text-[15px] font-medium text-ink">{t(`auth.portal.${id}.title` as const)}</span>
               <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">{t(`auth.portal.${id}.blurb` as const)}</span>
             </span>
-            <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" aria-hidden />
+            <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-1 group-hover:text-ink rtl:rotate-180 rtl:group-hover:-translate-x-1" aria-hidden />
           </Link>
         );
       })}

@@ -302,6 +302,69 @@ html.landing-motion-ready [data-experience-notice] {
     display: none !important;
   }
 
+  /*
+    Public night (the landing and the sign-in pages): the design tokens are
+    re-pointed on the wrapper, so every utility and shared component beneath
+    it (bg-paper, text-ink, border-line, inputs, buttons, radii) turns night
+    without restating each class. Square corners, hairlines instead of
+    shadows, and a white primary button, as on the landing.
+  */
+  .night-tokens {
+    color-scheme: dark;
+    --color-paper: #0b0a08;
+    --color-surface: #13120e;
+    --color-sunken: #0f0e0b;
+    --color-sunken-2: #1a1914;
+    --color-ink: #f2f0e6;
+    --color-ink-2: #aeab9d;
+    --color-ink-3: #85826f;
+    --color-ink-4: #5b584c;
+    --color-line: #25231d;
+    --color-line-2: #36332a;
+    --color-line-3: #4d493c;
+    --color-signal-bg: #2b1312;
+    --color-success: #4cbb83;
+    --color-success-deep: #7fd6a6;
+    --color-success-bg: #12241a;
+    --color-warning: #dba84a;
+    --color-warning-deep: #edc77a;
+    --color-warning-bg: #2a2111;
+    --color-danger: #f0736c;
+    --color-danger-bg: #2c1513;
+    --radius-xs: 1px;
+    --radius-sm: 2px;
+    --radius-md: 2px;
+    --radius-lg: 3px;
+    --shadow-pop: 0 0 0 1px rgb(242 240 230 / 0.08), 0 18px 40px -18px rgb(0 0 0 / 0.85);
+    --shadow-dialog: 0 0 0 1px rgb(242 240 230 / 0.08), 0 24px 64px -12px rgb(0 0 0 / 0.85);
+    --tenant-brand-primary: #f2f0e6;
+    --tenant-brand-primary-hover: #ffffff;
+    --tenant-brand-primary-foreground: #0b0a08;
+    --tenant-brand-primary-soft: #1a1914;
+    --tenant-brand-primary-soft-foreground: #f2f0e6;
+    --tenant-brand-focus: #f2f0e6;
+  }
+
+  /* A light product surface inside a night page (the member's Entry QR). */
+  .light-tokens {
+    color-scheme: light;
+    --color-paper: #f5f4ef;
+    --color-surface: #ffffff;
+    --color-sunken: #edece5;
+    --color-sunken-2: #e4e2d8;
+    --color-ink: #1b1a15;
+    --color-ink-2: #565449;
+    --color-ink-3: #8b887b;
+    --color-ink-4: #b6b3a6;
+    --color-line: #e3e1d6;
+    --color-line-2: #d2cfc2;
+    --color-line-3: #bdb9a9;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --shadow-dialog: 0 2px 4px rgb(0 0 0 / 0.2), 0 30px 80px -12px rgb(0 0 0 / 0.75);
+  }
+
   /* The three genuinely dark surfaces: sidebar, login brand panel, reception
      console. Opting into the dark scheme keeps their scrollbars and carets
      legible instead of painting light-theme chrome onto near-black panels. */
@@ -588,4 +651,29 @@ label[for] {
 
 @media (prefers-reduced-motion: reduce) {
   .auth-progress-bar > span { animation: none; }
+}
+
+/* Sign-in pages (`data-login`). Unlayered on purpose: these must outrank the
+   component utilities (the Input's h-9, the Button's disabled opacity). */
+/* Sign-in fields: taller, with a quiet focus (a firm border and a soft halo)
+   rather than the app's offset outline doubling the border. */
+[data-login] input:not([type="checkbox"]):not([type="radio"]):focus-visible {
+  outline: none;
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 3px rgb(242 240 230 / 0.1);
+}
+
+/* Standard-height fields (the shared Input's h-9) stand taller on sign-in. */
+[data-login] input.h-9 {
+  height: 2.75rem;
+  font-size: 14px;
+}
+
+/* An unfilled form's submit reads as waiting, not broken: an outline until
+   it can be pressed, then the solid white button. */
+[data-login] [data-rivet-button="primary"]:disabled {
+  border: 1px solid var(--color-line-2);
+  background: transparent;
+  color: var(--color-ink-3);
+  opacity: 1;
 }

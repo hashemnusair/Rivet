@@ -61,7 +61,7 @@ export default function LandingPage() {
   const signedOut = viewer.status === "signed-out";
 
   return (
-    <div className={`${styles.pageShell} ${styles.nightPage} marketing-body min-h-screen bg-paper text-ink`}>
+    <div className={`${styles.pageShell} ${styles.nightPage} night-tokens marketing-body min-h-screen bg-paper text-ink`}>
       <SignedInGuard />
       <LandingMotionController />
       <ScrollProgress />
@@ -416,7 +416,7 @@ export default function LandingPage() {
 function MemberCard() {
   return (
     <Reveal className="flex justify-center lg:justify-end">
-      <div className={cn("w-full max-w-sm", styles.lightTokens)} aria-hidden>
+      <div className="light-tokens w-full max-w-sm" aria-hidden>
         <EntryPassCard />
       </div>
     </Reveal>
