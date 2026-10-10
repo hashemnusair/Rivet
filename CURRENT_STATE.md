@@ -86,6 +86,9 @@ the page moved; nothing is committed, pushed or deployed yet.
   `PrerenderingDisabledByDevTools`); confirm on production with
   `activationStart > 0`. Each host still downloads its own ~1.2 MB of `_next`
   chunks (separate origins); one shared asset host would remove that, not done.
+  The chooser's 1440 reference (`pass-7-login-1440.png`) was re-captured on
+  Linux for the redrawn machine (throwaway `tmp/signin-machine-ref`, run
+  38056327851); the other captures that run rewrote were unchanged on screen.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of

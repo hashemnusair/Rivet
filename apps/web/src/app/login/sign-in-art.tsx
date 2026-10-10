@@ -361,7 +361,11 @@ function strandsOf(door: ArtDoor): Strand[] {
   return strands;
 }
 
+/** Whether this browser can measure SVG lines (test DOMs cannot). */
+const measurable = () => typeof document.createElementNS("http://www.w3.org/2000/svg", "path").getTotalLength === "function";
+
 function measureWhenIdle(): () => void {
+  if (!measurable()) return () => {};
   const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 200));
   const cancel = window.cancelIdleCallback ?? window.clearTimeout;
   let handle = 0;
@@ -570,7 +574,7 @@ export function SignInArt({ door }: { door: ArtDoor }) {
     }
     const current = session;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    setStage({ from: reduce ? null : current.from, start: current.start, animate: !reduce });
+    setStage({ from: reduce || !measurable() ? null : current.from, start: current.start, animate: !reduce });
     if (current.start !== null) return;
     const shown = () => {
       current.start = performance.now();
