@@ -13,11 +13,16 @@ cases survive; the header combines night-tone support with `SheetLink` navigatio
   overwritten by the delayed `router.push`. Back/Forward now clears the sheet and
   its timers; unit cases cover rack/hold and a real-browser case checks the history
   destination after the old timer would have fired.
-- Linux CI exposed a sign-in form captured partway through its entrance with
-  reduced motion enabled. The login stylesheet now disables the entrance entirely
+- Linux CI exposed a sign-in form captured partway through its entrance in
+  a visual suite intended to use reduced motion. The login stylesheet now disables the entrance entirely
   for that preference, including its staggered delay. The browser regression
   asserts no animation/transform and full opacity on chooser/member content;
   it failed before the fix. Linux visual references and tolerances are unchanged.
+- The visual suites put `reducedMotion` at the top level of `test.use`, which
+  the installed Playwright did not forward to its browser context. Moved it into
+  `contextOptions` in the twelve affected specs. The new reduced-motion journey
+  asserts the actual browser preference, visible sign-in content and an uncovered
+  ready workspace. Normal-motion navigation still has separate coverage.
 - The workspace curtain also leaves immediately when a shell becomes ready under
   reduced motion, rather than waiting for its decorative lift timers. A unit
   regression covers repeated loading/ready cycles; the Linux support-page capture
@@ -27,7 +32,7 @@ cases survive; the header combines night-tone support with `SheetLink` navigatio
   annual Growth signup parameters/night header, reduced motion and interrupted Back.
 - Local validation: both typechecks, lint/secret-output audit, the approved mock
   production build and all 2,053 unit/component tests passed after integration;
-  all 16 targeted motion/drawing tests pass after the interruption repair. The
+  all 17 targeted motion/drawing tests pass after the interruption and curtain repairs. The
   102-journey public/role/host/Arabic/RTL/Pass 4/Pass 7 run passed 100 initially;
   two journeys found five obsolete September 30 light-theme Mac auth references.
   Re-captured and visually inspected those five at unchanged tolerances; both

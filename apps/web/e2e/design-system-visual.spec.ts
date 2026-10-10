@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 test.use({
   colorScheme: "light",
   locale: "en-US",
-  reducedMotion: "reduce",
+  contextOptions: { reducedMotion: "reduce" },
   timezoneId: "Asia/Amman",
 });
 

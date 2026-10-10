@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.use({ locale: "en-US", timezoneId: "Asia/Amman", reducedMotion: "reduce", colorScheme: "light" });
+test.use({ locale: "en-US", timezoneId: "Asia/Amman", contextOptions: { reducedMotion: "reduce" }, colorScheme: "light" });
 const branch = "10000000-0000-4a00-8a00-000000000002";
 async function enter(page: Page, role = "Owner") {
   await page.clock.setFixedTime(new Date("2026-09-05T09:00:00+03:00"));

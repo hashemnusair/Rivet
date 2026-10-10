@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.use({ reducedMotion: "no-preference" });
+test.use({ contextOptions: { reducedMotion: "no-preference" } });
 
 async function settled(page: Page) {
   await expect(page.locator("[data-page-sheet]")).toHaveCount(0);
@@ -54,23 +54,33 @@ test("the pricing link keeps the chosen plan and cadence on the night applicatio
   await settled(page);
 });
 
-test("reduced motion reaches the door without a page sheet", async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.locator("[data-landing-header]").getByRole("link", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL(/\/login$/);
-  await settled(page);
-  await expect(page.getByRole("heading", { name: "Sign in to RIVET" })).toBeVisible();
-  for (const route of ["/login", "/login/member"]) {
-    await page.goto(route, { waitUntil: "domcontentloaded" });
-    const content = page.locator("main > * > *");
-    await expect(content.first()).toBeVisible();
-    for (const child of await content.all()) {
-      await expect(child).toHaveCSS("animation-name", "none");
-      await expect(child).toHaveCSS("opacity", "1");
-      await expect(child).toHaveCSS("transform", "none");
+test.describe("reduced motion", () => {
+  // reducedMotion is a BrowserContext option, not a top-level test fixture.
+  test.use({ contextOptions: { reducedMotion: "reduce" } });
+
+  test("reaches the door and workspace without an animated cover", async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.locator("[data-landing-header]").getByRole("link", { name: "Sign in", exact: true }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await settled(page);
+    await expect(page.getByRole("heading", { name: "Sign in to RIVET" })).toBeVisible();
+    for (const route of ["/login", "/login/member"]) {
+      await page.goto(route, { waitUntil: "domcontentloaded" });
+      const content = page.locator("main > * > *");
+      await expect(content.first()).toBeVisible();
+      for (const child of await content.all()) {
+        await expect(child).toHaveCSS("animation-name", "none");
+        await expect(child).toHaveCSS("opacity", "1");
+        await expect(child).toHaveCSS("transform", "none");
+      }
     }
-  }
+    await page.goto("/login/gym");
+    await page.getByRole("radio", { name: /Owner/i }).click();
+    await page.getByTestId("sign-in-button").click();
+    await expect(page.getByRole("heading", { name: /Omar/ })).toBeVisible();
+    await expect(page.getByTestId("workspace-curtain")).toHaveCount(0);
+  });
 });
 
 test("Back cancels a sheet before it can overwrite the history destination", async ({ page }) => {
