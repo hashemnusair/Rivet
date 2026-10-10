@@ -11,7 +11,7 @@ import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
-import { BenchArt, DeskArt, NetworkArt, StackArt } from "./sign-in-art";
+import { SignInArt, withArt, type ArtDoor } from "./sign-in-art";
 import type { Portal } from "./portals";
 
 const LEGAL_LABEL_KEYS = {
@@ -55,9 +55,9 @@ export function LoginLayout({
               {/* Members can create accounts here; gym access is issued by RIVET
                   after an application is reviewed. */}
               {portal && mode === "sign-up" ? (
-                <Link href={portal.href} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</Link>
+                <Link href={withArt(portal.href, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</Link>
               ) : portal?.signUpUrl ? (
-                <Link href={portal.signUpUrl} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</Link>
+                <Link href={withArt(portal.signUpUrl, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</Link>
               ) : null}
             </div>
           </div>
@@ -86,14 +86,8 @@ export function LoginLayout({
   );
 }
 
-/** Each door has its own drawing: the chooser one that belongs to everyone. */
-const ART: Record<"chooser" | Portal["id"], () => ReactNode> = {
-  chooser: StackArt,
-  account: StackArt,
-  staff: DeskArt,
-  member: BenchArt,
-  admin: NetworkArt,
-};
+/** The chooser's drawing belongs to every door; each door has its own. */
+const artDoor = (brand: "chooser" | Portal["id"]): ArtDoor => (brand === "chooser" ? "account" : brand);
 
 /**
  * The left half on wide screens: a line drawing for this door (a weight stack
@@ -103,10 +97,9 @@ const ART: Record<"chooser" | Portal["id"], () => ReactNode> = {
  */
 function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
   const { t } = useLocale();
-  const Art = ART[brand];
   return (
     <aside className={styles.panel}>
-      <Art />
+      <SignInArt door={artDoor(brand)} />
 
       <Link href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
         <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={122} height={31} priority />

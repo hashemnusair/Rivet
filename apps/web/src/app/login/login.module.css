@@ -222,6 +222,7 @@
 /* A door on the chooser: a hairline row, the arrow carries the motion. */
 .door {
   display: flex;
+  min-height: 4.75rem;
   align-items: center;
   gap: 1rem;
   border: 1px solid var(--color-line-2);

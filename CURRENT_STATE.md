@@ -58,6 +58,16 @@ the page moved; nothing is committed, pushed or deployed yet.
   one red plate on each end; admin door: three storefronts wired to one map
   screen. Lines draw in once (off for reduced motion); the door's own line is
   the caption; the form sits alone on the right, and phones render no panel.
+- **The drawings morph between doors.** Each drawing is stroke data; sign-in
+  links carry `?art=<door they leave>` (it survives the www → dashboard/app host
+  redirects), and the next page samples both drawings, pairs strokes by
+  nearest centre, and moves each one in three steps: pressed flat where it
+  stands, slid as a straight construction line to its new place, then opened
+  into its new shape (≈2 s, top first). The param is removed from the address
+  bar on arrival; reduced motion shows the drawing at rest. The machine's top
+  three plates are narrow and centred and its far cable ends in a tricep
+  rope; the bench plates are smaller; the member door's line is now "For
+  people who train at a RIVET gym." so both chooser rows match.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
