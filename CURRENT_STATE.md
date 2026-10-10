@@ -50,9 +50,13 @@ the page moved; nothing is committed, pushed or deployed yet.
 - **Sign-in pages in the same night look** (Elias: "ugly and sloppy"). `LoginLayout`
   (`login-chrome.tsx`, `login.module.css`) frames `/login`, the gym/member/admin
   doors, member sign-up, invitations and profile steps: on ≥1024px the left half
-  plays the portrait film (video only when that half is shown and motion is
-  allowed; poster otherwise) behind RIVET + tagline, with the door's own line as
-  the caption; the form sits alone on the right, phones get the form only. The
+  shows a still for that door (no video on sign-in, at Elias's request), drawn
+  from the film's scenes with `render.mjs --w 1600 --h 1800 --cam … --stills`:
+  the chooser a class filling up, the gym door the front desk checking a member
+  in, the member door the Entry QR, the admin door the owner's view over both
+  branches (`public/marketing/signin-*.jpg`). It drifts slowly (off for reduced
+  motion) under the door's own line; the form sits alone on the right, and
+  phones load neither the panel nor its image. The
   palette is the shared `night-tokens` class (moved from the landing module into
   `globals.css`, with `light-tokens` for the Entry QR). Removed: the icon boxes,
   the decorative Arabic line, the "rivet.jo" back link and the bordered language

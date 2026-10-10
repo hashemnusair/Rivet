@@ -55,10 +55,11 @@ function ffmpeg(argv, { piped = false } = {}) {
 }
 
 async function openFilm(browser, format) {
-  const cut = CUTS[format];
+  // --w/--h/--cam compose a still on a custom stage (the sign-in panel stills).
+  const cut = { ...CUTS[format], width: Number(flag("w", CUTS[format].width)), height: Number(flag("h", CUTS[format].height)) };
   const page = await browser.newPage({ viewport: { width: cut.width, height: cut.height }, deviceScaleFactor: scale });
   const url = pathToFileURL(join(here, "film.html"));
-  url.search = `format=${format}`;
+  url.search = new URLSearchParams({ format, w: String(cut.width), h: String(cut.height), ...(flag("cam", null) ? { cam: flag("cam") } : {}) }).toString();
   await page.goto(url.href, { waitUntil: "load" });
   await page.evaluate(async () => {
     await document.fonts.ready;
@@ -77,7 +78,8 @@ async function renderStills(browser, format) {
   const { page } = await openFilm(browser, format);
   for (const t of stills.split(",").map(Number)) {
     const png = await frameAt(page, t);
-    const { stdin, done } = ffmpeg(["-f", "png_pipe", "-i", "-", "-vf", `scale=${CUTS[format].width / 2}:-2:flags=lanczos`, join(out, `${format}-${t.toFixed(2)}.jpg`)], { piped: true });
+    const width = Number(flag("still-width", Number(flag("w", CUTS[format].width)) / 2));
+    const { stdin, done } = ffmpeg(["-f", "png_pipe", "-i", "-", "-vf", `scale=${width}:-2:flags=lanczos`, "-q:v", "2", join(out, `${flag("name", format)}-${t.toFixed(2)}.jpg`)], { piped: true });
     stdin.end(png);
     await done;
   }

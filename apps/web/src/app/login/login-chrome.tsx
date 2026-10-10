@@ -4,9 +4,8 @@ import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
-import filmStyles from "@/components/marketing/landing-cinematic.module.css";
 import { monaSans } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
@@ -19,12 +18,10 @@ const LEGAL_LABEL_KEYS = {
   "/terms": "auth.chrome.terms",
 } as const;
 
-const WORDMARK = ["R", "I", "V", "E", "T"] as const;
-
 /**
  * Shared frame for `/login` and every door beneath it, in the landing's night
- * look: the RIVET film in the left half on wide screens, the form alone on the
- * right. The palette comes from `night-tokens`, so the forms inside need no
+ * look: a still of the product for this door in the left half on wide screens,
+ * the form alone on the right. The palette comes from `night-tokens`, so the forms inside need no
  * colours of their own.
  */
 export function LoginLayout({
@@ -45,7 +42,7 @@ export function LoginLayout({
   return (
     <div data-login className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSans.variable)}>
       <div className={styles.frame}>
-        <LoginFilm brand={brand} homeHref={publicHref} />
+        <LoginStill brand={brand} homeHref={publicHref} />
 
         <div className={styles.column}>
           <div className={styles.bar}>
@@ -88,69 +85,33 @@ export function LoginLayout({
   );
 }
 
+/** Each door shows its own part of RIVET, drawn from the landing film's scenes (scripts/hero-film). */
+const STILLS: Record<"chooser" | Portal["id"], string> = {
+  chooser: "/marketing/signin-chooser.jpg",
+  account: "/marketing/signin-chooser.jpg",
+  staff: "/marketing/signin-staff.jpg",
+  member: "/marketing/signin-member.jpg",
+  admin: "/marketing/signin-admin.jpg",
+};
+
 /**
- * The left half on wide screens: the landing's film (portrait cut) behind the
- * name and the promise, with the door's own line where the landing shows its
- * chapter captions. The video loads only when the half is on screen and the
- * visitor has not asked for reduced motion; otherwise the poster stands still.
+ * The left half on wide screens: a still of the product for this door (a class
+ * filling up, the front desk checking a member in, the member's Entry QR, the
+ * owner's view of both branches), drifting slowly, with the door's own line as
+ * its caption. Phones never load it.
  */
-function LoginFilm({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
+function LoginStill({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
   const { t } = useLocale();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [showing, setShowing] = useState(false);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || typeof window.matchMedia !== "function") return;
-    const wide = window.matchMedia("(min-width: 1024px)");
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => {
-      if (wide.matches && !reduce.matches) {
-        if (!video.getAttribute("src")) video.src = "/marketing/rivet-film-portrait.mp4";
-        video.play()?.catch(() => undefined);
-      } else {
-        video.pause();
-      }
-    };
-    sync();
-    wide.addEventListener("change", sync);
-    reduce.addEventListener("change", sync);
-    return () => {
-      wide.removeEventListener("change", sync);
-      reduce.removeEventListener("change", sync);
-    };
-  }, []);
-
   return (
     <aside className={styles.panel}>
-      <div aria-hidden className={styles.poster} />
-      <video
-        ref={videoRef}
-        aria-hidden
-        className={cn(styles.video, showing && styles.videoOn)}
-        muted
-        loop
-        playsInline
-        preload="none"
-        disablePictureInPicture
-        onPlaying={() => setShowing(true)}
-      />
-      <div aria-hidden className={filmStyles.filmShade} />
+      <div aria-hidden className={styles.still}>
+        <Image src={STILLS[brand]} alt="" fill sizes="50vw" className="object-cover" />
+      </div>
+      <div aria-hidden className={styles.stillShade} />
 
       <Link href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
         <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={122} height={31} priority />
       </Link>
-
-      <div aria-hidden className={styles.panelTitle}>
-        <span className={cn(filmStyles.filmWord, styles.panelWord)} dir="ltr">
-          {WORDMARK.map((letter, index) => (
-            <span key={index} className={filmStyles.filmLetter} style={{ animationDelay: `${120 + index * 70}ms` }}>
-              {letter}
-            </span>
-          ))}
-        </span>
-        <span className={cn(filmStyles.filmTagline, styles.panelTagline)}>{t("marketing.film.tagline")}</span>
-      </div>
 
       <div className={styles.panelCaption}>
         <p>{t(`auth.brand.${brand}.headline` as const)}</p>

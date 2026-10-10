@@ -15,7 +15,7 @@ Needs `ffmpeg` on `PATH` and Playwright's Chromium. It writes, for the landscape
 
 H.264 only: VP9 came out no smaller at the same quality. Film grain is drawn by the page over the video, because per-frame noise nearly doubles the file.
 
-Useful flags: `--format landscape|portrait` (one cut), `--scale 1` (faster drafts; the default 2 renders at twice the size and downsamples so the screen text stays sharp), `--seconds 4` (first seconds only), `--stills 1.5,9,20 --out /tmp/stills` (review frames as JPEGs), `--crf 28`, `--poster 3.2`.
+Useful flags: `--format landscape|portrait` (one cut), `--scale 1` (faster drafts; the default 2 renders at twice the size and downsamples so the screen text stays sharp), `--seconds 4` (first seconds only), `--stills 1.5,9,20 --out /tmp/stills` (review frames as JPEGs; `--still-width 3840` keeps them full size), `--crf 28`, `--poster 3.2`.
 
 To watch it live, open `film.html?play` (or `film.html?format=portrait&play`) straight from disk in Chrome. `?t=12.5` holds one moment.
 

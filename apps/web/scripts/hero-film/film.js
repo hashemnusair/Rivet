@@ -14,8 +14,10 @@
   const params = new URLSearchParams(window.location.search);
   const FORMAT = params.get("format") === "portrait" ? "portrait" : "landscape";
   const PORTRAIT = FORMAT === "portrait";
-  const W = PORTRAIT ? 1080 : 1920;
-  const H = PORTRAIT ? 1920 : 1080;
+  // ?w=&h= set a custom stage (the sign-in stills); ?cam=x,y,z,rx,ry,rz frames it.
+  const W = Number(params.get("w")) || (PORTRAIT ? 1080 : 1920);
+  const H = Number(params.get("h")) || (PORTRAIT ? 1920 : 1080);
+  const CAM_OVERRIDE = params.get("cam")?.split(",").map(Number) ?? null;
   const T = 36;
 
   // ------------------------------------------------------------------ math
@@ -940,7 +942,9 @@
       const env = Math.min(fadeIn, fadeOut);
       sc.root.style.opacity = env.toFixed(3);
       setBlur(sc.root, (1 - fadeIn) * 18 + (1 - fadeOut) * 14);
-      const c = camAt(sc.cam, local);
+      const c = CAM_OVERRIDE
+        ? Object.fromEntries(CAM_FIELDS.map((f, i) => [f, CAM_OVERRIDE[i] ?? 0]))
+        : camAt(sc.cam, local);
       const push = (1 - fadeIn) * -60 + (1 - fadeOut) * 50;
       sc.world.style.transform = camCss({ ...c, z: c.z + push });
       sc.update(local, sc.refs);
