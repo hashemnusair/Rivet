@@ -157,7 +157,7 @@ test("serves Arabic on public first paint and preserves a staff draft through ke
   expect(landingHtml).toMatch(/<html\b[^>]*\blang="ar"[^>]*\bdir="rtl"/);
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { level: 1 }).first()).toContainText("كل تفاصيل ناديك و مشتركينه في مكان واحد");
+  await expect(page.getByRole("heading", { level: 1 }).first()).toContainText("أول نظام تشغيل للأندية الرياضية في الأردن");
   await checkNoHorizontalOverflow(page);
   await screenshot(page, "public-home-ar-desktop");
 
@@ -279,7 +279,7 @@ test("fresh visitors can choose Arabic on public, login and platform surfaces", 
   // The switch sits in the bar beside "Sign in", not inside the menu.
   await page.getByRole("banner").getByRole("button", { name: "Switch to Arabic" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "ar");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("كل تفاصيل ناديك و مشتركينه في مكان واحد");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("أول نظام تشغيل للأندية الرياضية في الأردن");
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => Array.from(document.fonts).some(face =>
     face.family.includes("Plex") && face.family.includes("Arabic") && !face.family.includes("Fallback") && face.status === "loaded",

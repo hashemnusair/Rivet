@@ -168,7 +168,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
     <>
       <div className="px-5 pb-6 pt-5">
         <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label={t("platformConsole.navigation.overview")}>
-          <Image src="/brand/rivet-lockup-rev.png" width={122} height={31} alt={t("common.brand.name")} />
+          <Image src="/brand/rivet-lockup-rev-488.png" width={122} height={31} alt={t("common.brand.name")} />
           <span className="border-s border-night-line ps-3 text-[12px] font-medium text-night-ink-3">{t("platformConsole.navigation.platformName")}</span>
         </Link>
       </div>

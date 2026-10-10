@@ -1,5 +1,102 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — landing opens on a product film (local, not deployed)
+
+**Scope:** at Elias's request the landing's first section is now a Palantir-style
+film of the product: a full-bleed dark loop with **RIVET** centred and
+"Jordan’s first operating system for gyms" under it, both white. Nothing else on
+the page moved; nothing is committed, pushed or deployed yet.
+
+- `apps/web/scripts/hero-film/` holds the film: `film.html`/`film.js` draw six
+  scenes from a clock (QR check-in at reception → classes timetable → collect
+  payment by CliQ with a receipt → a lead carried to "Membership sold" → one
+  member timeline → the owner's dashboard over a map of both Amman branches),
+  and `render.mjs` photographs it frame by frame into
+  `apps/web/public/marketing/rivet-film{,-portrait}.mp4` plus posters (H.264 only;
+  grain is a page overlay, since per-frame noise nearly doubled the file).
+  The shot list and render commands are in that folder's `README.md`. Screens are
+  traced from the real routes with the mock tenant's demo names, in night tokens.
+- `HeroFilm` (`components/marketing/hero-film.tsx`) plays the portrait cut on
+  square/portrait screens, only while on screen, and not at all until pressed for
+  reduced-motion visitors. Captions under the film follow its chapters
+  (`hero-film-chapters.ts`, unit tested); a pause/play button is always present.
+  The title and captions are page text in English and Arabic, not burned in.
+- The bar is clear with light type while the film is under it, then returns to the
+  persistent paper bar. The wordmark keeps Archivo and letter gaps in Arabic.
+- Removed with the old hero: the "Every member. Every dinar. Every shift." headline
+  (and its approved Arabic promise) from the landing, the hero's apply/see-how
+  buttons, the fact rail, and the laptop/phone mockups (`hero-devices`,
+  `device-frames`, `scaled-screen`, the unused owner-dashboard/member-home
+  replicas). The bar's "Apply for access" remains; on phones it is in the menu.
+- New Arabic copy follows `docs/arabic/STANDARD.md` (النادي الرياضي, سجل المشترك,
+  تسجيل الدخول للنادي, مسار المبيعات, وصل دفع, كاش, CliQ in Latin).
+- **Whole landing in the same Palantir-style night look** (Elias, same day): one
+  dark surface from the film down. `.nightPage` in `landing-cinematic.module.css`
+  re-points the design tokens for the landing only (paper/surface/ink/line,
+  radii, tenant-brand primary), so utilities and buttons turn night: primary is
+  square white with dark text, secondary a thin outline. Sheets are square with a
+  hairline top edge; headlines dropped from 650–900 to regular weight (the 06:00
+  clock to 300); pricing tiers are dark panels with Growth's red border; the bar
+  stays dark after the film (`headerNight`). Every section's layout, copy and
+  motion is unchanged. The Entry QR card keeps the member app's light tokens
+  (`.lightTokens`). Terms/privacy keep the paper bar. Sentence-case labels stay
+  (no Palantir-style uppercase/mono eyebrows, per the September feedback).
+- **Hero type:** "RIVET" and the tagline are set in Mona Sans (OFL; GitHub with
+  Degarism, the studio behind Palantir's Alliance), loaded only by `hero-film.tsx`:
+  the name at width 125 / weight 500, the tagline at normal width / 450. The
+  Arabic tagline stays IBM Plex Sans Arabic (Mona has no Arabic and its Arial
+  fallback would steal the glyphs). `vitest.setup.ts` now stubs `next/font/google`
+  so components can scope their own fonts under test.
+- **Sign-in pages in the same night look** (Elias: "ugly and sloppy"). `LoginLayout`
+  (`login-chrome.tsx`, `login.module.css`) frames `/login`, the gym/member/admin
+  doors, member sign-up, invitations and profile steps: on ≥1024px the left half
+  shows a line drawing for that door (no video or photos on sign-in, at
+  Elias's request): `sign-in-art.tsx`, inline SVG in white/black/red on a faint
+  layout grid. Chooser: a weight-stack machine with the red pin (the RIVET mark
+  as a machine); gym door: the front desk with a red dumbbell on its face and
+  three wall screens; member door: a bench press in one-point perspective with
+  one red plate on each end; admin door: three storefronts wired to one map
+  screen. Lines draw in once (off for reduced motion); the door's own line is
+  the caption; the form sits alone on the right, and phones render no panel.
+- **The drawings morph between doors.** Each drawing is stroke data; sign-in
+  links carry `?art=<door they leave>` (it survives the www → dashboard/app host
+  redirects), and the next page samples both drawings, pairs strokes by
+  nearest centre, and moves each one in three steps: pressed flat where it
+  stands, slid as a straight construction line to its new place, then opened
+  into its new shape (≈2 s, top first). The param is removed from the address
+  bar on arrival; reduced motion shows the drawing at rest. The machine's top
+  three plates are narrow and centred and its far cable ends in a tricep
+  rope; the bench plates are smaller; the member door's line is now "For
+  people who train at a RIVET gym." so both chooser rows match.
+- Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
+  without the width axis (40 KB instead of 98 KB; the landing keeps the wide
+  cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
+  37 KB; the full-size file stays for printed documents).
+- The ten Pass 4/Pass 7 sign-in references (1440 and 390-linux) were re-captured
+  on Linux with the drawings by a throwaway `tmp/signin-art-refs` run using
+  `--update-snapshots=all`; the member-app references it also rewrote were left
+  as they were, since they still pass. The
+  palette is the shared `night-tokens` class (moved from the landing module into
+  `globals.css`, with `light-tokens` for the Entry QR). Removed: the icon boxes,
+  the decorative Arabic line, the "rivet.jo" back link and the bordered language
+  chip (now a text link like the landing's, same test id). Fields are 44px with a
+  quiet focus; an unfilled form's submit is an outline, not a grey slab (unlayered
+  `[data-login]` rules in `globals.css`). Behaviour and copy are unchanged.
+- **CI after the sign-in redesign.** Runs 38006675594 and 38007884086 on `main`
+  failed two things: `pnpm audit --prod` (six Next.js advisories, one high, all
+  fixed in 16.3.8) and the Pass 4/Pass 7 sign-in screenshots. `next`,
+  `eslint-config-next` and `@next/eslint-plugin-next` now lock 16.3.8 (no other
+  locked package changed). The ten sign-in references CI compares
+  (`pass-4-login-member-{390-linux,1440}` and
+  `pass-7-{login,login-gym,login-admin,invitation-complete}-{390-linux,1440}`)
+  were captured on GitHub’s Ubuntu runner (Actions run 38046804620) by a
+  temporary workflow on the throwaway branch `tmp/signin-linux-refs`, which
+  then passed the same four journeys against them. That branch is not for
+  `main` and can be deleted (its workflow runs only on pushes to it). The Mac-only `-390.png` siblings
+  were not refreshed (they need a Mac): CI never reads them, but a local Mac
+  run of those journeys will fail until they are refreshed with
+  `--update-snapshots`.
+
 ## 7 October 2026 — nonlegal launch release deployed
 
 **Release verified at 18:46 Asia/Amman:** [PR #6](https://github.com/hashemnusair/Rivet/pull/6)

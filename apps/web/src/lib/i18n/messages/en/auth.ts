@@ -58,7 +58,7 @@ export const auth = {
     staff: { title: "Gym team", blurb: "For gym owners and staff." },
     member: {
       title: "Gym member",
-      blurb: "See your memberships, visits, receipts and entry code.",
+      blurb: "For people who train at a RIVET gym.",
       signUpTitle: "Create a member account",
     },
     admin: { title: "Platform administration", blurb: "Gyms, plans, billing and support. For RIVET staff." },

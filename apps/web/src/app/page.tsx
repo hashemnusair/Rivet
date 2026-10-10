@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 import { useState } from "react";
 import { CinematicHeader } from "@/components/marketing/cinematic-header";
-import { HeroDevices } from "@/components/marketing/hero-devices";
+import { HeroFilm } from "@/components/marketing/hero-film";
 import styles from "@/components/marketing/landing-cinematic.module.css";
 import { LandingMotionController } from "@/components/marketing/landing-motion";
 import { EntryPassCard } from "@/components/marketing/product-screens";
@@ -42,17 +42,6 @@ import {
 } from "@/lib/public/pricing";
 import { formatPublicJod, localizedPublicPlanFeatures, publicDestinationCopy } from "@/components/public/public-plan-copy";
 
-/** Hero entrance order, in ms — one cascade from the headline to the fact rail. */
-const HERO_STEP = {
-  line1: 0,
-  line2: 70,
-  line3: 140,
-  copy: 240,
-  actions: 320,
-  note: 380,
-  facts: 440,
-} as const;
-
 export default function LandingPage() {
   const { t, locale, isolateLtr } = useLocale();
   const f = useFormat();
@@ -72,7 +61,7 @@ export default function LandingPage() {
   const signedOut = viewer.status === "signed-out";
 
   return (
-    <div className={`${styles.pageShell} marketing-body min-h-screen bg-paper text-ink`}>
+    <div className={`${styles.pageShell} ${styles.nightPage} night-tokens marketing-body min-h-screen bg-paper text-ink`}>
       <SignedInGuard />
       <LandingMotionController />
       <ScrollProgress />
@@ -80,98 +69,11 @@ export default function LandingPage() {
 
       <div data-landing-sheet className={styles.pageSheet}>
       <main>
-        {/* ---------------------------------------------------------------- Hero */}
-        <section
-          id="top"
-          data-landing-hero
-          data-landing-snap="start"
-          data-landing-theme="paper"
-          className={`${styles.coverSheet} ${styles.layer1} relative overflow-hidden bg-paper lg:min-h-[100svh]`}
-        >
-          {/* Ruled backdrop, faded out at the edges so it never competes with
-              the headline. Texture only — no painted colour. */}
-          <div aria-hidden className="pointer-events-none absolute inset-0">
-            <div className="marketing-grid-sm absolute inset-0 [mask-image:radial-gradient(115%_85%_at_72%_18%,black,transparent_72%)]" />
-          </div>
-
-          <div className={`${styles.heroMotion} relative mx-auto grid max-w-[1440px] items-center gap-10 px-5 pb-10 pt-[calc(4.25rem+2.5rem)] sm:px-8 sm:pb-14 lg:min-h-[100svh] lg:grid-cols-[1fr_1fr] lg:gap-12 lg:px-12 lg:pb-20 lg:pt-28`}>
-            <div>
-              <h1 className="marketing-display text-[clamp(1.9rem,9.2vw,4.7rem)] leading-[0.9] rtl:leading-[1.3] lg:text-[clamp(2.6rem,4.7vw,4.7rem)] xl:text-[clamp(2.6rem,5vw,4.7rem)]">
-                {/* Arabic uses the same three-line rhythm; its lines join to the approved
-                    promise exactly (docs/arabic/STANDARD.md, marketing-promise). */}
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line1}ms` }}>{t("marketing.hero.line1")}</span>{" "}
-                <span className="block animate-rise-in" style={{ animationDelay: `${HERO_STEP.line2}ms` }}>{t("marketing.hero.line2")}</span>{" "}
-                <span className="block animate-rise-in text-signal" style={{ animationDelay: `${HERO_STEP.line3}ms` }}>
-                  {/* The rule is measured off the words, not a guessed width. */}
-                  <span className="relative inline-block">{t("marketing.hero.line3")}<span className="absolute inset-x-0 -bottom-1 h-[3px] origin-left animate-underline bg-signal [animation-delay:620ms] rtl:origin-right" />
-                  </span>
-                </span>
-              </h1>
-
-              <p
-                className="mt-7 max-w-xl animate-rise-in text-[16px] leading-[1.65] text-ink-2 sm:text-[17px]"
-                style={{ animationDelay: `${HERO_STEP.copy}ms` }}
-              >
-                {t("publicCompletion.hero.body")}
-              </p>
-
-              <div
-                className="mt-8 flex min-h-12 animate-rise-in flex-wrap gap-3"
-                style={{ animationDelay: `${HERO_STEP.actions}ms` }}
-              >
-                {signedIn ? (
-                  <Button asChild variant="signal" size="lg" className="group">
-                    <Link href={signedIn.href}>
-                      {signedInCopy?.action}{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
-                    </Link>
-                  </Button>
-                ) : signedOut ? (
-                  <Button asChild variant="signal" size="lg" className="group">
-                    <Link href="/signup">{t("marketing.actions.apply")}{" "}
-                      <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
-                    </Link>
-                  </Button>
-                ) : null}
-                <Button asChild variant="secondary" size="lg">
-                  <Link href="#product">{t("marketing.actions.seeHow")}</Link>
-                </Button>
-              </div>
-
-              {signedIn ? null : (
-                <p
-                  className="mt-4 animate-rise-in text-[12.5px] text-ink-3"
-                  style={{ animationDelay: `${HERO_STEP.note}ms` }}
-                >{t("marketing.hero.accessNote")}</p>
-              )}
-
-              <dl
-                className="mt-10 grid max-w-2xl animate-rise-in grid-cols-2 gap-x-8 gap-y-5 border-t border-ink/10 pt-7 xl:grid-cols-4"
-                style={{ animationDelay: `${HERO_STEP.facts}ms` }}
-              >
-                {[
-                  [t("publicCompletion.hero.facts.payments"), t("publicCompletion.hero.facts.paymentsDetail")],
-                  [t("publicCompletion.hero.facts.branches"), t("publicCompletion.hero.facts.branchesDetail")],
-                  [t("publicCompletion.hero.facts.languages"), t("publicCompletion.hero.facts.languagesDetail")],
-                  [t("publicCompletion.hero.facts.entry"), t("publicCompletion.hero.facts.entryDetail")],
-                ].map(([term, detail]) => (
-                  <div key={term} className="group relative">
-                    <span className="absolute -top-7 start-0 h-px w-0 bg-signal transition-[width] duration-500 ease-out group-hover:w-full" />
-                    <dt className="text-[13px] font-semibold tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-signal">
-                      {term}
-                    </dt>
-                    <dd className="mt-1 text-[12px] leading-snug text-ink-3">{detail}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            <HeroDevices />
-          </div>
-        </section>
+        {/* ---------------------------------------------------------------- Film */}
+        <HeroFilm />
 
         {/* ------------------------------------------------------------- The stack */}
-        <SheetUnder tone="paper" />
+        <SheetUnder tone="film" />
         <StackStory />
 
         {/* --------------------------------------------------------- A day on RIVET */}
@@ -428,7 +330,7 @@ export default function LandingPage() {
                         <div className="mt-auto pt-8">
                           <Button
                             asChild
-                            variant={isNight ? "night" : isSignal ? "signal" : "secondary"}
+                            variant={isSignal ? "primary" : "secondary"}
                             size="lg"
                             className="w-full"
                           >
@@ -465,7 +367,7 @@ export default function LandingPage() {
             <div className="mt-10 grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:gap-20">
               <Reveal>
                 <div>
-                  <h2 id="contact-title" className="max-w-xl text-[clamp(2.4rem,4.6vw,4.1rem)] font-semibold leading-[0.95] tracking-[-0.03em] text-night-ink [font-family:var(--font-marketing-display)]">
+                  <h2 id="contact-title" className="max-w-xl text-[clamp(2.4rem,4.6vw,4.1rem)] font-normal leading-[0.95] tracking-[-0.04em] text-night-ink [font-family:var(--font-marketing-display)]">
                     {t("publicCompletion.landing.contact.title")}
                   </h2>
                   <p className="mt-6 max-w-md text-[15px] leading-[1.7] text-night-ink-2">
@@ -476,14 +378,14 @@ export default function LandingPage() {
               <Reveal delay={120}>
                 <div className="flex flex-wrap items-center gap-5 lg:justify-end">
                   {signedIn ? (
-                    <Button asChild variant="signal" size="lg" className="group">
+                    <Button asChild size="lg" className="group">
                       <Link href={signedIn.href}>
                         {signedInCopy?.action}{" "}
                         <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
                     </Button>
                   ) : (
-                    <Button asChild variant="signal" size="lg" className="group">
+                    <Button asChild size="lg" className="group">
                       <Link href="/signup">{t("publicCompletion.header.applyAccess")}{" "}
                         <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
                       </Link>
@@ -514,7 +416,7 @@ export default function LandingPage() {
 function MemberCard() {
   return (
     <Reveal className="flex justify-center lg:justify-end">
-      <div className="w-full max-w-sm" aria-hidden>
+      <div className="light-tokens w-full max-w-sm" aria-hidden>
         <EntryPassCard />
       </div>
     </Reveal>
@@ -536,7 +438,7 @@ function SectionIntro({
     <Reveal className={stacked ? "mt-7 max-w-xl" : "grid gap-6 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"}>
       <h2
         id={id}
-        className="text-[clamp(2rem,3.4vw,3.1rem)] font-semibold leading-[1.02] tracking-[-0.025em] text-ink [font-family:var(--font-marketing-display)]"
+        className="text-[clamp(2rem,3.4vw,3.1rem)] font-normal leading-[1.02] tracking-[-0.035em] text-ink [font-family:var(--font-marketing-display)]"
       >
         {title}
       </h2>

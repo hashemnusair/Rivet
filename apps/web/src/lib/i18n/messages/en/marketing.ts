@@ -46,6 +46,22 @@ export const marketing = {
     },
   },
 
+  /** The landing's opening film: the title over it and the captions synced to its chapters. */
+  film: {
+    tagline: "Jordan’s first operating system for gyms",
+    summary: "A short film of RIVET at work: a member checks in with a QR code, a class fills up, a payment is taken by CliQ with a receipt, a trial visitor becomes a member, the member’s whole history sits in one timeline, and the owner sees both branches together.",
+    pause: "Pause the film",
+    play: "Play the film",
+    chapters: {
+      checkIn: { title: "Check-in", line: "Members scan in at the door. The desk sees it at once." },
+      classes: { title: "Classes", line: "The timetable, bookings and waiting lists." },
+      payments: { title: "Payments", line: "Cash, card and CliQ, with a receipt every time." },
+      sales: { title: "Sales", line: "Every lead followed up. Every sale credited to the person who made it." },
+      member: { title: "Member timeline", line: "Everything that happened to a member, in order, and who did it." },
+      owner: { title: "Every branch", line: "The owner sees every branch together." },
+    },
+  },
+
   /** Text inside the illustrated laptop and phone in the hero. */
   device: {
     alt: "Illustrative RIVET dashboard and member app preview with no customer or operational data.",

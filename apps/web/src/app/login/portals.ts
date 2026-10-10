@@ -49,7 +49,7 @@ export const PORTALS: Record<Audience, Portal> = {
     href: "/login/member",
     icon: Dumbbell,
     title: "Gym member",
-    blurb: "See your memberships, visits, receipts and entry code.",
+    blurb: "For people who train at a RIVET gym.",
     audience: "Anyone training at a RIVET gym",
     destination: "/customer/my-gyms",
     signUpUrl: "/login/member/create",

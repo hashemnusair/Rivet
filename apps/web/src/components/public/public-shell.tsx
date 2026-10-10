@@ -152,7 +152,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-5 px-4 sm:px-6 lg:px-8">
           <Link href="/customer/my-gyms" className="flex shrink-0 items-center gap-3" aria-label={t("common.brand.name")}>
-            <Image src="/brand/rivet-lockup.png" alt={t("common.brand.name")} width={112} height={29} priority />
+            <Image src="/brand/rivet-lockup-488.png" alt={t("common.brand.name")} width={112} height={29} priority />
             <span className="hidden border-s border-line-2 ps-3 text-[12px] font-medium text-ink-3 sm:block">{t("marketing.memberShell.member")}</span>
           </Link>
 

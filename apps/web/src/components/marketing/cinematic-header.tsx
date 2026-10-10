@@ -105,6 +105,7 @@ export function CinematicHeader({
   const [signingOut, setSigningOut] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeHref, setActiveHref] = useState<string>("#top");
+  const [onFilm, setOnFilm] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const focusTimerRef = useRef(0);
@@ -141,6 +142,32 @@ export function CinematicHeader({
     return () => {
       window.removeEventListener("scroll", requestRead);
       window.removeEventListener("resize", requestRead);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [onLanding]);
+
+  // While the opening film is under the bar, the bar is clear and its type light.
+  useEffect(() => {
+    if (!onLanding) return;
+    const film = document.querySelector<HTMLElement>("[data-landing-film]");
+    if (!film) return;
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const bar = document.querySelector<HTMLElement>("[data-landing-header]")?.offsetHeight ?? 72;
+      const next = film.getBoundingClientRect().bottom > bar;
+      setOnFilm((current) => (current === next ? current : next));
+    };
+    const request = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(read);
+    };
+    read();
+    window.addEventListener("scroll", request, { passive: true });
+    window.addEventListener("resize", request, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", request);
+      window.removeEventListener("resize", request);
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, [onLanding]);
@@ -292,7 +319,7 @@ export function CinematicHeader({
 
   return (
     <>
-      <header data-landing-header className={cn(styles.header, "marketing-body", open && styles.headerOpen)}>
+      <header data-landing-header className={cn(styles.header, "marketing-body", open ? styles.headerOpen : onFilm ? styles.headerOnFilm : onLanding && styles.headerNight)}>
         <Link
           href={onLanding ? "#top" : publicHref}
           className={styles.brand}
@@ -300,7 +327,7 @@ export function CinematicHeader({
           inert={open}
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
-          <Image src={open ? "/brand/rivet-lockup-rev.png" : "/brand/rivet-lockup.png"} alt={t("common.brand.name")} width={122} height={31} priority />
+          <Image src={open || onLanding ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
         </Link>
 
         <div className={styles.headerActions}>

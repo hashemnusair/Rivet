@@ -34,6 +34,8 @@ import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
 import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
+import loginStyles from "./login.module.css";
+import { withArt } from "./sign-in-art";
 import { ProfileCompletionGate } from "./profile-completion.client";
 
 type StaffRole = "owner" | "manager" | "salesperson" | "receptionist";
@@ -177,7 +179,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
             /login reads the role instead, so only demo personas leave it. */}
         <SignedInGuard demoOnly={audience === "account"} />
         {audience !== "account" ? (
-          <Link href="/login" className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+          <Link href={withArt("/login", audience)} className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
             <ArrowLeft className="size-3.5" aria-hidden /> {t("auth.chrome.backToSignIn")}
           </Link>
         ) : null}
@@ -241,6 +243,8 @@ function ClerkPanel({ audience, redirectUrl }: { audience: Audience; mode: AuthM
 function DoorChooser({ next }: { next: string | null }) {
   const t = useT();
   const query = next ? `?next=${encodeURIComponent(next)}` : "";
+  // The doors' drawings grow out of this page's weight stack.
+  const door = (href: string) => withArt(`${href}${query}`, "account");
   return (
     <div className="mt-7 grid gap-3">
       {(["staff", "member"] as const).map((id) => {
@@ -248,23 +252,21 @@ function DoorChooser({ next }: { next: string | null }) {
         return (
           <Link
             key={id}
-            href={`${portal.href}${query}`}
-            className="group flex items-center gap-4 rounded-lg border border-line-2 bg-surface p-4 transition-colors hover:border-ink"
+            href={door(portal.href)}
+            className={cn("group", loginStyles.door)}
           >
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-ink text-paper" aria-hidden>
-              <portal.icon className="size-5" />
-            </span>
+            <portal.icon className="size-5 shrink-0 text-ink-3 transition-colors group-hover:text-ink" strokeWidth={1.6} aria-hidden />
             <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-medium text-ink">{t(`auth.portal.${id}.title` as const)}</span>
+              <span className="block text-[15px] font-medium text-ink">{t(`auth.portal.${id}.title` as const)}</span>
               <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">{t(`auth.portal.${id}.blurb` as const)}</span>
             </span>
-            <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5" aria-hidden />
+            <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-1 group-hover:text-ink rtl:rotate-180 rtl:group-hover:-translate-x-1" aria-hidden />
           </Link>
         );
       })}
       <p className="mt-2 text-center text-[12px] text-ink-3">
         {t("auth.doors.staffPrefix")}{" "}
-        <Link href={`/login/admin${query}`} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
+        <Link href={door("/login/admin")} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
           {t("auth.portal.admin.title")}
         </Link>
       </p>
