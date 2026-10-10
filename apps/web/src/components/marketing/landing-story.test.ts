@@ -4,6 +4,11 @@ import {
   RIG,
   STACK_ITEMS,
   STACK_PACE,
+  STACK_SCROLL,
+  STACK_SCROLL_STEPS,
+  stackPoseAt,
+  stackRestAt,
+  stackStepsFor,
   clearTip,
   moveDuration,
   pathLength,
@@ -116,6 +121,52 @@ describe("stack pin path", () => {
       largest = Math.max(largest, Math.hypot(poses[index]!.tipX - poses[index - 1]!.tipX, poses[index]!.y - poses[index - 1]!.y));
     }
     expect(largest).toBeLessThan(long / 2000 + 0.01);
+  });
+});
+
+describe("stack pinned to the scroll", () => {
+  const edge = STACK_SCROLL.hold / 2;
+
+  it("starts seated in the first plate and ends seated in the last", () => {
+    expect(stackPoseAt(0)).toEqual(seatedPose(0));
+    expect(stackPoseAt(STACK_SCROLL.lead)).toEqual(seatedPose(0));
+    expect(stackPoseAt(STACK_SCROLL_STEPS)).toEqual(seatedPose(last));
+    expect(stackPoseAt(STACK_SCROLL_STEPS + 3)).toEqual(seatedPose(last));
+    expect(stackPoseAt(-1)).toEqual(seatedPose(0));
+  });
+
+  it("rests seated around every plate and moves only between them", () => {
+    for (let index = 0; index <= last; index += 1) {
+      const at = stackStepsFor(index);
+      expect(stackPoseAt(at)).toEqual(seatedPose(index));
+      if (index > 0) expect(stackPoseAt(at - edge + 0.001)).toEqual(seatedPose(index));
+      if (index < last) expect(stackPoseAt(at + edge - 0.001)).toEqual(seatedPose(index));
+    }
+    const between = stackPoseAt(stackStepsFor(1) + 0.5);
+    expect(between).not.toEqual(seatedPose(1));
+    expect(between).not.toEqual(seatedPose(2));
+  });
+
+  it("goes down the stack by the planned path, without a jump, as the page scrolls", () => {
+    let previous = stackPoseAt(0);
+    for (let steps = 0; steps <= STACK_SCROLL_STEPS; steps += 0.002) {
+      const pose = stackPoseAt(steps);
+      expect(Math.hypot(pose.tipX - previous.tipX, pose.y - previous.y)).toBeLessThan(4);
+      expect(pose.y).toBeGreaterThanOrEqual(previous.y - 0.001);
+      previous = pose;
+    }
+  });
+
+  it("finishes a scroll that stopped between plates into the nearer seat", () => {
+    expect(stackRestAt(stackStepsFor(2))).toBeNull();
+    expect(stackRestAt(stackStepsFor(2) + edge / 2)).toBeNull();
+    expect(stackRestAt(stackStepsFor(2) + 0.3)).toBeCloseTo(stackStepsFor(2) + edge);
+    expect(stackRestAt(stackStepsFor(2) + 0.7)).toBeCloseTo(stackStepsFor(3) - edge);
+    expect(stackRestAt(0)).toBeNull();
+    expect(stackRestAt(STACK_SCROLL_STEPS)).toBeNull();
+    const rest = stackRestAt(stackStepsFor(0) + 0.45);
+    expect(rest).not.toBeNull();
+    expect(stackPoseAt(rest ?? 0)).toEqual(seatedPose(0));
   });
 });
 

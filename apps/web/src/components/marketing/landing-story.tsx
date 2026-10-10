@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type 
 import { Reveal } from "@/components/marketing/reveal";
 import { cn } from "@/lib/utils/cn";
 import styles from "./landing-cinematic.module.css";
+import { bindStackScroll, type StackScroll } from "./stack-scroll";
 
 export const STACK_ITEMS = [
   { key: "sales", caps: ["leadCapture", "followUps", "conversion"] },
@@ -200,10 +201,49 @@ export function moveDuration(length: number): number {
   return clamp(length / STACK_PACE.unitsPerMs, STACK_PACE.minMs, STACK_PACE.maxMs);
 }
 
-type PauseKey = "focus" | "hidden" | "offscreen";
+/**
+ * The pinned stack's scroll, in steps of one plate. The run opens with a short
+ * rest on the first plate (`lead`) and closes with one on the last (`tail`);
+ * within each step the pin rests seated for `hold` of it, half either side of
+ * the plate, and makes its move in the rest.
+ */
+export const STACK_SCROLL = { lead: 0.25, tail: 0.5, hold: 0.4 } as const;
+
+/** The whole run, in steps: the stylesheet multiplies it by one step's height. */
+export const STACK_SCROLL_STEPS = STACK_SCROLL.lead + (PLATE_COUNT - 1) + STACK_SCROLL.tail;
+
+/** The pin's pose with the page `steps` into the stack's run. */
+export function stackPoseAt(steps: number): PinPose {
+  const at = clamp(steps - STACK_SCROLL.lead, 0, PLATE_COUNT - 1);
+  const from = Math.min(Math.floor(at), PLATE_COUNT - 2);
+  const local = at - from;
+  const edge = STACK_SCROLL.hold / 2;
+  if (local <= edge) return seatedPose(from);
+  if (local >= 1 - edge) return seatedPose(from + 1);
+  const points = pinPath(seatedPose(from), from + 1);
+  return poseAlong(points, smoothstep((local - edge) / (1 - STACK_SCROLL.hold)) * pathLength(points));
+}
+
+/** Where a scroll that stopped with the pin between plates comes to rest, in steps: the nearer seat. Null when the pin is seated. */
+export function stackRestAt(steps: number): number | null {
+  const at = steps - STACK_SCROLL.lead;
+  if (at <= 0 || at >= PLATE_COUNT - 1) return null;
+  const from = Math.floor(at);
+  const local = at - from;
+  const edge = STACK_SCROLL.hold / 2;
+  if (local <= edge || local >= 1 - edge) return null;
+  return STACK_SCROLL.lead + (local < 0.5 ? from + edge : from + 1 - edge);
+}
+
+/** Where the pin rests seated in a plate, in steps: chosen plates scroll here. */
+export const stackStepsFor = (index: number) => STACK_SCROLL.lead + index;
+
+type PauseKey = "focus" | "hidden" | "offscreen" | "scroll";
 
 interface StackEngine {
   select(index: number): void;
+  /** Puts the pin at a pose at once: the scroll drives it while the stack is pinned. */
+  show(pose: PinPose): void;
   pause(key: PauseKey, value: boolean): void;
   destroy(): void;
 }
@@ -225,7 +265,7 @@ function createStackEngine(
   let seated = true;
   let move: { frame: number; start: number; duration: number; points: PinPose[]; length: number; target: number } | null = null;
   let timer = 0;
-  const paused: Record<PauseKey, boolean> = { focus: false, hidden: false, offscreen: true };
+  const paused: Record<PauseKey, boolean> = { focus: false, hidden: false, offscreen: true, scroll: false };
   const reduced = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
   const paint = (next: PinPose) => {
@@ -249,7 +289,7 @@ function createStackEngine(
     if (timer) window.clearTimeout(timer);
     timer = 0;
   };
-  const isPaused = () => paused.focus || paused.hidden || paused.offscreen;
+  const isPaused = () => paused.focus || paused.hidden || paused.offscreen || paused.scroll;
   const stop = () => {
     if (move) window.cancelAnimationFrame(move.frame);
     move = null;
@@ -307,6 +347,11 @@ function createStackEngine(
 
   return {
     select,
+    show(next) {
+      clearTimer();
+      stop();
+      paint(next);
+    },
     pause(key, value) {
       if (paused[key] === value) return;
       paused[key] = value;
@@ -321,6 +366,18 @@ function createStackEngine(
   };
 }
 
+/** A rectangle with rounded corners, as one path, so it can draw itself in. */
+const outline = (x: number, y: number, w: number, h: number, r = 0) =>
+  r
+    ? `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`
+    : `M${x} ${y}H${x + w}V${y + h}H${x}Z`;
+const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
+
+/** The page is pinned on the stack and scrolls the pin; reduced motion and very short screens keep the tappable machine. */
+const STATIC_STACK = "(prefers-reduced-motion: reduce), (max-height: 559px)";
+
+type DrawState = "drawn" | "pending" | "drawing";
+
 export function StackStory() {
   const { t, locale } = useLocale();
   const stackItems = STACK_ITEMS.map((item) => ({
@@ -329,19 +386,25 @@ export function StackStory() {
     copy: t(`publicCompletion.story.stack.items.${item.key}.copy` as TKey),
     caps: item.caps.map((cap) => t(`publicCompletion.story.stack.items.${item.key}.caps.${cap}` as TKey)),
   }));
-  const gridRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const figureRef = useRef<HTMLDivElement>(null);
   const pinRef = useRef<SVGGElement>(null);
   const plateRefs = useRef<Array<SVGGElement | null>>([]);
   const engineRef = useRef<StackEngine | null>(null);
+  const scrollRef = useRef<StackScroll | null>(null);
   const [selected, setSelected] = useState(0);
   const [engaged, setEngaged] = useState(0);
   const [seated, setSeated] = useState(true);
+  const [scrolled, setScrolled] = useState(false);
+  const [draw, setDraw] = useState<DrawState>("drawn");
 
   useEffect(() => {
     const pin = pinRef.current;
     const figure = figureRef.current;
-    if (!pin || !figure) return;
+    const section = sectionRef.current;
+    const stage = stageRef.current;
+    if (!pin || !figure || !section || !stage) return;
 
     const engine = createStackEngine(pin, { selected: setSelected, engaged: setEngaged, seated: setSeated });
     engineRef.current = engine;
@@ -359,15 +422,62 @@ export function StackStory() {
       engine.pause("offscreen", false);
     }
 
+    // Pinned, the page's scroll drives the pin; otherwise the machine runs itself and takes taps.
+    const staticQuery = typeof window.matchMedia === "function" ? window.matchMedia(STATIC_STACK) : null;
+    const applyMode = () => {
+      scrollRef.current?.destroy();
+      scrollRef.current = null;
+      const pinned = !staticQuery?.matches;
+      setScrolled(pinned);
+      engine.pause("scroll", pinned);
+      if (pinned) {
+        section.setAttribute("data-stack-scrolly", "");
+        scrollRef.current = bindStackScroll({
+          section,
+          stage,
+          totalSteps: STACK_SCROLL_STEPS,
+          restAt: stackRestAt,
+          onSteps: (steps) => engine.show(stackPoseAt(steps)),
+        });
+      } else {
+        section.removeAttribute("data-stack-scrolly");
+      }
+    };
+    applyMode();
+    staticQuery?.addEventListener("change", applyMode);
+
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      staticQuery?.removeEventListener("change", applyMode);
       observer?.disconnect();
+      scrollRef.current?.destroy();
+      scrollRef.current = null;
       engine.destroy();
       engineRef.current = null;
     };
   }, []);
 
-  const choose = (index: number) => engineRef.current?.select(index);
+  // The lines draw themselves in the first time the machine comes into view.
+  // Already on screen when the page opens (a reload part way down), it is simply drawn.
+  useEffect(() => {
+    const figure = figureRef.current;
+    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!figure || reduced || typeof IntersectionObserver !== "function") return;
+    if (figure.getBoundingClientRect().top < window.innerHeight) return;
+    setDraw("pending");
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setDraw("drawing");
+      observer.disconnect();
+    }, { threshold: 0.25 });
+    observer.observe(figure);
+    return () => observer.disconnect();
+  }, []);
+
+  const choose = (index: number) => {
+    if (scrollRef.current) scrollRef.current.toSteps(stackStepsFor(index));
+    else engineRef.current?.select(index);
+  };
 
   const onPlateKeyDown = (event: KeyboardEvent<SVGGElement>, index: number) => {
     let next: number | null = null;
@@ -378,7 +488,7 @@ export function StackStory() {
     else if (event.key === "Enter" || event.key === " ") next = index;
     if (next === null) return;
     event.preventDefault();
-    plateRefs.current[next]?.focus();
+    plateRefs.current[next]?.focus({ preventScroll: true });
     choose(next);
   };
 
@@ -401,124 +511,125 @@ export function StackStory() {
 
   const { view, upright, bar, stub, plate, hole, pin } = RIG;
   const ringOuter = pin.ringRadius + pin.ringStroke / 2;
+  const ringInner = pin.ringRadius - pin.ringStroke / 2;
+  // Pinned, the plate the pin is in is the chosen tab; otherwise the last one chosen is.
+  const current = scrolled ? engaged : selected;
+  // Each line's place in the draw-in, in seconds.
+  const at = (seconds: number) => ({ "--d": `${seconds.toFixed(2)}s` }) as CSSProperties;
+  const centreX = (plate.left + plate.narrowRight) / 2;
+  const r = 5;
+  const frameOutline = [
+    `M${upright.x + r} 0H${bar.right - r}A${r} ${r} 0 0 1 ${bar.right} ${r}`,
+    `V${stub.bottom - r}A${r} ${r} 0 0 1 ${bar.right - r} ${stub.bottom}H${stub.x + r}A${r} ${r} 0 0 1 ${stub.x} ${stub.bottom - r}`,
+    `V${bar.height}H${upright.x + upright.width}`,
+    `V${view.height - r}A${r} ${r} 0 0 1 ${upright.x + upright.width - r} ${view.height}H${upright.x + r}A${r} ${r} 0 0 1 ${upright.x} ${view.height - r}`,
+    `V${r}A${r} ${r} 0 0 1 ${upright.x + r} 0Z`,
+  ].join("");
 
   return (
-    <section id="product" data-landing-theme="dark" data-landing-snap="start" className={styles.stackStory} aria-labelledby="stack-title">
-      <div ref={gridRef} className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
-        <div className={styles.stackHeader}>
-          <StoryMarker label={t("publicCompletion.header.stack")} dark />
-          <h2 id="stack-title">{t("publicCompletion.story.stack.title")}</h2>
-        </div>
-
-        <div ref={figureRef} className={styles.stackFigure}>
-          <svg
-            className={styles.rig}
-            viewBox={`0 0 ${view.width} ${view.height}`}
-            width={view.width}
-            height={view.height}
-            focusable="false"
-          >
-            <defs>
-              {/* Matte shading: a touch lighter along the top of the pin, darker underneath. */}
-              <linearGradient id="stack-pin-shade" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#ec3f46" />
-                <stop offset="0.55" stopColor="#e5262e" />
-                <stop offset="1" stopColor="#c9202a" />
-              </linearGradient>
-              {/* The hole's rim: a dark upper lip, a lit lower one, so it reads as cut into the face. */}
-              <linearGradient id="stack-hole-rim" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#000000" stopOpacity="0.55" />
-                <stop offset="0.5" stopColor="#000000" stopOpacity="0.1" />
-                <stop offset="1" stopColor="#f2f0e6" stopOpacity="0.3" />
-              </linearGradient>
-              <filter id="stack-plate-shadow" x="-10%" y="-60%" width="120%" height="260%">
-                <feGaussianBlur stdDeviation="3" />
-              </filter>
-            </defs>
-
-            {/* frame: upright, crossbar, return stub */}
-            <g aria-hidden>
-              <rect className={styles.rigFrame} x={upright.x} y={0} width={upright.width} height={view.height} rx={6} />
-              <rect className={styles.rigFrame} x={upright.x} y={0} width={bar.right - upright.x} height={bar.height} rx={6} />
-              <rect className={styles.rigFrame} x={stub.x} y={0} width={stub.width} height={stub.bottom} rx={6} />
-            </g>
-
-            {/* each plate's soft shadow on the one beneath, drawn before any face */}
-            <g aria-hidden>
-              {stackItems.map((item, index) => (
-                <rect
-                  key={item.key}
-                  className={styles.rigPlateShadow}
-                  x={plate.left + 5}
-                  y={plateTop(index) + plate.height - 1}
-                  width={plateRight(index) - plate.left - 10}
-                  height={10}
-                  rx={5}
-                  filter="url(#stack-plate-shadow)"
-                />
-              ))}
-            </g>
-
-            {/* the pin, drawn under the plates so its rod disappears inside one */}
-            <g ref={pinRef} className={styles.rigPin} data-stack-pin aria-hidden>
-              <rect className={styles.rigPinRod} x={0} y={-pin.rodHeight / 2} width={pin.rod + pin.ringStroke / 2} height={pin.rodHeight} rx={pin.rodHeight / 2} />
-              <circle className={styles.rigPinRing} cx={pin.rod + ringOuter} cy={0} r={pin.ringRadius} />
-            </g>
-
-            {/* the plates: each one a tab the pin can be sent to */}
-            <g role="tablist" aria-label={t("publicCompletion.story.stack.tabLabel")} aria-orientation="vertical">
-              {stackItems.map((item, index) => {
-                const top = plateTop(index);
-                const right = plateRight(index);
-                const width = right - plate.left;
-                const isSelected = selected === index;
-                return (
-                  <g
-                    key={item.key}
-                    ref={(node) => { plateRefs.current[index] = node; }}
-                    id={`stack-tab-${index}`}
-                    role="tab"
-                    aria-selected={isSelected}
-                    aria-controls="stack-panel"
-                    aria-label={item.label}
-                    tabIndex={isSelected ? 0 : -1}
-                    data-stack-plate={index}
-                    className={cn(styles.rigPlateGroup, engaged === index && styles.rigPlateGroupLit, seated && engaged === index && styles.rigPlateGroupSeated)}
-                    onClick={() => choose(index)}
-                    onKeyDown={(event) => onPlateKeyDown(event, index)}
-                  >
-                    {/* the whole pitch answers a tap, not just the face */}
-                    <rect className={styles.rigPlateHit} x={plate.left - 6} y={top - (plate.pitch - plate.height) / 2} width={width + 18} height={plate.pitch} />
-                    <rect className={styles.rigPlateSide} x={plate.left} y={top + RIG.plateDepth} width={width} height={plate.height} rx={7} />
-                    <rect className={styles.rigPlate} x={plate.left} y={top} width={width} height={plate.height} rx={7} />
-                    <rect className={styles.rigPlateEdge} x={plate.left + 7} y={top + 1} width={width - 14} height={1.5} rx={0.75} />
-                    {/* The rig keeps the mark's orientation in Arabic, so the label still
-                        sits at the plate's open left end; RTL flips "start" to the right. */}
-                    <text className={styles.rigPlateLabel} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central" textAnchor={locale === "ar" ? "end" : "start"}>
-                      {item.label}
-                    </text>
-                    <circle className={styles.rigHole} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
-                    <circle className={styles.rigHoleRim} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius} />
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
-        </div>
-
-        <div className={styles.stackCopy}>
-          <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${selected}`} className={styles.stackStates}>
-            {stackItems.map((item, index) => (
-              <div key={item.key} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
-                <h3>{item.label}</h3>
-                <p>{item.copy}</p>
-                <ul className={styles.stackCaps}>
-                  {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
-                </ul>
-              </div>
-            ))}
+    <section
+      ref={sectionRef}
+      id="product"
+      data-landing-theme="dark"
+      data-landing-snap="start"
+      data-landing-stack
+      className={styles.stackStory}
+      style={{ "--stack-steps": STACK_SCROLL_STEPS } as CSSProperties}
+      aria-labelledby="stack-title"
+    >
+      <div ref={stageRef} className={styles.stackStage}>
+        <div className={styles.stackGrid} onFocus={onFocus} onBlur={onBlur}>
+          <div className={styles.stackHeader}>
+            <StoryMarker label={t("publicCompletion.header.stack")} dark />
+            <h2 id="stack-title">{t("publicCompletion.story.stack.title")}</h2>
           </div>
-          <p className={styles.stackNote}>{t("publicCompletion.story.stack.note")}</p>
+
+          <div ref={figureRef} className={styles.stackFigure}>
+            {/* A line drawing, as on the sign-in pages: the frame, the plates and the
+                pin in outline, with faint construction lines for the pin's lanes. */}
+            <svg
+              className={cn(styles.rig, draw === "pending" && styles.rigPending, draw === "drawing" && styles.rigDrawing)}
+              viewBox={`0 0 ${view.width} ${view.height}`}
+              width={view.width}
+              height={view.height}
+              focusable="false"
+            >
+              {/* construction: the stack's centre line, and each plate's lane out to where the pin waits */}
+              <g aria-hidden className={styles.rigGuides}>
+                <path className={styles.rigGuide} d={`M${centreX} ${bar.height + 10}V${view.height}`} strokeDasharray="3 7" />
+                {stackItems.map((item, index) => (
+                  <path key={item.key} className={styles.rigGuide} d={`M${plateRight(index) + 6} ${plateCentre(index)}H${view.width}`} strokeDasharray="2 6" />
+                ))}
+              </g>
+
+              {/* frame: upright, crossbar and return stub as one outline, the mark's own shape */}
+              <g aria-hidden>
+                <path className={cn(styles.rigLine, styles.rigFrame)} pathLength={1} style={at(0)} d={frameOutline} />
+              </g>
+
+              {/* the pin, drawn under the plates so its rod disappears inside one */}
+              <g ref={pinRef} className={styles.rigPin} data-stack-pin aria-hidden>
+                <path className={cn(styles.rigLine, styles.rigPinPart)} pathLength={1} style={at(0.9)} d={outline(0, -pin.rodHeight / 2, pin.rod + pin.ringStroke / 2, pin.rodHeight, pin.rodHeight / 2)} />
+                <path className={cn(styles.rigLine, styles.rigPinPart)} pathLength={1} style={at(0.95)} d={circle(pin.rod + ringOuter, 0, ringOuter)} />
+                <path className={cn(styles.rigLine, styles.rigPinInner)} pathLength={1} style={at(1.05)} d={circle(pin.rod + ringOuter, 0, ringInner)} />
+                <circle className={cn(styles.rigFade, styles.rigPinDot)} style={at(1.2)} cx={pin.rod + ringOuter} cy={0} r={3.2} />
+              </g>
+
+              {/* the plates: each one a tab the pin can be sent to */}
+              <g role="tablist" aria-label={t("publicCompletion.story.stack.tabLabel")} aria-orientation="vertical">
+                {stackItems.map((item, index) => {
+                  const top = plateTop(index);
+                  const right = plateRight(index);
+                  const width = right - plate.left;
+                  const isCurrent = current === index;
+                  const delay = 0.3 + index * 0.07;
+                  return (
+                    <g
+                      key={item.key}
+                      ref={(node) => { plateRefs.current[index] = node; }}
+                      id={`stack-tab-${index}`}
+                      role="tab"
+                      aria-selected={isCurrent}
+                      aria-controls="stack-panel"
+                      aria-label={item.label}
+                      tabIndex={isCurrent ? 0 : -1}
+                      data-stack-plate={index}
+                      className={cn(styles.rigPlateGroup, engaged === index && styles.rigPlateGroupLit, seated && engaged === index && styles.rigPlateGroupSeated)}
+                      onClick={() => choose(index)}
+                      onKeyDown={(event) => onPlateKeyDown(event, index)}
+                    >
+                      {/* the whole pitch answers a tap, not just the face */}
+                      <rect className={styles.rigPlateHit} x={plate.left - 6} y={top - (plate.pitch - plate.height) / 2} width={width + 18} height={plate.pitch} />
+                      <path className={cn(styles.rigLine, styles.rigPlateSide)} pathLength={1} style={at(delay + 0.05)} d={outline(plate.left, top + RIG.plateDepth, width, plate.height, 7)} />
+                      <path className={cn(styles.rigLine, styles.rigPlate)} pathLength={1} style={at(delay)} d={outline(plate.left, top, width, plate.height, 7)} />
+                      {/* The rig keeps the mark's orientation in Arabic, so the label still
+                          sits at the plate's open left end; RTL flips "start" to the right. */}
+                      <text className={cn(styles.rigFade, styles.rigPlateLabel)} style={at(delay + 0.25)} x={plate.left + 18} y={top + plate.height / 2} dominantBaseline="central" textAnchor={locale === "ar" ? "end" : "start"}>
+                        {item.label}
+                      </text>
+                      <path className={cn(styles.rigLine, styles.rigHole)} pathLength={1} style={at(delay + 0.2)} d={circle(right - hole.inset, top + plate.height / 2, hole.radius)} />
+                      <circle className={cn(styles.rigFade, styles.rigHoleDot)} style={at(delay + 0.4)} cx={right - hole.inset} cy={top + plate.height / 2} r={hole.radius - 3} />
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+          </div>
+
+          <div className={styles.stackCopy}>
+            <div id="stack-panel" role="tabpanel" aria-labelledby={`stack-tab-${current}`} className={styles.stackStates}>
+              {stackItems.map((item, index) => (
+                <div key={item.key} className={cn(styles.stackState, engaged === index && styles.stackStateActive)} aria-hidden={engaged !== index}>
+                  <h3>{item.label}</h3>
+                  <p>{item.copy}</p>
+                  <ul className={styles.stackCaps}>
+                    {item.caps.map((cap) => <li key={cap}>{cap}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <p className={styles.stackNote}>{t("publicCompletion.story.stack.note")}</p>
+          </div>
         </div>
       </div>
     </section>

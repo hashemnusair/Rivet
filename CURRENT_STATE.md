@@ -1,5 +1,30 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — The stack pinned to the scroll, as a line drawing
+
+Elias asked for the landing's stack machine in the sign-in drawings' line style
+("holographic svg"), and for that section only: the first scroll down from the
+film snaps onto the machine, and the pin goes down the plates as the page
+scrolls. This reverses the 9 Sep "no scrollytelling" stack on his request.
+
+- `StackStory` (landing-story.tsx) draws the rig in outline on the sign-in grid:
+  the frame as one mark-shaped outline, plates and the pin in outline (plates
+  filled with the section's night so the rod still hides inside one), dashed
+  lanes and centre line; it draws itself in the first time it comes into view.
+- `stack-scroll.ts`: from the film, the first wheel/swipe/key down glides onto
+  the machine (held glide, trailing momentum absorbed so it lands on plate 1);
+  up from plate 1 glides back to the film. The stage is sticky; the run is
+  `STACK_SCROLL_STEPS` × 40svh and `stackPoseAt` maps it to the pin (rests
+  seated around each plate, moves between); a scroll that stops mid-move
+  settles into the nearer seat (`stackRestAt`). Plate clicks glide to the
+  plate. `landing-motion.tsx` leaves the film-to-stack stretch to it.
+- Reduced motion and screens under 560px tall keep the tappable machine with
+  no pinning or gliding.
+- Checked on the mock production build with scripted wheel, trackpad-style
+  momentum and CDP touch swipes at 1440×900 and 390×844 (lands exactly on the
+  stack start, plate by plate, back to the film), screencasts of the glide and
+  draw-in, 64 landing/Arabic/RTL browser cases, 2,069 unit tests, lint.
+
 ## 10 October 2026 — Smooth landing → sign-in transition and steady doors (deployed)
 
 **Follow-up (same evening):** Elias, testing live, still saw "bars going over the
