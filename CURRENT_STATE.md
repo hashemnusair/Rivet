@@ -22,6 +22,13 @@ unchanged scroll/viewport assertion. All 11 operations browser tests pass locall
 including supplier-payment posting/reversal in mock mode. This follow-up changes
 test readiness only; the deployed application source remains unchanged.
 
+**Final verification:** all 13 jobs passed for follow-up `ad18a2b` in
+[main CI 38069565212](https://github.com/hashemnusair/Rivet/actions/runs/38069565212).
+Vercel Production `2JY35PBkF8v5FN7T98qp3Gpobyu8` is READY at that revision and
+assigned to all production domains. An initial `git_info_fail` was resolved by
+redeploying the exact same commit. The live workspace smoke check had no browser
+errors, no horizontal overflow and no remaining curtain.
+
 Local main was fast-forwarded without losing the font picker. Its exact additions
 and all 11 excluded untracked artifact entries were checked against saved copies.
 Every local branch commit is reachable from a remote ref. The font picker and

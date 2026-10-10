@@ -8,6 +8,10 @@ the live signed-in workspace opens and its loading curtain clears. See the newes
 CURRENT_STATE.md entry for local-work preservation and the subsequent test-only
 supplier-dialog readiness correction.
 
+The final test-only follow-up `ad18a2b` passed all 13 jobs in main CI `38069565212`;
+Production deployment `2JY35PBkF8v5FN7T98qp3Gpobyu8` is READY and assigned to the
+production domains. Its application source is identical to merge `316a337`.
+
 The integrated motion source preserves current main's signup night treatment and
 interactive sign-in machine. This is frontend-only; no Convex deployment or data
 migration is required. Read the PR #8 integration entry in CURRENT_STATE.md.
