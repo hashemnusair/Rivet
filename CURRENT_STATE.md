@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## 10 October 2026 — Smooth landing → sign-in transition and steady doors (local, not deployed)
+## 10 October 2026 — Smooth landing → sign-in transition and steady doors (deployed)
 
 Elias reported the landing → sign-in sheet as glitchy on desktop and phone ("the
 bars"), white bars above and below the night pages on his phone, the door heading
@@ -37,11 +37,16 @@ first open. Frontend only; no Convex, auth rule or billing change.
   public-experience/host-routing/role-routing/Arabic/RTL (66) pass. The Mac
   sign-in references (`pass-7-login*`, `pass-4-login-member-*`,
   `pass-7-invitation-complete-*`) were re-captured and inspected.
-- **Owed before merge:** five Linux 390px references move with the new
-  heading anchor (`pass-7-login-390-linux`, `pass-7-login-gym-390-linux`,
-  `pass-7-login-admin-390-linux`, `pass-4-login-member-390-linux`,
-  `pass-7-invitation-complete-390-linux`) and must be re-captured on a Linux
-  runner, then inspected. Prerender of a cross-host door stays desktop-only (no
+- **Release:** pushed to main as `bfa9619` at Elias's request; Vercel
+  Production deployed it. Live re-measure (same script): phone profile at 4×,
+  max frame 134 → 33 ms, jank ~440 → 50–70 ms; the live door HTML now carries
+  `id="login-email"`. Main CI failed only on the five expected Linux 390px
+  sign-in references. The Linux runner also showed the bar's "Create a member
+  account" wrapping below ~390px on the chooser and member door only, which
+  dropped their heading a row: `5f256b6` fixes the bar's height (headings level
+  at 320–1440px). The five `-linux` references were re-captured on a throwaway
+  push-triggered workflow (`tmp/linux-signin-refs`, verified in the same job),
+  inspected, and committed. Prerender of a cross-host door stays desktop-only (no
   hover on phones, no speculation rules in Safari); warming door hosts' assets
   from the chooser would need the CSP `connect-src` widened, so it was not done.
 - Launch entry `web-perf-start` (port 3620, `NEXT_DIST_DIR=.next-playwright/perf`)
