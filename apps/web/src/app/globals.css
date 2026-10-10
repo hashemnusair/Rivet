@@ -657,16 +657,31 @@ label[for] {
    component utilities (the Input's h-9, the Button's disabled opacity). */
 /* Sign-in fields: taller, with a quiet focus (a firm border and a soft halo)
    rather than the app's offset outline doubling the border. */
-[data-login] input:not([type="checkbox"]):not([type="radio"]):focus-visible {
+[data-login] input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+[data-night-form] input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+[data-night-form] textarea:focus-visible {
   outline: none;
   border-color: var(--color-ink);
   box-shadow: 0 0 0 3px rgb(242 240 230 / 0.1);
 }
 
 /* Standard-height fields (the shared Input's h-9) stand taller on sign-in. */
-[data-login] input.h-9 {
+[data-login] input.h-9,
+[data-night-form] input.h-9 {
   height: 2.75rem;
   font-size: 14px;
+}
+
+/* The gym application (`data-night-form`) takes the same fields. Its
+   placeholders are examples a visitor reads, so they keep readable contrast
+   on the night surface. */
+[data-night-form] textarea {
+  padding-block: 0.7rem;
+  font-size: 14px;
+}
+
+[data-night-form] ::placeholder {
+  color: var(--color-ink-3);
 }
 
 /* An unfilled form's submit reads as waiting, not broken: an outline until

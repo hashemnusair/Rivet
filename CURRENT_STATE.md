@@ -115,6 +115,28 @@ the page moved; nothing is committed, pushed or deployed yet.
   On the live `/login` of `app`, `dashboard`, `www` and `platform` a headless
   Chromium moved the pin, sank the rope under the lightest plate and pulled it
   back, with no page errors. Frontend only; no Convex deploy is owed.
+- **The gym application (`/signup`) in the night look** (Hashem, 10 October).
+  `PublicDocumentPage` and `CinematicHeader`
+  take `tone="night"` (the landing's surface, palette and bar); only `/signup`
+  passes it, so the terms, privacy policy and signed-out member pages keep the
+  paper bar. The page is one axis: what a row is about on the start side (the
+  title, then each question with its note, which stays in view beside a tall
+  row), the row itself beside it. Contact and gym fields sit together under
+  "Who should we contact?" in their old tab order; "Which plan fits?" holds the
+  billing switch and the four plans as a 2×2 of hairline panels, the chosen
+  one carrying a red pin (ring and dot, as in the mark) instead of a tick.
+  Copy, fields, roles, query handling and the submitted payload are unchanged.
+  Two behaviour fixes the taller page needed: a failed check moves focus to
+  the first field that needs attention (the button is a screen below them),
+  and the receipt scrolls to its top and takes focus. Fields use the sign-in
+  treatment through `[data-night-form]` in `globals.css`, with placeholders at
+  readable contrast (ink-3; the sign-in pages still use ink-4, about 2.6:1).
+  Verified: unit suites, lint, all 13 browser journeys that touch `/signup`
+  (six widths, English), Arabic at 1440 and 390 with no overflow.
+  `pass-7-signup-1440.png` and `pass-7-signup-390.png` were re-captured on
+  macOS and `pass-7-signup-390-linux.png` on GitHub's Ubuntu runner by a
+  throwaway `tmp/signup-night-refs` run (`--update-snapshots=changed`, so only
+  references that no longer matched were rewritten).
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of

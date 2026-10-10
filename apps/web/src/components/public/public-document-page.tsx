@@ -13,22 +13,29 @@ import { cn } from "@/lib/utils/cn";
  * surface the open menu dims and locks, restored when the menu closes or the
  * page changes. A page meant for signed-out visitors only (the application,
  * the doors) sends a signed-in visitor on to their own area.
+ *
+ * `tone="night"` gives the page the landing's night surface, palette and bar
+ * (the application, which a visitor reaches straight from the landing's
+ * pricing); the reading pages keep the paper one.
  */
 export function PublicDocumentPage({
   path,
   audience = "gym",
+  tone = "paper",
   signedOutOnly = false,
   children,
 }: {
   path: string;
   audience?: "gym" | "member";
+  tone?: "paper" | "night";
   signedOutOnly?: boolean;
   children: ReactNode;
 }) {
+  const night = tone === "night";
   return (
-    <div className={cn(styles.pageShell, "min-h-screen bg-paper text-ink")}>
+    <div className={cn(styles.pageShell, night && [styles.nightPage, "night-tokens marketing-body"], "min-h-screen bg-paper text-ink")}>
       {signedOutOnly ? <SignedInGuard /> : null}
-      <CinematicHeader page="document" currentPath={path} audience={audience} />
+      <CinematicHeader page="document" currentPath={path} audience={audience} tone={tone} />
       <div data-landing-sheet className={styles.pageSheet}>
         <main className={styles.documentMain}>{children}</main>
         <PublicFooter />
