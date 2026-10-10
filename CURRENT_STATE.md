@@ -255,6 +255,13 @@ the page moved; nothing is committed, pushed or deployed yet.
   macOS and `pass-7-signup-390-linux.png` on GitHub's Ubuntu runner by a
   throwaway `tmp/signup-night-refs` run (`--update-snapshots=changed`, so only
   references that no longer matched were rewritten).
+  **Released:** `20e4b6c` on `main`. Vercel Production
+  `6cq2ezkHAX9KMLSqxF2d1v43Hsu7` completed for that commit and all 13 jobs
+  passed in [CI run 38067003271](https://github.com/hashemnusair/Rivet/actions/runs/38067003271).
+  `rivetjo.com/signup` (redirected to `www`) serves the night page with no page
+  errors or overflow at 1440 and 390, and `?plan=Growth&interval=annual` still
+  preselects the plan and cadence; the form was not submitted on Production.
+  The temporary branch was deleted. Frontend only; no Convex deploy is owed.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
