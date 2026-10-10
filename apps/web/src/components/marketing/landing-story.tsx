@@ -224,17 +224,6 @@ export function stackPoseAt(steps: number): PinPose {
   return poseAlong(points, smoothstep((local - edge) / (1 - STACK_SCROLL.hold)) * pathLength(points));
 }
 
-/** Where a scroll that stopped with the pin between plates comes to rest, in steps: the nearer seat. Null when the pin is seated. */
-export function stackRestAt(steps: number): number | null {
-  const at = steps - STACK_SCROLL.lead;
-  if (at <= 0 || at >= PLATE_COUNT - 1) return null;
-  const from = Math.floor(at);
-  const local = at - from;
-  const edge = STACK_SCROLL.hold / 2;
-  if (local <= edge || local >= 1 - edge) return null;
-  return STACK_SCROLL.lead + (local < 0.5 ? from + edge : from + 1 - edge);
-}
-
 /** Where the pin rests seated in a plate, in steps: chosen plates scroll here. */
 export const stackStepsFor = (index: number) => STACK_SCROLL.lead + index;
 
@@ -436,7 +425,6 @@ export function StackStory() {
           section,
           stage,
           totalSteps: STACK_SCROLL_STEPS,
-          restAt: stackRestAt,
           onSteps: (steps) => engine.show(stackPoseAt(steps)),
         });
       } else {
@@ -531,7 +519,6 @@ export function StackStory() {
       ref={sectionRef}
       id="product"
       data-landing-theme="dark"
-      data-landing-snap="start"
       data-landing-stack
       className={styles.stackStory}
       style={{ "--stack-steps": STACK_SCROLL_STEPS } as CSSProperties}

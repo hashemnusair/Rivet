@@ -7,7 +7,6 @@ import {
   STACK_SCROLL,
   STACK_SCROLL_STEPS,
   stackPoseAt,
-  stackRestAt,
   stackStepsFor,
   clearTip,
   moveDuration,
@@ -155,18 +154,6 @@ describe("stack pinned to the scroll", () => {
       expect(pose.y).toBeGreaterThanOrEqual(previous.y - 0.001);
       previous = pose;
     }
-  });
-
-  it("finishes a scroll that stopped between plates into the nearer seat", () => {
-    expect(stackRestAt(stackStepsFor(2))).toBeNull();
-    expect(stackRestAt(stackStepsFor(2) + edge / 2)).toBeNull();
-    expect(stackRestAt(stackStepsFor(2) + 0.3)).toBeCloseTo(stackStepsFor(2) + edge);
-    expect(stackRestAt(stackStepsFor(2) + 0.7)).toBeCloseTo(stackStepsFor(3) - edge);
-    expect(stackRestAt(0)).toBeNull();
-    expect(stackRestAt(STACK_SCROLL_STEPS)).toBeNull();
-    const rest = stackRestAt(stackStepsFor(0) + 0.45);
-    expect(rest).not.toBeNull();
-    expect(stackPoseAt(rest ?? 0)).toEqual(seatedPose(0));
   });
 });
 

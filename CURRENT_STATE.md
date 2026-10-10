@@ -1,5 +1,13 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — Stack snapping removed (same evening)
+
+After trying it live, Elias asked to remove "the whole snapping thing" and chose
+the stack's snapping only: the film → machine glide, the glide back up and the
+between-plate settle are gone, and the stack section no longer carries a settle
+edge. The pinned stage, the pin following the scroll, plate clicks scrolling to
+their plate, the line drawing and the landing's other section settles stay.
+
 ## 10 October 2026 — The stack pinned to the scroll, as a line drawing
 
 Elias asked for the landing's stack machine in the sign-in drawings' line style

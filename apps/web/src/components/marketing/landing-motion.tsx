@@ -22,7 +22,7 @@ export function LandingMotionController() {
     const snapStarts = Array.from(document.querySelectorAll<HTMLElement>("[data-landing-snap=start]"));
     const snapEnds = Array.from(document.querySelectorAll<HTMLElement>("[data-landing-snap=end]"));
     const header = document.querySelector<HTMLElement>("[data-landing-header]");
-    // From the film to the end of the stack's run the stack moves the page itself (stack-scroll.ts).
+    // From the film to the end of the stack's run the page is never settled: the stack scrolls freely.
     const stack = document.querySelector<HTMLElement>("[data-landing-stack]");
     const stackOwnsScroll = () => Boolean(stack?.hasAttribute("data-stack-scrolly")) && (stack?.getBoundingClientRect().bottom ?? 0) > window.innerHeight + 1;
     let lastY = window.scrollY;
