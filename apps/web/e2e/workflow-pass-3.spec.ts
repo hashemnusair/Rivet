@@ -123,6 +123,11 @@ test("branch work dialogs fit a short phone viewport", async ({ page }) => {
     await page.getByRole("button", { name: button, exact: true }).click();
     const dialog = page.getByRole("dialog", { name: title, exact: true });
     await expect(dialog).toBeVisible();
+    if (title === "Record supplier payment") {
+      // The cash-shift result adds a taller notice after the dialog opens.
+      // Scroll only once that async content has settled, as a user would.
+      await expect(dialog.getByText(/^(Open cash shift at|No cash shift is open at)/)).toBeVisible();
+    }
     const submit = dialog.getByRole("button", { name: action, exact: true });
     await submit.scrollIntoViewIfNeeded();
     await expect(submit).toBeInViewport();

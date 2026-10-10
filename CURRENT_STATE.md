@@ -1,5 +1,34 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — PR #8 merged and deployed
+
+PR #8 merged as `316a337986c9dd923db83be4a5d68ee83ef1b79b`, with exactly the
+source tree tested at `be2c4a4`. All 13 jobs passed in
+[PR CI 38068415483](https://github.com/hashemnusair/Rivet/actions/runs/38068415483):
+2,056 unit/component tests and 217 browser cases passed (one dev-indicator request
+needed a retry; that case also passed locally). Fourteen provider/credential-gated
+browser cases were skipped as designed. No assertion tolerance was relaxed.
+
+Vercel Production `37iDcx6H5eVZ3toT4taKngyCNz3B` is READY at merge `316a337`.
+The existing signed-in browser session reached the live gym workspace and the
+curtain cleared. An anonymous HTTP request to signup returned 200 with the night
+header and application form. The signed-in browser's public-page guard correctly
+sent it back to its workspace; no production form or payment was submitted.
+
+The automatic main run surfaced a timing race in the existing short-phone dialog
+test: it scrolled before the cash-shift result changed the supplier-payment
+dialog's height. The test now waits for the open/closed shift notice before the
+unchanged scroll/viewport assertion. All 11 operations browser tests pass locally,
+including supplier-payment posting/reversal in mock mode. This follow-up changes
+test readiness only; the deployed application source remains unchanged.
+
+Local main was fast-forwarded without losing the font picker. Its exact additions
+and all 11 excluded untracked artifact entries were checked against saved copies.
+Every local branch commit is reachable from a remote ref. The font picker and
+historical Jev/import artifacts remain local by instruction. No Convex deployment,
+schema migration, provider configuration or historical frontend-handoff edit was
+needed. PR #7 was also merged earlier as `e16025c`.
+
 ## 10 October 2026 — PR #8 integration and navigation regression checks
 
 Hashem approved the motion preview and authorized merging after conflict resolution

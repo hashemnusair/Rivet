@@ -2,6 +2,12 @@
 
 ## PR #8 — frontend motion release, 10 October 2026
 
+Released as `316a337` after all 13 checks passed in PR CI run `38068415483`.
+Vercel Production `37iDcx6H5eVZ3toT4taKngyCNz3B` is READY at that revision;
+the live signed-in workspace opens and its loading curtain clears. See the newest
+CURRENT_STATE.md entry for local-work preservation and the subsequent test-only
+supplier-dialog readiness correction.
+
 The integrated motion source preserves current main's signup night treatment and
 interactive sign-in machine. This is frontend-only; no Convex deployment or data
 migration is required. Read the PR #8 integration entry in CURRENT_STATE.md.
