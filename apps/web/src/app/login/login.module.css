@@ -216,9 +216,12 @@
   .column { padding: 2rem 2.5rem; }
 }
 
+/* One height on every sign-in page. On a narrow phone the links can take two
+   lines; the second hangs into the empty space above the heading instead of
+   pushing it down, so the chooser and the doors keep their heading level. */
 .bar {
   display: flex;
-  min-height: 2.5rem;
+  height: 2.5rem;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -228,9 +231,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  align-self: flex-start;
   justify-content: flex-end;
-  gap: 0.4rem 1.25rem;
+  gap: 0 1.25rem;
   margin-inline-start: auto;
+  padding-top: 0.125rem;
 }
 
 .barLink {
