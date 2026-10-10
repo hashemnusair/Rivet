@@ -1,5 +1,52 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — Smooth landing → sign-in transition and steady doors (local, not deployed)
+
+Elias reported the landing → sign-in sheet as glitchy on desktop and phone ("the
+bars"), white bars above and below the night pages on his phone, the door heading
+jumping below a "Back to sign in" link, and slow, jumpy email/password fields on
+first open. Frontend only; no Convex, auth rule or billing change.
+
+- **Main-thread stalls:** the drawing measured every door's strokes with
+  `getPointAtLength` in idle callbacks *during* the sheet: four 100–145 ms frames
+  on a 4× throttled phone profile. `sign-in-art-geometry.ts` now flattens the
+  path data in JS (within 0.22 viewBox units of Chromium's own measure) and
+  nothing is measured in the background. Phones (no art panel) skip the
+  drawing's morph and draw-in work entirely.
+- **The bars:** plates rack with transforms instead of `clip-path` (compositor
+  only; the face wipes up in its row while its grid counter-moves, so the grid
+  stays put). The hairline seams between resting plates are gone. The sheet's
+  drawing is its own layer, is fetched when the page is idle (phones had no hover
+  to fetch it on), and lands on the panel by centre and one even scale.
+- **Measured** (headless Chromium, landing → `/login`, rAF gaps + Long
+  Animation Frames): phone profile at 4× CPU, live 4 frames over 50 ms (max
+  134 ms, ~440 ms total jank) → 0 over 50 ms (max ~50 ms, ~70 ms); desktop at 4×,
+  max 133 → 67 ms, 495 → 128 ms. Layout passes during the sheet 371 → 7.
+- **Doors:** every `LoginLayout` page starts its heading at one height
+  (`.main`, 25svh desktop / 14svh phone); "Back to sign in" is absolutely placed
+  above it. Live door HTML carried only the loading mark; the password form now
+  renders before Clerk loads (submit waits for `useClerk().loaded`, typed or
+  autofilled values from before hydration are adopted) and gives way only if
+  Clerk reports a session.
+- **Night edges:** `html`/`body` turn `#0b0a08` when a `[data-night-page]` root
+  is present (landing, sign-in, night application); `useNightChrome` sets
+  `theme-color` night on those pages and back to the paper after.
+- **Tests:** typecheck, lint + secret audit, 2,065 unit tests (new: geometry,
+  door SSR/Clerk hand-over, pre-hydration typing) pass. Browser, on the approved
+  mock production build: page-motion 5/5, Pass 4/7 sign-in captures, and
+  public-experience/host-routing/role-routing/Arabic/RTL (66) pass. The Mac
+  sign-in references (`pass-7-login*`, `pass-4-login-member-*`,
+  `pass-7-invitation-complete-*`) were re-captured and inspected.
+- **Owed before merge:** five Linux 390px references move with the new
+  heading anchor (`pass-7-login-390-linux`, `pass-7-login-gym-390-linux`,
+  `pass-7-login-admin-390-linux`, `pass-4-login-member-390-linux`,
+  `pass-7-invitation-complete-390-linux`) and must be re-captured on a Linux
+  runner, then inspected. Prerender of a cross-host door stays desktop-only (no
+  hover on phones, no speculation rules in Safari); warming door hosts' assets
+  from the chooser would need the CSP `connect-src` widened, so it was not done.
+- Launch entry `web-perf-start` (port 3620, `NEXT_DIST_DIR=.next-playwright/perf`)
+  serves the mock production build for these measurements.
+
 ## 10 October 2026 — PR #8 merged and deployed
 
 PR #8 merged as `316a337986c9dd923db83be4a5d68ee83ef1b79b`, with exactly the

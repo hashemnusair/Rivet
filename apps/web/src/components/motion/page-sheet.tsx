@@ -6,7 +6,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyn
 import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import { Plates, platesMs } from "./plates";
-import { IDLE_SHEET, sheetRoute, sheetStore, type SheetDock } from "./sheet-store";
+import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, type SheetDock } from "./sheet-store";
 import styles from "./page-sheet.module.css";
 
 /*
@@ -21,6 +21,20 @@ import styles from "./page-sheet.module.css";
 
 const loadDrawing = () => import("@/app/login/sign-in-art");
 const SheetDrawing = lazy(() => loadDrawing().then((module) => ({ default: module.DrawingLoop })));
+
+let drawingPrefetched = false;
+
+/**
+ * Fetches the drawing once a page with sheet links is idle. A phone has no
+ * hover to fetch it on, so without this the first sheet would play without
+ * its drawing and show it late.
+ */
+function prefetchDrawing() {
+  if (drawingPrefetched) return;
+  drawingPrefetched = true;
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(() => void loadDrawing(), { timeout: 4000 });
+  else window.setTimeout(() => void loadDrawing(), 1500);
+}
 
 /** Matches `--rack-*` and `--lift-*` in the stylesheet. */
 const RACK_MS = platesMs(400, 24);
@@ -81,9 +95,11 @@ export function startSheet(href: string, source?: Element): boolean {
 /**
  * A link that goes by sheet when it can and is an ordinary `Link` otherwise.
  * Its own `onClick` runs first and may cancel the navigation; new-tab and
- * modified clicks are the browser's. The drawing is fetched on hover or focus.
+ * modified clicks are the browser's. The drawing is fetched once the page is
+ * idle, or sooner on hover or focus.
  */
 export function SheetLink({ href, onClick, onPointerEnter, onFocus, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  useEffect(prefetchDrawing, []);
   return (
     <Link
       {...props}
@@ -190,9 +206,15 @@ export function PageSheet() {
       const timer = window.setTimeout(settle, LIFT_MS);
       return () => window.clearTimeout(timer);
     }
+    // Both copies sit centred and evenly scaled in their boxes, so the lines land
+    // by their centre and one scale, never stretched, wherever the panel ends.
     const from = box.getBoundingClientRect();
     const to = dock.getBoundingClientRect();
-    const move = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})`;
+    const fit = (rect: DOMRect) => Math.min(rect.width / ART_VIEWBOX.width, rect.height / ART_VIEWBOX.height);
+    const scale = fit(to) / fit(from);
+    const x = to.left + to.width / 2 - from.left - (from.width / 2) * scale;
+    const y = to.top + to.height / 2 - from.top - (from.height / 2) * scale;
+    const move = `translate(${x}px, ${y}px) scale(${scale})`;
     const landing = box.animate([{ transform: "none" }, { transform: move }], { duration: DOCK_MS, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" });
     const place = window.setTimeout(() => {
       landed.current.placed = true;

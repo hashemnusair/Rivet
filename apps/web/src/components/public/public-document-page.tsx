@@ -3,6 +3,7 @@ import { CinematicHeader } from "@/components/marketing/cinematic-header";
 import styles from "@/components/marketing/landing-cinematic.module.css";
 import { PublicFooter } from "@/components/public/public-footer";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
+import { NightChrome } from "@/components/public/use-night-chrome";
 import { cn } from "@/lib/utils/cn";
 
 /**
@@ -33,8 +34,9 @@ export function PublicDocumentPage({
 }) {
   const night = tone === "night";
   return (
-    <div className={cn(styles.pageShell, night && [styles.nightPage, "night-tokens marketing-body"], "min-h-screen bg-paper text-ink")}>
+    <div data-night-page={night ? "" : undefined} className={cn(styles.pageShell, night && [styles.nightPage, "night-tokens marketing-body"], "min-h-screen bg-paper text-ink")}>
       {signedOutOnly ? <SignedInGuard /> : null}
+      {night ? <NightChrome /> : null}
       <CinematicHeader page="document" currentPath={path} audience={audience} tone={tone} />
       <div data-landing-sheet className={styles.pageSheet}>
         <main className={styles.documentMain}>{children}</main>

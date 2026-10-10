@@ -9,6 +9,7 @@ import { createProfileCompletionSchema } from "./profile-completion.client";
 import { createInvitationAccountSchema, invitationErrorMessage } from "./accept-invitation/accept-invitation.client";
 
 vi.mock("@clerk/nextjs", () => ({
+  useClerk: () => ({ loaded: true }),
   useSignIn: () => ({
     signIn: null,
     errors: { fields: { identifier: null, password: null, code: null } },

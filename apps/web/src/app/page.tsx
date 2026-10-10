@@ -28,6 +28,7 @@ import { ScrollProgress } from "@/components/marketing/scroll-progress";
 import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
+import { useNightChrome } from "@/components/public/use-night-chrome";
 import { Button } from "@/components/ui/button";
 import { SheetLink } from "@/components/motion/page-sheet";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
@@ -51,6 +52,7 @@ export default function LandingPage() {
   const pricingPlans = resolvePublicPricingPlans(saasPlans);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const liveGyms = experienceStatus === "ready" ? marketplaceGyms : [];
+  useNightChrome();
 
   // Signed in, every call to action on the page leads to the visitor's own
   // area and nothing offers them a sign-in or an application. Above the fold
@@ -62,7 +64,7 @@ export default function LandingPage() {
   const signedOut = viewer.status === "signed-out";
 
   return (
-    <div className={`${styles.pageShell} ${styles.nightPage} night-tokens marketing-body min-h-screen bg-paper text-ink`}>
+    <div data-night-page className={`${styles.pageShell} ${styles.nightPage} night-tokens marketing-body min-h-screen bg-paper text-ink`}>
       <SignedInGuard />
       <LandingMotionController />
       <ScrollProgress />

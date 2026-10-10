@@ -43,7 +43,9 @@
     ".next-playwright/classes-pt/types/**/*.ts",
     ".next-playwright/classes-pt/dev/types/**/*.ts",
     ".next-playwright/finops/types/**/*.ts",
-    ".next-playwright/finops/dev/types/**/*.ts"
+    ".next-playwright/finops/dev/types/**/*.ts",
+    ".next-playwright/perf/types/**/*.ts",
+    ".next-playwright/perf/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

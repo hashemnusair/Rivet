@@ -12,6 +12,9 @@ export type SheetPhase = "idle" | "rack" | "hold" | "lift";
 /** The sign-in drawing a sheet can carry into the page's own art panel. */
 export type SheetDock = "account";
 
+/** The sign-in drawings' viewBox. Each drawing is centred in its box and scaled evenly to fit. */
+export const ART_VIEWBOX = { width: 800, height: 900 } as const;
+
 export type SheetState = {
   phase: SheetPhase;
   /** Where the sheet is going: a path on this origin, with its query and hash. */

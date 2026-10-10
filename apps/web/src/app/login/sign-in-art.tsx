@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { sheetCarries } from "@/components/motion/sheet-store";
+import { ART_VIEWBOX, sheetCarries } from "@/components/motion/sheet-store";
 import { cn } from "@/lib/utils/cn";
+import { samplePath, type Point } from "./sign-in-art-geometry";
 import styles from "./login.module.css";
 
 /*
@@ -14,6 +15,7 @@ import styles from "./login.module.css";
  */
 
 export type ArtDoor = "account" | "staff" | "member" | "admin";
+const VIEWBOX = `0 0 ${ART_VIEWBOX.width} ${ART_VIEWBOX.height}`;
 const DOORS: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
 type Tone = "ink" | "thin" | "faint" | "red" | "redThin";
 type Shape = { d: string; t: Tone | "soft" | "dot"; at: number; dash?: string };
@@ -310,7 +312,7 @@ const drawIn = (shape: Shape, animate: boolean) => (animate ? (isFill(shape.t) |
  */
 function StaticArt({ shapes, animate, pending = false, pace }: { shapes: Shape[]; animate: boolean; pending?: boolean; pace?: number }) {
   return (
-    <svg viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
+    <svg viewBox={VIEWBOX} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
       {shapes.map((shape, i) => (
         <ShapePath key={i} shape={shape} pace={pace} motion={drawIn(shape, animate)} />
       ))}
@@ -344,7 +346,7 @@ function MachineArt({ animate, pending = false }: { animate: boolean; pending?: 
 
   return (
     <svg
-      viewBox="0 0 800 900"
+      viewBox={VIEWBOX}
       preserveAspectRatio="xMidYMid meet"
       className={styles.art}
       aria-hidden
@@ -411,24 +413,17 @@ const TONE: Record<Tone, readonly [number, number, number, number, number]> = {
   redThin: [229, 38, 46, 0.75, 1.2],
 };
 
-type Point = readonly [number, number];
 type Strand = { pts: Point[]; closed: boolean; cx: number; cy: number; w: number; h: number; tone: Tone };
 /** A stroke of the old drawing (a) and the stroke of the new one it becomes (b). */
 type Pair = { a: Strand; b: Strand; fadeOut: boolean };
 
 /** Samples every stroke of a drawing into evenly spaced points. */
-function sample(shapes: Shape[], probe: SVGPathElement): Strand[] {
+function sample(shapes: Shape[]): Strand[] {
   return shapes
     .filter((s) => !isFill(s.t))
     .map((s) => {
-      probe.setAttribute("d", s.d);
-      const length = probe.getTotalLength();
       const closed = /z\s*$/i.test(s.d);
-      const pts: Point[] = [];
-      for (let i = 0; i < SAMPLES; i += 1) {
-        const p = probe.getPointAtLength(length * (closed ? i / SAMPLES : i / (SAMPLES - 1)));
-        pts.push([p.x, p.y]);
-      }
+      const pts = samplePath(s.d, SAMPLES, closed);
       const xs = pts.map((p) => p[0]);
       const ys = pts.map((p) => p[1]);
       const cx = xs.reduce((sum, x) => sum + x, 0) / SAMPLES;
@@ -440,42 +435,20 @@ function sample(shapes: Shape[], probe: SVGPathElement): Strand[] {
 const sampled = new Map<ArtDoor, Strand[]>();
 
 /**
- * A door's strokes as points, measured once per page. Measuring both drawings
- * takes tens of milliseconds, so the other doors are measured while the
- * browser is idle and a click only has to pair them.
+ * A door's strokes as points, worked out once per page from the path data
+ * (`sign-in-art-geometry`), well inside a frame, so a move never waits on the
+ * browser measuring its lines.
  */
 function strandsOf(door: ArtDoor): Strand[] {
   const known = sampled.get(door);
   if (known) return known;
-  const host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  host.setAttribute("aria-hidden", "true");
-  host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
-  const probe = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  host.appendChild(probe);
-  document.body.appendChild(host);
-  const strands = sample(DRAWINGS[door](), probe);
-  host.remove();
+  const strands = sample(DRAWINGS[door]());
   sampled.set(door, strands);
   return strands;
 }
 
-/** Whether this browser can measure SVG lines (test DOMs cannot). */
+/** Whether this browser lays SVG out at all (test DOMs do not), so lines can be seen to move. */
 const measurable = () => typeof document.createElementNS("http://www.w3.org/2000/svg", "path").getTotalLength === "function";
-
-function measureWhenIdle(): () => void {
-  if (!measurable()) return () => {};
-  const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 200));
-  const cancel = window.cancelIdleCallback ?? window.clearTimeout;
-  let handle = 0;
-  const next = () => {
-    const door = DOORS.find((d) => !sampled.has(d));
-    if (!door) return;
-    strandsOf(door);
-    handle = idle(next);
-  };
-  handle = idle(next);
-  return () => cancel(handle);
-}
 
 const collapse = (s: Strand): Strand => ({ ...s, pts: s.pts.map((): Point => [s.cx, s.cy]) });
 const dist = (p: Point | undefined, q: Point | undefined) => (p && q ? (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 : Infinity);
@@ -564,23 +537,25 @@ function MorphArt({ from, to, start, onDone }: { from: ArtDoor; to: ArtDoor; sta
     const leaving = svg.querySelector<SVGGElement>("g[data-before]");
     const fills = svg.querySelector<SVGGElement>("g[data-fills]");
     const exact = svg.querySelector<SVGGElement>("g[data-exact]");
+    // A stroke that keeps its tone is coloured once; only its shape changes per frame.
+    const steady = pairs.map(({ a, b, fadeOut }) => a.tone === b.tone && !fadeOut);
+    const point = new Array<string>(SAMPLES);
     const draw = (t: number) => {
       const u = ease(t);
       const v = 1 - u;
       pairs.forEach(({ a, b, fadeOut }, i) => {
         const el = strands[i];
         if (!el) return;
-        let d = "";
         for (let p = 0; p < SAMPLES; p += 1) {
-          const pa = a.pts[p];
-          const pb = b.pts[p];
-          if (pa && pb) d += `${d ? "L" : "M"}${(v * pa[0] + u * pb[0]).toFixed(1)} ${(v * pa[1] + u * pb[1]).toFixed(1)}`;
+          const pa = a.pts[p]!;
+          const pb = b.pts[p]!;
+          point[p] = `${(v * pa[0] + u * pb[0]).toFixed(1)} ${(v * pa[1] + u * pb[1]).toFixed(1)}`;
         }
-        if (a.closed || b.closed) d += "Z";
+        el.setAttribute("d", `M${point.join("L")}${a.closed || b.closed ? "Z" : ""}`);
+        if (steady[i] && t > 0) return;
         const ta = TONE[a.tone];
         const tb = TONE[b.tone];
         const mix = (n: 0 | 1 | 2 | 3 | 4) => ta[n] + (tb[n] - ta[n]) * u;
-        el.setAttribute("d", d);
         el.setAttribute("stroke", `rgb(${mix(0).toFixed(0)} ${mix(1).toFixed(0)} ${mix(2).toFixed(0)} / ${(fadeOut ? mix(3) * v : mix(3)).toFixed(3)})`);
         el.setAttribute("stroke-width", mix(4).toFixed(2));
       });
@@ -604,7 +579,7 @@ function MorphArt({ from, to, start, onDone }: { from: ArtDoor; to: ArtDoor; sta
   }, [pairs, start, onDone]);
 
   return (
-    <svg ref={svgRef} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
+    <svg ref={svgRef} viewBox={VIEWBOX} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
       <g data-before>
         {before.map((s, i) => <ShapePath key={i} shape={s} />)}
       </g>
@@ -635,6 +610,9 @@ const ART_PARAM = "art";
 let session: { door: ArtDoor; from: ArtDoor | null; start: number | null } | null = null;
 
 const prerendering = () => (document as Document & { prerendering?: boolean }).prerendering === true;
+
+/** Whether the art panel is on screen: it shows from `lg` up (`.panel` in login.module.css). */
+const panelShown = () => typeof window.matchMedia !== "function" || window.matchMedia("(min-width: 1024px)").matches;
 
 function readFrom(): ArtDoor | null {
   const url = new URL(window.location.href);
@@ -674,7 +652,9 @@ export function SignInArt({ door }: { door: ArtDoor }) {
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // A page sheet carrying this drawing in lays it over this one when it lands, so this one is simply drawn.
     const carried = sheetCarries(door);
-    setStage({ from: reduce || carried || !measurable() ? null : current.from, start: current.start, animate: !reduce && !carried });
+    // Phones never show the panel: nothing moves or draws there, so nothing is worked out for it.
+    const still = reduce || carried || !panelShown();
+    setStage({ from: still || !measurable() ? null : current.from, start: current.start, animate: !still });
     if (current.start !== null) return;
     const shown = () => {
       current.start = performance.now();
@@ -683,10 +663,6 @@ export function SignInArt({ door }: { door: ArtDoor }) {
     document.addEventListener("prerenderingchange", shown, { once: true });
     return () => document.removeEventListener("prerenderingchange", shown);
   }, [door]);
-
-  // Once this drawing is in place, measure the others for the next door.
-  const resting = stage !== null && (!stage.from || settled);
-  useEffect(() => (resting ? measureWhenIdle() : undefined), [resting]);
 
   if (stage?.from && !settled) return <MorphArt from={stage.from} to={door} start={stage.start} onDone={settle} />;
   const animate = stage ? stage.animate && !stage.from : true;
@@ -721,9 +697,6 @@ export function DrawingLoop({ pace = DRAW_PACE, endOn = null, onRest }: { pace?:
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     setMoves(!reduce && measurable());
   }, []);
-
-  // Measure the other drawings while the first draws, so each move only has to pair lines.
-  useEffect(() => (moves ? measureWhenIdle() : undefined), [moves]);
 
   useEffect(() => {
     if (step.from) return;

@@ -2,8 +2,14 @@
   Eight full-width plates, one per plate of the mark. They rack in from the
   floor up to cover a page and lift off top first to show the next one; the
   lag between them opens the seams, as plates part when a stack is lifted.
-  Night plates are the sign-in panel's layout sheet, seamed in hairlines;
-  paper plates are the product's plain paper.
+  Night plates are the sign-in panel's layout sheet; paper plates are the
+  product's plain paper. At rest they read as one sheet, with no lines
+  between them: the plates only show as plates while they move.
+
+  Every move is a transform, so it runs on the compositor and stays smooth
+  while the next page loads underneath. A plate is its own row and clips its
+  face; racking in, the face rises into the row while its grid moves the
+  other way, so the grid stays still on the page as each plate wipes up.
 */
 
 .plates {
@@ -16,6 +22,13 @@
 .plate {
   position: relative;
   overflow: hidden;
+  will-change: transform;
+}
+
+.face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   background-color: var(--plate-color);
 }
 
@@ -23,17 +36,12 @@
   --plate-color: #0b0a08;
 }
 
-/* Paper plates are plain at rest: a ruled line through the mark reads as a fault. */
 .paper {
   --plate-color: var(--color-paper);
 }
 
-.night .plate + .plate {
-  box-shadow: inset 0 1px 0 rgb(242 240 230 / 0.07);
-}
-
-/* The sheet's 40px grid, laid across all eight so it runs unbroken. */
-.night .plate::before {
+/* The sheet's 40px grid, cut from one sheet-high piece so it runs unbroken across all eight. */
+.night .face::before {
   position: absolute;
   inset-inline: 0;
   top: calc(var(--plate) * -100%);
@@ -45,17 +53,25 @@
   content: "";
 }
 
-.racking .plate {
+.racking .face {
   animation: plate-rack var(--rack-ms, 400ms) cubic-bezier(0.65, 0, 0.35, 1) calc((7 - var(--plate)) * var(--rack-step, 24ms)) both;
+}
+
+.racking .face::before {
+  animation: plate-rack-grid var(--rack-ms, 400ms) cubic-bezier(0.65, 0, 0.35, 1) calc((7 - var(--plate)) * var(--rack-step, 24ms)) both;
 }
 
 .lifting .plate {
   animation: plate-lift var(--lift-ms, 560ms) linear calc(var(--plate) * var(--lift-step, 26ms)) both;
 }
 
+/* The face rises one row; its grid (eight rows tall) falls back by the same row. */
 @keyframes plate-rack {
-  from { clip-path: inset(100% 0 0 0); }
-  to { clip-path: inset(0); }
+  from { transform: translateY(100%); }
+}
+
+@keyframes plate-rack-grid {
+  from { transform: translateY(-12.5%); }
 }
 
 /* A small settle under the weight, then the pull. */
@@ -66,7 +82,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .racking .plate,
+  .racking .face,
+  .racking .face::before,
   .lifting .plate {
     animation: none;
   }

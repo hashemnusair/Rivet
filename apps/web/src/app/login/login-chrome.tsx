@@ -10,6 +10,7 @@ import { monaSansText } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
 import { SheetLink } from "@/components/motion/page-sheet";
+import { useNightChrome } from "@/components/public/use-night-chrome";
 import { useCanonicalHref } from "@/lib/routing/use-canonical-href";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
@@ -42,9 +43,10 @@ export function LoginLayout({
   const { t, dir, isolateLtr } = useLocale();
   const brand = portal?.id ?? "chooser";
   usePrepareDoors();
+  useNightChrome();
 
   return (
-    <div data-login className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSansText.variable)}>
+    <div data-login data-night-page className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSansText.variable)}>
       <div className={styles.frame}>
         <LoginArt brand={brand} homeHref={publicHref} />
 

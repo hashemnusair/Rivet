@@ -4,11 +4,11 @@ import { AuthFlowError, authErrorText, authMessage, renderAuthMessage } from "@/
 import type { MessageDescriptor } from "@/lib/i18n/core";
 import { latinDigits } from "@/lib/utils/text";
 import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
-import { useSignIn } from "@clerk/nextjs";
+import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
-import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { PasswordInput } from "@/components/auth/password-input";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -21,13 +21,26 @@ type VerificationKind = "email_code" | "phone_code" | "totp" | "backup_code";
  * A stable password-first Clerk flow. Unlike Clerk's adaptive prebuilt view,
  * this always paints both primary fields immediately and only introduces a
  * second step when Client Trust or user-enabled MFA genuinely requires it.
+ * The fields are in the server's HTML and take typing while Clerk's script is
+ * still loading; only the submit waits for it.
  */
 export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redirectUrl?: string; signUp?: boolean }) {
   const { signIn, errors, fetchStatus } = useSignIn();
+  const { loaded: clerkLoaded } = useClerk();
   const router = useRouter();
   const t = useT();
   const [emailAddress, setEmailAddress] = useState("");
   const [password, setPassword] = useState("");
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Whatever was typed or filled in before the page came alive stays, and counts.
+  useEffect(() => {
+    const typedEmail = emailRef.current?.value;
+    const typedPassword = passwordRef.current?.value;
+    if (typedEmail) setEmailAddress((current) => current || typedEmail);
+    if (typedPassword) setPassword((current) => current || typedPassword);
+  }, []);
   const [verification, setVerification] = useState<VerificationKind | null>(null);
   const [code, setCode] = useState("");
   const [localError, setLocalError] = useState<MessageDescriptor | null>(null);
@@ -92,7 +105,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
 
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!signIn || busy) return;
+    if (!signIn || !clerkLoaded || busy) return;
     setLocalError(null);
 
     setSubmitting(true);
@@ -246,6 +259,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     <form onSubmit={submitPassword} className="mt-7 space-y-4" noValidate>
       <Field label={t("auth.signIn.emailLabel")} htmlFor="login-email" error={errors.fields.identifier ? authErrorText(errors.fields.identifier, "auth.signIn.errors.incorrect", t) : undefined} required>
         <Input
+          ref={emailRef}
           id="login-email"
           type="email"
           value={emailAddress}
@@ -259,6 +273,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
       </Field>
       <Field label={t("common.label.password")} htmlFor="login-password" error={errors.fields.password ? authErrorText(errors.fields.password, "auth.signIn.errors.incorrect", t) : undefined} required>
         <PasswordInput
+          ref={passwordRef}
           id="login-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
@@ -274,7 +289,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         size="lg"
         className="w-full"
         loading={busy}
-        disabled={!signIn || !emailAddress.trim() || !password}
+        disabled={!signIn || !clerkLoaded || !emailAddress.trim() || !password}
       >
         {t("common.action.signIn")} <ArrowRight className="rtl:rotate-180" />
       </Button>

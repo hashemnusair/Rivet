@@ -271,6 +271,15 @@ html.landing-motion-ready [data-experience-notice] {
     line-height: 1.45;
   }
 
+  /* A night page (the landing, sign-in, the application) paints the
+     browser's own edges night too: the overscroll, the safe areas and the
+     bars a phone tints from the page, which were paper. */
+  html:has([data-night-page]),
+  html:has([data-night-page]) body {
+    background: #0b0a08;
+    color-scheme: dark;
+  }
+
   /*
     WebKit can extend a native text selection to a static block's padding
     edge. Human-facing text blocks are paint anchors so a one-line selection

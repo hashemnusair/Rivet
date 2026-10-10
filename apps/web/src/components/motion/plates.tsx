@@ -16,7 +16,9 @@ export function Plates({ tone, motion }: { tone: "night" | "paper"; motion: "rac
   return (
     <div className={cn(styles.plates, styles[tone], motion === "rack" && styles.racking, motion === "lift" && styles.lifting)} aria-hidden>
       {Array.from({ length: PLATE_COUNT }, (_, plate) => (
-        <span key={plate} className={styles.plate} style={{ "--plate": plate } as CSSProperties} />
+        <span key={plate} className={styles.plate} style={{ "--plate": plate } as CSSProperties}>
+          <span className={styles.face} />
+        </span>
       ))}
     </div>
   );

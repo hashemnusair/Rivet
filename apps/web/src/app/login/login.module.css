@@ -253,15 +253,26 @@
   font-family: var(--font-plex-arabic), sans-serif;
 }
 
+/* The heading starts at the same height on every sign-in page, so moving
+   from the chooser to a door, or a form arriving, never shifts it. */
 .main {
   display: flex;
   width: 100%;
   max-width: 25rem;
   flex: 1;
   flex-direction: column;
-  justify-content: center;
   margin-inline: auto;
-  padding-block: 3rem;
+  padding-block: clamp(4.5rem, 14svh, 7rem) 3rem;
+}
+
+@media (min-width: 1024px) {
+  .main { padding-top: clamp(4.5rem, 25svh, 15rem); }
+}
+
+/* "Back to sign in" sits above a door's heading without pushing it down. */
+.back {
+  position: absolute;
+  margin-top: -3.5rem;
 }
 
 /* The door's heading, then its form, rise into place as the page opens. A

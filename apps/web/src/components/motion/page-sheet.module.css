@@ -22,13 +22,16 @@
   pointer-events: none;
 }
 
-/* Sized like the sign-in art panel, so the drawing can land on it unscaled. */
+/* Sized like the sign-in art panel, so the drawing can land on it unscaled.
+   Its own layer: the lines repaint as they draw, and the plates under them
+   are never repainted with them. */
 .drawing {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
   width: 100%;
   transform-origin: 0 0;
+  will-change: transform;
   animation: sheet-in 300ms ease 160ms both;
 }
 

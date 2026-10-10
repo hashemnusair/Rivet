@@ -15,6 +15,7 @@ import { dirFor } from "@/lib/i18n/config";
 import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import { PageSheet } from "@/components/motion/page-sheet";
+import { PAPER_CHROME } from "@/lib/ui/chrome-colors";
 import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
 import "./globals.css";
 
@@ -97,7 +98,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#f5f4ef",
+  themeColor: PAPER_CHROME,
 };
 
 const PRE_PAINT_FRONTEND_API = clerkFrontendApiOrigin(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);

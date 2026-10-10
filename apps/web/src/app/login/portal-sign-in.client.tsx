@@ -1,6 +1,6 @@
 "use client";
 
-import { Show, useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 import {
   ArrowLeft,
   ArrowRight,
@@ -118,7 +118,6 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   // restored their browser state. Otherwise a cold server-rendered page can
   // submit its form before React attaches the handlers.
   const previewReady = !DEMO_AUTH_BYPASS || (!sessionLoading && experienceReady);
-  const identityReady = (DEMO_AUTH_BYPASS || clerkLoaded) && previewReady;
   const redirectUrl = safeInternalRedirect(searchParams.get("next"), portal.href);
   // On the resolver a signed-in account is being opened, not asked to sign
   // in: no heading and no doors until Clerk has said who this is.
@@ -164,25 +163,28 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
     );
 
   return (
-    <div>
+    <div className="relative">
       {/* A signed-in visitor has no business on a door; the resolver at
           /login reads the role instead, so only demo personas leave it. */}
       <SignedInGuard demoOnly={audience === "account"} />
+      {/* Above the heading, out of the flow: every sign-in page's heading
+          starts at the same height, so a door opens with its name where the
+          chooser's was. */}
       {audience !== "account" ? (
-        <DoorLink href={withArt("/login", audience)} className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+        <DoorLink href={withArt("/login", audience)} className={cn(loginStyles.back, "flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink")}>
           <ArrowLeft className="size-3.5" aria-hidden /> {t("auth.chrome.backToSignIn")}
         </DoorLink>
       ) : null}
 
       {resolvingAccount ? null : (
-        <div className={audience === "account" ? undefined : "mt-6"}>
+        <div>
           <PortalHeading portal={portal} mode={mode} />
         </div>
       )}
 
-      {!identityReady && audience !== "account" ? <LoginLoading /> : null}
+      {DEMO_AUTH_BYPASS && !previewReady && audience !== "account" ? <LoginLoading /> : null}
 
-      {identityReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
+      {previewReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
 
       {accountResolver ? (
         !clerkLoaded ? (
@@ -196,18 +198,21 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
         )
       ) : null}
 
-      {identityReady && !DEMO_AUTH_BYPASS && audience !== "account" ? (
-        <>
-          <Show when="signed-out">
-            <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
-          </Show>
-          <Show when="signed-in">
+      {/* The form is on the page from the server's first paint, before Clerk
+          has loaded; its submit waits for Clerk. A signed-in visitor is sent
+          on by the middleware first, so it gives way only in the rare case
+          Clerk reports a session here, keeping whatever was typed otherwise. */}
+      {!DEMO_AUTH_BYPASS && audience !== "account" ? (
+        clerkLoaded && clerkSignedIn ? (
+          <>
             <SignedInIdentity />
             <ProfileCompletionGate>
               {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
             </ProfileCompletionGate>
-          </Show>
-        </>
+          </>
+        ) : (
+          <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
+        )
       ) : null}
     </div>
   );

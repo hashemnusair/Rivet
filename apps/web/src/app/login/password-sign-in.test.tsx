@@ -1,9 +1,12 @@
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PasswordSignIn } from "./password-sign-in.client";
 
 const clerk = vi.hoisted(() => ({
+  loaded: true,
   hook: {
     signIn: null as unknown,
     errors: { fields: { identifier: null, password: null, code: null } },
@@ -15,6 +18,7 @@ const navigation = vi.hoisted(() => ({ router: { replace: vi.fn() } }));
 
 vi.mock("@clerk/nextjs", () => ({
   useSignIn: () => clerk.hook,
+  useClerk: () => ({ loaded: clerk.loaded }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -24,6 +28,7 @@ vi.mock("next/navigation", () => ({
 describe("PasswordSignIn", () => {
   beforeEach(() => {
     navigation.router.replace.mockReset();
+    clerk.loaded = true;
     clerk.hook = {
       signIn: null,
       errors: { fields: { identifier: null, password: null, code: null } },
@@ -32,6 +37,7 @@ describe("PasswordSignIn", () => {
   });
 
   it("renders email, password and the submit control before Clerk is ready", () => {
+    clerk.loaded = false;
     render(<PasswordSignIn />);
 
     expect(screen.getByLabelText(/Email address/)).toBeVisible();
@@ -39,6 +45,48 @@ describe("PasswordSignIn", () => {
     expect(screen.getByLabelText(/Email address/)).toHaveAttribute("placeholder", "Enter email");
     expect(screen.getByLabelText(/Password/)).toHaveAttribute("placeholder", "Enter password");
     expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
+  });
+
+  it("takes typing while Clerk loads, and holds the submit until it has", () => {
+    const password = vi.fn().mockResolvedValue({ error: null });
+    clerk.loaded = false;
+    clerk.hook = {
+      signIn: { status: "needs_identifier", password, finalize: vi.fn(), supportedSecondFactors: [], mfa: {} },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+
+    const { rerender } = render(<PasswordSignIn />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "admin@rivetjo.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "secret-password" } });
+    const submit = screen.getByRole("button", { name: "Sign in" });
+    expect(submit).toBeDisabled();
+    fireEvent.submit(submit.closest("form")!);
+    expect(password).not.toHaveBeenCalled();
+
+    clerk.loaded = true;
+    rerender(<PasswordSignIn />);
+    expect(screen.getByLabelText(/Email address/)).toHaveValue("admin@rivetjo.com");
+    expect(submit).toBeEnabled();
+  });
+
+  it("keeps what was typed into the server's form before the page came alive", async () => {
+    clerk.hook = {
+      signIn: { status: "needs_identifier", password: vi.fn(), finalize: vi.fn(), supportedSecondFactors: [], mfa: {} },
+      errors: { fields: { identifier: null, password: null, code: null } },
+      fetchStatus: "idle",
+    };
+    const host = document.createElement("div");
+    host.innerHTML = renderToString(<PasswordSignIn />);
+    document.body.appendChild(host);
+    (host.querySelector("#login-email") as HTMLInputElement).value = "owner@example.com";
+    (host.querySelector("#login-password") as HTMLInputElement).value = "secret-password";
+
+    const root = await act(async () => hydrateRoot(host, <PasswordSignIn />));
+    expect(host.querySelector("#login-email")).toHaveValue("owner@example.com");
+    expect(host.querySelector("button[type='submit']")).toBeEnabled();
+    act(() => root.unmount());
+    host.remove();
   });
 
   it("submits email and password together and finalizes a complete session", async () => {

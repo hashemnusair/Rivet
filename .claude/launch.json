@@ -102,6 +102,26 @@
         "3510"
       ],
       "port": 3510
+    },
+    {
+      "name": "web-perf-start",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "NEXT_PUBLIC_DATA_MODE=mock",
+        "NEXT_PUBLIC_RIVET_DEMO_AUTH=1",
+        "NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview",
+        "RIVET_DESIGN_PREVIEW=1",
+        "NEXT_DIST_DIR=.next-playwright/perf",
+        "pnpm",
+        "--dir",
+        "apps/web",
+        "exec",
+        "next",
+        "start",
+        "-p",
+        "3620"
+      ],
+      "port": 3620
     }
   ]
 }
