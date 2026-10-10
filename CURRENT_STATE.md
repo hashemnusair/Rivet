@@ -1,5 +1,23 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — Drawings centred, no words on the page sheet
+
+Elias asked for the sign-in drawings to be centred vertically (they sat high)
+and for the transition's page name ("Sign in", bottom left) to go.
+
+- `sign-in-art.tsx` centres each drawing on its own lines: `offsetOf(door)`
+  measures the strokes (via `flatten`) and `viewBoxFor(door)` shifts the
+  viewBox, so the machine's own moving parts keep their coordinates. A morph
+  moves the page before's lines into the arriving drawing's frame first, so
+  nothing jumps. The page sheet's drawing uses the same viewBoxes, so it is
+  centred in both directions and still lands exactly on the panel.
+- The page sheet carries no caption any more (and no borrowed font):
+  `SheetState.caption`/`font` and the route captions are removed.
+- Measured on the mock production build: drawing centre = panel centre (to
+  the pixel) on every sign-in/sign-up page at 1440×900 and 1920×1080, and the
+  sheet's drawing is centred landing → sign-in and back at 1440×900 and 390×844.
+  Mac 1440px sign-in references re-captured (390px unchanged).
+
 ## 11 October 2026 — Sign-in and sign-up centred, one screen, no captions
 
 Elias asked for every sign-in and the account creation page to be centred

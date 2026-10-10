@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps, type CSSProperties } from "react";
-import { useT } from "@/lib/i18n/provider";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 import { cn } from "@/lib/utils/cn";
 import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, type SheetDock } from "./sheet-store";
 import styles from "./page-sheet.module.css";
@@ -72,10 +71,8 @@ function settle() {
  * Starts a sheet to `href` when it goes to a sheet page on this origin, and
  * says whether it did. Anything else (another host, the page already open,
  * reduced motion, a sheet already playing) is left to ordinary navigation.
- * `source`, the link that was followed, lends the sheet its page's display
- * face, so the product's pages never load the public site's font.
  */
-export function startSheet(href: string, source?: Element): boolean {
+export function startSheet(href: string): boolean {
   if (!sheetStore.hasPlayer() || sheetStore.get().phase !== "idle" || reducedMotion()) return false;
   const url = new URL(href, window.location.href);
   const route = sheetRoute(url.pathname);
@@ -85,8 +82,6 @@ export function startSheet(href: string, source?: Element): boolean {
     phase: "rack",
     target: `${url.pathname}${url.search}${url.hash}`,
     from: window.location.pathname,
-    caption: route.caption,
-    font: source ? getComputedStyle(source).getPropertyValue("--font-mona").trim() : "",
     dock: route.dock ?? null,
     landing: false,
     startedAt: performance.now(),
@@ -118,7 +113,7 @@ export function SheetLink({ href, onClick, onPointerEnter, onFocus, ...props }: 
         onClick?.(event);
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         if (props.target && props.target !== "_self") return;
-        if (startSheet(href, event.currentTarget)) event.preventDefault();
+        if (startSheet(href)) event.preventDefault();
       }}
     />
   );
@@ -129,7 +124,6 @@ export function PageSheet() {
   const sheet = useSyncExternalStore(sheetStore.subscribe, sheetStore.get, () => IDLE_SHEET);
   const router = useRouter();
   const pathname = usePathname();
-  const t = useT();
   const drawingRef = useRef<HTMLDivElement>(null);
   // Landing needs both: the drawing over the panel, and back on the machine if a long wait moved it on.
   const landed = useRef({ placed: false, rested: false });
@@ -241,7 +235,6 @@ export function PageSheet() {
   return (
     <div
       className={cn(styles.sheet, sheet.phase === "rack" && styles.covering, lifting && styles.lifting)}
-      style={sheet.font ? ({ "--font-mona": sheet.font } as CSSProperties) : undefined}
       aria-hidden
       data-page-sheet={sheet.phase}
     >
@@ -251,11 +244,6 @@ export function PageSheet() {
           <SheetDrawing pace={DRAW_PACE} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
         </Suspense>
       </div>
-      {sheet.caption ? (
-        <p className={styles.caption}>
-          <span>{t(sheet.caption)}</span>
-        </p>
-      ) : null}
     </div>
   );
 }

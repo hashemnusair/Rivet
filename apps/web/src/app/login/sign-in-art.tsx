@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ART_VIEWBOX, sheetCarries } from "@/components/motion/sheet-store";
 import { cn } from "@/lib/utils/cn";
-import { samplePath, type Point } from "./sign-in-art-geometry";
+import { flatten, samplePath, type Point } from "./sign-in-art-geometry";
 import styles from "./login.module.css";
 
 /*
@@ -15,7 +15,6 @@ import styles from "./login.module.css";
  */
 
 export type ArtDoor = "account" | "staff" | "member" | "admin";
-const VIEWBOX = `0 0 ${ART_VIEWBOX.width} ${ART_VIEWBOX.height}`;
 const DOORS: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
 type Tone = "ink" | "thin" | "faint" | "red" | "redThin";
 type Shape = { d: string; t: Tone | "soft" | "dot"; at: number; dash?: string };
@@ -279,6 +278,43 @@ function network(): Shape[] {
 
 const DRAWINGS: Record<ArtDoor, () => Shape[]> = { account: stack, staff: desk, member: bench, admin: network };
 
+/* ---------------------------------------------------------------- centring */
+
+type Offset = { dx: number; dy: number };
+const offsets = new Map<ArtDoor, Offset>();
+
+/**
+ * How far a drawing moves to sit in the middle of the viewBox, worked out from
+ * its own lines: each drawing fills a different part of the sheet, and all of
+ * them sat high. Drawn, it moves by shifting the viewBox, so the machine's own
+ * moving parts keep their coordinates.
+ */
+function offsetOf(door: ArtDoor): Offset {
+  const known = offsets.get(door);
+  if (known) return known;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const shape of DRAWINGS[door]()) {
+    for (const [x, y] of flatten(shape.d)) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  const offset = { dx: Math.round(ART_VIEWBOX.width / 2 - (minX + maxX) / 2), dy: Math.round(ART_VIEWBOX.height / 2 - (minY + maxY) / 2) };
+  offsets.set(door, offset);
+  return offset;
+}
+
+/** The viewBox that shows a door's drawing centred. */
+const viewBoxFor = (door: ArtDoor) => {
+  const { dx, dy } = offsetOf(door);
+  return `${-dx} ${-dy} ${ART_VIEWBOX.width} ${ART_VIEWBOX.height}`;
+};
+
 /* ---------------------------------------------------------------- rendering */
 
 const isFill = (t: Shape["t"]) => t === "soft" || t === "dot";
@@ -310,9 +346,9 @@ const drawIn = (shape: Shape, animate: boolean) => (animate ? (isFill(shape.t) |
  * marks the server's copy: a page reached from another sign-in page hides it
  * before the first paint, because the lines will arrive from that page.
  */
-function StaticArt({ shapes, animate, pending = false, pace }: { shapes: Shape[]; animate: boolean; pending?: boolean; pace?: number }) {
+function StaticArt({ door, shapes, animate, pending = false, pace }: { door: ArtDoor; shapes: Shape[]; animate: boolean; pending?: boolean; pace?: number }) {
   return (
-    <svg viewBox={VIEWBOX} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
+    <svg viewBox={viewBoxFor(door)} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
       {shapes.map((shape, i) => (
         <ShapePath key={i} shape={shape} pace={pace} motion={drawIn(shape, animate)} />
       ))}
@@ -346,7 +382,7 @@ function MachineArt({ animate, pending = false }: { animate: boolean; pending?: 
 
   return (
     <svg
-      viewBox={VIEWBOX}
+      viewBox={viewBoxFor("account")}
       preserveAspectRatio="xMidYMid meet"
       className={styles.art}
       aria-hidden
@@ -450,6 +486,10 @@ function strandsOf(door: ArtDoor): Strand[] {
 /** Whether this browser lays SVG out at all (test DOMs do not), so lines can be seen to move. */
 const measurable = () => typeof document.createElementNS("http://www.w3.org/2000/svg", "path").getTotalLength === "function";
 
+/** A drawing's strokes moved by an offset, to be drawn in another drawing's frame. */
+const moveStrands = (strands: Strand[], { dx, dy }: Offset): Strand[] =>
+  dx === 0 && dy === 0 ? strands : strands.map((s) => ({ ...s, pts: s.pts.map(([x, y]): Point => [x + dx, y + dy]), cx: s.cx + dx, cy: s.cy + dy }));
+
 const collapse = (s: Strand): Strand => ({ ...s, pts: s.pts.map((): Point => [s.cx, s.cy]) });
 const dist = (p: Point | undefined, q: Point | undefined) => (p && q ? (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 : Infinity);
 
@@ -523,11 +563,17 @@ function MorphArt({ from, to, start, onDone }: { from: ArtDoor; to: ArtDoor; sta
   const [pairs, setPairs] = useState<Pair[] | null>(null);
   const before = useMemo(() => DRAWINGS[from]().filter((s) => isFill(s.t)), [from]);
   const after = useMemo(() => DRAWINGS[to](), [to]);
+  // Each drawing is centred on its own lines; the page before's starts where it was on screen.
+  const shift = useMemo(() => {
+    const a = offsetOf(from);
+    const b = offsetOf(to);
+    return { dx: a.dx - b.dx, dy: a.dy - b.dy };
+  }, [from, to]);
 
   // Paired before the first paint, so the page opens on the page before's drawing.
   useLayoutEffect(() => {
-    setPairs(pair(strandsOf(from), strandsOf(to)));
-  }, [from, to]);
+    setPairs(pair(moveStrands(strandsOf(from), shift), strandsOf(to)));
+  }, [from, to, shift]);
 
   useLayoutEffect(() => {
     const svg = svgRef.current;
@@ -579,8 +625,8 @@ function MorphArt({ from, to, start, onDone }: { from: ArtDoor; to: ArtDoor; sta
   }, [pairs, start, onDone]);
 
   return (
-    <svg ref={svgRef} viewBox={VIEWBOX} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
-      <g data-before>
+    <svg ref={svgRef} viewBox={viewBoxFor(to)} preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
+      <g data-before transform={`translate(${shift.dx} ${shift.dy})`}>
         {before.map((s, i) => <ShapePath key={i} shape={s} />)}
       </g>
       <g data-lines>
@@ -667,7 +713,7 @@ export function SignInArt({ door }: { door: ArtDoor }) {
   if (stage?.from && !settled) return <MorphArt from={stage.from} to={door} start={stage.start} onDone={settle} />;
   const animate = stage ? stage.animate && !stage.from : true;
   // One element for the server's copy and the page's own, so the lines keep drawing across the hand-over.
-  return door === "account" ? <MachineArt animate={animate} pending={!stage} /> : <StaticArt shapes={to} animate={animate} pending={!stage} />;
+  return door === "account" ? <MachineArt animate={animate} pending={!stage} /> : <StaticArt door={door} shapes={to} animate={animate} pending={!stage} />;
 }
 
 /* -------------------------------------------------------------------- loop */
@@ -715,7 +761,7 @@ export function DrawingLoop({ pace = DRAW_PACE, endOn = null, onRest }: { pace?:
   }, [moves, step, drawnMs, endOn, onRest]);
 
   if (step.from) return <MorphArt from={step.from} to={step.door} start={step.start} onDone={settle} />;
-  return <StaticArt shapes={shapes} animate={step.first} pace={pace} />;
+  return <StaticArt door={step.door} shapes={shapes} animate={step.first} pace={pace} />;
 }
 
 /** Adds the drawing a link leaves from, so the next sign-in page can move its lines. */

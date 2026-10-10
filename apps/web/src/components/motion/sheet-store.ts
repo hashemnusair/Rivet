@@ -1,5 +1,3 @@
-import type { TKey } from "@/lib/i18n/core";
-
 /*
  * The state of a page change carried by the night sheet, shared by the links
  * that start one, the sheet that plays it, and the sign-in drawing it hands
@@ -22,9 +20,6 @@ export type SheetState = {
   target: string;
   /** The path it left, so arrival is the first path that is not this one. */
   from: string;
-  caption: TKey | null;
-  /** The display face of the page left (its `--font-mona`), borrowed so the sheet loads no font of its own. */
-  font: string;
   dock: SheetDock | null;
   /** Decided as the sheet fades off: whether the drawing lands on the page's art panel. */
   landing: boolean;
@@ -32,15 +27,15 @@ export type SheetState = {
   startedAt: number;
 };
 
-export const IDLE_SHEET: SheetState = { phase: "idle", target: "", from: "", caption: null, font: "", dock: null, landing: false, startedAt: 0 };
+export const IDLE_SHEET: SheetState = { phase: "idle", target: "", from: "", dock: null, landing: false, startedAt: 0 };
 
-/** The public pages a sheet goes to, each with the line it shows on the way. */
-const SHEET_ROUTES: Record<string, { caption: TKey; dock?: SheetDock }> = {
-  "/": { caption: "common.brand.name" },
-  "/login": { caption: "auth.pageTitle.signIn", dock: "account" },
-  "/signup": { caption: "publicCompletion.header.applyAccess" },
-  "/privacy": { caption: "auth.chrome.privacy" },
-  "/terms": { caption: "auth.chrome.terms" },
+/** The public pages a sheet goes to, and the one whose art panel takes its drawing. */
+const SHEET_ROUTES: Record<string, { dock?: SheetDock }> = {
+  "/": {},
+  "/login": { dock: "account" },
+  "/signup": {},
+  "/privacy": {},
+  "/terms": {},
 };
 
 export const sheetRoute = (pathname: string) => SHEET_ROUTES[pathname] ?? null;

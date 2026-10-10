@@ -28,9 +28,9 @@ describe("page sheet", () => {
     vi.useRealTimers();
   });
 
-  it("goes only to the public pages, each with its own line", () => {
-    expect(sheetRoute("/login")).toEqual({ caption: "auth.pageTitle.signIn", dock: "account" });
-    expect(sheetRoute("/terms")?.caption).toBe("auth.chrome.terms");
+  it("goes only to the public pages, and lands its drawing only on sign-in", () => {
+    expect(sheetRoute("/login")).toEqual({ dock: "account" });
+    expect(sheetRoute("/terms")).toEqual({});
     expect(sheetRoute("/dashboard")).toBeNull();
     expect(sheetRoute("/login/gym")).toBeNull();
   });
@@ -60,7 +60,8 @@ describe("page sheet", () => {
       startSheet("/terms");
     });
     expect(document.querySelector("[data-page-sheet='rack']")).toBeInTheDocument();
-    expect(screen.getByText("Terms of service")).toBeInTheDocument();
+    // No words on the sheet: only the drawing.
+    expect(document.querySelector("[data-page-sheet]")?.textContent).toBe("");
     expect(nav.push).not.toHaveBeenCalled();
 
     // Covered: the router goes, and the next page knows it is under the sheet.
