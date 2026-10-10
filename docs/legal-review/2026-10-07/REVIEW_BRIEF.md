@@ -1,6 +1,7 @@
 # RIVET — external legal/commercial review brief
 
-Prepared 7 October 2026. **Not sent; counsel not yet appointed.** The lawyer's
+Prepared 7 October 2026; commercial facts refreshed 8 October 2026 against
+implementation `0f5a92f`. **Not sent; counsel not yet appointed.** The lawyer's
 name/email and the founders' legal-entity details remain missing. Start review
 with the open questions below rather than waiting for every decision. No fees,
 engagement terms or legal text have been approved by this preparation.
@@ -13,7 +14,8 @@ section 09, and the canonical subscription agreement clause body. They contain
 no customer/signatory records. Each is a snapshot of the existing source, not a
 rewritten contract; the contract's signature fields are described below.
 
-Legal source baseline `4fe7be1` (current main; legal source unchanged by the channel retirement):
+Legal snapshot baseline `4fe7be1`; the privacy/terms/DPA and agreement source
+remains unchanged at implementation `0f5a92f`:
 
 - Privacy: `apps/web/src/features/legal/privacy-policy.tsx`, v1.1, 14 September.
 - Terms and DPA: `apps/web/src/features/legal/terms-of-service.tsx`, same date.
@@ -21,7 +23,14 @@ Legal source baseline `4fe7be1` (current main; legal source unchanged by the cha
 - Arabic: `src/lib/i18n/messages/ar/publicPrivacy.ts`, `publicTerms.ts` and
   `convex/legalAgreementArabic.ts` (agreement v1.2-ar, 2 October).
 - E-signature flow: `subscription-agreement-signing.tsx`, `convex/legalAgreement.ts`.
-- Current pricing/limits: `convex/platformPlanCatalog.ts`, `convex/workspaceModules.ts`.
+- Current commercial facts (paths under `apps/web`): `convex/planCatalogue.ts`
+  (prices, fees, discount and limits), `convex/planCapacity.ts` (effective
+  catalogue overrides and capacity), `convex/workspaceModules.ts` and
+  `convex/platformPlanCatalog.ts` (module selection).
+- Public pricing/signup: `src/lib/public/pricing.ts`, `src/app/signup/page.tsx`.
+  Setup capture/invoicing: `convex/platformProvisioning.ts`,
+  `convex/onboardingBilling.ts`, `convex/domain.ts` and
+  `convex/subscriptionReconciliation.ts`.
 
 ## Decisions and redlines requested
 
@@ -29,12 +38,42 @@ Legal source baseline `4fe7be1` (current main; legal source unchanged by the cha
    and tax IDs, registered/service address, jurisdiction, authorized signatory,
    invoice issuer and bank/CliQ payee. `BRAND_LEGAL` is currently empty. Do not
    substitute the RIVET brand for an unconfirmed legal entity.
-2. **Pricing/package sign-off.** Current monthly defaults are Starter JOD 79,
-   Growth 149, Pro 249 and Enterprise base 500 (publicly quote-led). Annual is
-   20% off. Confirm tax inclusion, onboarding fees, fair-use/email costs,
-   negotiated overrides and limits. Current branch/staff/member caps are
-   1/8/500, 3/25/2,500, 8/80/10,000 and 25/250/50,000. These are implemented
-   defaults, not a founder approval recorded by this task.
+2. **Pricing/package sign-off.** Implemented launch defaults:
+
+   | Plan | Monthly (JOD) | One-time onboarding (JOD) | Branches | Owner/staff accounts | Active members | Operational emails/month |
+   |---|---:|---:|---:|---:|---:|---:|
+   | Starter | 39 | 75 | 1 | 3 | 150 | 600 |
+   | Growth | 89 | 150 | 2 | 8 | 300 | 1,500 |
+   | Pro | 199 | 300 | 5 | 20 | 1,000 | 5,000 |
+
+   Annual subscription billing is twelve monthly fees billed once at **5% off**;
+   onboarding is outside that discount. Public/signup first-payment subtotals
+   combine the selected subscription term with the one-time onboarding fee
+   before applicable tax; signup takes no immediate payment. New gyms capture
+   that fee for a separate line on their first subscription invoice for the
+   post-trial term. Existing gyms without a captured fee receive no retroactive
+   onboarding charge. This describes
+   implementation and collection timing, not legal approval or a new commitment.
+   Member capacity is pooled across branches; future and frozen membership terms
+   reserve capacity. Staff capacity includes owners and pending invitations.
+   Member-facing operational email allowances use the Amman calendar month;
+   authentication and platform billing/agreement/support/admin mail are exempt.
+   Excess operational mail is deferred; no automatic overage charge is implemented.
+   Valid operator catalogue overrides remain authoritative.
+
+   Enterprise is publicly **quote-only**, including pricing, onboarding and
+   capacity. Its retained negotiated/legacy configuration is JOD 500/month,
+   25 branches, 250 owner/staff accounts, 50,000 members and 20,000 operational
+   emails/month, with onboarding stored as zero; this is not a public fixed-price
+   or free-onboarding promise.
+
+   **Questions for counsel/founders:** confirm tax inclusion, onboarding fee
+   disclosure and collection timing, fair-use/email costs, negotiated overrides
+   and limits. Terms section 05 says "Onboarding is included"; reconcile that
+   wording with the implemented fee. Agreement 1.2 section 4 refers to written
+   quotes or published pricing, and section 6 describes onboarding services;
+   it does **not** explicitly promise free onboarding. These facts do not record
+   founder sign-off or resolve the legal wording.
 3. **Term conflict.** Terms default to 12 months with renewal; agreement 1.2
    continues until ended with 30 days' notice. Reconcile monthly/annual billing,
    commitment, renewals, cancellation, refunds and the precedence clause.

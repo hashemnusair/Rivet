@@ -265,8 +265,11 @@ Elias's request; the primary reviewed and integrated their changes.
   excess-capacity charge; email reservations remain charged to their original month
   on retries. Deferred time-sensitive email can become stale and requires outbox
   review. These are documented policies/limits, not claims of legal approval.
-- Legal conflict remains intentionally unresolved: the current agreement says
-  onboarding is included; counsel must reconcile it with the new commercial fee.
+- Legal wording remains for counsel: Terms section 05 says onboarding is included.
+  Agreement 1.2 section 4 refers to written quotes or published pricing, and
+  section 6 describes onboarding services without explicitly promising free
+  onboarding. Counsel must reconcile the Terms with the implemented fee; see the
+  refreshed `docs/legal-review/2026-10-07/REVIEW_BRIEF.md`.
 
 Read first: `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`,
 `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, `convex/planCapacity.ts`,
