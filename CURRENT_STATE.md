@@ -2,8 +2,8 @@
 
 ## 11 October 2026 — approved landing typography release candidate
 
-Synced with main `1e470df`, preserving the newer sign-in layout, night chrome,
-page transitions and stack animation. The English landing now uses Satoshi /
+Synced with main `015b9ad`, preserving the newer sign-in layout, night chrome,
+page transitions, stack animation and full-screen phone film. The English landing now uses Satoshi /
 Original (adjusted): name size **115%**, letter gap **0.2em**, weight **625**,
 tagline **1.8rem**, space below the name **2.3rem**. Fluid sizes and the phone
 wordmark cap match the approved picker. Arabic and auth typography are unchanged.
@@ -26,6 +26,18 @@ outputs stay local. `FRONTEND_HANDOFF.md` remains frozen.
 Read first: this entry, `apps/web/src/components/marketing/satoshi.ts`,
 `apps/web/src/components/marketing/landing-cinematic.module.css`, and
 `apps/web/scripts/prepare-marketing-font.mjs`.
+
+## 11 October 2026 — The landing film fills a phone's screen
+
+Elias saw the next section below the film on his phone before scrolling. The
+film was `100svh` (the small viewport), which stops above a phone browser's
+floating bottom bar; it is now `100lvh` (svh fallback) so it runs under the
+bars, and its footer (chapter caption, pause) is lifted by `100lvh - 100svh`
+so it stays above the bottom bar while it shows. Chromium has no toolbar to
+emulate this (svh = lvh there): verified only that the film still spans exactly
+one viewport at 375–430px and 1440px; the iPhone check is Elias's. The page
+motion pricing test now retries its Annual click until the tab is selected (it
+flaked twice when the click landed before hydration).
 
 ## 11 October 2026 — Drawings centred, no words on the page sheet
 

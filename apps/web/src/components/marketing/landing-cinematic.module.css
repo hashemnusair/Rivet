@@ -726,10 +726,14 @@
   middle for the name and the bottom for the captions; the poster holds the
   frame until the video has its first picture, then the video fades in.
 */
+/* The whole screen until the visitor scrolls: a phone's browser bars float
+   over the page, so the film runs under them (the large viewport), not just
+   down to them, and the next section never shows below it. */
 .film {
   position: relative;
   isolation: isolate;
   height: 100svh;
+  height: 100lvh;
   min-height: 34rem;
   overflow: hidden;
   background: #090806;
@@ -896,9 +900,11 @@
   }
 }
 
+/* Held above the browser's bottom bar while it shows, by the height the bar takes. */
 .filmFooter {
   position: absolute;
   inset: auto 0 0;
+  inset: auto 0 calc(100lvh - 100svh);
   z-index: 1;
   display: flex;
   align-items: flex-end;

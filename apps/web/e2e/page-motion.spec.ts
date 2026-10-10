@@ -40,7 +40,12 @@ for (const width of [1440, 390]) {
 
 test("the pricing link keeps the chosen plan and cadence on the night application", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("tab", { name: /Annual/ }).click();
+  // A click that lands before the page has hydrated only focuses the tab; try again until it takes.
+  const annual = page.getByRole("tab", { name: /Annual/ });
+  await expect(async () => {
+    await annual.click();
+    await expect(annual).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
+  }).toPass();
   await page.locator('a[href="/signup?plan=Growth&interval=annual"]').click();
   await expect(page).toHaveURL(/\/signup\?plan=Growth&interval=annual$/);
   await settled(page);
