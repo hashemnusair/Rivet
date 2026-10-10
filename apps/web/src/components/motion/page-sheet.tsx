@@ -5,18 +5,18 @@ import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps, type CSSProperties } from "react";
 import { useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
-import { Plates, platesMs } from "./plates";
 import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, type SheetDock } from "./sheet-store";
 import styles from "./page-sheet.module.css";
 
 /*
  * The page change between the public pages (the landing, the documents, the
- * application and sign-in). A sheet link racks the night plates over the page,
+ * application and sign-in). A sheet link fades one night sheet over the page,
  * the next page loads underneath while a sign-in drawing draws itself, and the
- * plates lift off it. A long load keeps the drawing going: its lines move from
- * the machine to the desk, the bench and the network until the page is there.
- * The doors between sign-in pages keep their own quicker move (`?art=`), and
- * the product's pages keep their short entrance.
+ * sheet fades off it. Only opacity moves, so nothing ever cuts across the page
+ * underneath. A long load keeps the drawing going: its lines move from the
+ * machine to the desk, the bench and the network until the page is there. The
+ * doors between sign-in pages keep their own quicker move (`?art=`), and the
+ * product's pages keep their short entrance.
  */
 
 const loadDrawing = () => import("@/app/login/sign-in-art");
@@ -36,10 +36,12 @@ function prefetchDrawing() {
   else window.setTimeout(() => void loadDrawing(), 1500);
 }
 
-/** Matches `--rack-*` and `--lift-*` in the stylesheet. */
-const RACK_MS = platesMs(400, 24);
-const LIFT_MS = platesMs(560, 26);
+/** Matches `--cover-ms` and `--uncover-ms` in the stylesheet: the sheet fading on, and off. */
+const RACK_MS = 280;
+const LIFT_MS = 460;
 const DOCK_MS = 760;
+/** Landing, how far into the glide the page's own words fade in: once the drawing has moved off them. */
+const WORDS_MS = 380;
 /** The least time from the click to the lift, so the drawing is seen, not flashed. */
 const HOLD_MS = 900;
 /** Going to sign in, long enough for the machine to be fully drawn when it lands. */
@@ -157,7 +159,7 @@ export function PageSheet() {
   }, [sheet.phase]);
 
   // Covered: go. The next page is told it is under the sheet (`data-page-covered`), so its
-  // entrance waits for the lift, and the sign-in page that its drawing is coming.
+  // entrance waits for the sheet to fade, and the sign-in page that its drawing is coming.
   useEffect(() => {
     if (sheet.phase !== "rack") return;
     router.prefetch(sheet.target);
@@ -182,8 +184,11 @@ export function PageSheet() {
     const hold = dockFor(sheet.dock) ? DOCK_HOLD_MS : HOLD_MS;
     const lift = () => {
       const landing = Boolean(dockFor(sheet.dock));
-      document.documentElement.removeAttribute("data-page-covered");
-      if (!landing) document.documentElement.removeAttribute("data-sheet-docking");
+      // Landing, the page's words wait for the drawing to move off them (the lift effect below).
+      if (!landing) {
+        document.documentElement.removeAttribute("data-page-covered");
+        document.documentElement.removeAttribute("data-sheet-docking");
+      }
       sheetStore.set({ ...sheet, phase: "lift", landing });
     };
     const timer = window.setTimeout(() => {
@@ -197,12 +202,13 @@ export function PageSheet() {
     };
   }, [sheet, pathname]);
 
-  // Lifting: the drawing either lands on the page's art panel or leaves with the plates.
+  // Uncovering: the drawing either glides onto the page's art panel or fades with the sheet.
   useLayoutEffect(() => {
     if (sheet.phase !== "lift") return;
     const box = drawingRef.current;
     const dock = sheet.landing ? dockFor(sheet.dock) : null;
     if (!box || !dock) {
+      document.documentElement.removeAttribute("data-page-covered");
       const timer = window.setTimeout(settle, LIFT_MS);
       return () => window.clearTimeout(timer);
     }
@@ -216,12 +222,14 @@ export function PageSheet() {
     const y = to.top + to.height / 2 - from.top - (from.height / 2) * scale;
     const move = `translate(${x}px, ${y}px) scale(${scale})`;
     const landing = box.animate([{ transform: "none" }, { transform: move }], { duration: DOCK_MS, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" });
+    const words = window.setTimeout(() => document.documentElement.removeAttribute("data-page-covered"), WORDS_MS);
     const place = window.setTimeout(() => {
       landed.current.placed = true;
       if (landed.current.rested) settle();
     }, Math.max(LIFT_MS, DOCK_MS));
     const limit = window.setTimeout(settle, Math.max(LIFT_MS, DOCK_MS) + LAND_LIMIT_MS);
     return () => {
+      window.clearTimeout(words);
       window.clearTimeout(place);
       window.clearTimeout(limit);
       landing.cancel();
@@ -232,12 +240,12 @@ export function PageSheet() {
   const lifting = sheet.phase === "lift";
   return (
     <div
-      className={cn(styles.sheet, lifting && styles.lifting)}
+      className={cn(styles.sheet, sheet.phase === "rack" && styles.covering, lifting && styles.lifting)}
       style={sheet.font ? ({ "--font-mona": sheet.font } as CSSProperties) : undefined}
       aria-hidden
       data-page-sheet={sheet.phase}
     >
-      <Plates tone="night" motion={sheet.phase === "rack" ? "rack" : lifting ? "lift" : null} />
+      <div className={styles.cover} />
       <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
         <Suspense fallback={null}>
           <SheetDrawing pace={DRAW_PACE} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />

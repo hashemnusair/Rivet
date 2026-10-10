@@ -1,16 +1,13 @@
 /*
-  The night sheet between public pages. The plates rack in over the page
-  being left, a sign-in drawing draws itself in the middle with the next
-  page's name under it, and once that page is in place the plates lift off.
-  Going to sign in, the drawing settles into the page's own art panel
-  instead of leaving.
+  The night sheet between public pages. It fades in over the page being
+  left, a sign-in drawing draws itself in the middle with the next page's
+  name under it, and once that page is in place the sheet fades off it.
+  Going to sign in, the drawing glides into the page's own art panel
+  instead of leaving. Only opacity and transform move, on the compositor:
+  the sheet never cuts across the page under it.
 */
 
 .sheet {
-  --rack-ms: 400ms;
-  --rack-step: 24ms;
-  --lift-ms: 560ms;
-  --lift-step: 26ms;
   position: fixed;
   inset: 0;
   z-index: 300;
@@ -22,9 +19,30 @@
   pointer-events: none;
 }
 
+/* One sheet in the sign-in panel's look: night with its faint 40px grid. */
+.cover {
+  position: absolute;
+  inset: 0;
+  background-color: #0b0a08;
+  background-image:
+    linear-gradient(rgb(242 240 230 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(242 240 230 / 0.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+  will-change: opacity;
+}
+
+/* Matches RACK_MS and LIFT_MS in page-sheet.tsx. */
+.covering .cover {
+  animation: sheet-in 280ms cubic-bezier(0.33, 0, 0.2, 1) both;
+}
+
+.lifting .cover {
+  animation: sheet-out 460ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 /* Sized like the sign-in art panel, so the drawing can land on it unscaled.
-   Its own layer: the lines repaint as they draw, and the plates under them
-   are never repainted with them. */
+   Its own layer: the lines repaint as they draw, and the sheet under them
+   is never repainted with them. */
 .drawing {
   position: absolute;
   inset-block: 0;
@@ -43,7 +61,7 @@
 }
 
 .leaving {
-  animation: sheet-drawing-out 420ms cubic-bezier(0.7, 0, 0.84, 0) both;
+  animation: sheet-out 360ms ease-in both;
 }
 
 .caption {
@@ -74,11 +92,11 @@
 
 .caption span {
   display: block;
-  animation: sheet-caption-in 520ms cubic-bezier(0.22, 1, 0.36, 1) 240ms both;
+  animation: sheet-caption-in 520ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
 }
 
 .lifting .caption {
-  animation: sheet-out 160ms ease-in both;
+  animation: sheet-out 200ms ease-in both;
 }
 
 @keyframes sheet-in {
@@ -91,8 +109,4 @@
 
 @keyframes sheet-caption-in {
   from { transform: translateY(110%); }
-}
-
-@keyframes sheet-drawing-out {
-  to { opacity: 0; transform: translateY(-8vh); }
 }

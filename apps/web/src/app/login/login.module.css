@@ -280,19 +280,20 @@
   margin-top: -3.5rem;
 }
 
-/* The door's heading, then its form, rise into place as the page opens. A
-   page prepared ahead of the click, or still under a page sheet, holds them
-   until it is seen. */
+/* The door's heading, then its form, fade in where they stand as the page
+   opens: nothing slides, so going from the chooser to a door only changes
+   the words. A page prepared ahead of the click, or still under a page
+   sheet, holds them until it is seen. */
 .main > * > * {
-  animation: door-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: door-in 320ms ease-out both;
 }
 
 .main > * > :nth-child(2) {
-  animation-delay: 70ms;
+  animation-delay: 40ms;
 }
 
 .main > * > :nth-child(n + 3) {
-  animation-delay: 140ms;
+  animation-delay: 80ms;
 }
 
 :global(html[data-prerendering]) .main > * > *,
@@ -300,8 +301,8 @@
   animation-play-state: paused;
 }
 
-@keyframes door-rise {
-  from { opacity: 0; transform: translateY(14px); }
+@keyframes door-in {
+  from { opacity: 0; }
 }
 
 .footer {

@@ -2,6 +2,21 @@
 
 ## 10 October 2026 — Smooth landing → sign-in transition and steady doors (deployed)
 
+**Follow-up (same evening):** Elias, testing live, still saw "bars going over the
+sign-in page" and the right side twitching. A frame-by-frame screencast of
+production showed why: the eight plates lifted one after another and sliced
+"Sign in to RIVET" into strips while the words also rose into place. Frame
+timing was already smooth; the choreography itself read as glitching. Now:
+- The page sheet is one night cover that fades on, holds the drawing, and fades
+  off while the drawing glides into the panel. The sign-in words wait until the
+  drawing has moved off them (380 ms into the glide), then fade in place.
+- Door content fades in where it stands (no 14px rise), so chooser → door only
+  changes the words. Live measurement already showed heading, blurb and first
+  control at identical heights on all three pages at 1440×900, 1440×760, 390×844.
+- `WorkspaceCurtain` fades its paper off in one piece too; `Plates` is removed.
+- Verified by screencast on the mock production build (60 fps frames, desktop
+  and phone), 58 motion/routing/sign-in browser cases, 2,065 unit tests, lint.
+
 Elias reported the landing → sign-in sheet as glitchy on desktop and phone ("the
 bars"), white bars above and below the night pages on his phone, the door heading
 jumping below a "Back to sign in" link, and slow, jumpy email/password fields on

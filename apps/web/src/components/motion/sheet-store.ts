@@ -7,6 +7,7 @@ import type { TKey } from "@/lib/i18n/core";
  * about it without loading the sheet.
  */
 
+/** `rack`: the sheet fading on; `hold`: covering while the next page loads; `lift`: fading off. */
 export type SheetPhase = "idle" | "rack" | "hold" | "lift";
 
 /** The sign-in drawing a sheet can carry into the page's own art panel. */
@@ -25,9 +26,9 @@ export type SheetState = {
   /** The display face of the page left (its `--font-mona`), borrowed so the sheet loads no font of its own. */
   font: string;
   dock: SheetDock | null;
-  /** Decided as the plates lift: whether the drawing lands on the page's art panel. */
+  /** Decided as the sheet fades off: whether the drawing lands on the page's art panel. */
   landing: boolean;
-  /** When the plates started to rack, on the page's clock. */
+  /** When the sheet started to cover, on the page's clock. */
   startedAt: number;
 };
 

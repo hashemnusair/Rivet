@@ -2,19 +2,18 @@
 
 import { useEffect, useLayoutEffect, useState } from "react";
 import { cn } from "@/lib/utils/cn";
-import { Plates, platesMs } from "./plates";
 import { RivetMarkLoader } from "./rivet-mark-loader";
 import styles from "./workspace-curtain.module.css";
 
-/** Matches `--lift-ms` and `--lift-step` in the stylesheet, plus the mark stepping back. */
-const LIFT_MS = platesMs(460, 18) + 160;
+/** Matches the cover's fade in the stylesheet, after the mark has stepped back. */
+const LIFT_MS = 480;
 /** The shell mounts in one long task; the lift starts after it has painted, so it runs smoothly. */
 const SETTLE_MS = 120;
 
 type Phase = "covering" | "ready" | "lifting" | "gone";
 
 /**
- * Covers a workspace shell until it is ready, then lifts away over it. Keep it
+ * Covers a workspace shell until it is ready, then fades off it. Keep it
  * mounted in the same place while `ready` changes: the lift plays only when
  * this curtain was actually seen, so a shell that is ready on its first render
  * never shows it. While it covers a wait it is the page's status, named by
@@ -59,7 +58,7 @@ export function WorkspaceCurtain({ ready, label }: { ready: boolean; label: stri
       aria-hidden={waiting ? undefined : true}
       data-testid="workspace-curtain"
     >
-      <Plates tone="paper" motion={phase === "lifting" ? "lift" : null} />
+      <div className={styles.cover} />
       <div className={styles.center}>
         <RivetMarkLoader className="h-14 w-auto text-ink" />
         <p className={styles.label}>{label}</p>

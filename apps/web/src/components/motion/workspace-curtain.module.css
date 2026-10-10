@@ -1,12 +1,11 @@
 /*
-  The product's loading curtain: plain paper plates, the mark
-  lifting in the middle, the wait named under it. When the workspace is
-  ready the mark steps back and the plates lift off over the shell.
+  The product's loading curtain: plain paper, the mark lifting in the
+  middle, the wait named under it. When the workspace is ready the mark
+  steps back and the paper fades off the shell in one piece, on the
+  compositor, so nothing cuts across the page as it appears.
 */
 
 .curtain {
-  --lift-ms: 460ms;
-  --lift-step: 18ms;
   position: fixed;
   inset: 0;
   z-index: 200;
@@ -14,6 +13,18 @@
 
 .done {
   pointer-events: none;
+}
+
+.cover {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-paper);
+  will-change: opacity;
+}
+
+/* With its delay, matches LIFT_MS in workspace-curtain.tsx. */
+.lifting .cover {
+  animation: curtain-fade 420ms cubic-bezier(0.4, 0, 0.2, 1) 60ms both;
 }
 
 .center {
@@ -39,6 +50,10 @@
   animation: curtain-label 300ms ease 700ms both;
 }
 
+@keyframes curtain-fade {
+  to { opacity: 0; }
+}
+
 @keyframes curtain-leave {
   to { opacity: 0; transform: translateY(-6px); }
 }
@@ -52,7 +67,8 @@
     animation: none;
   }
 
-  .done .center {
+  .done .center,
+  .lifting .cover {
     animation: none;
     opacity: 0;
   }
