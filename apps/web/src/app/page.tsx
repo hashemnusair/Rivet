@@ -25,6 +25,7 @@ import {
 } from "@/components/marketing/landing-story";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollProgress } from "@/components/marketing/scroll-progress";
+import { satoshi } from "@/components/marketing/satoshi";
 import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
@@ -64,7 +65,7 @@ export default function LandingPage() {
   const signedOut = viewer.status === "signed-out";
 
   return (
-    <div data-night-page className={`${styles.pageShell} ${styles.nightPage} night-tokens marketing-body min-h-screen bg-paper text-ink`}>
+    <div data-night-page className={cn(styles.pageShell, styles.nightPage, locale === "en" && [satoshi.variable, styles.satoshiLanding], "night-tokens marketing-body min-h-screen bg-paper text-ink")}>
       <SignedInGuard />
       <LandingMotionController />
       <ScrollProgress />

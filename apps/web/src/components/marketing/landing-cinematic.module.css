@@ -29,6 +29,36 @@
   background: #0b0a08;
 }
 
+/* The approved Satoshi direction is scoped to the English landing. */
+.satoshiLanding {
+  --font-marketing: var(--font-satoshi), sans-serif;
+  --font-marketing-display: var(--font-satoshi), sans-serif;
+  --font-sans: var(--font-satoshi), sans-serif;
+  --font-display: var(--font-satoshi), sans-serif;
+}
+
+.satoshiLanding :global([class*="font-marketing-display"]),
+.satoshiLanding .menuLabel,
+.satoshiLanding .stackHeader h2,
+.satoshiLanding .stackState h3,
+.satoshiLanding .dayMoment h3,
+.satoshiLanding .accountTitle {
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-stretch: 100%;
+}
+
+.satoshiLanding .rigPlateLabel {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-stretch: 100%;
+}
+
+.satoshiLanding .dayTime {
+  font-weight: 400;
+  font-stretch: 100%;
+}
+
 :global(html.landing-nav-open) .pageSheet {
   transform: translateX(calc(3.5% * var(--landing-dir))) scale(0.965);
   border-radius: 1.25rem;
@@ -822,6 +852,35 @@
 .filmTagline:lang(ar) {
   font-family: var(--font-marketing);
   font-weight: 500;
+}
+
+/* Satoshi / Original (adjusted): 115%, 0.2em, 625, 1.8rem, 2.3rem.
+   Keep the approved picker's fluid sizes and phone wordmark fit. */
+.satoshiLanding .filmWord {
+  gap: 0.2em;
+  font-family: var(--font-satoshi), sans-serif;
+  font-size: clamp(2.8rem, 21.85vw, 13.225rem);
+  font-stretch: 100%;
+  font-weight: 625;
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.satoshiLanding .filmTagline {
+  margin-top: clamp(0.8rem, 2.99vh, 2.3rem);
+  font-family: var(--font-satoshi), sans-serif;
+  font-size: clamp(1rem, 1.44vw + 0.5rem, 1.8rem);
+  font-stretch: 100%;
+  font-weight: 450;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+}
+
+@media (max-width: 600px) {
+  .satoshiLanding .filmWord {
+    /* Five glyphs and four 0.2em gaps within the picker's 82vw allowance. */
+    font-size: min(21.85vw, calc(82vw / 4.4));
+  }
 }
 
 @keyframes film-rise {

@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/prepare-marketing-font.mjs",
+    "fonts:prepare": "node scripts/prepare-marketing-font.mjs",
     "dev": "next dev --webpack -p 3000",
     "dev:full": "convex dev --start 'next dev --webpack -p 3000'",
     "dev:turbo": "next dev -p 3000",

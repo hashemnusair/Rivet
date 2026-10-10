@@ -1,5 +1,32 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — approved landing typography release candidate
+
+Synced with main `1e470df`, preserving the newer sign-in layout, night chrome,
+page transitions and stack animation. The English landing now uses Satoshi /
+Original (adjusted): name size **115%**, letter gap **0.2em**, weight **625**,
+tagline **1.8rem**, space below the name **2.3rem**. Fluid sizes and the phone
+wordmark cap match the approved picker. Arabic and auth typography are unchanged.
+
+The temporary picker and tunnel configuration are absent from the release.
+Satoshi is self-hosted through `next/font/local`; installation downloads the
+unmodified official Fontshare WOFF2 and verifies its SHA-256. The binary is ignored
+because the repository is public and the supplied license restricts redistribution.
+`pnpm install --frozen-lockfile` prepares it; `pnpm --filter web fonts:prepare`
+can restore it if missing. No runtime Fontshare request is needed.
+
+Local validation passes: web TypeScript, full lint/secret-output audit, 40 focused
+landing/header/story/navigation/signup tests, the Arabic revision-607 lock, and
+a fresh workspace install with checksum-verified font download. Browser checks
+confirm the English hero, narrow-phone fit, preserved night chrome, and unchanged
+Arabic fonts. Full CI must pass on the release commit before production.
+No Convex deployment or data migration is required. Historical audit/import
+outputs stay local. `FRONTEND_HANDOFF.md` remains frozen.
+
+Read first: this entry, `apps/web/src/components/marketing/satoshi.ts`,
+`apps/web/src/components/marketing/landing-cinematic.module.css`, and
+`apps/web/scripts/prepare-marketing-font.mjs`.
+
 ## 11 October 2026 — Drawings centred, no words on the page sheet
 
 Elias asked for the sign-in drawings to be centred vertically (they sat high)

@@ -2,6 +2,10 @@
 node_modules/
 .pnpm-store/
 
+# Fontshare permits self-hosting, but not redistribution in this public repo.
+# Restored and verified by apps/web/scripts/prepare-marketing-font.mjs on install.
+apps/web/src/components/marketing/fonts/Satoshi-Variable.woff2
+
 # Next.js build output
 .next/
 # Isolated verification output (custom Next distDir).
