@@ -13,14 +13,20 @@
   .frame { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
-/* -------------------------------------------------------------- the still */
+/* ---------------------------------------------------------------- the art */
 
+/* A layout sheet: night, a faint 40px grid, a little darker at the edges. */
 .panel {
   position: relative;
   isolation: isolate;
   display: none;
   overflow: hidden;
-  background: #090806;
+  background-color: #0b0a08;
+  background-image:
+    radial-gradient(120% 90% at 50% 42%, transparent 50%, rgb(0 0 0 / 0.55) 100%),
+    linear-gradient(rgb(242 240 230 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(242 240 230 / 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 40px 40px, 40px 40px;
   color: #fff;
 }
 
@@ -28,27 +34,49 @@
   .panel { display: block; }
 }
 
-/* The still drifts a few percent over half a minute and back: alive, never busy. */
-.still {
+.art {
   position: absolute;
   inset: 0;
-  transform-origin: 55% 40%;
-  animation: still-drift 32s ease-in-out infinite alternate;
+  width: 100%;
+  height: 100%;
 }
 
-@keyframes still-drift {
-  from { transform: scale(1.07) translate3d(-1.2%, 0.8%, 0); }
-  to { transform: scale(1) translate3d(0, 0, 0); }
+.ink,
+.thin,
+.faint,
+.red,
+.redThin {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* Light at the top for the logo, deep at the bottom for the caption; the
-   product in between stays as it was drawn. */
-.stillShade {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(to bottom, rgb(9 8 6 / 0.55) 0, rgb(9 8 6 / 0) 18%, rgb(9 8 6 / 0) 55%, rgb(9 8 6 / 0.92) 100%),
-    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.45) 100%);
+.ink { stroke: #f2f0e6; stroke-width: 1.6; }
+.thin { stroke: rgb(242 240 230 / 0.5); stroke-width: 1.1; }
+.faint { stroke: rgb(242 240 230 / 0.14); stroke-width: 1; }
+.red { stroke: #e5262e; stroke-width: 1.9; }
+.redThin { stroke: rgb(229 38 46 / 0.75); stroke-width: 1.2; }
+.redFill { fill: rgb(229 38 46 / 0.16); }
+.dot { fill: #e5262e; }
+
+/* Lines draw themselves in once, in order; fills and construction fade. */
+.draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: art-draw 1.3s cubic-bezier(0.65, 0, 0.35, 1) var(--d, 0s) forwards;
+}
+
+.fade {
+  opacity: 0;
+  animation: art-fade 0.9s ease var(--d, 0s) forwards;
+}
+
+@keyframes art-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes art-fade {
+  to { opacity: 1; }
 }
 
 .panelBrand {
@@ -208,5 +236,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .still { animation: none; }
+  .draw {
+    stroke-dasharray: none;
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .fade {
+    opacity: 1;
+    animation: none;
+  }
 }

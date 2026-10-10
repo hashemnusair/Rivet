@@ -50,13 +50,18 @@ the page moved; nothing is committed, pushed or deployed yet.
 - **Sign-in pages in the same night look** (Elias: "ugly and sloppy"). `LoginLayout`
   (`login-chrome.tsx`, `login.module.css`) frames `/login`, the gym/member/admin
   doors, member sign-up, invitations and profile steps: on ≥1024px the left half
-  shows a still for that door (no video on sign-in, at Elias's request), drawn
-  from the film's scenes with `render.mjs --w 1600 --h 1800 --cam … --stills`:
-  the chooser a class filling up, the gym door the front desk checking a member
-  in, the member door the Entry QR, the admin door the owner's view over both
-  branches (`public/marketing/signin-*.jpg`). It drifts slowly (off for reduced
-  motion) under the door's own line; the form sits alone on the right, and
-  phones load neither the panel nor its image. The
+  shows a line drawing for that door (no video or photos on sign-in, at
+  Elias's request): `sign-in-art.tsx`, inline SVG in white/black/red on a faint
+  layout grid. Chooser: a weight-stack machine with the red pin (the RIVET mark
+  as a machine); gym door: the front desk with a red dumbbell on its face and
+  three wall screens; member door: a bench press in one-point perspective with
+  one red plate on each end; admin door: three storefronts wired to one map
+  screen. Lines draw in once (off for reduced motion); the door's own line is
+  the caption; the form sits alone on the right, and phones render no panel.
+- Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
+  without the width axis (40 KB instead of 98 KB; the landing keeps the wide
+  cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
+  37 KB; the full-size file stays for printed documents). The
   palette is the shared `night-tokens` class (moved from the landing module into
   `globals.css`, with `light-tokens` for the Entry QR). Removed: the icon boxes,
   the decorative Arabic line, the "rivet.jo" back link and the bordered language

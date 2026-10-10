@@ -6,11 +6,12 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
-import { monaSans } from "@/components/marketing/mona-sans";
+import { monaSansText } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
+import { BenchArt, DeskArt, NetworkArt, StackArt } from "./sign-in-art";
 import type { Portal } from "./portals";
 
 const LEGAL_LABEL_KEYS = {
@@ -20,8 +21,8 @@ const LEGAL_LABEL_KEYS = {
 
 /**
  * Shared frame for `/login` and every door beneath it, in the landing's night
- * look: a still of the product for this door in the left half on wide screens,
- * the form alone on the right. The palette comes from `night-tokens`, so the forms inside need no
+ * look: a line drawing for this door in the left half on wide screens, the
+ * form alone on the right. The palette comes from `night-tokens`, so the forms inside need no
  * colours of their own.
  */
 export function LoginLayout({
@@ -40,14 +41,14 @@ export function LoginLayout({
   const brand = portal?.id ?? "chooser";
 
   return (
-    <div data-login className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSans.variable)}>
+    <div data-login className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSansText.variable)}>
       <div className={styles.frame}>
-        <LoginStill brand={brand} homeHref={publicHref} />
+        <LoginArt brand={brand} homeHref={publicHref} />
 
         <div className={styles.column}>
           <div className={styles.bar}>
             <Link href={publicHref} aria-label={t("auth.chrome.homeLabel")} className="lg:hidden">
-              <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={112} height={29} priority />
+              <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={112} height={29} priority />
             </Link>
             <div className={styles.barLinks}>
               <LanguageLink />
@@ -85,32 +86,30 @@ export function LoginLayout({
   );
 }
 
-/** Each door shows its own part of RIVET, drawn from the landing film's scenes (scripts/hero-film). */
-const STILLS: Record<"chooser" | Portal["id"], string> = {
-  chooser: "/marketing/signin-chooser.jpg",
-  account: "/marketing/signin-chooser.jpg",
-  staff: "/marketing/signin-staff.jpg",
-  member: "/marketing/signin-member.jpg",
-  admin: "/marketing/signin-admin.jpg",
+/** Each door has its own drawing: the chooser one that belongs to everyone. */
+const ART: Record<"chooser" | Portal["id"], () => ReactNode> = {
+  chooser: StackArt,
+  account: StackArt,
+  staff: DeskArt,
+  member: BenchArt,
+  admin: NetworkArt,
 };
 
 /**
- * The left half on wide screens: a still of the product for this door (a class
- * filling up, the front desk checking a member in, the member's Entry QR, the
- * owner's view of both branches), drifting slowly, with the door's own line as
- * its caption. Phones never load it.
+ * The left half on wide screens: a line drawing for this door (a weight stack
+ * with its pin, the front desk, a bench press, every gym on one screen) on a
+ * faint layout grid, with the door's own line as its caption. Inline SVG, so
+ * it costs no request; phones never render it.
  */
-function LoginStill({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
+function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
   const { t } = useLocale();
+  const Art = ART[brand];
   return (
     <aside className={styles.panel}>
-      <div aria-hidden className={styles.still}>
-        <Image src={STILLS[brand]} alt="" fill sizes="50vw" className="object-cover" />
-      </div>
-      <div aria-hidden className={styles.stillShade} />
+      <Art />
 
       <Link href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
-        <Image src="/brand/rivet-lockup-rev.png" alt={t("common.brand.name")} width={122} height={31} priority />
+        <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={122} height={31} priority />
       </Link>
 
       <div className={styles.panelCaption}>

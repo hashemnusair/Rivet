@@ -61,7 +61,7 @@ export function Sidebar() {
             <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
             <>
-              <Image src={brandLogo ?? "/brand/rivet-lockup-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+              <Image src={brandLogo ?? "/brand/rivet-lockup-rev-488.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
               {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
             </>
           )}

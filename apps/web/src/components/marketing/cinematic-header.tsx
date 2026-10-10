@@ -327,7 +327,7 @@ export function CinematicHeader({
           inert={open}
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
-          <Image src={open || onLanding ? "/brand/rivet-lockup-rev.png" : "/brand/rivet-lockup.png"} alt={t("common.brand.name")} width={122} height={31} priority />
+          <Image src={open || onLanding ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
         </Link>
 
         <div className={styles.headerActions}>
