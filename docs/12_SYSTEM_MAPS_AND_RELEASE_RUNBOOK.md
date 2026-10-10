@@ -1,5 +1,15 @@
 # 12 — System Maps and Release Runbook
 
+## PR #9 — approved Satoshi landing, 11 October 2026
+
+Released as `60b1bdb` after all 13 PR CI checks passed on the identical source
+tree at `03b9af1`. Production `dpl_HyeZpijYcZysSRqaz57ZmRbSUe7r` is READY and
+assigned to the RIVET domains. Live desktop/phone typography, the font checksum,
+annual-plan signup navigation and sign-in were verified. See CURRENT_STATE.md.
+The font picker and tunnel config are excluded. This is frontend-only; no Convex
+deployment or migration is owed. Fresh installs and dev/build commands prepare
+the ignored Fontshare font; direct Next commands require `pnpm --filter web fonts:prepare` first.
+
 ## PR #8 — frontend motion release, 10 October 2026
 
 Released as `316a337` after all 13 checks passed in PR CI run `38068415483`.

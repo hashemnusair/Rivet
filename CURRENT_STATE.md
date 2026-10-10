@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## 11 October 2026 — approved landing typography release candidate
+## 11 October 2026 — approved landing typography released (PR #9)
 
 Synced with main `015b9ad`, preserving the newer sign-in layout, night chrome,
 page transitions, stack animation and full-screen phone film. The English landing now uses Satoshi /
@@ -16,11 +16,23 @@ Fresh installs and the development/build commands prepare it (pnpm can skip
 install hooks with cached dependencies). `pnpm --filter web fonts:prepare`
 can restore it before direct Next.js commands. No runtime Fontshare request is needed.
 
-Local validation passes: web TypeScript, full lint/secret-output audit, 40 focused
-landing/header/story/navigation/signup tests, the Arabic revision-607 lock, and
-a fresh workspace install with checksum-verified font download. Browser checks
-confirm the English hero, narrow-phone fit, preserved night chrome, and unchanged
-Arabic fonts. Full CI must pass on the release commit before production.
+Merged as `60b1bdb35edddc084095bbb15c9ef50602547c38`, with exactly the source tree
+tested at `03b9af1`. All 13 jobs passed in
+[PR CI 38092168377](https://github.com/hashemnusair/Rivet/actions/runs/38092168377):
+2,068 unit/component tests and 217 browser cases, with 14 credential-gated cases
+skipped as designed. Type/lint/secret audit, production build and dependency audit
+also passed. The Arabic revision-607 decision lock is unchanged and verifies.
+The automatic [main CI 38092461224](https://github.com/hashemnusair/Rivet/actions/runs/38092461224)
+also passed all 13 jobs for the merge commit.
+
+Vercel Production `dpl_HyeZpijYcZysSRqaz57ZmRbSUe7r` is READY for the merge,
+assigned to all production domains. The live English hero matches the approved
+face/weight/spacing at desktop and phone widths; the phone film fills its viewport
+without horizontal overflow. The served 42,588-byte WOFF2 matches the approved
+SHA-256. Home → annual Growth signup preserves both choices; Back/Forward,
+the sign-in chooser and the gym sign-in form work. No application was submitted.
+The local Arabic check retains Mona/Plex/Manrope rather than Satoshi.
+
 No Convex deployment or data migration is required. Historical audit/import
 outputs stay local. `FRONTEND_HANDOFF.md` remains frozen.
 
