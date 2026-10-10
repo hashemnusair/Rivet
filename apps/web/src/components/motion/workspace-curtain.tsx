@@ -25,7 +25,12 @@ export function WorkspaceCurtain({ ready, label }: { ready: boolean; label: stri
 
   // Before paint, so the curtain never claims to be loading over a shell that is ready.
   useLayoutEffect(() => {
-    setPhase((current) => (ready ? (current === "covering" ? "ready" : current) : "covering"));
+    const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setPhase((current) => {
+      if (!ready) return "covering";
+      if (reduced) return "gone";
+      return current === "covering" ? "ready" : current;
+    });
   }, [ready]);
 
   useEffect(() => {

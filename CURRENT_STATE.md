@@ -18,6 +18,10 @@ cases survive; the header combines night-tone support with `SheetLink` navigatio
   for that preference, including its staggered delay. The browser regression
   asserts no animation/transform and full opacity on chooser/member content;
   it failed before the fix. Linux visual references and tolerances are unchanged.
+- The workspace curtain also leaves immediately when a shell becomes ready under
+  reduced motion, rather than waiting for its decorative lift timers. A unit
+  regression covers repeated loading/ready cycles; the Linux support-page capture
+  exposed the remaining cover before this repair.
 - Added five browser regressions in `e2e/page-motion.spec.ts`: keyboard navigation
   and interactive pin after docking at 1440px, mobile navigation at 390px, preserved
   annual Growth signup parameters/night header, reduced motion and interrupted Back.

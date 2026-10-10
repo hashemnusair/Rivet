@@ -9,6 +9,7 @@ describe("WorkspaceCurtain", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("never shows over a shell that is ready on its first render", () => {
@@ -36,5 +37,18 @@ describe("WorkspaceCurtain", () => {
     act(() => vi.advanceTimersByTime(1_500));
     rerender(<WorkspaceCurtain ready={false} label="Checking access" />);
     expect(screen.getByRole("status", { name: "Checking access" })).toBeInTheDocument();
+  });
+
+  it("uncovers a ready workspace immediately when reduced motion is requested", () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+    const { rerender } = render(<WorkspaceCurtain ready={false} label="Loading your gym" />);
+    expect(screen.getByRole("status", { name: "Loading your gym" })).toBeInTheDocument();
+    rerender(<WorkspaceCurtain ready label="Loading your gym" />);
+    expect(screen.queryByTestId("workspace-curtain")).toBeNull();
+
+    rerender(<WorkspaceCurtain ready={false} label="Loading your gym" />);
+    expect(screen.getByRole("status", { name: "Loading your gym" })).toBeInTheDocument();
+    rerender(<WorkspaceCurtain ready label="Loading your gym" />);
+    expect(screen.queryByTestId("workspace-curtain")).toBeNull();
   });
 });
