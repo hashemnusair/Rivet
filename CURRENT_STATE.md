@@ -1,5 +1,17 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — The landing film fills a phone's screen
+
+Elias saw the next section below the film on his phone before scrolling. The
+film was `100svh` (the small viewport), which stops above a phone browser's
+floating bottom bar; it is now `100lvh` (svh fallback) so it runs under the
+bars, and its footer (chapter caption, pause) is lifted by `100lvh - 100svh`
+so it stays above the bottom bar while it shows. Chromium has no toolbar to
+emulate this (svh = lvh there): verified only that the film still spans exactly
+one viewport at 375–430px and 1440px; the iPhone check is Elias's. The page
+motion pricing test now retries its Annual click until the tab is selected (it
+flaked twice when the click landed before hydration).
+
 ## 11 October 2026 — Drawings centred, no words on the page sheet
 
 Elias asked for the sign-in drawings to be centred vertically (they sat high)
