@@ -89,6 +89,26 @@ the page moved; nothing is committed, pushed or deployed yet.
   The chooser's 1440 reference (`pass-7-login-1440.png`) was re-captured on
   Linux for the redrawn machine (throwaway `tmp/signin-machine-ref`, run
   38056327851); the other captures that run rewrote were unchanged on screen.
+- **The chooser's machine works** (Hashem, 10 October). Nothing on the page
+  says so. Clicking a plate moves the red pin
+  into it and the red plate follows; with the pin in the top (lightest) plate
+  the rope outweighs what is selected, so it sinks 32 units, swings a little
+  from its clip, and lifts that plate by the same length of cable, with the
+  guide rods and selector stem showing in the gap. Any heavier plate pulls it
+  back. `machine()` in `sign-in-art.tsx` returns the drawing in parts and
+  `stack()` flattens them in the old order, so the morph between doors samples
+  exactly the strokes it did; `MachineArt` renders the chooser at rest and
+  holds the pin. Motion is CSS only (`login.module.css`: `.pin`, `.lift`,
+  `.gap`, `.sway`); reduced motion moves the parts without travel. Decisions:
+  pointer only, with the drawing still `aria-hidden` and out of the tab order,
+  because eight extra stops before the form would cost keyboard users more
+  than a decoration is worth; a faint fill and pointer cursor on hover are the
+  only hint; the pin's position is not carried to the next door (the morph
+  starts from the stock drawing, since door URLs are prefetched by address).
+  Checked: at rest the drawing is the same pixels as production once the
+  finished draw-in animations are taken off both (Chromium layers those, which
+  moves anti-aliasing by a fraction of a pixel); the 1440 sign-in references
+  pass unchanged; the clicks work in Chromium and WebKit.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of

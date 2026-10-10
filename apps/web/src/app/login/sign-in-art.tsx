@@ -37,59 +37,70 @@ function ground(y = 640, from = 70, to = 730): Shape[] {
 
 /* ------------------------------------------------------------------ chooser */
 
+const STACK_TOP = 412;
+const PLATE_PITCH = 24;
+const PLATE_HEIGHT = 18;
+/** The plates from the top, lightest first. */
+const PLATES = range(0, 7, 1).map((i) => ({ x: i < 3 ? 352 : 326, y: STACK_TOP + i * PLATE_PITCH, w: i < 3 ? 96 : 148 }));
+/** The plate the pin rests in: the red one of the mark. */
+const PIN_HOME = 4;
+const HOME_PLATE = { x: 326, y: STACK_TOP + PIN_HOME * PLATE_PITCH, w: 148 };
+const plateBox = (plate: { x: number; y: number; w: number }) => box(plate.x, plate.y, plate.w, PLATE_HEIGHT, 4);
+
 /**
  * A weight-stack machine with one red pin: the RIVET mark as the machine it
  * came from. Three narrow plates over five wide ones, as in the mark, each
  * with its pin hole; the cable runs over the far pulley to a tricep pushdown
  * rope, drawn to the same scale as the plates. The guide rods run behind the
- * stack, so they stop at its top plate.
+ * stack, so they stop at its top plate. Returned in parts, so the pin, the
+ * cable and the rope can move (see `MachineArt`).
  */
-function stack(): Shape[] {
-  const top = 412;
-  const plates = range(0, 7, 1).flatMap((i) => {
-    const y = top + i * 24;
-    const [x, w] = i < 3 ? [352, 96] : [326, 148];
-    return [sh(box(x, y, w, 18, 4), "ink", 0.8 + i * 0.05), sh(ring(x + w - 12, y + 9, 2.6), "thin", 1.0 + i * 0.04)];
-  });
-  const pinY = top + 4 * 24 + 9;
-  return [
-    ...ground(640, 120, 720),
-    sh(line(184, 76, 616, 76), "faint"),
-    ...[184, 616].map((x) => sh(line(x, 68, x, 84), "faint")),
-    // frame
-    sh(box(200, 96, 470, 24, 4), "ink", 0.1),
-    sh(box(220, 120, 20, 500, 2), "ink", 0.2),
-    sh(box(560, 120, 20, 500, 2), "ink", 0.25),
-    sh(box(184, 620, 432, 20, 4), "ink", 0.3),
-    sh(line(376, 120, 376, top), "thin", 0.4),
-    sh(line(424, 120, 424, top), "thin", 0.4),
-    // pulleys and cable
-    sh(line(400, 120, 400, 132), "ink", 0.45),
-    sh(ring(400, 152, 20), "ink", 0.5),
-    sh(ring(400, 152, 6), "thin", 0.6),
-    sh(line(650, 120, 650, 134), "ink", 0.45),
-    sh(ring(650, 148, 13), "ink", 0.55),
-    sh(ring(650, 148, 4), "thin", 0.65),
-    sh(`M400 172V${top}`, "thin", 0.7),
-    sh("M420 152H637", "thin", 0.7),
-    sh("M663 148V249", "thin", 0.8),
+function machine() {
+  const top = STACK_TOP;
+  const pinY = HOME_PLATE.y + PLATE_HEIGHT / 2;
+  return {
+    frame: [
+      ...ground(640, 120, 720),
+      sh(line(184, 76, 616, 76), "faint"),
+      ...[184, 616].map((x) => sh(line(x, 68, x, 84), "faint")),
+      sh(box(200, 96, 470, 24, 4), "ink", 0.1),
+      sh(box(220, 120, 20, 500, 2), "ink", 0.2),
+      sh(box(560, 120, 20, 500, 2), "ink", 0.25),
+      sh(box(184, 620, 432, 20, 4), "ink", 0.3),
+    ],
+    rods: [sh(line(376, 120, 376, top), "thin", 0.4), sh(line(424, 120, 424, top), "thin", 0.4)],
+    pulleys: [
+      sh(line(400, 120, 400, 132), "ink", 0.45),
+      sh(ring(400, 152, 20), "ink", 0.5),
+      sh(ring(400, 152, 6), "thin", 0.6),
+      sh(line(650, 120, 650, 134), "ink", 0.45),
+      sh(ring(650, 148, 13), "ink", 0.55),
+      sh(ring(650, 148, 4), "thin", 0.65),
+    ],
+    // the cable: down to the stack, across the top, down to the rope
+    stackCable: sh(`M400 172V${top}`, "thin", 0.7),
+    run: sh("M420 152H637", "thin", 0.7),
+    ropeCable: sh("M663 148V249", "thin", 0.8),
     // the tricep rope: a clip, two strands, two stoppers
-    sh(ring(663, 258, 9), "ink", 0.85),
-    sh("M658 266C652 320 636 368 632 408", "ink", 0.95),
-    sh("M668 266C674 320 690 368 694 408", "ink", 0.95),
-    sh("M663 267C659 322 645 370 642 408", "thin", 1.0),
-    sh("M663 267C667 322 681 370 684 408", "thin", 1.0),
-    sh(box(625, 408, 24, 34, 10), "ink", 1.1),
-    sh(box(677, 408, 24, 34, 10), "ink", 1.1),
-    // the stack
-    sh(line(400, top + 18, 400, 604), "faint", 0, "3 6"),
-    sh(box(326, pinY - 9, 148, 18, 4), "soft", 1.5),
-    ...plates,
-    // the pin
-    sh(line(474, pinY, 498, pinY), "red", 1.3),
-    sh(ring(507, pinY, 9), "red", 1.4),
-    sh(ring(507, pinY, 3.2), "dot", 1.6),
-  ];
+    rope: [
+      sh(ring(663, 258, 9), "ink", 0.85),
+      sh("M658 266C652 320 636 368 632 408", "ink", 0.95),
+      sh("M668 266C674 320 690 368 694 408", "ink", 0.95),
+      sh("M663 267C659 322 645 370 642 408", "thin", 1.0),
+      sh("M663 267C667 322 681 370 684 408", "thin", 1.0),
+      sh(box(625, 408, 24, 34, 10), "ink", 1.1),
+      sh(box(677, 408, 24, 34, 10), "ink", 1.1),
+    ],
+    centre: sh(line(400, top + PLATE_HEIGHT, 400, 604), "faint", 0, "3 6"),
+    glow: sh(plateBox(HOME_PLATE), "soft", 1.5),
+    plates: PLATES.map((plate, i) => [sh(plateBox(plate), "ink", 0.8 + i * 0.05), sh(ring(plate.x + plate.w - 12, plate.y + 9, 2.6), "thin", 1.0 + i * 0.04)]),
+    pin: [sh(line(474, pinY, 498, pinY), "red", 1.3), sh(ring(507, pinY, 9), "red", 1.4), sh(ring(507, pinY, 3.2), "dot", 1.6)],
+  };
+}
+
+function stack(): Shape[] {
+  const m = machine();
+  return [...m.frame, ...m.rods, ...m.pulleys, m.stackCable, m.run, m.ropeCable, ...m.rope, m.centre, m.glow, ...m.plates.flat(), ...m.pin];
 }
 
 /* --------------------------------------------------------------------- team */
@@ -285,6 +296,9 @@ function ShapePath({ shape, motion }: { shape: Shape; motion?: string }) {
   );
 }
 
+/** How a shape arrives while the drawing draws itself in: lines draw, fills and construction fade. */
+const drawIn = (shape: Shape, animate: boolean) => (animate ? (isFill(shape.t) || shape.t === "faint" ? styles.fade : styles.draw) : undefined);
+
 /**
  * The drawing at rest, drawing itself in when `animate` is set. `pending`
  * marks the server's copy: a page reached from another sign-in page hides it
@@ -294,8 +308,88 @@ function StaticArt({ shapes, animate, pending = false }: { shapes: Shape[]; anim
   return (
     <svg viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
       {shapes.map((shape, i) => (
-        <ShapePath key={i} shape={shape} motion={animate ? (isFill(shape.t) || shape.t === "faint" ? styles.fade : styles.draw) : undefined} />
+        <ShapePath key={i} shape={shape} motion={drawIn(shape, animate)} />
       ))}
+    </svg>
+  );
+}
+
+/* ----------------------------------------------------------------- machine */
+
+/** How far the rope sinks, and the top plate rises, with the pin in the lightest plate. */
+const SLACK = 32;
+const scaleY = (from: number, to: number, by: number) => `scaleY(${((to - from + by) / (to - from)).toFixed(4)})`;
+
+/**
+ * The chooser's machine at rest, with a pin that works. Nothing on the page
+ * says so: clicking a plate moves the pin into it, and with the pin in the
+ * lightest plate the rope outweighs what is selected, so it sinks and lifts
+ * that plate by the same length of cable. Pointer only: the drawing stays
+ * hidden from assistive technology and out of the tab order, because it does
+ * nothing a visitor needs before the form.
+ */
+function MachineArt({ animate, pending = false }: { animate: boolean; pending?: boolean }) {
+  const m = useMemo(() => machine(), []);
+  const [pin, setPin] = useState(PIN_HOME);
+  const [used, setUsed] = useState(false);
+  const light = pin === 0;
+  const paint = (shape: Shape, key: number | string) => <ShapePath key={key} shape={shape} motion={drawIn(shape, animate)} />;
+  const raised = light ? { transform: `translateY(${-SLACK}px)` } : undefined;
+  const gapFloor = STACK_TOP + PLATE_PITCH;
+  const pinTo = PLATES[pin] ?? HOME_PLATE;
+
+  return (
+    <svg
+      viewBox="0 0 800 900"
+      preserveAspectRatio="xMidYMid meet"
+      className={styles.art}
+      aria-hidden
+      focusable="false"
+      data-art-pending={pending ? "" : undefined}
+      data-rope={light ? "sunk" : used ? "raised" : undefined}
+    >
+      {m.frame.map(paint)}
+      {/* the rods run behind the stack, so they end at the top plate wherever it is */}
+      <g className={styles.lift} style={{ transformOrigin: "0 120px", transform: light ? scaleY(120, STACK_TOP, -SLACK) : undefined }}>{m.rods.map(paint)}</g>
+      {m.pulleys.map(paint)}
+      <g className={styles.lift} style={{ transformOrigin: "0 172px", transform: light ? scaleY(172, STACK_TOP, -SLACK) : undefined }}>{paint(m.stackCable, "stack-cable")}</g>
+      {paint(m.run, "run")}
+      <g className={styles.lift} style={{ transformOrigin: "0 148px", transform: light ? scaleY(148, 249, SLACK) : undefined }}>{paint(m.ropeCable, "rope-cable")}</g>
+      <g className={styles.lift} style={light ? { transform: `translateY(${SLACK}px)` } : undefined}>
+        <g className={styles.sway} style={{ transformOrigin: "663px 249px" }}>{m.rope.map(paint)}</g>
+      </g>
+      {paint(m.centre, "centre")}
+      {/* under a raised plate: the two rods and the selector stem */}
+      <g
+        className={cn(styles.lift, styles.gap)}
+        style={{ transformOrigin: `0 ${gapFloor}px`, transform: light ? undefined : scaleY(gapFloor, STACK_TOP + PLATE_HEIGHT - SLACK, SLACK) }}
+      >
+        {[376, 400, 424].map((x) => <path key={x} d={line(x, gapFloor, x, STACK_TOP + PLATE_HEIGHT - SLACK)} className={styles.thin} />)}
+      </g>
+      {PLATES.map((plate, i) => (
+        <g
+          key={i}
+          data-plate={i}
+          className={cn(styles.plate, i === 0 && styles.lift)}
+          style={i === 0 ? raised : undefined}
+          onClick={() => {
+            setPin(i);
+            if (i === 0) setUsed(true);
+          }}
+        >
+          {/* the whole row, out to where the pin sits */}
+          <rect x={plate.x - 8} y={plate.y - 3} width={plate.w + 52} height={PLATE_PITCH} className={styles.hit} />
+          <g className={styles.glow} data-on={pin === i ? "" : undefined}>
+            {i === PIN_HOME ? paint(m.glow, "glow") : <path d={plateBox(plate)} className={styles.redFill} />}
+          </g>
+          {m.plates[i]?.map(paint)}
+        </g>
+      ))}
+      <g className={styles.lift} style={raised}>
+        <g data-pin={pin} className={styles.pin} style={{ transform: `translate(${pinTo.x - HOME_PLATE.x + pinTo.w - HOME_PLATE.w}px, ${pinTo.y - HOME_PLATE.y}px)` }}>
+          {m.pin.map(paint)}
+        </g>
+      </g>
     </svg>
   );
 }
@@ -588,9 +682,10 @@ export function SignInArt({ door }: { door: ArtDoor }) {
   const resting = stage !== null && (!stage.from || settled);
   useEffect(() => (resting ? measureWhenIdle() : undefined), [resting]);
 
-  if (!stage) return <StaticArt shapes={to} animate pending />;
-  if (stage.from && !settled) return <MorphArt from={stage.from} to={door} start={stage.start} onDone={settle} />;
-  return <StaticArt shapes={to} animate={stage.animate && !stage.from} />;
+  if (stage?.from && !settled) return <MorphArt from={stage.from} to={door} start={stage.start} onDone={settle} />;
+  const animate = stage ? stage.animate && !stage.from : true;
+  // One element for the server's copy and the page's own, so the lines keep drawing across the hand-over.
+  return door === "account" ? <MachineArt animate={animate} pending={!stage} /> : <StaticArt shapes={to} animate={animate} pending={!stage} />;
 }
 
 /** Adds the drawing a link leaves from, so the next sign-in page can move its lines. */
