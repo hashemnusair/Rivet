@@ -63,6 +63,20 @@ the page moved; nothing is committed, pushed or deployed yet.
   chip (now a text link like the landing's, same test id). Fields are 44px with a
   quiet focus; an unfilled form's submit is an outline, not a grey slab (unlayered
   `[data-login]` rules in `globals.css`). Behaviour and copy are unchanged.
+- **CI after the sign-in redesign.** Runs 38006675594 and 38007884086 on `main`
+  failed two things: `pnpm audit --prod` (six Next.js advisories, one high, all
+  fixed in 16.3.8) and the Pass 4/Pass 7 sign-in screenshots. `next`,
+  `eslint-config-next` and `@next/eslint-plugin-next` now lock 16.3.8 (no other
+  locked package changed). The ten sign-in references CI compares
+  (`pass-4-login-member-{390-linux,1440}` and
+  `pass-7-{login,login-gym,login-admin,invitation-complete}-{390-linux,1440}`)
+  were captured on GitHub’s Ubuntu runner (Actions run 38046804620) by a
+  temporary workflow on the throwaway branch `tmp/signin-linux-refs`, which
+  then passed the same four journeys against them. That branch is not for
+  `main` and can be deleted (its workflow runs only on pushes to it). The Mac-only `-390.png` siblings
+  were not refreshed (they need a Mac): CI never reads them, but a local Mac
+  run of those journeys will fail until they are refreshed with
+  `--update-snapshots`.
 
 ## 7 October 2026 — nonlegal launch release deployed
 
