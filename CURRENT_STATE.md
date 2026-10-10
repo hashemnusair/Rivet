@@ -61,7 +61,11 @@ the page moved; nothing is committed, pushed or deployed yet.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
-  37 KB; the full-size file stays for printed documents). The
+  37 KB; the full-size file stays for printed documents).
+- The ten Pass 4/Pass 7 sign-in references (1440 and 390-linux) were re-captured
+  on Linux with the drawings by a throwaway `tmp/signin-art-refs` run using
+  `--update-snapshots=all`; the member-app references it also rewrote were left
+  as they were, since they still pass. The
   palette is the shared `night-tokens` class (moved from the landing module into
   `globals.css`, with `light-tokens` for the Entry QR). Removed: the icon boxes,
   the decorative Arabic line, the "rivet.jo" back link and the bordered language
