@@ -109,6 +109,12 @@ the page moved; nothing is committed, pushed or deployed yet.
   finished draw-in animations are taken off both (Chromium layers those, which
   moves anti-aliasing by a fraction of a pixel); the 1440 sign-in references
   pass unchanged; the clicks work in Chromium and WebKit.
+  **Released:** `70dff4f` on `main`. Vercel Production
+  `4nckQkpQsZLFgca6RPy4viqAjgD6` completed for that commit and all 13 jobs
+  passed in [CI run 38062238326](https://github.com/hashemnusair/Rivet/actions/runs/38062238326).
+  On the live `/login` of `app`, `dashboard`, `www` and `platform` a headless
+  Chromium moved the pin, sank the rope under the lightest plate and pulled it
+  back, with no page errors. Frontend only; no Convex deploy is owed.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
