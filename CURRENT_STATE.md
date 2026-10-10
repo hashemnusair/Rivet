@@ -13,6 +13,11 @@ cases survive; the header combines night-tone support with `SheetLink` navigatio
   overwritten by the delayed `router.push`. Back/Forward now clears the sheet and
   its timers; unit cases cover rack/hold and a real-browser case checks the history
   destination after the old timer would have fired.
+- Linux CI exposed a sign-in form captured partway through its entrance with
+  reduced motion enabled. The login stylesheet now disables the entrance entirely
+  for that preference, including its staggered delay. The browser regression
+  asserts no animation/transform and full opacity on chooser/member content;
+  it failed before the fix. Linux visual references and tolerances are unchanged.
 - Added five browser regressions in `e2e/page-motion.spec.ts`: keyboard navigation
   and interactive pin after docking at 1440px, mobile navigation at 390px, preserved
   annual Growth signup parameters/night header, reduced motion and interrupted Back.

@@ -61,6 +61,16 @@ test("reduced motion reaches the door without a page sheet", async ({ page }) =>
   await expect(page).toHaveURL(/\/login$/);
   await settled(page);
   await expect(page.getByRole("heading", { name: "Sign in to RIVET" })).toBeVisible();
+  for (const route of ["/login", "/login/member"]) {
+    await page.goto(route, { waitUntil: "domcontentloaded" });
+    const content = page.locator("main > * > *");
+    await expect(content.first()).toBeVisible();
+    for (const child of await content.all()) {
+      await expect(child).toHaveCSS("animation-name", "none");
+      await expect(child).toHaveCSS("opacity", "1");
+      await expect(child).toHaveCSS("transform", "none");
+    }
+  }
 });
 
 test("Back cancels a sheet before it can overwrite the history destination", async ({ page }) => {
