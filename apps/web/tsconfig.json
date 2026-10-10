@@ -45,7 +45,9 @@
     ".next-playwright/finops/types/**/*.ts",
     ".next-playwright/finops/dev/types/**/*.ts",
     ".next-playwright/perf/types/**/*.ts",
-    ".next-playwright/perf/dev/types/**/*.ts"
+    ".next-playwright/perf/dev/types/**/*.ts",
+    ".next-playwright/realauth/types/**/*.ts",
+    ".next-playwright/realauth/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

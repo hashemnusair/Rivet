@@ -1,5 +1,27 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — Sign-in and sign-up centred, one screen, no captions
+
+Elias asked for every sign-in and the account creation page to be centred
+vertically and not scroll, the bottom-left panel text removed everywhere, and
+the member sign-up's bench drawing to match the member sign-in's size.
+
+- `LoginLayout` centres one content block (`.block`); the chooser, gym, member
+  and admin doors share its 22rem minimum height, so they keep their heading
+  on one line, and taller content (account creation) centres on its own height.
+  The whole block fades in (no slide). `.main` is 27rem wide on every page.
+- The art panel is sticky and one screen tall on wide screens, so a door's
+  drawing is the same size whatever the form beside it (the bench was scaling
+  up on the taller sign-up page). The panel captions are gone (the
+  `auth.brand.*` messages are now unused but left in place).
+- Account creation pairs its fields (name|email from `sm`, mobile|gender and
+  the two passwords always) and its gender select has a slim arrow of its own;
+  under 760px of height the frame's padding tightens and the "we'll email you a
+  code" line is dropped, so it fits a 375×667 phone.
+- Measured on a local real-Clerk production build (`web-real-auth-start`,
+  :3630): no scrolling on any sign-in/sign-up page at 1440×900, 1440×760,
+  1920×1080, 430×932, 390×844, 375×667 and 360×740; door headings level.
+
 ## 11 October 2026 — The stack's pin moves on by itself when the page is still
 
 Elias asked for the pin to move every 5 seconds when not scrolling. While the

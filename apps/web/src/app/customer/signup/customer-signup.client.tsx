@@ -6,7 +6,7 @@ import { createTranslator } from "@/lib/i18n/core";
 import { useT } from "@/lib/i18n/provider";
 
 import { useAuth, useSignUp } from "@clerk/nextjs";
-import { ArrowLeft, ArrowRight, Check, MailCheck, RefreshCcw, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, MailCheck, RefreshCcw, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -474,24 +474,34 @@ export function CustomerSignupClient() {
       <PortalHeading portal={PORTALS.member} mode="sign-up" />
 
       {step === "details" ? (
-        <form onSubmit={(event) => { event.preventDefault(); void run(() => submitDetails(event)); }} className="mt-7 space-y-4" noValidate>
-          <Field label={t("common.label.fullName")} htmlFor="customer-signup-name" error={present(fieldErrors.fullName)} required>
-            <Input id="customer-signup-name" dir="auto" value={values.fullName} onChange={(event) => updateValue("fullName", event.target.value)} autoComplete="name" placeholder={t("authErrors.namePlaceholder")} autoFocus aria-invalid={Boolean(fieldErrors.fullName)} />
-          </Field>
-          <Field label={t("auth.signIn.emailLabel")} htmlFor="customer-signup-email" error={present(fieldErrors.email)} required>
-            <Input id="customer-signup-email" dir="ltr" type="email" value={values.email} onChange={(event) => updateValue("email", event.target.value)} autoComplete="email" placeholder="you@example.com" aria-invalid={Boolean(fieldErrors.email)} />
-          </Field>
-          <Field label={t("auth.memberSetup.mobile")} htmlFor="customer-signup-phone" error={present(fieldErrors.phone)} hint={t("authErrors.phonePurpose")} required>
-            <Input id="customer-signup-phone" dir="ltr" type="tel" value={values.phone} onChange={(event) => updateValue("phone", event.target.value)} autoComplete="tel" placeholder="+962 79 000 0000" aria-invalid={Boolean(fieldErrors.phone)} />
-          </Field>
-          <Field label={t("memberProfile.details.gender")} htmlFor="customer-signup-gender" error={present(fieldErrors.gender)} required>
-            <select id="customer-signup-gender" value={values.gender} onChange={(event) => updateValue("gender", event.target.value)} className="h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px]" aria-invalid={Boolean(fieldErrors.gender)} required>
-              <option value="" disabled>{t("auth.validation.genderRequired")}</option>
-              <option value="female">{t("memberProfile.details.female")}</option>
-              <option value="male">{t("memberProfile.details.male")}</option>
-            </select>
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <form onSubmit={(event) => { event.preventDefault(); void run(() => submitDetails(event)); }} className="mt-6 space-y-3.5" noValidate>
+          {/* Paired fields, so the whole form fits one screen without scrolling. */}
+          <div className="grid gap-3.5 sm:grid-cols-2">
+            <Field label={t("common.label.fullName")} htmlFor="customer-signup-name" error={present(fieldErrors.fullName)} required>
+              <Input id="customer-signup-name" dir="auto" value={values.fullName} onChange={(event) => updateValue("fullName", event.target.value)} autoComplete="name" placeholder={t("authErrors.namePlaceholder")} autoFocus aria-invalid={Boolean(fieldErrors.fullName)} />
+            </Field>
+            <Field label={t("auth.signIn.emailLabel")} htmlFor="customer-signup-email" error={present(fieldErrors.email)} required>
+              <Input id="customer-signup-email" dir="ltr" type="email" value={values.email} onChange={(event) => updateValue("email", event.target.value)} autoComplete="email" placeholder="you@example.com" aria-invalid={Boolean(fieldErrors.email)} />
+            </Field>
+          </div>
+          {/* On a phone the gender column takes a little more, so its prompt is never cut off. */}
+          <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-start gap-3 sm:grid-cols-2">
+            <Field label={t("auth.memberSetup.mobile")} htmlFor="customer-signup-phone" error={present(fieldErrors.phone)} hint={t("authErrors.phonePurpose")} required>
+              <Input id="customer-signup-phone" dir="ltr" type="tel" value={values.phone} onChange={(event) => updateValue("phone", event.target.value)} autoComplete="tel" placeholder="+962 79 000 0000" aria-invalid={Boolean(fieldErrors.phone)} />
+            </Field>
+            <Field label={t("memberProfile.details.gender")} htmlFor="customer-signup-gender" error={present(fieldErrors.gender)} required>
+              {/* A slim arrow of its own, so the prompt has the room on a narrow phone. */}
+              <div className="relative">
+                <select id="customer-signup-gender" value={values.gender} onChange={(event) => updateValue("gender", event.target.value)} className="h-11 w-full appearance-none rounded-md border border-line-2 bg-surface ps-2 pe-6 text-[12.5px] sm:ps-3 sm:pe-8 sm:text-[13.5px]" aria-invalid={Boolean(fieldErrors.gender)} required>
+                  <option value="" disabled>{t("auth.validation.genderRequired")}</option>
+                  <option value="female">{t("memberProfile.details.female")}</option>
+                  <option value="male">{t("memberProfile.details.male")}</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute end-2 top-1/2 size-3.5 -translate-y-1/2 text-ink-3 sm:end-3" aria-hidden />
+              </div>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <Field label={t("common.label.password")} htmlFor="customer-signup-password" error={present(fieldErrors.password)} required>
               <PasswordInput id="customer-signup-password" value={values.password} onChange={(event) => updateValue("password", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.password)} aria-describedby={fieldErrors.password ? "customer-signup-password-error" : undefined} />
             </Field>
@@ -503,7 +513,8 @@ export function CustomerSignupClient() {
           {existingAccount ? <p className="text-[12px] text-ink-2">{t("authErrors.alreadyAccount")}{" "}<Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">{t("common.action.signIn")}</Link>{t("members.bulk.toast.end")}</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>{t("marketing.actions.createAccount")}{" "}<ArrowRight className="rtl:rotate-180" /></Button>
           <div id="clerk-captcha" role="group" aria-label={t("authErrors.securityCheck")} />
-          <p className="text-center text-[12.5px] leading-relaxed text-ink-3">{t("authErrors.emailCodeNote")}</p>
+          {/* The code's own screen says the same, so a short screen drops the line to fit. */}
+          <p className="text-center text-[12.5px] leading-relaxed text-ink-3 [@media(max-height:760px)]:hidden">{t("authErrors.emailCodeNote")}</p>
         </form>
       ) : null}
 

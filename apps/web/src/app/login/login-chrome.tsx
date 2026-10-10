@@ -67,7 +67,9 @@ export function LoginLayout({
             </div>
           </div>
 
-          <main className={styles.main}>{children}</main>
+          <main className={styles.main}>
+            <div className={styles.block}>{children}</div>
+          </main>
 
           <div className={styles.footer}>
             {footer ?? (
@@ -131,8 +133,8 @@ const artDoor = (brand: "chooser" | Portal["id"]): ArtDoor => (brand === "choose
 /**
  * The left half on wide screens: a line drawing for this door (a weight stack
  * with its pin, the front desk, a bench press, every gym on one screen) on a
- * faint layout grid, with the door's own line as its caption. Inline SVG, so
- * it costs no request; phones never render it.
+ * faint layout grid, one screen tall on every door so each drawing is the
+ * same size. Inline SVG, so it costs no request; phones never render it.
  */
 function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
   const { t } = useLocale();
@@ -144,10 +146,6 @@ function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHr
         <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={122} height={31} priority />
       </SheetLink>
 
-      <div className={styles.panelCaption}>
-        <p>{t(`auth.brand.${brand}.headline` as const)}</p>
-        <p>{t(`auth.brand.${brand}.body` as const)}</p>
-      </div>
       <span aria-hidden className={styles.panelEdge} />
     </aside>
   );
