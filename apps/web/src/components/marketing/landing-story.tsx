@@ -102,8 +102,8 @@ export const RIG = {
   plateDepth: 4,
 } as const;
 
-/** How long the pin rests in a plate before it moves on to the next. */
-export const STACK_DWELL_MS = 4000;
+/** How long the pin rests in a plate, once nobody is scrolling, before it moves on to the next. */
+export const STACK_DWELL_MS = 5000;
 /** The pin's pace in viewBox units per millisecond, and the bounds one move may take. */
 export const STACK_PACE = { unitsPerMs: 0.42, minMs: 380, maxMs: 1250 } as const;
 
@@ -227,12 +227,14 @@ export function stackPoseAt(steps: number): PinPose {
 /** Where the pin rests seated in a plate, in steps: chosen plates scroll here. */
 export const stackStepsFor = (index: number) => STACK_SCROLL.lead + index;
 
-type PauseKey = "focus" | "hidden" | "offscreen" | "scroll";
+type PauseKey = "focus" | "hidden" | "offscreen";
 
 interface StackEngine {
   select(index: number): void;
-  /** Puts the pin at a pose at once: the scroll drives it while the stack is pinned. */
+  /** Puts the pin at a pose at once and restarts the dwell: the scroll drives it while the stack is pinned. */
   show(pose: PinPose): void;
+  /** Whether a move of the engine's own is under way. */
+  moving(): boolean;
   pause(key: PauseKey, value: boolean): void;
   destroy(): void;
 }
@@ -243,18 +245,18 @@ interface StackEngine {
  * pin seats, a timer moves it on after the dwell; the timer is held while a
  * keyboard user has focus in the section, while the tab is hidden or the rig
  * is off screen, and never runs for a reader who prefers reduced motion, for
- * whom every move is instant. A click or a tap simply resets the dwell.
+ * whom every move is instant. A click, a tap or a scroll resets the dwell.
  */
 function createStackEngine(
   pin: SVGGElement,
-  notify: { selected(index: number): void; engaged(index: number): void; seated(value: boolean): void },
+  notify: { selected(index: number): void; engaged(index: number): void; seated(value: boolean): void; arrived?(index: number): void },
 ): StackEngine {
   let pose: PinPose = seatedPose(0);
   let engaged = 0;
   let seated = true;
   let move: { frame: number; start: number; duration: number; points: PinPose[]; length: number; target: number } | null = null;
   let timer = 0;
-  const paused: Record<PauseKey, boolean> = { focus: false, hidden: false, offscreen: true, scroll: false };
+  const paused: Record<PauseKey, boolean> = { focus: false, hidden: false, offscreen: true };
   const reduced = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
   const paint = (next: PinPose) => {
@@ -278,7 +280,7 @@ function createStackEngine(
     if (timer) window.clearTimeout(timer);
     timer = 0;
   };
-  const isPaused = () => paused.focus || paused.hidden || paused.offscreen || paused.scroll;
+  const isPaused = () => paused.focus || paused.hidden || paused.offscreen;
   const stop = () => {
     if (move) window.cancelAnimationFrame(move.frame);
     move = null;
@@ -304,6 +306,7 @@ function createStackEngine(
     const { target } = move;
     move = null;
     paint(seatedPose(target));
+    notify.arrived?.(target);
     schedule();
   };
 
@@ -316,6 +319,7 @@ function createStackEngine(
     const length = pathLength(points);
     if (length < 0.01 || reduced?.matches) {
       paint(seatedPose(index));
+      notify.arrived?.(index);
       schedule();
       return;
     }
@@ -340,7 +344,9 @@ function createStackEngine(
       clearTimer();
       stop();
       paint(next);
+      schedule();
     },
+    moving: () => move !== null,
     pause(key, value) {
       if (paused[key] === value) return;
       paused[key] = value;
@@ -382,6 +388,9 @@ export function StackStory() {
   const plateRefs = useRef<Array<SVGGElement | null>>([]);
   const engineRef = useRef<StackEngine | null>(null);
   const scrollRef = useRef<StackScroll | null>(null);
+  /** How far into the run the page is, and how far the pin has been moved on from that by its own timer, in steps. */
+  const scrollStepsRef = useRef(0);
+  const leadRef = useRef(0);
   const [selected, setSelected] = useState(0);
   const [engaged, setEngaged] = useState(0);
   const [seated, setSeated] = useState(true);
@@ -395,7 +404,16 @@ export function StackStory() {
     const stage = stageRef.current;
     if (!pin || !figure || !section || !stage) return;
 
-    const engine = createStackEngine(pin, { selected: setSelected, engaged: setEngaged, seated: setSeated });
+    // A move the pin makes on its own (the dwell, a chosen plate) leaves the page where it is; the
+    // scroll then carries on from the plate the pin is in, so the pin never jumps back.
+    const engine = createStackEngine(pin, {
+      selected: setSelected,
+      engaged: setEngaged,
+      seated: setSeated,
+      arrived: (index) => {
+        if (scrollRef.current) leadRef.current = stackStepsFor(index) - scrollStepsRef.current;
+      },
+    });
     engineRef.current = engine;
 
     const onVisibility = () => engine.pause("hidden", document.hidden);
@@ -405,27 +423,38 @@ export function StackStory() {
     // The pin only works while the rig can be seen.
     let observer: IntersectionObserver | null = null;
     if (typeof IntersectionObserver === "function") {
-      observer = new IntersectionObserver(([entry]) => engine.pause("offscreen", !entry?.isIntersecting), { threshold: 0.4 });
+      observer = new IntersectionObserver(([entry]) => {
+        const away = !entry?.isIntersecting;
+        // Away from the machine, the pin goes back to following the page alone.
+        if (away) leadRef.current = 0;
+        engine.pause("offscreen", away);
+      }, { threshold: 0.4 });
       observer.observe(figure);
     } else {
       engine.pause("offscreen", false);
     }
 
-    // Pinned, the page's scroll drives the pin; otherwise the machine runs itself and takes taps.
+    // Pinned, the page's scroll drives the pin, and the pin moves on by itself once the
+    // scroll has been still for the dwell. Otherwise the machine runs itself and takes taps.
     const staticQuery = typeof window.matchMedia === "function" ? window.matchMedia(STATIC_STACK) : null;
     const applyMode = () => {
       scrollRef.current?.destroy();
       scrollRef.current = null;
+      leadRef.current = 0;
       const pinned = !staticQuery?.matches;
       setScrolled(pinned);
-      engine.pause("scroll", pinned);
       if (pinned) {
         section.setAttribute("data-stack-scrolly", "");
         scrollRef.current = bindStackScroll({
           section,
           stage,
           totalSteps: STACK_SCROLL_STEPS,
-          onSteps: (steps) => engine.show(stackPoseAt(steps)),
+          onSteps: (steps) => {
+            scrollStepsRef.current = steps;
+            // A move of the pin's own finishes first; the scroll picks up from where it lands.
+            if (engine.moving()) return;
+            engine.show(stackPoseAt(clamp(steps + leadRef.current, 0, STACK_SCROLL_STEPS)));
+          },
         });
       } else {
         section.removeAttribute("data-stack-scrolly");
@@ -462,10 +491,7 @@ export function StackStory() {
     return () => observer.disconnect();
   }, []);
 
-  const choose = (index: number) => {
-    if (scrollRef.current) scrollRef.current.toSteps(stackStepsFor(index));
-    else engineRef.current?.select(index);
-  };
+  const choose = (index: number) => engineRef.current?.select(index);
 
   const onPlateKeyDown = (event: KeyboardEvent<SVGGElement>, index: number) => {
     let next: number | null = null;

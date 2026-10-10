@@ -1,5 +1,17 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — The stack's pin moves on by itself when the page is still
+
+Elias asked for the pin to move every 5 seconds when not scrolling. While the
+stage is pinned the pin follows the scroll as before, and once the scroll has
+been still for `STACK_DWELL_MS` (now 5 s, also used by the static machine) it
+moves to the next plate (6 → 1 wraps), without moving the page. The scroll then
+continues from the plate the pin is in (`leadRef` in `StackStory`), so it never
+jumps back; leaving the machine resets that. Clicking a plate moves the pin
+there without scrolling the page. Checked on the production build: Sales →
+Memberships → Payments at 5 s intervals with the page still, a wheel then moves
+on from Payments, and the timer waits 5 s after the last scroll.
+
 ## 10 October 2026 — Stack snapping removed (same evening)
 
 After trying it live, Elias asked to remove "the whole snapping thing" and chose

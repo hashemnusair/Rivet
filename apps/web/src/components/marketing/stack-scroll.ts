@@ -1,7 +1,6 @@
 /*
  * The stack's scroll: while the stage is pinned the page's own scroll drives
- * the pin, plate by plate. The page is never moved for the visitor; only a
- * plate they choose scrolls it, to that plate.
+ * the pin, plate by plate. The page is never moved for the visitor.
  */
 
 export interface StackScrollOptions {
@@ -16,8 +15,6 @@ export interface StackScrollOptions {
 }
 
 export interface StackScroll {
-  /** Scrolls the page to a point in the run, as choosing a plate does. */
-  toSteps(steps: number): void;
   destroy(): void;
 }
 
@@ -45,9 +42,6 @@ export function bindStackScroll({ section, stage, totalSteps, onSteps }: StackSc
   window.addEventListener("resize", requestPaint, { passive: true });
 
   return {
-    toSteps(steps) {
-      window.scrollTo({ top: Math.round(start() + clamp(steps, 0, totalSteps) * stepPx()), behavior: "smooth" });
-    },
     destroy() {
       window.removeEventListener("scroll", requestPaint);
       window.removeEventListener("resize", requestPaint);
