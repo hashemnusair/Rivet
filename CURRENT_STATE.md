@@ -166,6 +166,54 @@ the page moved; nothing is committed, pushed or deployed yet.
   The chooser's 1440 reference (`pass-7-login-1440.png`) was re-captured on
   Linux for the redrawn machine (throwaway `tmp/signin-machine-ref`, run
   38056327851); the other captures that run rewrote were unchanged on screen.
+- **The chooser's machine works** (Hashem, 10 October). Nothing on the page
+  says so. Clicking a plate moves the red pin
+  into it and the red plate follows; with the pin in the top (lightest) plate
+  the rope outweighs what is selected, so it sinks 32 units, swings a little
+  from its clip, and lifts that plate by the same length of cable, with the
+  guide rods and selector stem showing in the gap. Any heavier plate pulls it
+  back. `machine()` in `sign-in-art.tsx` returns the drawing in parts and
+  `stack()` flattens them in the old order, so the morph between doors samples
+  exactly the strokes it did; `MachineArt` renders the chooser at rest and
+  holds the pin. Motion is CSS only (`login.module.css`: `.pin`, `.lift`,
+  `.gap`, `.sway`); reduced motion moves the parts without travel. Decisions:
+  pointer only, with the drawing still `aria-hidden` and out of the tab order,
+  because eight extra stops before the form would cost keyboard users more
+  than a decoration is worth; a faint fill and pointer cursor on hover are the
+  only hint; the pin's position is not carried to the next door (the morph
+  starts from the stock drawing, since door URLs are prefetched by address).
+  Checked: at rest the drawing is the same pixels as production once the
+  finished draw-in animations are taken off both (Chromium layers those, which
+  moves anti-aliasing by a fraction of a pixel); the 1440 sign-in references
+  pass unchanged; the clicks work in Chromium and WebKit.
+  **Released:** `70dff4f` on `main`. Vercel Production
+  `4nckQkpQsZLFgca6RPy4viqAjgD6` completed for that commit and all 13 jobs
+  passed in [CI run 38062238326](https://github.com/hashemnusair/Rivet/actions/runs/38062238326).
+  On the live `/login` of `app`, `dashboard`, `www` and `platform` a headless
+  Chromium moved the pin, sank the rope under the lightest plate and pulled it
+  back, with no page errors. Frontend only; no Convex deploy is owed.
+- **The gym application (`/signup`) in the night look** (Hashem, 10 October).
+  `PublicDocumentPage` and `CinematicHeader`
+  take `tone="night"` (the landing's surface, palette and bar); only `/signup`
+  passes it, so the terms, privacy policy and signed-out member pages keep the
+  paper bar. The page is one axis: what a row is about on the start side (the
+  title, then each question with its note, which stays in view beside a tall
+  row), the row itself beside it. Contact and gym fields sit together under
+  "Who should we contact?" in their old tab order; "Which plan fits?" holds the
+  billing switch and the four plans as a 2×2 of hairline panels, the chosen
+  one carrying a red pin (ring and dot, as in the mark) instead of a tick.
+  Copy, fields, roles, query handling and the submitted payload are unchanged.
+  Two behaviour fixes the taller page needed: a failed check moves focus to
+  the first field that needs attention (the button is a screen below them),
+  and the receipt scrolls to its top and takes focus. Fields use the sign-in
+  treatment through `[data-night-form]` in `globals.css`, with placeholders at
+  readable contrast (ink-3; the sign-in pages still use ink-4, about 2.6:1).
+  Verified: unit suites, lint, all 13 browser journeys that touch `/signup`
+  (six widths, English), Arabic at 1440 and 390 with no overflow.
+  `pass-7-signup-1440.png` and `pass-7-signup-390.png` were re-captured on
+  macOS and `pass-7-signup-390-linux.png` on GitHub's Ubuntu runner by a
+  throwaway `tmp/signup-night-refs` run (`--update-snapshots=changed`, so only
+  references that no longer matched were rewritten).
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of
@@ -316,8 +364,11 @@ Elias's request; the primary reviewed and integrated their changes.
   excess-capacity charge; email reservations remain charged to their original month
   on retries. Deferred time-sensitive email can become stale and requires outbox
   review. These are documented policies/limits, not claims of legal approval.
-- Legal conflict remains intentionally unresolved: the current agreement says
-  onboarding is included; counsel must reconcile it with the new commercial fee.
+- Legal wording remains for counsel: Terms section 05 says onboarding is included.
+  Agreement 1.2 section 4 refers to written quotes or published pricing, and
+  section 6 describes onboarding services without explicitly promising free
+  onboarding. Counsel must reconcile the Terms with the implemented fee; see the
+  refreshed `docs/legal-review/2026-10-07/REVIEW_BRIEF.md`.
 
 Read first: `docs/19_GO_LIVE_MESSAGING_EMAIL_LEGAL_PRICING.md`,
 `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, `convex/planCapacity.ts`,

@@ -79,6 +79,80 @@
   to { opacity: 1; }
 }
 
+/*
+  The chooser's machine works, though nothing says so: a clicked plate takes
+  the pin. Everything hung on the cable shares `.lift`, so the rope and the
+  plate it raises move as one length of cable.
+*/
+.plate { cursor: pointer; }
+/* A plate's whole row takes the click. Never painted, so the drawing rasterizes as it does without it. */
+.hit { fill: none; visibility: hidden; pointer-events: all; }
+.plate > .ink { transition: fill 150ms ease; }
+.plate:active > .ink { fill: rgb(242 240 230 / 0.1); }
+
+@media (hover: hover) and (pointer: fine) {
+  .plate:hover > .ink { fill: rgb(242 240 230 / 0.06); }
+}
+
+/* The red plate follows the pin: out at once, in as the pin arrives. */
+.glow {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.glow[data-on] {
+  opacity: 1;
+  transition-delay: 140ms;
+}
+
+.pin { transition: transform 260ms cubic-bezier(0.77, 0, 0.175, 1); }
+
+/* A weight settling on its cable: a spring (damping ratio 0.7), where `linear()` is supported. */
+.lift {
+  transition: transform 460ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition-timing-function: linear(
+    0, 0.052, 0.176, 0.332, 0.491, 0.638, 0.763, 0.862, 0.936, 0.987, 1.02, 1.038, 1.045, 1.045, 1.041,
+    1.034, 1.027, 1.02, 1.014, 1.008, 1.004, 1.002, 1, 0.999, 0.998, 0.998, 0.998, 0.998, 1
+  );
+}
+
+/* The rope sinks once the pin is home in the lightest plate, and takes longer about it than the stack takes to pull it back. */
+[data-rope="sunk"] .lift {
+  transition-duration: 680ms;
+  transition-delay: 200ms;
+}
+
+/* The rods and stem under the raised plate are only there while there is a gap to see them in. */
+.gap {
+  opacity: 0;
+  transition-property: transform, opacity;
+  transition-duration: 460ms, 80ms;
+  transition-delay: 0s, 300ms;
+}
+
+[data-rope="sunk"] .gap {
+  opacity: 1;
+  transition-duration: 680ms, 80ms;
+  transition-delay: 200ms, 200ms;
+}
+
+/* It swings a little from its clip when the cable moves. */
+[data-rope="sunk"] .sway { animation: rope-sink 2.1s ease-in-out 200ms; }
+[data-rope="raised"] .sway { animation: rope-rise 1.3s ease-in-out; }
+
+@keyframes rope-sink {
+  18% { transform: rotate(1.5deg); }
+  40% { transform: rotate(-1deg); }
+  61% { transform: rotate(0.6deg); }
+  81% { transform: rotate(-0.25deg); }
+}
+
+@keyframes rope-rise {
+  25% { transform: rotate(-0.8deg); }
+  55% { transform: rotate(0.45deg); }
+  80% { transform: rotate(-0.15deg); }
+}
+
 .panelBrand {
   position: absolute;
   top: 2rem;
@@ -271,4 +345,13 @@
     opacity: 1;
     animation: none;
   }
+
+  /* The machine still works; its parts change places without travelling. */
+  .pin,
+  .lift,
+  .gap {
+    transition: none;
+  }
+
+  [data-rope] .sway { animation: none; }
 }

@@ -88,6 +88,7 @@ export function CinematicHeader({
   page = "landing",
   currentPath,
   audience = "gym",
+  tone,
 }: {
   /** Which kind of public page the bar sits on. */
   page?: "landing" | "document";
@@ -95,9 +96,12 @@ export function CinematicHeader({
   currentPath?: string;
   /** Whose page this is: a gym-facing page leads to the application, a member page to account creation. */
   audience?: "gym" | "member";
+  /** The surface under the bar. The landing is night; a document page is paper unless it says otherwise. */
+  tone?: "paper" | "night";
 }) {
   const { t } = useLocale();
   const onLanding = page === "landing";
+  const night = tone ? tone === "night" : onLanding;
   const publicHref = usePublicSiteHref();
   const viewer = usePublicViewer();
   const signedIn = viewer.status === "signed-in" ? viewer : null;
@@ -320,7 +324,7 @@ export function CinematicHeader({
 
   return (
     <>
-      <header data-landing-header className={cn(styles.header, "marketing-body", open ? styles.headerOpen : onFilm ? styles.headerOnFilm : onLanding && styles.headerNight)}>
+      <header data-landing-header className={cn(styles.header, "marketing-body", open ? styles.headerOpen : onFilm ? styles.headerOnFilm : night && styles.headerNight)}>
         <SheetLink
           href={onLanding ? "#top" : publicHref}
           className={styles.brand}
@@ -328,7 +332,7 @@ export function CinematicHeader({
           inert={open}
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
-          <Image src={open || onLanding ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
+          <Image src={open || night ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
         </SheetLink>
 
         <div className={styles.headerActions}>
