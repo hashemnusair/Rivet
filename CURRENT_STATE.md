@@ -12,8 +12,9 @@ The temporary picker and tunnel configuration are absent from the release.
 Satoshi is self-hosted through `next/font/local`; installation downloads the
 unmodified official Fontshare WOFF2 and verifies its SHA-256. The binary is ignored
 because the repository is public and the supplied license restricts redistribution.
-`pnpm install --frozen-lockfile` prepares it; `pnpm --filter web fonts:prepare`
-can restore it if missing. No runtime Fontshare request is needed.
+Fresh installs and the development/build commands prepare it (pnpm can skip
+install hooks with cached dependencies). `pnpm --filter web fonts:prepare`
+can restore it before direct Next.js commands. No runtime Fontshare request is needed.
 
 Local validation passes: web TypeScript, full lint/secret-output audit, 40 focused
 landing/header/story/navigation/signup tests, the Arabic revision-607 lock, and
