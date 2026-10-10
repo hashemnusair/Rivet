@@ -8,6 +8,7 @@ import { useState } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import { publicDestinationCopy } from "@/components/public/public-plan-copy";
+import { SheetLink } from "@/components/motion/page-sheet";
 
 /**
  * The public site's footer — the site map lives here, so every area is one
@@ -96,7 +97,7 @@ export function PublicFooter() {
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 text-[12px] font-medium text-night-ink-3">
           <span>{t("marketing.footer.copyright")}</span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {LEGAL_LINKS.map((item) => <Link key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{t(item.href === "/terms" ? "auth.chrome.terms" : "auth.chrome.privacy")}</Link>)}
+            {LEGAL_LINKS.map((item) => <SheetLink key={item.href} href={item.href} className="transition-colors hover:text-night-ink">{t(item.href === "/terms" ? "auth.chrome.terms" : "auth.chrome.privacy")}</SheetLink>)}
           </span>
           <span>{t("common.brand.tagline")}</span>
         </div>
@@ -111,9 +112,9 @@ function FooterColumn({ title, links }: { title: string; links: Array<[string, s
       <p className="text-[12px] font-medium text-night-ink-3">{title}</p>
       <div className="mt-4 grid gap-3">
         {links.map(([label, href]) => (
-          <Link key={href + label} href={href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
+          <SheetLink key={href + label} href={href} className="text-[13px] text-night-ink-2 transition-colors hover:text-night-ink">
             {label}
-          </Link>
+          </SheetLink>
         ))}
       </div>
     </nav>

@@ -1,0 +1,100 @@
+/*
+  The RIVET mark as a loader. The machine is built in the order a stack is set
+  up: the post rises, the top bar runs across, the cable drop comes down, the
+  plates are racked from the floor up, and the pin goes in. Then it lifts:
+  the pin carries its plate and every plate above it, as a real stack does,
+  for as long as the wait lasts.
+
+  Units are the mark's own (`viewBox="44 20 102 152"`); a CSS length on an SVG
+  element is read in those units, so the motion keeps its proportions at any
+  size.
+*/
+
+.mark {
+  display: block;
+  overflow: visible;
+}
+
+.machine {
+  fill: currentColor;
+  transform-box: fill-box;
+}
+
+.post {
+  transform-origin: 50% 100%;
+  animation: mark-rise 300ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+.bar {
+  transform-origin: 0 50%;
+  animation: mark-span 240ms cubic-bezier(0.65, 0, 0.35, 1) 220ms both;
+}
+
+.hook {
+  transform-origin: 50% 0;
+  animation: mark-drop 180ms cubic-bezier(0.65, 0, 0.35, 1) 420ms both;
+}
+
+/* `--rack` counts from the floor: the bottom plate goes on first. */
+.plate {
+  animation: mark-rack 320ms cubic-bezier(0.22, 1, 0.36, 1) calc(320ms + var(--rack) * 55ms) both;
+}
+
+.pin {
+  animation: mark-pin 420ms cubic-bezier(0.3, 1.6, 0.4, 1) 820ms both;
+}
+
+.pinBar {
+  fill: var(--color-signal);
+}
+
+.pinRing {
+  fill: none;
+  stroke: var(--color-signal);
+  stroke-width: 3.4;
+}
+
+/* The pin's plate and everything above it, lifted on the cable. */
+.lift {
+  animation: mark-rep 1.7s linear 1.25s infinite;
+}
+
+@keyframes mark-rise {
+  from { transform: scaleY(0); }
+}
+
+@keyframes mark-span {
+  from { transform: scaleX(0); }
+}
+
+@keyframes mark-drop {
+  from { transform: scaleY(0); }
+}
+
+@keyframes mark-rack {
+  from { opacity: 0; transform: translateY(-9px); }
+}
+
+@keyframes mark-pin {
+  from { opacity: 0; transform: translateX(12px); }
+}
+
+/* Up quickly, a beat at the top, down under control, a rest on the stack. */
+@keyframes mark-rep {
+  0%, 10% { transform: none; animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  38% { transform: translateY(-9px); }
+  50% { transform: translateY(-9px); animation-timing-function: cubic-bezier(0.55, 0, 0.45, 1); }
+  80% { transform: translateY(0.6px); animation-timing-function: ease-out; }
+  88%, 100% { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post,
+  .bar,
+  .hook,
+  .plate,
+  .pin,
+  .lift {
+    animation: none;
+  }
+}

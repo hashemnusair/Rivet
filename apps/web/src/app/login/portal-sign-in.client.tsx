@@ -164,7 +164,7 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
     );
 
   return (
-    <div className="animate-fade-up">
+    <div>
       {/* A signed-in visitor has no business on a door; the resolver at
           /login reads the role instead, so only demo personas leave it. */}
       <SignedInGuard demoOnly={audience === "account"} />

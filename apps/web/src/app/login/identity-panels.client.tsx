@@ -5,12 +5,11 @@ import { isRivetHost, RIVET_HOSTS, postSignInPath } from "@/lib/routing/host-rou
 import { useAction } from "convex/react";
 import { useClerk } from "@clerk/nextjs";
 import { CircleAlert, LogOut } from "lucide-react";
-import Image from "next/image";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { AuthProgressBar } from "@/components/auth/auth-transition";
+import { RivetMarkLoader } from "@/components/motion/rivet-mark-loader";
 import { destinationFor, INVITATION_CLAIMED_EVENT, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { roleLabel } from "@/lib/i18n/labels";
 import { useLocale } from "@/lib/i18n/provider";
@@ -420,14 +419,9 @@ function AutomaticEntry({ label }: { label: string }) {
   const { t } = useLocale();
   return (
     <div className="mt-7 flex min-h-56 flex-col items-center justify-center" role="status" aria-live="polite">
-      <div className="relative flex size-16 items-center justify-center">
-        <span className="absolute inset-0 animate-ping rounded-full border border-line-3 opacity-30" aria-hidden />
-        <span className="absolute inset-2 rounded-full bg-sunken" aria-hidden />
-        <Image src="/brand/rivet-glyph.png" alt="" width={23} height={36} className="relative" />
-      </div>
-      <p className="mt-5 font-display text-[18px] font-semibold tracking-tight">{t("auth.identity.signedIn")}</p>
+      <RivetMarkLoader className="h-14 w-auto text-ink" />
+      <p className="mt-6 font-display text-[18px] font-semibold tracking-tight">{t("auth.identity.signedIn")}</p>
       <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
-      <AuthProgressBar className="mt-5 w-36" />
     </div>
   );
 }

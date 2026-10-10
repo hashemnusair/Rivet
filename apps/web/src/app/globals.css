@@ -653,6 +653,12 @@ label[for] {
   .auth-progress-bar > span { animation: none; }
 }
 
+/* A page sheet carrying the sign-in drawing lands it on the art panel; the
+   panel's own copy stays out of sight until it has. */
+html[data-sheet-docking] [data-sheet-dock] > svg {
+  visibility: hidden;
+}
+
 /* Sign-in pages (`data-login`). Unlayered on purpose: these must outrank the
    component utilities (the Input's h-9, the Button's disabled opacity). */
 /* Sign-in fields: taller, with a quiet focus (a firm border and a soft halo)
