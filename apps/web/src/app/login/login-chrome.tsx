@@ -4,11 +4,12 @@ import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { AuthProgressBar } from "@/components/auth/auth-transition";
 import { monaSansText } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
+import { useCanonicalHref } from "@/lib/routing/use-canonical-href";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
 import { SignInArt, withArt, type ArtDoor } from "./sign-in-art";
@@ -39,6 +40,7 @@ export function LoginLayout({
   const publicHref = usePublicSiteHref();
   const { t, dir, isolateLtr } = useLocale();
   const brand = portal?.id ?? "chooser";
+  usePrepareDoors();
 
   return (
     <div data-login className={cn("night-tokens night-surface marketing-body min-h-screen bg-paper text-ink", monaSansText.variable)}>
@@ -55,9 +57,9 @@ export function LoginLayout({
               {/* Members can create accounts here; gym access is issued by RIVET
                   after an application is reviewed. */}
               {portal && mode === "sign-up" ? (
-                <Link href={withArt(portal.href, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</Link>
+                <DoorLink href={withArt(portal.href, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</DoorLink>
               ) : portal?.signUpUrl ? (
-                <Link href={withArt(portal.signUpUrl, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</Link>
+                <DoorLink href={withArt(portal.signUpUrl, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</DoorLink>
               ) : null}
             </div>
           </div>
@@ -84,6 +86,40 @@ export function LoginLayout({
       </div>
     </div>
   );
+}
+
+/**
+ * A link to another sign-in page. A door on another RIVET host is linked
+ * there directly (no redirect through this host) and marked, so the browser
+ * can fetch it at once and prepare the whole page while the pointer rests on
+ * the link; the click then shows a page that is already loaded.
+ */
+export function DoorLink({ href, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
+  const target = useCanonicalHref(href);
+  return <Link {...props} href={target} data-door={target === href ? undefined : ""} />;
+}
+
+const DOOR_RULES_ID = "rivet-door-rules";
+
+/**
+ * Speculation rules for the marked doors: fetch each page straight away, and
+ * prerender the one the pointer rests on. Browsers without them simply
+ * navigate. The doors answer with `Supports-Loading-Mode` (next.config) so a
+ * page on another RIVET host may be prepared.
+ */
+function usePrepareDoors() {
+  useEffect(() => {
+    if (document.getElementById(DOOR_RULES_ID) || !HTMLScriptElement.supports?.("speculationrules")) return;
+    const where = { selector_matches: "a[data-door]" };
+    const script = document.createElement("script");
+    script.id = DOOR_RULES_ID;
+    script.type = "speculationrules";
+    script.textContent = JSON.stringify({
+      prefetch: [{ source: "document", where, eagerness: "immediate" }],
+      prerender: [{ source: "document", where, eagerness: "moderate" }],
+    });
+    document.head.appendChild(script);
+  }, []);
 }
 
 /** The chooser's drawing belongs to every door; each door has its own. */

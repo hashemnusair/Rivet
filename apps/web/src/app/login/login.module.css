@@ -1,6 +1,6 @@
 /*
   Sign-in pages share the landing's night look. On wide screens the left half
-  plays the RIVET film behind the name; the form sits alone in the right half.
+  holds the door's line drawing; the form sits alone in the right half.
   Phones get the form only.
 */
 
@@ -59,16 +59,16 @@
 .redFill { fill: rgb(229 38 46 / 0.16); }
 .dot { fill: #e5262e; }
 
-/* Lines draw themselves in once, in order; fills and construction fade. */
+/* Lines draw themselves in once, quickly, in order; fills and construction fade. */
 .draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: art-draw 1.3s cubic-bezier(0.65, 0, 0.35, 1) var(--d, 0s) forwards;
+  animation: art-draw 0.6s cubic-bezier(0.45, 0, 0.25, 1) var(--d, 0s) forwards;
 }
 
 .fade {
   opacity: 0;
-  animation: art-fade 0.9s ease var(--d, 0s) forwards;
+  animation: art-fade 0.45s ease var(--d, 0s) forwards;
 }
 
 @keyframes art-draw {

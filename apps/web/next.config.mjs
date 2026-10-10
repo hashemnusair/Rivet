@@ -26,7 +26,15 @@ const nextConfig = {
         : process.env.NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS,
   },
   async headers() {
-    return [{ source: "/(.*)", headers: buildSecurityHeaders({ production: process.env.NODE_ENV === "production" }) }];
+    // A sign-in door may be prepared from another RIVET host (the chooser on
+    // www prerenders the gym or member door while the pointer rests on it).
+    // Same-site hosts need this opt-in; the page itself is the same one.
+    const preparable = [{ key: "Supports-Loading-Mode", value: "credentialed-prerender" }];
+    return [
+      { source: "/(.*)", headers: buildSecurityHeaders({ production: process.env.NODE_ENV === "production" }) },
+      { source: "/login", headers: preparable },
+      { source: "/login/:path*", headers: preparable },
+    ];
   },
   // Pin the trace root to the pnpm workspace. Without this, Next walks up and
   // may pick an unrelated lockfile in a parent directory, which it warns about.
