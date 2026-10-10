@@ -14,6 +14,7 @@ import { LocaleProvider } from "@/lib/i18n/provider";
 import { dirFor } from "@/lib/i18n/config";
 import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
+import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
 import "./globals.css";
 
 /**
@@ -115,6 +116,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale} dir={dirFor(locale)} style={{ "--font-manrope-primary": manrope.style.fontFamily.split(",")[0] } as React.CSSProperties} data-scroll-behavior="smooth" className={locale === "ar" ? `${fontClasses} rtl-font` : fontClasses}>
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         {PRE_PAINT_SIGNED_IN_GUARD ? <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} /> : null}
+        <script dangerouslySetInnerHTML={{ __html: SIGN_IN_ART_PRE_PAINT }} />
         <LocaleProvider initialLocale={locale} initialOwner={preference.owner} initialPending={preference.pending}>
         <ClerkProvider allowedRedirectOrigins={RIVET_ORIGINS} signInUrl="/login" signUpUrl="/login/member/create" signInFallbackRedirectUrl="/login" signUpFallbackRedirectUrl="/login">
           <HostRouteGuard />

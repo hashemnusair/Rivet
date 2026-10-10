@@ -59,15 +59,33 @@ the page moved; nothing is committed, pushed or deployed yet.
   screen. Lines draw in once (off for reduced motion); the door's own line is
   the caption; the form sits alone on the right, and phones render no panel.
 - **The drawings morph between doors.** Each drawing is stroke data; sign-in
-  links carry `?art=<door they leave>` (it survives the www → dashboard/app host
-  redirects), and the next page samples both drawings, pairs strokes by
-  nearest centre, and moves each one in three steps: pressed flat where it
-  stands, slid as a straight construction line to its new place, then opened
-  into its new shape (≈2 s, top first). The param is removed from the address
-  bar on arrival; reduced motion shows the drawing at rest. The machine's top
-  three plates are narrow and centred and its far cable ends in a tricep
-  rope; the bench plates are smaller; the member door's line is now "For
-  people who train at a RIVET gym." so both chooser rows match.
+  links carry `?art=<door they leave>`, and the next page samples both
+  drawings, pairs strokes by centre, size and kind (a line never becomes a
+  closed shape, which tangled mid-move), and moves every stroke at once in one
+  480 ms ease-out, no hold and no stagger; the exact drawing fades in under the
+  last frames, so nothing settles afterwards (Elias: "so damn slow", "a little
+  touch up at the end"). The draw-in on a direct visit is also quicker (≈1.3 s).
+  The param is removed from the address bar on arrival; reduced motion shows
+  the drawing at rest. The machine: no wide top plate, three narrow centred
+  plates over five wide ones, every plate with its pin hole, smaller plates and
+  a larger tricep rope hung higher so the two read at one scale, guide rods that
+  stop at the stack. The bench plates are smaller; the member door's line is
+  "For people who train at a RIVET gym." so both chooser rows match.
+- **Faster jumps between sign-in hosts.** Measured live before: click → the
+  app host's first byte ≈540 ms (a failed Next soft-nav fetch, then a 308 from
+  www), page ready ≈1 s, then the old 2.35 s morph. Now `DoorLink` links a door
+  on another RIVET host directly (`useCanonicalHref`; localhost and previews keep
+  local paths), and speculation rules fetch those doors at once and prerender
+  the one the pointer rests on; door pages send `Supports-Loading-Mode:
+  credentialed-prerender` (next.config), which same-site prerender needs. A
+  prerendered door holds the first frame of the morph until it is shown. The
+  frame and drawing now render once outside the form's suspense boundary, so
+  the server HTML paints the drawing before hydration; a pre-paint guard in the
+  root layout hides it when `?art=` is present (the lines arrive from the page
+  before). Prerender cannot be observed under Playwright (Chromium reports
+  `PrerenderingDisabledByDevTools`); confirm on production with
+  `activationStart > 0`. Each host still downloads its own ~1.2 MB of `_next`
+  chunks (separate origins); one shared asset host would remove that, not done.
 - Sign-in weight: the JPEG stills are gone (−109 KB), sign-in loads Mona Sans
   without the width axis (40 KB instead of 98 KB; the landing keeps the wide
   cut for its name), and every on-screen logo uses a 488 px PNG (8 KB instead of

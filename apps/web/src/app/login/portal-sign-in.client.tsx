@@ -31,7 +31,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IdentityPanel, UnavailableGymEntry } from "./identity-panels.client";
-import { LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
+import { DoorLink, LoginLayout, LoginLoading, PortalHeading } from "./login-chrome";
 import { PasswordSignIn } from "./password-sign-in.client";
 import { PORTALS, type Audience } from "./portals";
 import loginStyles from "./login.module.css";
@@ -78,15 +78,12 @@ function SignedInIdentity() {
   );
 }
 
-export function PortalSignIn(props: { audience: Audience; mode?: AuthMode }) {
-  return (
-    <Suspense fallback={<PortalSignInFallback {...props} />}>
-      <PortalSignInContent {...props} />
-    </Suspense>
-  );
-}
-
-function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
+/**
+ * The frame (and its drawing) renders once, outside the suspense boundary: the
+ * server's HTML already carries it, and the form arriving after hydration
+ * replaces only the column's contents, so the drawing is never torn down.
+ */
+export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
   const { t } = useLocale();
   const portal = PORTALS[audience];
   return (
@@ -99,7 +96,9 @@ function PortalSignInFallback({ audience, mode = "sign-in" }: { audience: Audien
         </p>
       }
     >
-      <LoginLoading />
+      <Suspense fallback={<LoginLoading />}>
+        <PortalSignInContent audience={audience} mode={mode} />
+      </Suspense>
     </LoginLayout>
   );
 }
@@ -165,62 +164,52 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
     );
 
   return (
-    <LoginLayout
-      portal={portal}
-      mode={mode}
-      footer={
-        <p className="text-center text-[12px] text-ink-3">
-          {portal.id === "admin" ? t("auth.chrome.staffOnly") : t("auth.chrome.secureSignIn")}
-        </p>
-      }
-    >
-      <div className="animate-fade-up">
-        {/* A signed-in visitor has no business on a door; the resolver at
-            /login reads the role instead, so only demo personas leave it. */}
-        <SignedInGuard demoOnly={audience === "account"} />
-        {audience !== "account" ? (
-          <Link href={withArt("/login", audience)} className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
-            <ArrowLeft className="size-3.5" aria-hidden /> {t("auth.chrome.backToSignIn")}
-          </Link>
-        ) : null}
+    <div className="animate-fade-up">
+      {/* A signed-in visitor has no business on a door; the resolver at
+          /login reads the role instead, so only demo personas leave it. */}
+      <SignedInGuard demoOnly={audience === "account"} />
+      {audience !== "account" ? (
+        <DoorLink href={withArt("/login", audience)} className="flex min-h-8 w-fit items-center gap-2 text-[12.5px] font-medium text-ink-3 transition-colors hover:text-ink">
+          <ArrowLeft className="size-3.5" aria-hidden /> {t("auth.chrome.backToSignIn")}
+        </DoorLink>
+      ) : null}
 
-        {resolvingAccount ? null : (
-          <div className={audience === "account" ? undefined : "mt-6"}>
-            <PortalHeading portal={portal} mode={mode} />
-          </div>
-        )}
+      {resolvingAccount ? null : (
+        <div className={audience === "account" ? undefined : "mt-6"}>
+          <PortalHeading portal={portal} mode={mode} />
+        </div>
+      )}
 
-        {!identityReady && audience !== "account" ? <LoginLoading /> : null}
+      {!identityReady && audience !== "account" ? <LoginLoading /> : null}
 
-        {identityReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
+      {identityReady && DEMO_AUTH_BYPASS ? unavailablePreview ? <UnavailableGymEntry /> : accounts : null}
 
-        {accountResolver ? (
-          !clerkLoaded ? (
-            <LoginLoading />
-          ) : !clerkSignedIn ? (
-            <DoorChooser next={searchParams.get("next")} />
-          ) : (
+      {accountResolver ? (
+        !clerkLoaded ? (
+          <LoginLoading />
+        ) : !clerkSignedIn ? (
+          <DoorChooser next={searchParams.get("next")} />
+        ) : (
+          <ProfileCompletionGate>
+            {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
+          </ProfileCompletionGate>
+        )
+      ) : null}
+
+      {identityReady && !DEMO_AUTH_BYPASS && audience !== "account" ? (
+        <>
+          <Show when="signed-out">
+            <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
+          </Show>
+          <Show when="signed-in">
+            <SignedInIdentity />
             <ProfileCompletionGate>
               {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
             </ProfileCompletionGate>
-          )
-        ) : null}
-
-        {identityReady && !DEMO_AUTH_BYPASS && audience !== "account" ? (
-          <>
-            <Show when="signed-out">
-              <ClerkPanel audience={audience} mode={mode} redirectUrl={redirectUrl} />
-            </Show>
-            <Show when="signed-in">
-              <SignedInIdentity />
-              <ProfileCompletionGate>
-                {CONVEX_ENABLED ? <IdentityPanel audience={audience} /> : <NoRoleSource>{accounts}</NoRoleSource>}
-              </ProfileCompletionGate>
-            </Show>
-          </>
-        ) : null}
-      </div>
-    </LoginLayout>
+          </Show>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -250,7 +239,7 @@ function DoorChooser({ next }: { next: string | null }) {
       {(["staff", "member"] as const).map((id) => {
         const portal = PORTALS[id];
         return (
-          <Link
+          <DoorLink
             key={id}
             href={door(portal.href)}
             className={cn("group", loginStyles.door)}
@@ -261,14 +250,14 @@ function DoorChooser({ next }: { next: string | null }) {
               <span className="mt-0.5 block text-[12.5px] leading-snug text-ink-3">{t(`auth.portal.${id}.blurb` as const)}</span>
             </span>
             <ArrowRight className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-1 group-hover:text-ink rtl:rotate-180 rtl:group-hover:-translate-x-1" aria-hidden />
-          </Link>
+          </DoorLink>
         );
       })}
       <p className="mt-2 text-center text-[12px] text-ink-3">
         {t("auth.doors.staffPrefix")}{" "}
-        <Link href={door("/login/admin")} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
+        <DoorLink href={door("/login/admin")} className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">
           {t("auth.portal.admin.title")}
-        </Link>
+        </DoorLink>
       </p>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
 
@@ -13,6 +13,7 @@ import styles from "./login.module.css";
  */
 
 export type ArtDoor = "account" | "staff" | "member" | "admin";
+const DOORS: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
 type Tone = "ink" | "thin" | "faint" | "red" | "redThin";
 type Shape = { d: string; t: Tone | "soft" | "dot"; at: number; dash?: string };
 
@@ -38,17 +39,19 @@ function ground(y = 640, from = 70, to = 730): Shape[] {
 
 /**
  * A weight-stack machine with one red pin: the RIVET mark as the machine it
- * came from. Three narrow plates over five wide ones, as in the mark; the
- * cable runs over the far pulley to a tricep pushdown rope.
+ * came from. Three narrow plates over five wide ones, as in the mark, each
+ * with its pin hole; the cable runs over the far pulley to a tricep pushdown
+ * rope, drawn to the same scale as the plates. The guide rods run behind the
+ * stack, so they stop at its top plate.
  */
 function stack(): Shape[] {
+  const top = 412;
   const plates = range(0, 7, 1).flatMap((i) => {
-    const y = 352 + i * 30;
-    return i < 3
-      ? [sh(box(335, y, 130, 24, 5), "ink", 0.8 + i * 0.05)]
-      : [sh(box(300, y, 200, 24, 5), "ink", 0.8 + i * 0.05), sh(ring(484, y + 12, 3), "thin", 1.0 + i * 0.04)];
+    const y = top + i * 24;
+    const [x, w] = i < 3 ? [352, 96] : [326, 148];
+    return [sh(box(x, y, w, 18, 4), "ink", 0.8 + i * 0.05), sh(ring(x + w - 12, y + 9, 2.6), "thin", 1.0 + i * 0.04)];
   });
-  const pinY = 364 + 4 * 30;
+  const pinY = top + 4 * 24 + 9;
   return [
     ...ground(640, 120, 720),
     sh(line(184, 76, 616, 76), "faint"),
@@ -58,8 +61,8 @@ function stack(): Shape[] {
     sh(box(220, 120, 20, 500, 2), "ink", 0.2),
     sh(box(560, 120, 20, 500, 2), "ink", 0.25),
     sh(box(184, 620, 432, 20, 4), "ink", 0.3),
-    sh(line(350, 120, 350, 620), "thin", 0.4),
-    sh(line(450, 120, 450, 620), "thin", 0.4),
+    sh(line(376, 120, 376, top), "thin", 0.4),
+    sh(line(424, 120, 424, top), "thin", 0.4),
     // pulleys and cable
     sh(line(400, 120, 400, 132), "ink", 0.45),
     sh(ring(400, 152, 20), "ink", 0.5),
@@ -67,26 +70,25 @@ function stack(): Shape[] {
     sh(line(650, 120, 650, 134), "ink", 0.45),
     sh(ring(650, 148, 13), "ink", 0.55),
     sh(ring(650, 148, 4), "thin", 0.65),
-    sh("M400 172V322", "thin", 0.7),
+    sh(`M400 172V${top}`, "thin", 0.7),
     sh("M420 152H637", "thin", 0.7),
-    sh("M663 148V418", "thin", 0.8),
+    sh("M663 148V249", "thin", 0.8),
     // the tricep rope: a clip, two strands, two stoppers
-    sh(ring(663, 425, 7), "ink", 0.95),
-    sh("M659 431C655 456 645 474 642 500", "ink", 1.0),
-    sh("M667 431C671 456 681 474 684 500", "ink", 1.0),
-    sh("M663 432C659 458 650 476 648 500", "thin", 1.05),
-    sh("M663 432C667 458 676 476 678 500", "thin", 1.05),
-    sh(box(634, 500, 18, 24, 6), "ink", 1.15),
-    sh(box(674, 500, 18, 24, 6), "ink", 1.15),
+    sh(ring(663, 258, 9), "ink", 0.85),
+    sh("M658 266C652 320 636 368 632 408", "ink", 0.95),
+    sh("M668 266C674 320 690 368 694 408", "ink", 0.95),
+    sh("M663 267C659 322 645 370 642 408", "thin", 1.0),
+    sh("M663 267C667 322 681 370 684 408", "thin", 1.0),
+    sh(box(625, 408, 24, 34, 10), "ink", 1.1),
+    sh(box(677, 408, 24, 34, 10), "ink", 1.1),
     // the stack
-    sh(box(300, 322, 200, 22, 5), "ink", 0.75),
-    sh(line(400, 344, 400, 604), "faint", 0, "3 6"),
-    sh(box(300, 352 + 4 * 30, 200, 24, 5), "soft", 1.5),
+    sh(line(400, top + 18, 400, 604), "faint", 0, "3 6"),
+    sh(box(326, pinY - 9, 148, 18, 4), "soft", 1.5),
     ...plates,
     // the pin
-    sh(line(500, pinY, 530, pinY), "red", 1.3),
-    sh(ring(540, pinY, 10), "red", 1.4),
-    sh(ring(540, pinY, 3.5), "dot", 1.7),
+    sh(line(474, pinY, 498, pinY), "red", 1.3),
+    sh(ring(507, pinY, 9), "red", 1.4),
+    sh(ring(507, pinY, 3.2), "dot", 1.6),
   ];
 }
 
@@ -266,35 +268,42 @@ const DRAWINGS: Record<ArtDoor, () => Shape[]> = { account: stack, staff: desk, 
 /* ---------------------------------------------------------------- rendering */
 
 const isFill = (t: Shape["t"]) => t === "soft" || t === "dot";
+/** The draw-in runs at this fraction of each shape's `at`, in seconds. */
+const DRAW_PACE = 0.45;
 
-/** The drawing at rest, drawing itself in when `animate` is set. */
-function StaticArt({ shapes, animate }: { shapes: Shape[]; animate: boolean }) {
+function ShapePath({ shape, motion }: { shape: Shape; motion?: string }) {
+  const style = motion ? ({ "--d": `${(shape.at * DRAW_PACE).toFixed(3)}s` } as CSSProperties) : undefined;
+  if (isFill(shape.t)) return <path d={shape.d} className={cn(shape.t === "dot" ? styles.dot : styles.redFill, motion)} style={style} />;
   return (
-    <svg viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
-      {shapes.map((shape, i) => {
-        const motion = animate ? (isFill(shape.t) || shape.t === "faint" ? styles.fade : styles.draw) : undefined;
-        const style = { "--d": `${shape.at}s` } as CSSProperties;
-        if (isFill(shape.t)) return <path key={i} d={shape.d} className={cn(shape.t === "dot" ? styles.dot : styles.redFill, motion)} style={style} />;
-        return (
-          <path
-            key={i}
-            d={shape.d}
-            pathLength={shape.t === "faint" ? undefined : 1}
-            strokeDasharray={shape.dash}
-            className={cn(styles[shape.t as Tone], motion)}
-            style={style}
-          />
-        );
-      })}
+    <path
+      d={shape.d}
+      pathLength={shape.t === "faint" ? undefined : 1}
+      strokeDasharray={shape.dash}
+      className={cn(styles[shape.t as Tone], motion)}
+      style={style}
+    />
+  );
+}
+
+/**
+ * The drawing at rest, drawing itself in when `animate` is set. `pending`
+ * marks the server's copy: a page reached from another sign-in page hides it
+ * before the first paint, because the lines will arrive from that page.
+ */
+function StaticArt({ shapes, animate, pending = false }: { shapes: Shape[]; animate: boolean; pending?: boolean }) {
+  return (
+    <svg viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
+      {shapes.map((shape, i) => (
+        <ShapePath key={i} shape={shape} motion={animate ? (isFill(shape.t) || shape.t === "faint" ? styles.fade : styles.draw) : undefined} />
+      ))}
     </svg>
   );
 }
 
 /* ------------------------------------------------------------------- morph */
 
-const SAMPLES = 36;
-const MORPH_MS = 2000;
-const MORPH_HOLD_MS = 350;
+const SAMPLES = 48;
+const MORPH_MS = 480;
 /** Stroke colour (r, g, b, alpha) and width per tone, for blending one tone into another. */
 const TONE: Record<Tone, readonly [number, number, number, number, number]> = {
   ink: [242, 240, 230, 1, 1.6],
@@ -305,8 +314,9 @@ const TONE: Record<Tone, readonly [number, number, number, number, number]> = {
 };
 
 type Point = readonly [number, number];
-type Strand = { pts: Point[]; closed: boolean; cx: number; cy: number; tone: Tone };
-type Pair = { a: Strand; flatA: Point[]; flatB: Point[]; b: Strand; fadeOut: boolean };
+type Strand = { pts: Point[]; closed: boolean; cx: number; cy: number; w: number; h: number; tone: Tone };
+/** A stroke of the old drawing (a) and the stroke of the new one it becomes (b). */
+type Pair = { a: Strand; b: Strand; fadeOut: boolean };
 
 /** Samples every stroke of a drawing into evenly spaced points. */
 function sample(shapes: Shape[], probe: SVGPathElement): Strand[] {
@@ -321,10 +331,48 @@ function sample(shapes: Shape[], probe: SVGPathElement): Strand[] {
         const p = probe.getPointAtLength(length * (closed ? i / SAMPLES : i / (SAMPLES - 1)));
         pts.push([p.x, p.y]);
       }
-      const cx = pts.reduce((sum, p) => sum + p[0], 0) / SAMPLES;
-      const cy = pts.reduce((sum, p) => sum + p[1], 0) / SAMPLES;
-      return { pts, closed, cx, cy, tone: s.t as Tone };
+      const xs = pts.map((p) => p[0]);
+      const ys = pts.map((p) => p[1]);
+      const cx = xs.reduce((sum, x) => sum + x, 0) / SAMPLES;
+      const cy = ys.reduce((sum, y) => sum + y, 0) / SAMPLES;
+      return { pts, closed, cx, cy, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), tone: s.t as Tone };
     });
+}
+
+const sampled = new Map<ArtDoor, Strand[]>();
+
+/**
+ * A door's strokes as points, measured once per page. Measuring both drawings
+ * takes tens of milliseconds, so the other doors are measured while the
+ * browser is idle and a click only has to pair them.
+ */
+function strandsOf(door: ArtDoor): Strand[] {
+  const known = sampled.get(door);
+  if (known) return known;
+  const host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  host.setAttribute("aria-hidden", "true");
+  host.style.cssText = "position:absolute;width:0;height:0;overflow:hidden";
+  const probe = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  host.appendChild(probe);
+  document.body.appendChild(host);
+  const strands = sample(DRAWINGS[door](), probe);
+  host.remove();
+  sampled.set(door, strands);
+  return strands;
+}
+
+function measureWhenIdle(): () => void {
+  const idle = window.requestIdleCallback ?? ((run: () => void) => window.setTimeout(run, 200));
+  const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+  let handle = 0;
+  const next = () => {
+    const door = DOORS.find((d) => !sampled.has(d));
+    if (!door) return;
+    strandsOf(door);
+    handle = idle(next);
+  };
+  handle = idle(next);
+  return () => cancel(handle);
 }
 
 const collapse = (s: Strand): Strand => ({ ...s, pts: s.pts.map((): Point => [s.cx, s.cy]) });
@@ -351,18 +399,14 @@ function align(a: Strand, b: Strand): Strand {
 }
 
 /**
- * A stroke pressed flat into a straight construction line where it stands:
- * across a wide shape, upright through a tall one. Each point drops straight
- * onto the line, so the shape can rise from it again.
+ * How far one stroke has to travel to become another: the move itself, plus
+ * the change of size, plus a large step for a line that would have to become
+ * a closed shape (that is what tangles mid-move).
  */
-function flatten(s: Strand): Point[] {
-  const xs = s.pts.map((p) => p[0]);
-  const ys = s.pts.map((p) => p[1]);
-  const wide = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
-  return s.pts.map((p): Point => (wide ? [p[0], s.cy] : [s.cx, p[1]]));
-}
+const cost = (a: Strand, b: Strand) =>
+  (a.cx - b.cx) ** 2 + (a.cy - b.cy) ** 2 + 0.6 * ((a.w - b.w) ** 2 + (a.h - b.h) ** 2) + (a.closed === b.closed ? 0 : 160 ** 2);
 
-/** Pairs each stroke of the new drawing with the nearest unused stroke of the old one. */
+/** Pairs each stroke of the new drawing with the closest unused stroke of the old one. */
 function pair(from: Strand[], to: Strand[]): Pair[] {
   const used = new Set<number>();
   const pairs: Pair[] = [];
@@ -370,7 +414,7 @@ function pair(from: Strand[], to: Strand[]): Pair[] {
     let best = -1;
     let bestD = Infinity;
     from.forEach((a, j) => {
-      const d = used.has(j) ? Infinity : (a.cx - b.cx) ** 2 + (a.cy - b.cy) ** 2;
+      const d = used.has(j) ? Infinity : cost(a, b);
       if (d < bestD) {
         bestD = d;
         best = j;
@@ -380,69 +424,76 @@ function pair(from: Strand[], to: Strand[]): Pair[] {
     if (a) used.add(best);
     // a stroke with no partner grows out of its own middle
     const start = a ? align(a, b) : collapse(b);
-    pairs.push({ a: start, flatA: flatten(start), flatB: flatten(b), b, fadeOut: false });
+    pairs.push({ a: start, b, fadeOut: false });
   }
   from.forEach((a, j) => {
     if (used.has(j)) return;
-    pairs.push({ a, flatA: flatten(a), flatB: collapse(a).pts, b: collapse(a), fadeOut: true });
+    pairs.push({ a, b: collapse(a), fadeOut: true });
   });
   return pairs;
 }
 
-const ease = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const clamp = (n: number) => Math.min(1, Math.max(0, n));
+const ease = (k: number) => 1 - Math.pow(1 - k, 3);
 
-/** The page before's lines, moving into this page's drawing. */
-function MorphArt({ from, to, start, onDone }: { from: Shape[]; to: Shape[]; start: number; onDone: () => void }) {
+/**
+ * The page before's lines, moving straight into this page's drawing in one
+ * quick motion that starts at full speed. Every line moves at once and lands
+ * together; over the last frames the exact drawing fades in under them, so
+ * nothing is left to settle. Without a `start` (a page prepared ahead of the
+ * click) it holds the first frame.
+ */
+function MorphArt({ from, to, start, onDone }: { from: ArtDoor; to: ArtDoor; start: number | null; onDone: () => void }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [pairs, setPairs] = useState<Pair[]>([]);
+  const [pairs, setPairs] = useState<Pair[] | null>(null);
+  const before = useMemo(() => DRAWINGS[from]().filter((s) => isFill(s.t)), [from]);
+  const after = useMemo(() => DRAWINGS[to](), [to]);
 
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    const probe = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    svg.appendChild(probe);
-    setPairs(pair(sample(from, probe), sample(to, probe)));
-    probe.remove();
+  // Paired before the first paint, so the page opens on the page before's drawing.
+  useLayoutEffect(() => {
+    setPairs(pair(strandsOf(from), strandsOf(to)));
   }, [from, to]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const svg = svgRef.current;
-    if (!svg || pairs.length === 0) return;
+    if (!svg || !pairs) return;
     const strands = Array.from(svg.querySelectorAll<SVGPathElement>("path[data-strand]"));
-    const fillsOut = Array.from(svg.querySelectorAll<SVGPathElement>("path[data-fill-out]"));
-    const fillsIn = Array.from(svg.querySelectorAll<SVGPathElement>("path[data-fill-in]"));
-    let frame = 0;
-    const tick = (now: number) => {
-      // the page before's drawing holds still for a beat, so the eye finds it first
-      const t = Math.min(1, Math.max(0, now - start - MORPH_HOLD_MS) / MORPH_MS);
-      pairs.forEach(({ a, flatA, flatB, b, fadeOut }, i) => {
+    const lines = svg.querySelector<SVGGElement>("g[data-lines]");
+    const leaving = svg.querySelector<SVGGElement>("g[data-before]");
+    const fills = svg.querySelector<SVGGElement>("g[data-fills]");
+    const exact = svg.querySelector<SVGGElement>("g[data-exact]");
+    const draw = (t: number) => {
+      const u = ease(t);
+      const v = 1 - u;
+      pairs.forEach(({ a, b, fadeOut }, i) => {
         const el = strands[i];
         if (!el) return;
-        // Strands near the top go first, so the change reads as a sweep. Each
-        // presses flat where it stands, slides as a straight line to its new
-        // place, then opens into its new shape.
-        const r = Math.min(1, Math.max(0, (t - (b.cy / 900) * 0.25) / 0.75));
-        const k = ease(r);
-        const phase = r < 1 / 3 ? 0 : r < 2 / 3 ? 1 : 2;
-        const u = ease(Math.min(1, (r - phase / 3) * 3));
-        const src = [a.pts, flatA, flatB][phase] ?? a.pts;
-        const dst = [flatA, flatB, b.pts][phase] ?? b.pts;
         let d = "";
         for (let p = 0; p < SAMPLES; p += 1) {
-          const pa = src[p];
-          const pb = dst[p];
-          if (pa && pb) d += `${d ? "L" : "M"}${(pa[0] + (pb[0] - pa[0]) * u).toFixed(1)} ${(pa[1] + (pb[1] - pa[1]) * u).toFixed(1)}`;
+          const pa = a.pts[p];
+          const pb = b.pts[p];
+          if (pa && pb) d += `${d ? "L" : "M"}${(v * pa[0] + u * pb[0]).toFixed(1)} ${(v * pa[1] + u * pb[1]).toFixed(1)}`;
         }
         if (a.closed || b.closed) d += "Z";
         const ta = TONE[a.tone];
         const tb = TONE[b.tone];
-        const mix = (n: 0 | 1 | 2 | 3 | 4) => ta[n] + (tb[n] - ta[n]) * k;
+        const mix = (n: 0 | 1 | 2 | 3 | 4) => ta[n] + (tb[n] - ta[n]) * u;
         el.setAttribute("d", d);
-        el.setAttribute("stroke", `rgb(${mix(0).toFixed(0)} ${mix(1).toFixed(0)} ${mix(2).toFixed(0)} / ${(fadeOut ? mix(3) * (1 - k) : mix(3)).toFixed(3)})`);
+        el.setAttribute("stroke", `rgb(${mix(0).toFixed(0)} ${mix(1).toFixed(0)} ${mix(2).toFixed(0)} / ${(fadeOut ? mix(3) * v : mix(3)).toFixed(3)})`);
         el.setAttribute("stroke-width", mix(4).toFixed(2));
       });
-      for (const el of fillsOut) el.style.opacity = String(Math.max(0, 1 - t * 3));
-      for (const el of fillsIn) el.style.opacity = String(Math.max(0, (t - 0.75) / 0.25));
+      const land = clamp((t - 0.8) / 0.2);
+      if (lines) lines.style.opacity = String(1 - land);
+      if (exact) exact.style.opacity = String(land);
+      if (leaving) leaving.style.opacity = String(1 - clamp(t / 0.3));
+      if (fills) fills.style.opacity = String(clamp((t - 0.45) / 0.45));
+    };
+    draw(0);
+    if (start === null) return;
+    let frame = 0;
+    const tick = (now: number) => {
+      const t = clamp((now - start) / MORPH_MS);
+      draw(t);
       if (t < 1) frame = requestAnimationFrame(tick);
       else onDone();
     };
@@ -452,9 +503,18 @@ function MorphArt({ from, to, start, onDone }: { from: Shape[]; to: Shape[]; sta
 
   return (
     <svg ref={svgRef} viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false">
-      {from.filter((s) => isFill(s.t)).map((s, i) => <path key={`o${i}`} data-fill-out d={s.d} className={s.t === "dot" ? styles.dot : styles.redFill} />)}
-      {pairs.map((_, i) => <path key={i} data-strand fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
-      {to.filter((s) => isFill(s.t)).map((s, i) => <path key={`i${i}`} data-fill-in d={s.d} className={s.t === "dot" ? styles.dot : styles.redFill} style={{ opacity: 0 }} />)}
+      <g data-before>
+        {before.map((s, i) => <ShapePath key={i} shape={s} />)}
+      </g>
+      <g data-lines>
+        {pairs?.map((_, i) => <path key={i} data-strand fill="none" strokeLinecap="round" strokeLinejoin="round" />)}
+      </g>
+      <g data-fills style={{ opacity: 0 }}>
+        {after.filter((s) => isFill(s.t)).map((s, i) => <ShapePath key={i} shape={s} />)}
+      </g>
+      <g data-exact style={{ opacity: 0 }}>
+        {after.filter((s) => !isFill(s.t)).map((s, i) => <ShapePath key={i} shape={s} />)}
+      </g>
     </svg>
   );
 }
@@ -463,49 +523,70 @@ function MorphArt({ from, to, start, onDone }: { from: Shape[]; to: Shape[]; sta
 
 /** Which drawing a sign-in link left from, carried as `?art=` across hosts. */
 const ART_PARAM = "art";
-const DOORS: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
 
 /**
- * One morph per page view. The frame around the form mounts twice (the
- * server's fallback, then the client's form), so the first mount records where
- * the lines came from and when they started, and the second carries on.
+ * One morph per page view, even when the frame mounts twice (development's
+ * strict mode): the first mount records where the lines came from and when
+ * they started, and any later mount carries on. `start` stays empty while the
+ * browser prepares the page ahead of the click; the morph begins when it is shown.
  */
-let session: { door: ArtDoor; from: ArtDoor | null; start: number } | null = null;
+let session: { door: ArtDoor; from: ArtDoor | null; start: number | null } | null = null;
+
+const prerendering = () => (document as Document & { prerendering?: boolean }).prerendering === true;
 
 function readFrom(): ArtDoor | null {
   const url = new URL(window.location.href);
   const from = url.searchParams.get(ART_PARAM);
   if (!from) return null;
-  url.searchParams.delete(ART_PARAM);
-  window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  // Only tidies the address bar. A page prepared ahead of the click keeps the
+  // address it was prepared under until it is shown, so the click still finds it.
+  const tidy = () => {
+    url.searchParams.delete(ART_PARAM);
+    try {
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {}
+  };
+  if (prerendering()) document.addEventListener("prerenderingchange", tidy, { once: true });
+  else tidy();
   return DOORS.includes(from as ArtDoor) ? (from as ArtDoor) : null;
 }
 
 /**
  * The drawing for a door. Arriving from another sign-in page, that page's
- * lines move into this drawing; otherwise it draws itself in. Reduced motion
- * shows it drawn.
+ * lines move into this drawing; otherwise it draws itself in, starting with
+ * the server's HTML. Reduced motion shows it drawn.
  */
 export function SignInArt({ door }: { door: ArtDoor }) {
-  const [state, setState] = useState<{ from: ArtDoor | null; start: number; animate: boolean } | null>(null);
+  const [stage, setStage] = useState<{ from: ArtDoor | null; start: number | null; animate: boolean } | null>(null);
   const [settled, setSettled] = useState(false);
   const settle = useCallback(() => setSettled(true), []);
   const to = useMemo(() => DRAWINGS[door](), [door]);
-  const from = useMemo(() => (state?.from ? DRAWINGS[state.from]() : null), [state?.from]);
 
-  useEffect(() => {
+  // Decided before the first client paint, so a page reached in-app never flashes its own drawing first.
+  useLayoutEffect(() => {
     if (!session || session.door !== door) {
       const from = readFrom();
-      session = { door, from: from === door ? null : from, start: performance.now() };
+      session = { door, from: from === door ? null : from, start: prerendering() ? null : performance.now() };
     }
+    const current = session;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    setState({ from: reduce ? null : session.from, start: session.start, animate: !reduce });
+    setStage({ from: reduce ? null : current.from, start: current.start, animate: !reduce });
+    if (current.start !== null) return;
+    const shown = () => {
+      current.start = performance.now();
+      setStage((value) => (value ? { ...value, start: current.start } : value));
+    };
+    document.addEventListener("prerenderingchange", shown, { once: true });
+    return () => document.removeEventListener("prerenderingchange", shown);
   }, [door]);
 
-  // Until the client knows where the lines come from, the sheet stays empty.
-  if (!state) return null;
-  if (from && !settled) return <MorphArt from={from} to={to} start={state.start} onDone={settle} />;
-  return <StaticArt shapes={to} animate={state.animate && !state.from} />;
+  // Once this drawing is in place, measure the others for the next door.
+  const resting = stage !== null && (!stage.from || settled);
+  useEffect(() => (resting ? measureWhenIdle() : undefined), [resting]);
+
+  if (!stage) return <StaticArt shapes={to} animate pending />;
+  if (stage.from && !settled) return <MorphArt from={stage.from} to={door} start={stage.start} onDone={settle} />;
+  return <StaticArt shapes={to} animate={stage.animate && !stage.from} />;
 }
 
 /** Adds the drawing a link leaves from, so the next sign-in page can move its lines. */
