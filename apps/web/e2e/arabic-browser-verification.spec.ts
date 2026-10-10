@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 
 const OUT = process.env.RTL_SHOTS ?? join(tmpdir(), "rivet-arabic-rtl-evidence");
 
-test.use({ colorScheme: "light", locale: "ar-JO", reducedMotion: "reduce", timezoneId: "Asia/Amman" });
+test.use({ colorScheme: "light", locale: "ar-JO", contextOptions: { reducedMotion: "reduce" }, timezoneId: "Asia/Amman" });
 test.beforeAll(() => mkdirSync(OUT, { recursive: true }));
 
 async function seedArabicFirstPaint(page: Page) {

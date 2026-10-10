@@ -14,6 +14,7 @@ import { LocaleProvider } from "@/lib/i18n/provider";
 import { dirFor } from "@/lib/i18n/config";
 import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
+import { PageSheet } from "@/components/motion/page-sheet";
 import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
 import "./globals.css";
 
@@ -131,6 +132,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </RivetIdentityProvider>
           </ConvexClientProvider>
         </ClerkProvider>
+        <PageSheet />
         </LocaleProvider>
       </body>
     </html>

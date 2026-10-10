@@ -18,6 +18,7 @@ import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll"
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-modal";
+import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const t = useT();
@@ -95,17 +96,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (identityDestination && identityDestination.area !== "gym") router.replace(identityDestination.href);
   }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, previewMemberSignedIn, previewPlatformAdminSignedIn, sessionLoading, router]);
 
-  if (!workspaceReady) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label={t("palette.layout.loadingGym")}>
-        <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
-          <div className="h-full w-1/2 animate-[loading-bar_1s_ease-in-out_infinite] rounded-full bg-ink" />
-        </div>
-      </div>
-    );
-  }
+  // The curtain is the second child either way, so React keeps it across the
+  // change and it lifts off the shell it was covering instead of vanishing.
+  const curtain = <WorkspaceCurtain ready={workspaceReady} label={t("palette.layout.loadingGym")} />;
+  if (!workspaceReady) return <>{null}{curtain}</>;
 
   return (
+    <>
     <TenantBrandProvider>
       <div className="min-h-screen bg-paper">
       <Sidebar />
@@ -134,5 +131,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <SubscriptionAgreementGate required={agreementRequired} />
     </TenantBrandProvider>
+    {curtain}
+    </>
   );
 }

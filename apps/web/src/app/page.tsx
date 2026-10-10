@@ -29,6 +29,7 @@ import { PublicFooter } from "@/components/public/public-footer";
 import { ExperienceDataState } from "@/components/public/experience-data-state";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { Button } from "@/components/ui/button";
+import { SheetLink } from "@/components/motion/page-sheet";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { cn } from "@/lib/utils/cn";
 import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -334,7 +335,7 @@ export default function LandingPage() {
                             size="lg"
                             className="w-full"
                           >
-                            <Link href={pricingSignupHref(plan.name, billingInterval)}>{t("marketing.actions.applyShort")}</Link>
+                            <SheetLink href={pricingSignupHref(plan.name, billingInterval)}>{t("marketing.actions.applyShort")}</SheetLink>
                           </Button>
                         </div>
                       )}
@@ -386,9 +387,9 @@ export default function LandingPage() {
                     </Button>
                   ) : (
                     <Button asChild size="lg" className="group">
-                      <Link href="/signup">{t("publicCompletion.header.applyAccess")}{" "}
+                      <SheetLink href="/signup">{t("publicCompletion.header.applyAccess")}{" "}
                         <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1" />
-                      </Link>
+                      </SheetLink>
                     </Button>
                   )}
                 </div>

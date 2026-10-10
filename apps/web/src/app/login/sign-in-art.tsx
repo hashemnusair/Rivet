@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { sheetCarries } from "@/components/motion/sheet-store";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
 
@@ -281,9 +282,12 @@ const DRAWINGS: Record<ArtDoor, () => Shape[]> = { account: stack, staff: desk, 
 const isFill = (t: Shape["t"]) => t === "soft" || t === "dot";
 /** The draw-in runs at this fraction of each shape's `at`, in seconds. */
 const DRAW_PACE = 0.45;
+/** The latest `at` in any drawing, and how long one line takes to draw (`.draw`). */
+const LAST_AT = 1.6;
+const LINE_DRAW_S = 0.6;
 
-function ShapePath({ shape, motion }: { shape: Shape; motion?: string }) {
-  const style = motion ? ({ "--d": `${(shape.at * DRAW_PACE).toFixed(3)}s` } as CSSProperties) : undefined;
+function ShapePath({ shape, motion, pace = DRAW_PACE }: { shape: Shape; motion?: string; pace?: number }) {
+  const style = motion ? ({ "--d": `${(shape.at * pace).toFixed(3)}s` } as CSSProperties) : undefined;
   if (isFill(shape.t)) return <path d={shape.d} className={cn(shape.t === "dot" ? styles.dot : styles.redFill, motion)} style={style} />;
   return (
     <path
@@ -304,11 +308,11 @@ const drawIn = (shape: Shape, animate: boolean) => (animate ? (isFill(shape.t) |
  * marks the server's copy: a page reached from another sign-in page hides it
  * before the first paint, because the lines will arrive from that page.
  */
-function StaticArt({ shapes, animate, pending = false }: { shapes: Shape[]; animate: boolean; pending?: boolean }) {
+function StaticArt({ shapes, animate, pending = false, pace }: { shapes: Shape[]; animate: boolean; pending?: boolean; pace?: number }) {
   return (
     <svg viewBox="0 0 800 900" preserveAspectRatio="xMidYMid meet" className={styles.art} aria-hidden focusable="false" data-art-pending={pending ? "" : undefined}>
       {shapes.map((shape, i) => (
-        <ShapePath key={i} shape={shape} motion={drawIn(shape, animate)} />
+        <ShapePath key={i} shape={shape} pace={pace} motion={drawIn(shape, animate)} />
       ))}
     </svg>
   );
@@ -668,7 +672,9 @@ export function SignInArt({ door }: { door: ArtDoor }) {
     }
     const current = session;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    setStage({ from: reduce || !measurable() ? null : current.from, start: current.start, animate: !reduce });
+    // A page sheet carrying this drawing in lays it over this one when it lands, so this one is simply drawn.
+    const carried = sheetCarries(door);
+    setStage({ from: reduce || carried || !measurable() ? null : current.from, start: current.start, animate: !reduce && !carried });
     if (current.start !== null) return;
     const shown = () => {
       current.start = performance.now();
@@ -686,6 +692,57 @@ export function SignInArt({ door }: { door: ArtDoor }) {
   const animate = stage ? stage.animate && !stage.from : true;
   // One element for the server's copy and the page's own, so the lines keep drawing across the hand-over.
   return door === "account" ? <MachineArt animate={animate} pending={!stage} /> : <StaticArt shapes={to} animate={animate} pending={!stage} />;
+}
+
+/* -------------------------------------------------------------------- loop */
+
+/** The drawings in the order a wait walks through them: the machine, the desk, the bench, the network. */
+const LOOP: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
+/** How long each drawing rests before its lines move on to the next. */
+const LOOP_REST_MS = 1100;
+
+/**
+ * A drawing for as long as something takes: the first one draws itself in at
+ * `pace`, then its lines move into the next door's drawing, and on round the
+ * four. Given `endOn`, it stops going round and moves to that drawing (if it
+ * is not there already), then calls `onRest` once it is fully drawn there. Where lines cannot be measured,
+ * or motion is reduced, the first drawing stays.
+ */
+export function DrawingLoop({ pace = DRAW_PACE, endOn = null, onRest }: { pace?: number; endOn?: ArtDoor | null; onRest?: () => void }) {
+  const [step, setStep] = useState<{ first: boolean; door: ArtDoor; from: ArtDoor | null; start: number }>({ first: true, door: LOOP[0]!, from: null, start: 0 });
+  const shapes = useMemo(() => DRAWINGS[step.door](), [step.door]);
+  const [moves, setMoves] = useState(false);
+  const born = useRef(0);
+  const settle = useCallback(() => setStep((current) => ({ ...current, from: null })), []);
+  const drawnMs = (LAST_AT * pace + LINE_DRAW_S) * 1000;
+
+  useEffect(() => {
+    born.current = performance.now();
+    const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setMoves(!reduce && measurable());
+  }, []);
+
+  // Measure the other drawings while the first draws, so each move only has to pair lines.
+  useEffect(() => (moves ? measureWhenIdle() : undefined), [moves]);
+
+  useEffect(() => {
+    if (step.from) return;
+    const moveTo = (door: ArtDoor) => setStep((current) => ({ first: false, door, from: current.door, start: performance.now() }));
+    if (endOn && moves && step.door !== endOn) {
+      moveTo(endOn);
+      return;
+    }
+    if (endOn) {
+      const timer = window.setTimeout(() => onRest?.(), step.first ? Math.max(0, drawnMs - (performance.now() - born.current)) : 0);
+      return () => window.clearTimeout(timer);
+    }
+    if (!moves) return;
+    const timer = window.setTimeout(() => moveTo(LOOP[(LOOP.indexOf(step.door) + 1) % LOOP.length]!), (step.first ? drawnMs : 0) + LOOP_REST_MS);
+    return () => window.clearTimeout(timer);
+  }, [moves, step, drawnMs, endOn, onRest]);
+
+  if (step.from) return <MorphArt from={step.from} to={step.door} start={step.start} onDone={settle} />;
+  return <StaticArt shapes={shapes} animate={step.first} pace={pace} />;
 }
 
 /** Adds the drawing a link leaves from, so the next sign-in page can move its lines. */

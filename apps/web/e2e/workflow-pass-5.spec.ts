@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.use({ locale: "en-US", timezoneId: "Asia/Amman", reducedMotion: "reduce", colorScheme: "light" });
+test.use({ locale: "en-US", timezoneId: "Asia/Amman", contextOptions: { reducedMotion: "reduce" }, colorScheme: "light" });
 
 async function fixClock(page: Page) {
   // Fix date-dependent seed content while keeping native browser timers.

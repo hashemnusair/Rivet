@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test.use({ locale: "en-US", timezoneId: "Asia/Amman", reducedMotion: "reduce", colorScheme: "light" });
+test.use({ locale: "en-US", timezoneId: "Asia/Amman", contextOptions: { reducedMotion: "reduce" }, colorScheme: "light" });
 test.describe.configure({ timeout: 120_000 });
 
 async function fits(page: Page) {

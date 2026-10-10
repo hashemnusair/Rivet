@@ -4,6 +4,7 @@ import { useLocale } from "@/lib/i18n/provider";
 import Image from "next/image";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import Link from "next/link";
+import { SheetLink } from "@/components/motion/page-sheet";
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
@@ -324,7 +325,7 @@ export function CinematicHeader({
   return (
     <>
       <header data-landing-header className={cn(styles.header, "marketing-body", open ? styles.headerOpen : onFilm ? styles.headerOnFilm : night && styles.headerNight)}>
-        <Link
+        <SheetLink
           href={onLanding ? "#top" : publicHref}
           className={styles.brand}
           aria-label={t(onLanding ? "publicCompletion.header.backToTop" : "publicCompletion.header.home")}
@@ -332,19 +333,19 @@ export function CinematicHeader({
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
           <Image src={open || night ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
-        </Link>
+        </SheetLink>
 
         <div className={styles.headerActions}>
           <HeaderLanguageSwitch inert={open} />
           {signedOut ? (
             <>
-              <Link href="/login" className={styles.memberLink} inert={open}>{t("common.action.signIn")}</Link>
+              <SheetLink href="/login" className={styles.memberLink} inert={open}>{t("common.action.signIn")}</SheetLink>
               {audience === "member" ? (
                 <Link href="/login/member/create" className={styles.apply} inert={open}>{t("marketing.actions.createAccount")}</Link>
               ) : (
-                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.apply} inert={open}>
+                <SheetLink href={`${publicHref.split("?")[0]}signup`} className={styles.apply} inert={open}>
                   {t("publicCompletion.header.applyAccess")}
-                </Link>
+                </SheetLink>
               )}
             </>
           ) : signedIn ? (
@@ -416,7 +417,7 @@ export function CinematicHeader({
                 <span className={styles.metaKey}>{t("publicCompletion.header.legal")}</span>
                 <span className={styles.menuLegalLinks}>
                   {LEGAL_LINKS.map((item) => (
-                    <Link
+                    <SheetLink
                       key={item.href}
                       href={item.href}
                       className={styles.menuDocLink}
@@ -424,7 +425,7 @@ export function CinematicHeader({
                       onClick={close}
                     >
                       {t(item.href === "/terms" ? "auth.chrome.terms" : "auth.chrome.privacy")}
-                    </Link>
+                    </SheetLink>
                   ))}
                 </span>
               </div>
@@ -438,7 +439,7 @@ export function CinematicHeader({
                   <Link href={signedIn.destination.href} className={styles.menuCta} onClick={close}>{destinationCopy?.action}</Link>
                 </>
               ) : signedOut ? (
-                <Link href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>{t("marketing.actions.applyShort")}</Link>
+                <SheetLink href={`${publicHref.split("?")[0]}signup`} className={styles.menuCta} onClick={close}>{t("marketing.actions.applyShort")}</SheetLink>
               ) : null}
             </div>
           </div>

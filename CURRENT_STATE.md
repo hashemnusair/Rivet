@@ -1,5 +1,132 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — PR #8 integration and navigation regression checks
+
+Hashem approved the motion preview and authorized merging after conflict resolution
+and regression checks. Integrated current main `20e4b6c` into PR #8 with merge
+`ffdbec6`: the signup night styling/validation from `49400c7` is already published
+as `20e4b6c` (plus its Linux mobile reference), and the interactive machine from
+`70dff4f` is retained alongside the new page-sheet drawing loop. Both drawing test
+cases survive; the header combines night-tone support with `SheetLink` navigation.
+
+- Fixed a browser-proven interruption bug: Back during the plate rack used to be
+  overwritten by the delayed `router.push`. Back/Forward now clears the sheet and
+  its timers; unit cases cover rack/hold and a real-browser case checks the history
+  destination after the old timer would have fired.
+- Linux CI exposed a sign-in form captured partway through its entrance in
+  a visual suite intended to use reduced motion. The login stylesheet now disables the entrance entirely
+  for that preference, including its staggered delay. The browser regression
+  asserts no animation/transform and full opacity on chooser/member content;
+  it failed before the fix. Linux visual references and tolerances are unchanged.
+- The visual suites put `reducedMotion` at the top level of `test.use`, which
+  the installed Playwright did not forward to its browser context. Moved it into
+  `contextOptions` in the twelve affected specs. The new reduced-motion journey
+  asserts the actual browser preference, visible sign-in content and an uncovered
+  ready workspace. Normal-motion navigation still has separate coverage.
+- The workspace curtain also leaves immediately when a shell becomes ready under
+  reduced motion, rather than waiting for its decorative lift timers. A unit
+  regression covers repeated loading/ready cycles; the Linux support-page capture
+  exposed the remaining cover before this repair.
+- Added five browser regressions in `e2e/page-motion.spec.ts`: keyboard navigation
+  and interactive pin after docking at 1440px, mobile navigation at 390px, preserved
+  annual Growth signup parameters/night header, reduced motion and interrupted Back.
+- Local validation: both typechecks, lint/secret-output audit, the approved mock
+  production build and all 2,053 unit/component tests passed after integration;
+  all 17 targeted motion/drawing tests pass after the interruption and curtain repairs. The
+  102-journey public/role/host/Arabic/RTL/Pass 4/Pass 7 run passed 100 initially;
+  two journeys found five obsolete September 30 light-theme Mac auth references.
+  Re-captured and visually inspected those five at unchanged tolerances; both
+  journeys pass, as do all five new motion browser checks. Linux references remain
+  unchanged. The full GitHub CI on the PR is the final merge gate.
+- Frontend only: no Convex source, schema, authentication/authorization or billing
+  rules changed; no backend deploy is owed. Credentialed provider acceptance is
+  outside this animation pass. Cross-host/full-document navigation keeps its
+  existing behavior; the sheet only animates same-origin public navigation.
+- The font picker and older untracked Jev/import artifacts stay local by Hashem's
+  instruction. They are excluded from the integration checkout and release.
+
+Read first: this entry, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, and
+`apps/web/src/components/motion/page-sheet.tsx`. Recheck with `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, and an approved mock production
+bundle followed by `PLAYWRIGHT_SERVER_MODE=start pnpm test:e2e`.
+
+## 10 October 2026 — page sheet, mark loader and workspace curtain (branch, not deployed)
+
+**Scope:** Elias asked for a loading and page-transition motion inspired by
+palantir.com's page transitions and built from the sign-in drawings, that the
+public site (and its future subpages), the sign-in pages and the web app can all
+share. palantir.com could not be opened from the build environment (its network
+policy denied the host), so the choreography below is RIVET's own and has not been
+compared with Palantir's. Every timing is a named constant (`page-sheet.tsx`,
+`workspace-curtain.tsx`, `plates.module.css`, `page-sheet.module.css`) for tuning
+against the reference.
+
+- **The plates.** `components/motion/plates.tsx` draws eight full-width plates, one
+  per plate of the mark. They rack in from the floor up (clip from each plate's
+  base, 400 ms, 24 ms apart) and lift off top first (a 5 px settle, then the pull,
+  560 ms, 26 ms apart), so the seams part as a stack does when it is lifted. Night
+  plates carry the sign-in panel's 40 px layout grid unbroken across all eight;
+  paper plates are plain (a ruled seam through the mark read as a fault).
+- **The page sheet** (`components/motion/page-sheet.tsx`, mounted once in the root
+  layout). A `SheetLink` (a drop-in `Link`) to `/`, `/login`, `/signup`, `/privacy`
+  or `/terms` on the same origin racks the night plates over the page, pushes the
+  route under them, draws the chooser's machine in the middle with the next page's
+  name in the panel caption's place (existing keys only, so no new Arabic copy),
+  and lifts once the new path has painted and the drawing has been seen (0.9 s from
+  the click at least). Going to `/login` on a wide screen, the machine lands on the
+  page's art panel (`data-sheet-dock`) while the plates lift, and the panel's own
+  copy, drawn and not redrawn, stays hidden until it has (`data-sheet-docking`). A
+  slow page keeps the drawing going: `DrawingLoop` (in `sign-in-art.tsx`) moves the
+  lines on from the machine to the desk, the bench and the network, and back to the
+  machine before landing. Used by the site bar, menu and footer, the landing's
+  application links, and the sign-in pages' home and legal links. Not used: links
+  to another host (door links keep `?art=` and the morph), the page already open,
+  modified clicks, reduced motion. Browser back/forward has no sheet. A route that
+  has not arrived after 12 s is loaded the ordinary way; a page restored from the
+  back-forward cache clears any sheet. The sheet loads no font of its own: it borrows
+  `--font-mona` from the page whose link was followed, so product pages never load
+  Mona Sans (an earlier draft added its `@font-face` stylesheet to every page).
+- **The mark loader** (`components/motion/rivet-mark-loader.tsx`). The glyph as the
+  weight stack it is, in the landing loop machine's geometry: post, bar and cable
+  drop draw, plates rack from the floor up, the red pin slides in, then the pin's
+  plate and every plate above it lift and lower for as long as the wait lasts. It
+  takes the text colour. It replaces the ping-and-PNG glyph and progress bars in
+  `AuthTransition` (signing out, opening an account), `LoginLoading` ("Checking
+  sign-in") and the identity panel's automatic entry. `AuthProgressBar` remains for
+  the invitation progress card.
+- **The web app's version** (`components/motion/workspace-curtain.tsx`). The gym
+  workspace and platform console gates now render a paper curtain with the mark and
+  the wait named under it (same accessible names, "Loading your gym" and "Checking
+  access", which browser tests use). When the shell is ready the status role goes at
+  once, the mark steps back, and the plates lift after the shell has painted (on
+  the dev server the shell mounted in one ~240 ms task, and lifting in that task
+  dropped frames). The curtain
+  keeps its place in the tree (second child of a fragment in both branches) so it
+  can lift off the shell; a shell already ready on its first render never shows it.
+  Product route changes keep the 240 ms entrance. `DESIGN.md` → Motion records this.
+- **Sign-in doors.** The door's heading and form rise into place in turn (560 ms,
+  70 ms apart). The rise is paused while a door is prerendered (the pre-paint script
+  marks `data-prerendering` until it is shown) and while a page sheet covers the
+  page (`data-page-covered`), so it plays as the page is seen. The content root's
+  older `animate-fade-up` was removed so the two do not stack.
+- **Verified:** typecheck, lint, all 329 Vitest files / 2,052 tests (new:
+  `page-sheet.test.tsx`, `workspace-curtain.test.tsx`, a `DrawingLoop` case in
+  `sign-in-art.test.tsx`) and the mock preview build. Motion was checked frame by
+  frame from recordings against the dev server and the built bundle: landing → sign
+  in (land on the panel, LTR and forced RTL), door → door, door → home, a 3.5 s
+  latency page (the loop), privacy → sign in at 390 px, and a dashboard reload
+  (curtain). Browser specs against the built bundle (CI's mode): design-system
+  visual, role routing, public experience, host routing, RTL audit, Arabic browser
+  verification, workflow passes 4 and 7 and the happy path all pass except four
+  captures/assertions that fail here for this machine's fonts and browser:
+  `happy-path` settings scroll and the Pass 7 390 px platform-gym and onboarding
+  agreement captures fail identically on an untouched build of `fc1b70b`; the
+  Pass 4 `login-member-390-linux` capture differs only because the bar's "Create a
+  member account" fits on one line here (the form moves up 19 px), and was not
+  re-run on the untouched build. CI on GitHub's runner is the authority for those.
+- **Not done:** cross-document arrivals (a sheet that survives a full page load to
+  another RIVET host); a sheet for browser back/forward; Palantir comparison.
+
 ## 10 October 2026 — landing opens on a product film (local, not deployed)
 
 **Scope:** at Elias's request the landing's first section is now a Palantir-style

@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SignInArt, withArt } from "./sign-in-art";
+import { DrawingLoop, SignInArt, withArt } from "./sign-in-art";
 
 describe("sign-in drawings", () => {
   afterEach(() => {
@@ -18,6 +18,20 @@ describe("sign-in drawings", () => {
     expect(window.location.search).toBe("");
     expect(() => act(() => vi.advanceTimersByTime(2_000))).not.toThrow();
     unmount();
+  });
+
+  it("keeps the first drawing where lines cannot move, and rests on the drawing it is asked to end on once drawn", () => {
+    vi.useFakeTimers();
+    const onRest = vi.fn();
+    const { container, rerender } = render(<DrawingLoop pace={0.3} />);
+    act(() => vi.advanceTimersByTime(5_000));
+    expect(container.querySelector("g[data-lines]")).toBeNull();
+    const drawn = container.innerHTML;
+
+    rerender(<DrawingLoop pace={0.3} endOn="account" onRest={onRest} />);
+    act(() => vi.advanceTimersByTime(0));
+    expect(onRest).toHaveBeenCalledTimes(1);
+    expect(container.innerHTML).toBe(drawn);
   });
 
   it("moves the machine's pin into a clicked plate, and sinks the rope only under the lightest", () => {

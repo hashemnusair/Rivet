@@ -1,0 +1,59 @@
+/*
+  The product's loading curtain: plain paper plates, the mark
+  lifting in the middle, the wait named under it. When the workspace is
+  ready the mark steps back and the plates lift off over the shell.
+*/
+
+.curtain {
+  --lift-ms: 460ms;
+  --lift-step: 18ms;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.done {
+  pointer-events: none;
+}
+
+.center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding-inline: 1.5rem;
+  text-align: center;
+}
+
+.done .center {
+  animation: curtain-leave 160ms ease-in both;
+}
+
+.label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-ink-3);
+  animation: curtain-label 300ms ease 700ms both;
+}
+
+@keyframes curtain-leave {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes curtain-label {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .label {
+    animation: none;
+  }
+
+  .done .center {
+    animation: none;
+    opacity: 0;
+  }
+}

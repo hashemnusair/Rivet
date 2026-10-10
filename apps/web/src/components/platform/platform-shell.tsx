@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
 import { AuthTransition } from "@/components/auth/auth-transition";
+import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 import { Input } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
@@ -97,17 +98,13 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!identityReady || !previewSessionReady || !experienceReady || !identitySignedIn || !authorized || !platformAdminSignedIn) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-paper" role="status" aria-label={t("platformConsole.shell.checkingAccess")}>
-        <div className="h-1 w-40 overflow-hidden rounded-full bg-sunken-2">
-          <div className="h-full w-1/2 animate-pulse rounded-full bg-ink" />
-        </div>
-      </div>
-    );
-  }
+  const consoleReady = Boolean(identityReady && previewSessionReady && experienceReady && identitySignedIn && authorized && platformAdminSignedIn);
+  // Second child either way, so the curtain lifts off the console it covered.
+  const curtain = <WorkspaceCurtain ready={consoleReady} label={t("platformConsole.shell.checkingAccess")} />;
+  if (!consoleReady) return <>{null}{curtain}</>;
 
   return (
+    <>
     <div className="min-h-screen bg-paper lg:grid lg:grid-cols-[236px_1fr]">
       <aside className="night-surface fixed inset-y-0 start-0 z-50 hidden w-[236px] flex-col border-e border-night-line bg-night text-night-ink lg:flex">
         <PlatformSidebar pathname={pathname} onNavigate={() => setOpen(false)} />
@@ -159,6 +156,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
         <main className="min-w-0">{children}</main>
       </div>
     </div>
+    {curtain}
+    </>
   );
 }
 

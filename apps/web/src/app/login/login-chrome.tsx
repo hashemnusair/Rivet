@@ -5,10 +5,11 @@ import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, type ComponentProps, type ReactNode } from "react";
-import { AuthProgressBar } from "@/components/auth/auth-transition";
+import { RivetMarkLoader } from "@/components/motion/rivet-mark-loader";
 import { monaSansText } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
+import { SheetLink } from "@/components/motion/page-sheet";
 import { useCanonicalHref } from "@/lib/routing/use-canonical-href";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
@@ -49,9 +50,9 @@ export function LoginLayout({
 
         <div className={styles.column}>
           <div className={styles.bar}>
-            <Link href={publicHref} aria-label={t("auth.chrome.homeLabel")} className="lg:hidden">
+            <SheetLink href={publicHref} aria-label={t("auth.chrome.homeLabel")} className="lg:hidden">
               <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={112} height={29} priority />
-            </Link>
+            </SheetLink>
             <div className={styles.barLinks}>
               <LanguageLink />
               {/* Members can create accounts here; gym access is issued by RIVET
@@ -76,7 +77,7 @@ export function LoginLayout({
                 {LEGAL_LINKS.map((item, index) => (
                   <span key={item.href} className="contents">
                     {index > 0 ? <span aria-hidden>·</span> : null}
-                    <Link href={item.href} className="hover:text-ink">{t(LEGAL_LABEL_KEYS[item.href])}</Link>
+                    <SheetLink href={item.href} className="hover:text-ink">{t(LEGAL_LABEL_KEYS[item.href])}</SheetLink>
                   </span>
                 ))}
               </p>
@@ -134,12 +135,12 @@ const artDoor = (brand: "chooser" | Portal["id"]): ArtDoor => (brand === "choose
 function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHref: string }) {
   const { t } = useLocale();
   return (
-    <aside className={styles.panel}>
+    <aside className={styles.panel} data-sheet-dock={artDoor(brand)}>
       <SignInArt door={artDoor(brand)} />
 
-      <Link href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
+      <SheetLink href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
         <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={122} height={31} priority />
-      </Link>
+      </SheetLink>
 
       <div className={styles.panelCaption}>
         <p>{t(`auth.brand.${brand}.headline` as const)}</p>
@@ -188,7 +189,7 @@ export function LoginLoading() {
   const t = useT();
   return (
     <div className="flex min-h-40 items-center justify-center" role="status" aria-label={t("auth.chrome.checkingSignIn")}>
-      <AuthProgressBar />
+      <RivetMarkLoader className="h-12 w-auto text-ink" />
     </div>
   );
 }

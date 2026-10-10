@@ -1,5 +1,20 @@
 # 12 — System Maps and Release Runbook
 
+## PR #8 — frontend motion release, 10 October 2026
+
+The integrated motion source preserves current main's signup night treatment and
+interactive sign-in machine. This is frontend-only; no Convex deployment or data
+migration is required. Read the PR #8 integration entry in CURRENT_STATE.md.
+
+Release only after the PR's full CI is green, using its checked head SHA. Confirm
+Vercel Production reports success for the resulting main revision. On the live
+public host check home → signup with plan/cadence preserved, home → sign-in and
+Back/Forward; on the sign-in hosts check form visibility and the chooser's pin.
+Same-origin public transitions animate; cross-host links retain normal navigation.
+Use the approved mock preview for gym/platform curtain and role-routing checks;
+production verification is read-only. Do not publish the local font picker or
+untracked historical Jev/import artifacts. Keep FRONTEND_HANDOFF.md frozen.
+
 ## Nonlegal launch release — 7 October 2026
 
 **Deployed:** PR #6 merged as `b95150b18d330ef77dd04351018238077c297f89`, with
