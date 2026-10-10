@@ -1,5 +1,41 @@
 # GymOS / RIVET current implementation state
 
+## 10 October 2026 — PR #8 integration and navigation regression checks
+
+Hashem approved the motion preview and authorized merging after conflict resolution
+and regression checks. Integrated current main `20e4b6c` into PR #8 with merge
+`ffdbec6`: the signup night styling/validation from `49400c7` is already published
+as `20e4b6c` (plus its Linux mobile reference), and the interactive machine from
+`70dff4f` is retained alongside the new page-sheet drawing loop. Both drawing test
+cases survive; the header combines night-tone support with `SheetLink` navigation.
+
+- Fixed a browser-proven interruption bug: Back during the plate rack used to be
+  overwritten by the delayed `router.push`. Back/Forward now clears the sheet and
+  its timers; unit cases cover rack/hold and a real-browser case checks the history
+  destination after the old timer would have fired.
+- Added five browser regressions in `e2e/page-motion.spec.ts`: keyboard navigation
+  and interactive pin after docking at 1440px, mobile navigation at 390px, preserved
+  annual Growth signup parameters/night header, reduced motion and interrupted Back.
+- Local validation: both typechecks, lint/secret-output audit, the approved mock
+  production build and all 2,053 unit/component tests passed after integration;
+  all 16 targeted motion/drawing tests pass after the interruption repair. The
+  102-journey public/role/host/Arabic/RTL/Pass 4/Pass 7 run passed 100 initially;
+  two journeys found five obsolete September 30 light-theme Mac auth references.
+  Re-captured and visually inspected those five at unchanged tolerances; both
+  journeys pass, as do all five new motion browser checks. Linux references remain
+  unchanged. The full GitHub CI on the PR is the final merge gate.
+- Frontend only: no Convex source, schema, authentication/authorization or billing
+  rules changed; no backend deploy is owed. Credentialed provider acceptance is
+  outside this animation pass. Cross-host/full-document navigation keeps its
+  existing behavior; the sheet only animates same-origin public navigation.
+- The font picker and older untracked Jev/import artifacts stay local by Hashem's
+  instruction. They are excluded from the integration checkout and release.
+
+Read first: this entry, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`, and
+`apps/web/src/components/motion/page-sheet.tsx`. Recheck with `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm test`, and an approved mock production
+bundle followed by `PLAYWRIGHT_SERVER_MODE=start pnpm test:e2e`.
+
 ## 10 October 2026 — page sheet, mark loader and workspace curtain (branch, not deployed)
 
 **Scope:** Elias asked for a loading and page-transition motion inspired by

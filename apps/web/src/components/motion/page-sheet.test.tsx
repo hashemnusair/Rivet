@@ -138,4 +138,17 @@ describe("page sheet", () => {
     expect(sheetStore.get().phase).toBe("idle");
     expect(html).not.toHaveAttribute("data-page-covered");
   });
+
+  it.each([0, 600])("cancels navigation and its cover on Back/Forward after %ims", (elapsed) => {
+    render(<PageSheet />);
+    act(() => { startSheet("/login"); });
+    act(() => vi.advanceTimersByTime(elapsed));
+    const pushes = nav.push.mock.calls.length;
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    act(() => vi.advanceTimersByTime(2_000));
+    expect(nav.push).toHaveBeenCalledTimes(pushes);
+    expect(sheetStore.get().phase).toBe("idle");
+    expect(html).not.toHaveAttribute("data-page-covered");
+    expect(html).not.toHaveAttribute("data-sheet-docking");
+  });
 });

@@ -122,13 +122,18 @@ export function PageSheet() {
 
   useEffect(() => sheetStore.addPlayer(), []);
 
-  // A page brought back from the back-forward cache never keeps a sheet over it.
+  // Back/forward supersedes an in-flight sheet, including its delayed push.
+  // A page brought back from the back-forward cache must also clear the cover.
   useEffect(() => {
     const restored = (event: PageTransitionEvent) => {
       if (event.persisted) settle();
     };
     window.addEventListener("pageshow", restored);
-    return () => window.removeEventListener("pageshow", restored);
+    window.addEventListener("popstate", settle);
+    return () => {
+      window.removeEventListener("pageshow", restored);
+      window.removeEventListener("popstate", settle);
+    };
   }, []);
 
   useEffect(() => {
