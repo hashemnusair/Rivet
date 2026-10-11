@@ -14,8 +14,11 @@ test.describe("class calendar roles", () => {
 
     await expect(page.getByRole("heading", { name: "Classes", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "New class" })).toHaveCount(0);
-    // Reception opens the dated roster directly from the agenda.
-    await page.getByTestId("class-agenda-row").filter({ hasText: "Morning HIIT" }).getByRole("button", { name: "Who booked" }).click();
+    // Reception opens the dated roster directly from the agenda. Desk tools only
+    // show before a class ends, so take a mixed class that has not started: a
+    // fixed class fails on the days its session is already over.
+    const upcoming = page.getByTestId("class-agenda-row").filter({ hasText: "Attendance open" }).filter({ hasText: "Mixed" }).first();
+    await upcoming.getByRole("button", { name: "Who booked" }).click();
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: /Who booked/ })).toBeVisible();
     // Desk tools are tucked behind a disclosure so the roster stays a clean list.

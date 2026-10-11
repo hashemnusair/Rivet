@@ -30,6 +30,11 @@ and the arrival on dashboard/app drew it. Chromium does not reproduce the iOS
 repaint stop; that behavior was inferred from the screenshot timing and needs
 an iPhone check after release.
 
+CI also exposed a time-dependent class test. `e2e/classes.spec.ts` opened the
+week's only Morning HIIT. On the day that session has ended (e.g. after 07:00
+Amman on 11 October) the roster hides its desk tools, so the test failed on any
+branch. It now opens the first mixed class that has not started.
+
 Read first: `apps/web/src/components/motion/page-sheet.tsx`, `sheet-entry.ts`,
 `page-sheet.test.tsx`, `sheet-link-hosts.test.tsx`.
 
