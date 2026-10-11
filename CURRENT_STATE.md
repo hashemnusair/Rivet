@@ -1,5 +1,43 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — cross-host sheets no longer freeze half drawn
+
+On iPhone Safari, a Gym Team or Gym Member door from `www` stopped on a
+half-drawn machine on dashboard.rivetjo.com for several seconds, then showed the
+sign-in page. The drawing stopped about 50ms after the sheet's
+`location.assign` to the other host. Safari stops repainting the page it is
+leaving once that document load starts, and the page stays on screen until the
+next document paints.
+
+A sheet that leaves for another RIVET host now shows only the night cover on
+the old page. The next page draws the drawing during its arrival, so it is
+drawn once per transition. The arrival's pre-paint cover now uses the sheet's
+40px grid, so old sheet → new document → arrival looks continuous. If a
+cross-host load takes longer than 12s, the sheet now lifts instead of calling
+`location.assign` again, which would restart the load. Sheet links to another
+RIVET host preconnect to it on mount, because Safari ignores the door
+speculation rules. Same-host sheets are unchanged.
+
+The remaining wait is the destination host's cold document and bundle load on
+cellular. Each host serves its own `/_next/static` URLs, so nothing is reused
+from `www`'s cache.
+
+Validation: 2,080 unit/component tests, typecheck, lint/secret audit and an
+optimized mock-preview build passed. The page-motion and host-routing browser
+specs passed, 10 of 10, including the real cross-origin door → home flow. A
+one-off check of the leaving document showed no drawing in `rack` or `hold`,
+and the arrival on dashboard/app drew it. Chromium does not reproduce the iOS
+repaint stop; that behavior was inferred from the screenshot timing and needs
+an iPhone check after release.
+
+CI also exposed a time-dependent class test. `e2e/classes.spec.ts` opened the
+week's only Morning HIIT. On the day that session has ended (e.g. after 07:00
+Amman on 11 October) the roster hides its desk tools, so the test failed on any
+branch. It now opens the first mixed class that has not started.
+
+Read first: `apps/web/src/components/motion/page-sheet.tsx`, `sheet-entry.ts`,
+`page-sheet.test.tsx`, `sheet-link-hosts.test.tsx`.
+
 ## 11 October 2026 — sign-in doors and landing arrivals share the page transition
 
 The Gym Team and Gym Member links now play the existing night sheet, including

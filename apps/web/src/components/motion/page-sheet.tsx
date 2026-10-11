@@ -16,8 +16,12 @@ import styles from "./page-sheet.module.css";
  * sheet fades off it. Only opacity moves, so nothing ever cuts across the page
  * underneath. A long load keeps the drawing going: its lines move from the
  * machine to the desk, the bench and the network until the page is there. The
- * doors and links across RIVET hosts use the same sheet. Full-document arrivals
- * resume behind a pre-paint cover; product pages keep their short entrance.
+ * doors and links across RIVET hosts use the same sheet, but the page left
+ * holds only the night: a browser may stop painting it as soon as the next
+ * document starts loading (iOS Safari does), and a drawing stopped there stays
+ * half drawn until that document paints. The next page draws it instead.
+ * Full-document arrivals resume behind a pre-paint cover; product pages keep
+ * their short entrance.
  */
 
 const loadDrawing = () => import("@/app/login/sign-in-art");
@@ -47,7 +51,10 @@ const WORDS_MS = 380;
 const HOLD_MS = 900;
 /** Going to sign in, long enough for the machine to be fully drawn when it lands. */
 const DOCK_HOLD_MS = 1250;
-/** A page that has not arrived by then is loaded the ordinary way. */
+/**
+ * A page on this host that has not arrived by then is loaded the ordinary way.
+ * One on another host is already loading that way, so the sheet only lifts.
+ */
 const STALL_MS = 12_000;
 /** The longest a landed drawing may take to come back to the machine before the sheet goes anyway. */
 const LAND_LIMIT_MS = 1600;
@@ -55,6 +62,27 @@ const LAND_LIMIT_MS = 1600;
 const DRAW_PACE = 0.3;
 
 const reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Whether a sheet's target is on another RIVET host, so this document is left behind. */
+const crossesHost = (target: string) => new URL(target, window.location.href).origin !== window.location.origin;
+
+const preconnected = new Set<string>();
+
+/**
+ * Opens the connection to another RIVET host a link goes to, so its page
+ * starts loading sooner. Safari has no speculation rules to fetch it ahead.
+ */
+function preconnect(href: string) {
+  const target = sheetTarget(href, window.location.href);
+  if (!target || !crossesHost(target)) return;
+  const { origin } = new URL(target);
+  if (preconnected.has(origin)) return;
+  preconnected.add(origin);
+  const link = document.createElement("link");
+  link.rel = "preconnect";
+  link.href = origin;
+  document.head.appendChild(link);
+}
 
 /** The art panel a sheet can land its drawing on, when it is on screen. */
 function dockFor(dock: SheetDock | null): HTMLElement | null {
@@ -79,7 +107,7 @@ export function startSheet(href: string): boolean {
   const target = sheetTarget(href, window.location.href);
   if (!target) return false;
   const route = sheetRoute(new URL(target, window.location.href).pathname)!;
-  void loadDrawing();
+  if (!crossesHost(target)) void loadDrawing();
   sheetStore.set({
     phase: "rack",
     target,
@@ -106,10 +134,11 @@ function arrive(pathname: string) {
  * A link that goes by sheet when it can and is an ordinary `Link` otherwise.
  * Its own `onClick` runs first and may cancel the navigation; new-tab and
  * modified clicks are the browser's. The drawing is fetched once the page is
- * idle, or sooner on hover or focus.
+ * idle, or sooner on hover or focus; another host is connected to at once.
  */
 export function SheetLink({ href, onClick, onPointerEnter, onFocus, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
   useEffect(prefetchDrawing, []);
+  useEffect(() => preconnect(href), [href]);
   return (
     <Link
       {...props}
@@ -211,7 +240,7 @@ export function PageSheet() {
   // entrance waits for the sheet to fade, and the sign-in page that its drawing is coming.
   useEffect(() => {
     if (sheet.phase !== "rack") return;
-    const crossingHost = new URL(sheet.target, window.location.href).origin !== window.location.origin;
+    const crossingHost = crossesHost(sheet.target);
     if (!crossingHost) router.prefetch(sheet.target);
     const timer = window.setTimeout(() => {
       document.documentElement.setAttribute("data-page-covered", "");
@@ -228,7 +257,9 @@ export function PageSheet() {
     if (sheet.phase !== "hold") return;
     const elapsed = performance.now() - sheet.startedAt;
     if (pathname === sheet.from) {
-      const timer = window.setTimeout(() => window.location.assign(sheet.target), Math.max(0, STALL_MS - elapsed));
+      // Assigning a slow page on another host again would start its load over.
+      const stalled = crossesHost(sheet.target) ? settle : () => window.location.assign(sheet.target);
+      const timer = window.setTimeout(stalled, Math.max(0, STALL_MS - elapsed));
       return () => window.clearTimeout(timer);
     }
     let frame = 0;
@@ -296,11 +327,14 @@ export function PageSheet() {
       data-page-sheet={sheet.phase}
     >
       <div className={styles.cover} />
-      <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
-        <Suspense fallback={null}>
-          <SheetDrawing pace={DRAW_PACE} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
-        </Suspense>
-      </div>
+      {/* Leaving for another host, the night alone: the next page draws. */}
+      {crossesHost(sheet.target) ? null : (
+        <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
+          <Suspense fallback={null}>
+            <SheetDrawing pace={DRAW_PACE} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }

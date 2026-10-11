@@ -53,6 +53,8 @@ describe("page sheet", () => {
   it.each(["https://www.rivetjo.com/", "https://dashboard.rivetjo.com/login/gym", "https://app.rivetjo.com/login/member?art=account"])("covers a fresh document before hydration and releases it safely: %s", (href) => {
     new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL(href), () => ({ matches: false }));
     expect(document.getElementById(SHEET_ENTRY_ID)?.textContent).toContain("background:#0b0a08");
+    // The sheet's own grid, so a sheet left on the page before runs on unbroken.
+    expect(document.getElementById(SHEET_ENTRY_ID)?.textContent).toContain("background-size:40px 40px");
     act(() => vi.advanceTimersByTime(12_000));
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
   });
@@ -158,6 +160,34 @@ describe("page sheet", () => {
     act(() => vi.advanceTimersByTime(800));
     expect(sheetStore.get().phase).toBe("idle");
     expect(document.querySelector("[data-page-sheet]")).toBeNull();
+  });
+
+  it("draws while it stays on this host, and leaves for another host on the bare night", () => {
+    window.history.replaceState(null, "", "/login");
+    nav.pathname = "/login";
+    render(<PageSheet />);
+    const hold = { phase: "hold", from: "/login", dock: "staff", landing: false, startedAt: performance.now() } as const;
+    const sheet = () => document.querySelector("[data-page-sheet='hold']");
+    act(() => sheetStore.set({ ...hold, target: "/login/gym" }));
+    // The night cover, and the drawing's box over it.
+    expect(sheet()?.childElementCount).toBe(2);
+
+    // A browser can stop painting the page it is leaving; nothing on it may be caught half drawn.
+    act(() => sheetStore.set({ ...hold, target: "https://dashboard.rivetjo.com/login/gym?art=account" }));
+    expect(sheet()?.childElementCount).toBe(1);
+  });
+
+  it("lifts a stalled load on another host instead of starting it over", () => {
+    window.history.replaceState(null, "", "/login");
+    nav.pathname = "/login";
+    render(<PageSheet />);
+    html.setAttribute("data-page-covered", "");
+    act(() => sheetStore.set({ phase: "hold", target: "https://dashboard.rivetjo.com/login/gym", from: "/login", dock: "staff", landing: false, startedAt: performance.now() }));
+    act(() => vi.advanceTimersByTime(11_000));
+    expect(sheetStore.get().phase).toBe("hold");
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(sheetStore.get().phase).toBe("idle");
+    expect(html).not.toHaveAttribute("data-page-covered");
   });
 
   it("tells the sign-in page its drawing is on the way, and stops when no panel is there to land on", () => {
