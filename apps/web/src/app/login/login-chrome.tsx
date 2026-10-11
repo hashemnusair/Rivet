@@ -101,7 +101,7 @@ export function LoginLayout({
  */
 export function DoorLink({ href, ...props }: Omit<ComponentProps<typeof Link>, "href"> & { href: string }) {
   const target = useCanonicalHref(href);
-  return <Link {...props} href={target} data-door={target === href ? undefined : ""} />;
+  return <SheetLink {...props} href={target} data-door={target === href ? undefined : ""} />;
 }
 
 const DOOR_RULES_ID = "rivet-door-rules";

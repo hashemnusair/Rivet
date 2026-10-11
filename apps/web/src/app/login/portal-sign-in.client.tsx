@@ -16,7 +16,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { toast } from "sonner";
 import { safeInternalRedirect } from "@/lib/routing/host-routing";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
@@ -50,6 +50,8 @@ const STAFF_ROLES: Array<{ role: StaffRole; icon: LucideIcon; name: string }> = 
 
 
 export type AuthMode = "sign-in" | "sign-up";
+
+const subscribeToHydration = () => () => {};
 
 /**
  * Shows the Clerk account actually in use. Without this the portal jumps
@@ -117,7 +119,11 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   // Preview controls must not be interactive before the client providers have
   // restored their browser state. Otherwise a cold server-rendered page can
   // submit its form before React attaches the handlers.
-  const previewReady = !DEMO_AUTH_BYPASS || (!sessionLoading && experienceReady);
+  // The parent providers can finish before this Suspense boundary hydrates,
+  // especially when canonical host links update. Keep its first snapshot equal
+  // to the server instead of inserting preview controls into unhydrated HTML.
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
+  const previewReady = !DEMO_AUTH_BYPASS || (hydrated && !sessionLoading && experienceReady);
   const redirectUrl = safeInternalRedirect(searchParams.get("next"), portal.href);
   // On the resolver a signed-in account is being opened, not asked to sign
   // in: no heading and no doors until Clerk has said who this is.
@@ -274,9 +280,9 @@ function PreviewAccountOptions() {
   return (
     <div className="mt-7 grid gap-2">
       <p className="context-label mb-1">{t("auth.preview.heading")}</p>
-      <Button asChild variant="secondary"><Link href="/login/member">{t("auth.preview.member")}</Link></Button>
-      <Button asChild variant="secondary"><Link href="/login/gym">{t("auth.preview.gym")}</Link></Button>
-      <Button asChild variant="secondary"><Link href="/login/admin">{t("auth.preview.admin")}</Link></Button>
+      <Button asChild variant="secondary"><DoorLink href="/login/member">{t("auth.preview.member")}</DoorLink></Button>
+      <Button asChild variant="secondary"><DoorLink href="/login/gym">{t("auth.preview.gym")}</DoorLink></Button>
+      <Button asChild variant="secondary"><DoorLink href="/login/admin">{t("auth.preview.admin")}</DoorLink></Button>
     </div>
   );
 }
