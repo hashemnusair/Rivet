@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 import { cn } from "@/lib/utils/cn";
-import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, type SheetDock } from "./sheet-store";
+import { decideHostRouting } from "@/lib/routing/host-routing";
+import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, sheetTarget, type SheetDock } from "./sheet-store";
+import { SHEET_ENTRY_ID } from "./sheet-entry";
 import styles from "./page-sheet.module.css";
 
 /*
@@ -14,8 +16,8 @@ import styles from "./page-sheet.module.css";
  * sheet fades off it. Only opacity moves, so nothing ever cuts across the page
  * underneath. A long load keeps the drawing going: its lines move from the
  * machine to the desk, the bench and the network until the page is there. The
- * doors between sign-in pages keep their own quicker move (`?art=`), and the
- * product's pages keep their short entrance.
+ * doors and links across RIVET hosts use the same sheet. Full-document arrivals
+ * resume behind a pre-paint cover; product pages keep their short entrance.
  */
 
 const loadDrawing = () => import("@/app/login/sign-in-art");
@@ -68,25 +70,36 @@ function settle() {
 }
 
 /**
- * Starts a sheet to `href` when it goes to a sheet page on this origin, and
- * says whether it did. Anything else (another host, the page already open,
+ * Starts a sheet to `href` when it goes to a public/sign-in page on this origin
+ * or another RIVET host. Anything else (an external site, the page already open,
  * reduced motion, a sheet already playing) is left to ordinary navigation.
  */
 export function startSheet(href: string): boolean {
   if (!sheetStore.hasPlayer() || sheetStore.get().phase !== "idle" || reducedMotion()) return false;
-  const url = new URL(href, window.location.href);
-  const route = sheetRoute(url.pathname);
-  if (!route || url.origin !== window.location.origin || url.pathname === window.location.pathname) return false;
+  const target = sheetTarget(href, window.location.href);
+  if (!target) return false;
+  const route = sheetRoute(new URL(target, window.location.href).pathname)!;
   void loadDrawing();
   sheetStore.set({
     phase: "rack",
-    target: `${url.pathname}${url.search}${url.hash}`,
+    target,
     from: window.location.pathname,
     dock: route.dock ?? null,
     landing: false,
     startedAt: performance.now(),
   });
   return true;
+}
+
+/** An arrival never pushes history: the document or Back/Forward already did. */
+function arrive(pathname: string) {
+  const route = sheetRoute(pathname);
+  if (!route || reducedMotion()) return;
+  if (pathname === "/" && decideHostRouting(window.location.hostname, pathname).kind === "rewrite") return;
+  void loadDrawing();
+  document.documentElement.setAttribute("data-page-covered", "");
+  if (route.dock) document.documentElement.setAttribute("data-sheet-docking", "");
+  sheetStore.set({ phase: "hold", target: pathname, from: "", dock: route.dock ?? null, landing: false, startedAt: performance.now() });
 }
 
 /**
@@ -124,6 +137,7 @@ export function PageSheet() {
   const sheet = useSyncExternalStore(sheetStore.subscribe, sheetStore.get, () => IDLE_SHEET);
   const router = useRouter();
   const pathname = usePathname();
+  const previousPath = useRef(pathname);
   const drawingRef = useRef<HTMLDivElement>(null);
   // Landing needs both: the drawing over the panel, and back on the machine if a long wait moved it on.
   const landed = useRef({ placed: false, rested: false });
@@ -134,34 +148,77 @@ export function PageSheet() {
 
   useEffect(() => sheetStore.addPlayer(), []);
 
+  // A hard navigation has a pre-paint cover. A plain Next link or browser Back
+  // to the landing also gets an arrival, without requiring every caller to use
+  // SheetLink. An existing in-app sheet already owns the arrival and is kept.
+  useLayoutEffect(() => {
+    const entry = document.getElementById(SHEET_ENTRY_ID);
+    const returningHome = pathname === "/" && previousPath.current !== pathname;
+    previousPath.current = pathname;
+    if (!entry && !returningHome) return;
+    let frame = 0;
+    const enter = () => {
+      if (sheetStore.get().phase === "idle") arrive(pathname);
+      entry?.remove();
+    };
+    // Keep the pre-paint cover through the initial commit, then let the shared
+    // player take over on the next frame without exposing the page between them.
+    const hydrated = () => { frame = requestAnimationFrame(enter); };
+    if ((document as Document & { prerendering?: boolean }).prerendering) {
+      document.addEventListener("prerenderingchange", hydrated, { once: true });
+    } else if (entry) {
+      hydrated();
+    } else {
+      enter();
+    }
+    return () => {
+      document.removeEventListener("prerenderingchange", hydrated);
+      cancelAnimationFrame(frame);
+    };
+  }, [pathname]);
+
   // Back/forward supersedes an in-flight sheet, including its delayed push.
   // A page brought back from the back-forward cache must also clear the cover.
   useEffect(() => {
     const restored = (event: PageTransitionEvent) => {
-      if (event.persisted) settle();
+      if (event.persisted) {
+        settle();
+        if (window.location.pathname === "/") arrive("/");
+      }
+    };
+    const historyChanged = () => {
+      const current = sheetStore.get();
+      const home = window.location.pathname === "/";
+      // pageshow precedes popstate on a cached document; keep its fresh arrival.
+      if (home && current.phase !== "idle" && current.target === "/" && current.from === "") return;
+      settle();
+      // Moving between anchors on the landing is scrolling, not a page arrival.
+      if (home && previousPath.current !== "/") arrive("/");
     };
     window.addEventListener("pageshow", restored);
-    window.addEventListener("popstate", settle);
+    window.addEventListener("popstate", historyChanged);
     return () => {
       window.removeEventListener("pageshow", restored);
-      window.removeEventListener("popstate", settle);
+      window.removeEventListener("popstate", historyChanged);
     };
   }, []);
 
   useEffect(() => {
-    if (sheet.phase === "rack") landed.current = { placed: false, rested: false };
+    if (sheet.phase === "rack" || sheet.phase === "hold") landed.current = { placed: false, rested: false };
   }, [sheet.phase]);
 
   // Covered: go. The next page is told it is under the sheet (`data-page-covered`), so its
   // entrance waits for the sheet to fade, and the sign-in page that its drawing is coming.
   useEffect(() => {
     if (sheet.phase !== "rack") return;
-    router.prefetch(sheet.target);
+    const crossingHost = new URL(sheet.target, window.location.href).origin !== window.location.origin;
+    if (!crossingHost) router.prefetch(sheet.target);
     const timer = window.setTimeout(() => {
       document.documentElement.setAttribute("data-page-covered", "");
       if (sheet.dock) document.documentElement.setAttribute("data-sheet-docking", "");
       sheetStore.set({ ...sheet, phase: "hold" });
-      router.push(sheet.target);
+      if (crossingHost) window.location.assign(sheet.target);
+      else router.push(sheet.target);
     }, RACK_MS);
     return () => window.clearTimeout(timer);
   }, [sheet, router]);

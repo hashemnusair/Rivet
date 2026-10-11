@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageSheet, SheetLink, startSheet } from "./page-sheet";
-import { IDLE_SHEET, sheetCarries, sheetRoute, sheetStore } from "./sheet-store";
+import { IDLE_SHEET, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
+import { SHEET_ENTRY_ID, SHEET_ENTRY_PRE_PAINT } from "./sheet-entry";
 
 const nav = vi.hoisted(() => ({ pathname: "/", push: vi.fn(), prefetch: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -25,6 +26,7 @@ describe("page sheet", () => {
     act(() => sheetStore.set(IDLE_SHEET));
     html.removeAttribute("data-page-covered");
     html.removeAttribute("data-sheet-docking");
+    document.getElementById(SHEET_ENTRY_ID)?.remove();
     vi.useRealTimers();
   });
 
@@ -32,7 +34,78 @@ describe("page sheet", () => {
     expect(sheetRoute("/login")).toEqual({ dock: "account" });
     expect(sheetRoute("/terms")).toEqual({});
     expect(sheetRoute("/dashboard")).toBeNull();
-    expect(sheetRoute("/login/gym")).toBeNull();
+    expect(sheetRoute("/login/gym")).toEqual({ dock: "staff" });
+    expect(sheetRoute("/login/member")).toEqual({ dock: "member" });
+    expect(sheetRoute("/login/member/create")).toEqual({ dock: "member" });
+    expect(sheetRoute("/login/admin")).toEqual({ dock: "admin" });
+  });
+
+  it("resolves production doors and home across hosts without losing the continuation", () => {
+    expect(sheetTarget("/login/gym?next=%2Fmembers&art=account", "https://www.rivetjo.com/login")).toBe("https://dashboard.rivetjo.com/login/gym?next=%2Fmembers&art=account");
+    expect(sheetTarget("/login/member", "https://www.rivetjo.com/login")).toBe("https://app.rivetjo.com/login/member");
+    expect(sheetTarget("https://www.rivetjo.com/#pricing", "https://app.rivetjo.com/login/member")).toBe("https://www.rivetjo.com/#pricing");
+    expect(sheetTarget("/login/gym", "http://localhost:3210/login")).toBe("/login/gym");
+    expect(sheetTarget("https://unrelated.example/", "https://app.rivetjo.com/login/member")).toBeNull();
+    expect(sheetTarget("https://www.rivetjo.com.attacker.example/", "https://app.rivetjo.com/login/member")).toBeNull();
+    expect(sheetTarget("javascript:alert(1)", "https://www.rivetjo.com/login")).toBeNull();
+  });
+
+  it.each(["https://www.rivetjo.com/", "https://dashboard.rivetjo.com/login/gym", "https://app.rivetjo.com/login/member?art=account"])("covers a fresh document before hydration and releases it safely: %s", (href) => {
+    new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL(href), () => ({ matches: false }));
+    expect(document.getElementById(SHEET_ENTRY_ID)?.textContent).toContain("background:#0b0a08");
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+  });
+
+  it("does not cover reduced motion or an app-host workspace root", () => {
+    const run = new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT);
+    run(new URL("https://www.rivetjo.com/"), () => ({ matches: true }));
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+    run(new URL("https://dashboard.rivetjo.com/"), () => ({ matches: false }));
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+  });
+
+  it("takes over the document cover without another navigation", () => {
+    new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL("https://www.rivetjo.com/"), () => ({ matches: false }));
+    render(<PageSheet />);
+    act(() => vi.advanceTimersByTime(20));
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+    expect(sheetStore.get()).toMatchObject({ phase: "hold", from: "", target: "/" });
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(sheetStore.get().phase).toBe("lift");
+    act(() => vi.advanceTimersByTime(500));
+    expect(sheetStore.get().phase).toBe("idle");
+    expect(nav.push).not.toHaveBeenCalled();
+  });
+
+  it("holds a prerendered page's cover until the visitor activates it", () => {
+    Object.defineProperty(document, "prerendering", { configurable: true, value: true });
+    try {
+      new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL("https://www.rivetjo.com/"), () => ({ matches: false }));
+      render(<PageSheet />);
+      act(() => vi.advanceTimersByTime(20_000));
+      expect(document.getElementById(SHEET_ENTRY_ID)).not.toBeNull();
+      expect(sheetStore.get().phase).toBe("idle");
+      Object.defineProperty(document, "prerendering", { configurable: true, value: false });
+      act(() => document.dispatchEvent(new Event("prerenderingchange")));
+      act(() => vi.advanceTimersByTime(20));
+      expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+      expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/" });
+      expect(nav.push).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(document, "prerendering");
+    }
+  });
+
+  it("animates a plain router or history arrival home without pushing another entry", () => {
+    window.history.replaceState(null, "", "/login/gym");
+    nav.pathname = "/login/gym";
+    const { rerender } = render(<PageSheet />);
+    window.history.replaceState(null, "", "/");
+    nav.pathname = "/";
+    rerender(<PageSheet />);
+    expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/" });
+    expect(nav.push).not.toHaveBeenCalled();
   });
 
   it("leaves navigation alone when nothing is mounted to play a sheet", () => {
@@ -125,7 +198,7 @@ describe("page sheet", () => {
     expect(sheetStore.get()).toMatchObject({ phase: "rack", target: "/privacy" });
   });
 
-  it("clears itself when the page comes back from the back-forward cache", () => {
+  it("replaces a stale departure with an arrival when home comes back from the back-forward cache", () => {
     render(<PageSheet />);
     act(() => {
       startSheet("/privacy");
@@ -136,20 +209,36 @@ describe("page sheet", () => {
       Object.defineProperty(event, "persisted", { value: true });
       window.dispatchEvent(event);
     });
+    expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/", from: "" });
+    act(() => vi.advanceTimersByTime(1_000));
+    act(() => vi.advanceTimersByTime(500));
     expect(sheetStore.get().phase).toBe("idle");
     expect(html).not.toHaveAttribute("data-page-covered");
   });
 
   it.each([0, 600])("cancels navigation and its cover on Back/Forward after %ims", (elapsed) => {
+    window.history.replaceState(null, "", "/privacy");
+    nav.pathname = "/privacy";
     render(<PageSheet />);
     act(() => { startSheet("/login"); });
     act(() => vi.advanceTimersByTime(elapsed));
     const pushes = nav.push.mock.calls.length;
+    window.history.replaceState(null, "", "/");
     act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/", from: "" });
     act(() => vi.advanceTimersByTime(2_000));
+    act(() => vi.advanceTimersByTime(500));
     expect(nav.push).toHaveBeenCalledTimes(pushes);
     expect(sheetStore.get().phase).toBe("idle");
     expect(html).not.toHaveAttribute("data-page-covered");
     expect(html).not.toHaveAttribute("data-sheet-docking");
+  });
+
+  it("leaves same-page landing anchor history alone", () => {
+    render(<PageSheet />);
+    window.history.replaceState(null, "", "/#pricing");
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    expect(sheetStore.get().phase).toBe("idle");
+    expect(nav.push).not.toHaveBeenCalled();
   });
 });

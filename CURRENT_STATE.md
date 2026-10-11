@@ -1,5 +1,33 @@
 # GymOS / RIVET current implementation state
 
+## 11 October 2026 — sign-in doors and landing arrivals share the page transition
+
+The Gym Team and Gym Member links now play the existing night sheet, including
+when they cross from `www` to the dashboard/member hosts. Their RIVET home links
+play it in reverse. All sign-in doors use the same navigation component, with
+canonical host ownership and continuation query strings preserved.
+
+A small pre-paint cover hands full-document arrivals to the sheet player. The
+landing also animates on plain router returns, browser Back/Forward and restored
+back-forward-cache documents. Reduced-motion preferences skip the animation;
+landing anchor history and app-host workspace roots do not trigger it. A failed
+client bundle releases the pre-paint cover after 12 seconds. Speculatively
+prerendered pages wait until activation before starting their arrival.
+
+Cross-host testing also exposed a preview-only hydration race: restored demo
+providers could insert persona controls before the sign-in Suspense boundary
+hydrated. Those controls now wait for that boundary's client snapshot.
+
+Validation: 51 focused unit/component tests, typecheck, lint/secret audit and an
+optimized mock-preview build passed. All eight browser cases passed, covering desktop/mobile,
+real cross-origin document navigation through an isolated local fixture, fresh
+sign-in hydration, reduced motion, pricing continuation and browser history.
+Release status: local implementation; PR/CI and deployment verification pending.
+No backend deployment, data migration, font-picker or tunnel files are involved.
+
+Read first: `apps/web/src/components/motion/page-sheet.tsx`, `sheet-store.ts`,
+`sheet-entry.ts`, and `apps/web/e2e/page-motion.spec.ts`.
+
 ## 11 October 2026 — approved landing typography released (PR #9)
 
 Synced with main `015b9ad`, preserving the newer sign-in layout, night chrome,

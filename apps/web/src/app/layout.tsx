@@ -15,6 +15,7 @@ import { dirFor } from "@/lib/i18n/config";
 import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import { PageSheet } from "@/components/motion/page-sheet";
+import { SHEET_ENTRY_PRE_PAINT } from "@/components/motion/sheet-entry";
 import { PAPER_CHROME } from "@/lib/ui/chrome-colors";
 import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
 import "./globals.css";
@@ -119,6 +120,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body data-demo-auth={DEMO_AUTH_BYPASS ? "true" : undefined}>
         {PRE_PAINT_SIGNED_IN_GUARD ? <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} /> : null}
         <script dangerouslySetInnerHTML={{ __html: SIGN_IN_ART_PRE_PAINT }} />
+        <script dangerouslySetInnerHTML={{ __html: SHEET_ENTRY_PRE_PAINT }} />
         <LocaleProvider initialLocale={locale} initialOwner={preference.owner} initialPending={preference.pending}>
         <ClerkProvider allowedRedirectOrigins={RIVET_ORIGINS} signInUrl="/login" signUpUrl="/login/member/create" signInFallbackRedirectUrl="/login" signUpFallbackRedirectUrl="/login">
           <HostRouteGuard />
