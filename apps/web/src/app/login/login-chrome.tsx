@@ -14,7 +14,7 @@ import { useNightChrome } from "@/components/public/use-night-chrome";
 import { useCanonicalHref } from "@/lib/routing/use-canonical-href";
 import { cn } from "@/lib/utils/cn";
 import styles from "./login.module.css";
-import { SignInArt, withArt, type ArtDoor } from "./sign-in-art";
+import { SignInArt, type ArtDoor } from "./sign-in-art";
 import type { Portal } from "./portals";
 
 const LEGAL_LABEL_KEYS = {
@@ -60,9 +60,9 @@ export function LoginLayout({
               {/* Members can create accounts here; gym access is issued by RIVET
                   after an application is reviewed. */}
               {portal && mode === "sign-up" ? (
-                <DoorLink href={withArt(portal.href, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</DoorLink>
+                <DoorLink href={portal.href} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</DoorLink>
               ) : portal?.signUpUrl ? (
-                <DoorLink href={withArt(portal.signUpUrl, artDoor(brand))} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</DoorLink>
+                <DoorLink href={portal.signUpUrl} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</DoorLink>
               ) : null}
             </div>
           </div>

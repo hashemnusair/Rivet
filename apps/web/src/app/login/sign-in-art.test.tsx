@@ -1,6 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DrawingLoop, SignInArt, withArt } from "./sign-in-art";
+import { DrawingLoop, SignInArt } from "./sign-in-art";
 
 describe("sign-in drawings", () => {
   afterEach(() => {
@@ -32,6 +32,17 @@ describe("sign-in drawings", () => {
     act(() => vi.advanceTimersByTime(0));
     expect(onRest).toHaveBeenCalledTimes(1);
     expect(container.innerHTML).toBe(drawn);
+  });
+
+  it("opens a wait on the drawing of the page being opened", () => {
+    const paths = (root: Element) => Array.from(root.querySelectorAll("svg path")).map((path) => path.getAttribute("d"));
+    for (const door of ["staff", "member", "admin"] as const) {
+      const loop = render(<DrawingLoop startOn={door} />);
+      const page = render(<SignInArt door={door} />);
+      expect(paths(loop.container)).toEqual(paths(page.container));
+      loop.unmount();
+      page.unmount();
+    }
   });
 
   it("moves the machine's pin into a clicked plate, and sinks the rope only under the lightest", () => {
@@ -71,10 +82,5 @@ describe("sign-in drawings", () => {
     expect(redPlates()).toEqual(["4"]);
     // The lines themselves never change, only where the parts sit.
     expect(Array.from(container.querySelectorAll("svg path")).map((path) => path.getAttribute("d"))).toEqual(stack);
-  });
-
-  it("carries the door a link leaves from, keeping its other parameters", () => {
-    expect(withArt("/login/gym", "account")).toBe("/login/gym?art=account");
-    expect(withArt("/login/member?next=%2Fcustomer", "staff")).toBe("/login/member?next=%2Fcustomer&art=staff");
   });
 });

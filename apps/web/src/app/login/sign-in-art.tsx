@@ -724,14 +724,15 @@ const LOOP: readonly ArtDoor[] = ["account", "staff", "member", "admin"];
 const LOOP_REST_MS = 1100;
 
 /**
- * A drawing for as long as something takes: the first one draws itself in at
- * `pace`, then its lines move into the next door's drawing, and on round the
- * four. Given `endOn`, it stops going round and moves to that drawing (if it
- * is not there already), then calls `onRest` once it is fully drawn there. Where lines cannot be measured,
- * or motion is reduced, the first drawing stays.
+ * A drawing for as long as something takes: the first one (`startOn`, the
+ * page being opened, or the machine) draws itself in at `pace`, then its
+ * lines move into the next door's drawing, and on round the four. Given
+ * `endOn`, it stops going round and moves to that drawing (if it is not there
+ * already), then calls `onRest` once it is fully drawn there. Where lines
+ * cannot be measured, or motion is reduced, the first drawing stays.
  */
-export function DrawingLoop({ pace = DRAW_PACE, endOn = null, onRest }: { pace?: number; endOn?: ArtDoor | null; onRest?: () => void }) {
-  const [step, setStep] = useState<{ first: boolean; door: ArtDoor; from: ArtDoor | null; start: number }>({ first: true, door: LOOP[0]!, from: null, start: 0 });
+export function DrawingLoop({ pace = DRAW_PACE, startOn = null, endOn = null, onRest }: { pace?: number; startOn?: ArtDoor | null; endOn?: ArtDoor | null; onRest?: () => void }) {
+  const [step, setStep] = useState<{ first: boolean; door: ArtDoor; from: ArtDoor | null; start: number }>(() => ({ first: true, door: startOn ?? LOOP[0]!, from: null, start: 0 }));
   const shapes = useMemo(() => DRAWINGS[step.door](), [step.door]);
   const [moves, setMoves] = useState(false);
   const born = useRef(0);
@@ -762,12 +763,4 @@ export function DrawingLoop({ pace = DRAW_PACE, endOn = null, onRest }: { pace?:
 
   if (step.from) return <MorphArt from={step.from} to={step.door} start={step.start} onDone={settle} />;
   return <StaticArt door={step.door} shapes={shapes} animate={step.first} pace={pace} />;
-}
-
-/** Adds the drawing a link leaves from, so the next sign-in page can move its lines. */
-export function withArt(href: string, from: ArtDoor): string {
-  const [path, query = ""] = href.split("?");
-  const params = new URLSearchParams(query);
-  params.set(ART_PARAM, from);
-  return `${path}?${params.toString()}`;
 }

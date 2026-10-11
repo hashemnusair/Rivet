@@ -52,6 +52,12 @@ const HOLD_MS = 900;
 /** Going to sign in, long enough for the machine to be fully drawn when it lands. */
 const DOCK_HOLD_MS = 1250;
 /**
+ * A page that arrives as a new document (another RIVET host) has kept the
+ * visitor waiting through its load already, so its sheet lifts sooner; the
+ * drawing finishes as it glides onto the panel.
+ */
+const ARRIVAL_HOLD_MS = 800;
+/**
  * A page on this host that has not arrived by then is loaded the ordinary way.
  * One on another host is already loading that way, so the sheet only lifts.
  */
@@ -263,7 +269,8 @@ export function PageSheet() {
       return () => window.clearTimeout(timer);
     }
     let frame = 0;
-    const hold = dockFor(sheet.dock) ? DOCK_HOLD_MS : HOLD_MS;
+    const arrival = sheet.from === "";
+    const hold = arrival ? ARRIVAL_HOLD_MS : dockFor(sheet.dock) ? DOCK_HOLD_MS : HOLD_MS;
     const lift = () => {
       const landing = Boolean(dockFor(sheet.dock));
       // Landing, the page's words wait for the drawing to move off them (the lift effect below).
@@ -331,7 +338,7 @@ export function PageSheet() {
       {crossesHost(sheet.target) ? null : (
         <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
           <Suspense fallback={null}>
-            <SheetDrawing pace={DRAW_PACE} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
+            <SheetDrawing pace={DRAW_PACE} startOn={sheet.dock} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
           </Suspense>
         </div>
       )}

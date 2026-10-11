@@ -1,5 +1,29 @@
 # GymOS / RIVET current implementation state
 
+## 12 October 2026 — Each door's loading screen is its own drawing; one address
+
+Elias saw the pulley machine as the loading screen for every door and "2 link
+redirects" that made the change slow. Traced live (after PR #10/#11's
+cross-host sheets): each door was one 200 response, but the link carried
+`?art=account`, which the arriving page then stripped from the address bar (a
+second visible navigation), and the arriving sheet's `DrawingLoop` always
+opened on the machine, morphing to the door's drawing only as it lifted.
+
+- `DrawingLoop` takes `startOn`; `PageSheet` passes the sheet's dock, so the
+  gym door loads on the desk, the member door (and sign-up) on the bench, the
+  admin door on the network, sign-in on the machine.
+- Door links (chooser doors, "Back to sign in", the bar's sign-in/sign-up
+  links) no longer add `?art=`; `withArt` is gone. `SignInArt` still honours an
+  old `?art=` link.
+- A sheet that arrives with a new document (`from === ""`) holds 800 ms instead
+  of 1,250 ms; the drawing finishes as it glides onto the panel. Locally a
+  direct door load now settles about 1.8 s after commit (live was ~2.9 s).
+- Checked on the mock production build (each door's arrival sheet shows its own
+  drawing; the in-page Gym team click loads on the desk; chooser links are bare
+  paths), 2,080 unit tests and 80 browser cases including PR #10's motion tests.
+- Local builds now need `node scripts/prepare-marketing-font.mjs` first (PR #9's
+  Satoshi font is downloaded and checksum-verified, not committed).
+
 ## 11 October 2026 — cross-host sheets no longer freeze half drawn
 
 On iPhone Safari, a Gym Team or Gym Member door from `www` stopped on a
