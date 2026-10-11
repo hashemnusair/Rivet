@@ -22,7 +22,19 @@ Validation: 51 focused unit/component tests, typecheck, lint/secret audit and an
 optimized mock-preview build passed. All eight browser cases passed, covering desktop/mobile,
 real cross-origin document navigation through an isolated local fixture, fresh
 sign-in hydration, reduced motion, pricing continuation and browser history.
-Release status: local implementation; PR/CI and deployment verification pending.
+Merged in [PR #10](https://github.com/hashemnusair/Rivet/pull/10) as
+`04eeb6d8ad0a51056d2f30cd7e61203f96efbe18`, with the exact source tree tested at
+`5a06f84`. All 13 jobs passed in
+[PR CI 38097892693](https://github.com/hashemnusair/Rivet/actions/runs/38097892693):
+2,077 unit/component tests and 220 browser cases; 14 credential-dependent browser
+cases were skipped as designed.
+
+Production deployment `dpl_7ygGq2m2fEqtmeg2tD76ovMwJAG9` is READY for that merge,
+assigned to all production domains. Live checks at 390×844 and 1280px verified
+chooser → Gym Team/Gym Member and each logo → public landing, including the
+outgoing cover and incoming sheet. No horizontal overflow or hydration errors
+were observed. Verification stopped at the sign-in forms; no credentials or
+applications were submitted.
 No backend deployment, data migration, font-picker or tunnel files are involved.
 
 Read first: `apps/web/src/components/motion/page-sheet.tsx`, `sheet-store.ts`,
