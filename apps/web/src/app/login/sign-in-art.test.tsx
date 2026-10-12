@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SHEET_ENTRY_ID } from "@/components/motion/sheet-store";
 import { DrawingLoop, SignInArt } from "./sign-in-art";
 
 describe("sign-in drawings", () => {
@@ -32,6 +33,24 @@ describe("sign-in drawings", () => {
     act(() => vi.advanceTimersByTime(0));
     expect(onRest).toHaveBeenCalledTimes(1);
     expect(container.innerHTML).toBe(drawn);
+  });
+
+  it("is simply drawn under a fresh document's cover, which lands the drawing on it", () => {
+    const moving = (root: Element) => Array.from(root.querySelectorAll("svg path")).filter((path) => /draw|fade/.test(path.getAttribute("class") ?? "")).length;
+    const drawing = render(<SignInArt door="staff" />);
+    expect(moving(drawing.container)).toBeGreaterThan(0);
+    drawing.unmount();
+    const cover = document.createElement("style");
+    cover.id = SHEET_ENTRY_ID;
+    document.head.appendChild(cover);
+    try {
+      const carried = render(<SignInArt door="member" />);
+      expect(carried.container.querySelectorAll("svg path").length).toBeGreaterThan(50);
+      expect(moving(carried.container)).toBe(0);
+      carried.unmount();
+    } finally {
+      cover.remove();
+    }
   });
 
   it("opens a wait on the drawing of the page being opened", () => {

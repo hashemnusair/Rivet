@@ -19,6 +19,9 @@ export type SheetDock = "account" | "staff" | "member" | "admin";
  */
 export const OPENING_DRAWING: SheetDock = "account";
 
+/** A fresh document's pre-paint cover (`sheet-entry`), while it is on the page. */
+export const SHEET_ENTRY_ID = "rivet-sheet-entry";
+
 /** The sign-in drawings' viewBox. Each drawing is centred in its box and scaled evenly to fit. */
 export const ART_VIEWBOX = { width: 800, height: 900 } as const;
 
@@ -89,5 +92,10 @@ export const sheetStore = {
   },
 };
 
-/** Whether a sheet is bringing this drawing in, so the page shows it drawn and waits for it. */
-export const sheetCarries = (door: string) => state.phase !== "idle" && state.dock === door;
+/**
+ * Whether a sheet is bringing this drawing in, so the page shows it drawn and
+ * waits for it: a sheet playing in this document, or a fresh document's
+ * pre-paint cover, which lands the page's own drawing on its art panel.
+ */
+export const sheetCarries = (door: string) =>
+  (state.phase !== "idle" && state.dock === door) || document.getElementById(SHEET_ENTRY_ID) !== null;

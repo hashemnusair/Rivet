@@ -68,7 +68,7 @@ export function LoginLayout({
           </div>
 
           <main className={styles.main}>
-            <div className={styles.block}>{children}</div>
+            <div className={styles.block} data-sheet-words>{children}</div>
           </main>
 
           <div className={styles.footer}>

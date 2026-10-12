@@ -1,5 +1,35 @@
 # GymOS / RIVET current implementation state
 
+## 12 October 2026 — cross-host doors glide their drawing onto the panel again
+
+Elias, after the entry below: going to Gym team or Gym member sign-in should
+load on that door's drawing and then move it left onto the art panel, as
+landing → Sign in does, not just appear. Since the entry below, a full
+document's pre-paint cover only faded. The glide onto the panel lived only in
+`PageSheet`'s same-host dock.
+
+- **Glide.** On a sign-in page whose art panel is on screen (1024px up), the
+  pre-paint cover (`sheet-entry.ts`) now measures `[data-sheet-dock]` once the
+  page has painted. It then moves its drawing from the middle half onto the
+  panel (760ms, the sheet's `DOCK_MS` easing) while the night fades (460ms).
+  The page's words (`data-sheet-words` on the form block) are held under the
+  cover and fade in 380ms into the glide, as under a same-host sheet. Phones,
+  `/` and reduced motion are unchanged.
+- **No second draw.** The panel's own drawing stays hidden while the cover is
+  up. The cover goes once the page has taken that drawing over (no
+  `[data-art-pending]` left), or 3s after the lift at most. `sheetCarries` is
+  now also true while the cover (`SHEET_ENTRY_ID`, moved to `sheet-store.ts`)
+  is on the page, so a hydrating `SignInArt` is simply drawn, exactly where the
+  cover's copy landed.
+- No attribute is set on `<html>` before hydration (React would report it as
+  a mismatch). Everything is in the cover's own style elements.
+- Checked: frame samples of fresh `/login`, `/login/gym`, `/login/member` and
+  `/login/member/create` loads at 1440px (drawing moves exactly −360px at
+  scale 1, panel revealed drawn, no console errors) and 390px (fade as
+  before). 2,084 unit tests pass. `e2e/page-motion.spec.ts` passes 9/9 on a
+  built mock bundle; its cross-host door test now also runs at 1440px and
+  asserts the glide and a fully drawn panel.
+
 ## 12 October 2026 — cross-host doors play the drawing while loading
 
 Elias, after the two entries below: going from the sign-in chooser to Gym team

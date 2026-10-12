@@ -416,7 +416,7 @@ export function SignInArt({ door }: { door: ArtDoor }) {
     }
     const current = session;
     const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // A page sheet carrying this drawing in lays it over this one when it lands, so this one is simply drawn.
+    // A page sheet (or a fresh document's cover) carrying this drawing in lays it over this one when it lands, so this one is simply drawn.
     const carried = sheetCarries(door);
     // Phones never show the panel: nothing moves or draws there, so nothing is worked out for it.
     const still = reduce || carried || !panelShown();

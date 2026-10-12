@@ -21,7 +21,8 @@ import styles from "./page-sheet.module.css";
  * while the next page's stylesheets are fetched, and that page is only asked
  * for once it is fully drawn. The next page opens on the same drawing (its
  * pre-paint cover, `sheet-entry`), which lifts as soon as that page has
- * painted. Product pages keep their short entrance.
+ * painted, gliding onto a sign-in page's art panel as it does here. Product
+ * pages keep their short entrance.
  */
 
 const loadDrawing = () => import("@/app/login/sign-in-art");

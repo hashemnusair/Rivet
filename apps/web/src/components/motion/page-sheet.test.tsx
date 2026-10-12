@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageSheet, SheetLink, startSheet } from "./page-sheet";
-import { IDLE_SHEET, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
+import { IDLE_SHEET, SHEET_ENTRY_ID, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
 import { drawingSvg } from "@/app/login/sign-in-drawings";
-import { SHEET_ENTRY_ID, SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
+import { SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
 import { SheetEntryArt } from "./sheet-entry-art";
 
 const nav = vi.hoisted(() => ({ pathname: "/", push: vi.fn(), prefetch: vi.fn() }));
@@ -47,6 +47,7 @@ describe("page sheet", () => {
     html.removeAttribute("data-page-covered");
     html.removeAttribute("data-sheet-docking");
     document.getElementById(SHEET_ENTRY_ID)?.remove();
+    document.head.querySelectorAll("style").forEach((style) => style.textContent?.includes("data-sheet-words") && style.remove());
     vi.useRealTimers();
   });
 
@@ -82,6 +83,50 @@ describe("page sheet", () => {
     expect(entryCss()).toContain("rivet-sheet-entry .46s");
     act(() => vi.advanceTimersByTime(600));
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+  });
+
+  it("glides a door's drawing onto its art panel, and goes once the page has its own drawing", () => {
+    const panel = document.createElement("aside");
+    panel.setAttribute("data-sheet-dock", "staff");
+    panel.innerHTML = "<svg data-art-pending></svg>";
+    panel.getBoundingClientRect = () => ({ left: 0, top: 0, width: 720, height: 900 }) as DOMRect;
+    document.body.appendChild(panel);
+    Object.defineProperty(html, "clientWidth", { configurable: true, value: 1440 });
+    Object.defineProperty(html, "clientHeight", { configurable: true, value: 900 });
+    const words = () => Array.from(document.head.querySelectorAll("style")).some((style) => style.textContent?.includes("data-sheet-words"));
+    try {
+      runEntry("https://dashboard.rivetjo.com/login/gym");
+      // Under the cover the page's own drawing and words wait for it.
+      expect(entryCss()).toContain("[data-sheet-dock]>svg{visibility:hidden}");
+      expect(words()).toBe(true);
+      act(() => vi.advanceTimersByTime(40));
+      // The night fades; the drawing moves from the middle half onto the left half, at the same size.
+      expect(entryCss()).toContain("html::after{animation:rivet-sheet-entry .46s");
+      expect(entryCss()).not.toContain("html::before,html::after{animation");
+      expect(entryCss()).toContain("html::before{animation:rivet-sheet-dock .76s cubic-bezier(.65,0,.35,1) forwards}");
+      expect(entryCss()).toContain("transform:translate(-360px,0px) scale(1)");
+      act(() => vi.advanceTimersByTime(380));
+      expect(words()).toBe(false);
+      // Landed, it stays until the page has taken its drawing over.
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(sheetCarries("staff")).toBe(true);
+      panel.querySelector("svg")!.removeAttribute("data-art-pending");
+      act(() => vi.advanceTimersByTime(50));
+      expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+      expect(sheetCarries("staff")).toBe(false);
+
+      // A page that never takes it over is uncovered anyway.
+      panel.querySelector("svg")!.setAttribute("data-art-pending", "");
+      runEntry("https://dashboard.rivetjo.com/login/gym");
+      act(() => vi.advanceTimersByTime(2_900));
+      expect(document.getElementById(SHEET_ENTRY_ID)).not.toBeNull();
+      act(() => vi.advanceTimersByTime(200));
+      expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+    } finally {
+      panel.remove();
+      Reflect.deleteProperty(html, "clientWidth");
+      Reflect.deleteProperty(html, "clientHeight");
+    }
   });
 
   it("opens the cover on the machine, and a door page on its own drawing", () => {
