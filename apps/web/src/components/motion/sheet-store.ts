@@ -13,6 +13,12 @@ export type SheetPhase = "idle" | "rack" | "hold" | "lift";
 /** The sign-in drawing a sheet can carry into the page's own art panel. */
 export type SheetDock = "account" | "staff" | "member" | "admin";
 
+/**
+ * The drawing a sheet opens on (`DrawingLoop` starts there). A sheet leaving
+ * for another host stays on it, and the next page's pre-paint cover shows it.
+ */
+export const OPENING_DRAWING: SheetDock = "account";
+
 /** The sign-in drawings' viewBox. Each drawing is centred in its box and scaled evenly to fit. */
 export const ART_VIEWBOX = { width: 800, height: 900 } as const;
 

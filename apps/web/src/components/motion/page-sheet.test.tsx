@@ -1,19 +1,39 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageSheet, SheetLink, startSheet } from "./page-sheet";
 import { IDLE_SHEET, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
-import { SHEET_ENTRY_ID, SHEET_ENTRY_PRE_PAINT } from "./sheet-entry";
+import { drawingSvg } from "@/app/login/sign-in-drawings";
+import { SHEET_ENTRY_ID, SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
+import { SheetEntryArt } from "./sheet-entry-art";
 
 const nav = vi.hoisted(() => ({ pathname: "/", push: vi.fn(), prefetch: vi.fn() }));
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
   useRouter: () => ({ push: nav.push, prefetch: nav.prefetch }),
 }));
-vi.mock("@/app/login/sign-in-art", () => ({ DrawingLoop: () => <svg data-testid="sheet-drawing" /> }));
 
 const html = document.documentElement;
+const runEntry = (href: string, reduce = false) => new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL(href), () => ({ matches: reduce }));
+const entryCss = () => document.getElementById(SHEET_ENTRY_ID)?.textContent ?? null;
+/** jsdom cannot leave the document: it reports each document navigation as an error instead. */
+const documentNavigations = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.filter(([message]) => String(message).includes("Not implemented: navigation")).length;
 
 describe("page sheet", () => {
+  // The sheet fetches its drawing (the real one) lazily. Fetched first under
+  // fake timers, the fetch could outlive the fake clock and never arrive: play
+  // one sheet on the real clock first, so every sheet below draws at once.
+  beforeAll(async () => {
+    const { unmount } = render(<PageSheet />);
+    act(() => {
+      startSheet("/login");
+    });
+    await waitFor(() => expect(document.querySelector("[data-page-sheet] svg")).not.toBeNull(), { timeout: 10_000 });
+    act(() => sheetStore.set(IDLE_SHEET));
+    unmount();
+    html.removeAttribute("data-page-covered");
+    html.removeAttribute("data-sheet-docking");
+  }, 15_000);
+
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
     window.history.replaceState(null, "", "/");
@@ -50,32 +70,41 @@ describe("page sheet", () => {
     expect(sheetTarget("javascript:alert(1)", "https://www.rivetjo.com/login")).toBeNull();
   });
 
-  it.each(["https://www.rivetjo.com/", "https://dashboard.rivetjo.com/login/gym", "https://app.rivetjo.com/login/member?art=account"])("covers a fresh document before hydration and releases it safely: %s", (href) => {
-    new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL(href), () => ({ matches: false }));
-    expect(document.getElementById(SHEET_ENTRY_ID)?.textContent).toContain("background:#0b0a08");
-    // The sheet's own grid, so a sheet left on the page before runs on unbroken.
-    expect(document.getElementById(SHEET_ENTRY_ID)?.textContent).toContain("background-size:40px 40px");
-    act(() => vi.advanceTimersByTime(12_000));
+  it.each(["https://www.rivetjo.com/", "https://dashboard.rivetjo.com/login/gym", "https://app.rivetjo.com/login/member?art=account"])("opens a fresh document on the drawn sheet and lifts it once painted: %s", (href) => {
+    runEntry(href);
+    // The sheet as the page before was left on: its night, its grid and its drawing.
+    expect(entryCss()).toContain("background:#0b0a08");
+    expect(entryCss()).toContain("background-size:40px 40px");
+    expect(entryCss()).toMatch(/html::before\{[^}]*url\("data:image\/svg\+xml,%3Csvg /);
+    expect(entryCss()).not.toContain("rivet-sheet-entry .46s");
+    // Painted (two frames once parsed): the cover fades by itself, with no script of the page's.
+    act(() => vi.advanceTimersByTime(40));
+    expect(entryCss()).toContain("rivet-sheet-entry .46s");
+    act(() => vi.advanceTimersByTime(600));
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+  });
+
+  it("opens the cover on the machine, and a door page on its own drawing", () => {
+    runEntry("https://dashboard.rivetjo.com/login/gym");
+    expect(entryCss()).toContain(svgUrl(drawingSvg("account")));
+    const { container } = render(<SheetEntryArt door="staff" />);
+    // Later in the document than the cover, so its drawing is the one shown.
+    expect(container.querySelector("style")?.textContent).toBe(`html::before{background-image:${svgUrl(drawingSvg("staff"))}}`);
   });
 
   it("does not cover reduced motion or an app-host workspace root", () => {
-    const run = new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT);
-    run(new URL("https://www.rivetjo.com/"), () => ({ matches: true }));
+    runEntry("https://www.rivetjo.com/", true);
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
-    run(new URL("https://dashboard.rivetjo.com/"), () => ({ matches: false }));
+    runEntry("https://dashboard.rivetjo.com/");
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
   });
 
-  it("takes over the document cover without another navigation", () => {
-    new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL("https://www.rivetjo.com/"), () => ({ matches: false }));
+  it("leaves a document's own cover to lift itself, without starting another sheet or navigation", () => {
+    runEntry("https://www.rivetjo.com/");
     render(<PageSheet />);
-    act(() => vi.advanceTimersByTime(20));
+    expect(sheetStore.get().phase).toBe("idle");
+    act(() => vi.advanceTimersByTime(700));
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
-    expect(sheetStore.get()).toMatchObject({ phase: "hold", from: "", target: "/" });
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(sheetStore.get().phase).toBe("lift");
-    act(() => vi.advanceTimersByTime(500));
     expect(sheetStore.get().phase).toBe("idle");
     expect(nav.push).not.toHaveBeenCalled();
   });
@@ -83,17 +112,15 @@ describe("page sheet", () => {
   it("holds a prerendered page's cover until the visitor activates it", () => {
     Object.defineProperty(document, "prerendering", { configurable: true, value: true });
     try {
-      new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL("https://www.rivetjo.com/"), () => ({ matches: false }));
-      render(<PageSheet />);
+      runEntry("https://www.rivetjo.com/");
       act(() => vi.advanceTimersByTime(20_000));
-      expect(document.getElementById(SHEET_ENTRY_ID)).not.toBeNull();
-      expect(sheetStore.get().phase).toBe("idle");
+      expect(entryCss()).not.toContain("rivet-sheet-entry .46s");
       Object.defineProperty(document, "prerendering", { configurable: true, value: false });
       act(() => document.dispatchEvent(new Event("prerenderingchange")));
-      act(() => vi.advanceTimersByTime(20));
+      act(() => vi.advanceTimersByTime(40));
+      expect(entryCss()).toContain("rivet-sheet-entry .46s");
+      act(() => vi.advanceTimersByTime(600));
       expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
-      expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/" });
-      expect(nav.push).not.toHaveBeenCalled();
     } finally {
       Reflect.deleteProperty(document, "prerendering");
     }
@@ -162,32 +189,62 @@ describe("page sheet", () => {
     expect(document.querySelector("[data-page-sheet]")).toBeNull();
   });
 
-  it("draws while it stays on this host, and leaves for another host on the bare night", () => {
-    window.history.replaceState(null, "", "/login");
-    nav.pathname = "/login";
-    render(<PageSheet />);
-    const hold = { phase: "hold", from: "/login", dock: "staff", landing: false, startedAt: performance.now() } as const;
-    const sheet = () => document.querySelector("[data-page-sheet='hold']");
-    act(() => sheetStore.set({ ...hold, target: "/login/gym" }));
-    // The night cover, and the drawing's box over it.
-    expect(sheet()?.childElementCount).toBe(2);
-
-    // A browser can stop painting the page it is leaving; nothing on it may be caught half drawn.
-    act(() => sheetStore.set({ ...hold, target: "https://dashboard.rivetjo.com/login/gym?art=account" }));
-    expect(sheet()?.childElementCount).toBe(1);
+  it("leaves for another host only once its drawing is fully drawn, and asks once", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      window.history.replaceState(null, "", "/login");
+      nav.pathname = "/login";
+      render(<PageSheet />);
+      act(() => sheetStore.set({ phase: "rack", target: "https://dashboard.rivetjo.com/login/gym?art=account", from: "/login", dock: "staff", landing: false, startedAt: performance.now() }));
+      // The drawing plays here, and the next page is not asked for while it draws (1080ms).
+      expect(document.querySelector("[data-page-sheet] svg")).not.toBeNull();
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(sheetStore.get().phase).toBe("hold");
+      expect(documentNavigations(errors)).toBe(0);
+      // Drawn: go, once, even when the limit comes round after.
+      act(() => vi.advanceTimersByTime(100));
+      expect(documentNavigations(errors)).toBe(1);
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(documentNavigations(errors)).toBe(1);
+      expect(nav.push).not.toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+    }
   });
 
-  it("lifts a stalled load on another host instead of starting it over", () => {
-    window.history.replaceState(null, "", "/login");
-    nav.pathname = "/login";
-    render(<PageSheet />);
-    html.setAttribute("data-page-covered", "");
-    act(() => sheetStore.set({ phase: "hold", target: "https://dashboard.rivetjo.com/login/gym", from: "/login", dock: "staff", landing: false, startedAt: performance.now() }));
-    act(() => vi.advanceTimersByTime(11_000));
+  it("lifts a stalled load on another host instead of asking for it again", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      window.history.replaceState(null, "", "/login");
+      nav.pathname = "/login";
+      render(<PageSheet />);
+      html.setAttribute("data-page-covered", "");
+      act(() => sheetStore.set({ phase: "hold", target: "https://dashboard.rivetjo.com/login/gym", from: "/login", dock: "staff", landing: false, startedAt: performance.now() }));
+      act(() => vi.advanceTimersByTime(11_900));
+      expect(sheetStore.get().phase).toBe("hold");
+      expect(documentNavigations(errors)).toBe(1);
+      act(() => vi.advanceTimersByTime(200));
+      expect(sheetStore.get().phase).toBe("idle");
+      expect(html).not.toHaveAttribute("data-page-covered");
+      expect(documentNavigations(errors)).toBe(1);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("lifts only once the first drawing is fully drawn, so it is never cut off", () => {
+    const { rerender } = render(<PageSheet />);
+    act(() => {
+      startSheet("/terms");
+    });
+    act(() => vi.advanceTimersByTime(300));
+    nav.pathname = "/terms";
+    rerender(<PageSheet />);
+    // The drawing draws for 1080ms at the sheet's pace.
+    act(() => vi.advanceTimersByTime(800));
     expect(sheetStore.get().phase).toBe("hold");
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(sheetStore.get().phase).toBe("idle");
-    expect(html).not.toHaveAttribute("data-page-covered");
+    act(() => vi.advanceTimersByTime(100));
+    expect(sheetStore.get().phase).toBe("lift");
   });
 
   it("tells the sign-in page its drawing is on the way, and stops when no panel is there to land on", () => {
@@ -240,7 +297,7 @@ describe("page sheet", () => {
       window.dispatchEvent(event);
     });
     expect(sheetStore.get()).toMatchObject({ phase: "hold", target: "/", from: "" });
-    act(() => vi.advanceTimersByTime(1_000));
+    act(() => vi.advanceTimersByTime(1_200));
     act(() => vi.advanceTimersByTime(500));
     expect(sheetStore.get().phase).toBe("idle");
     expect(html).not.toHaveAttribute("data-page-covered");
