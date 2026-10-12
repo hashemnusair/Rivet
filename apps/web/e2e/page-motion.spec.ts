@@ -6,8 +6,9 @@ type SheetTrace = { entryAdded?: number; entryRemoved?: number };
 
 /**
  * Records, in every document, when the pre-paint cover (`#rivet-sheet-entry`)
- * comes and goes, and logs as a document is left whether its sheet's drawing
- * had finished drawing and how long after the sheet appeared it was left.
+ * comes and goes, and logs as a document starts to leave (`beforeunload`,
+ * while it is still the page on screen) whether its sheet's drawing had
+ * finished drawing and how long the sheet had been up.
  */
 async function traceSheets(page: Page) {
   await page.addInitScript(() => {
@@ -20,7 +21,7 @@ async function traceSheets(page: Page) {
       if (!entry && trace.entryAdded !== undefined && trace.entryRemoved === undefined) trace.entryRemoved = performance.now();
       if (!sheetSeen && document.querySelector("[data-page-sheet]")) sheetSeen = performance.now();
     }).observe(document, { childList: true, subtree: true });
-    addEventListener("pagehide", () => {
+    addEventListener("beforeunload", () => {
       const sheet = document.querySelector("[data-page-sheet]");
       if (!sheet) return;
       const drawing = document.getAnimations().filter((animation) => {
