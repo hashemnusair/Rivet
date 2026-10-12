@@ -5,8 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 import { cn } from "@/lib/utils/cn";
 import { decideHostRouting } from "@/lib/routing/host-routing";
-import { ART_VIEWBOX, IDLE_SHEET, sheetRoute, sheetStore, sheetTarget, type SheetDock } from "./sheet-store";
-import { SHEET_ENTRY_ID } from "./sheet-entry";
+import { ART_VIEWBOX, IDLE_SHEET, OPENING_DRAWING, sheetRoute, sheetStore, sheetTarget, type SheetDock } from "./sheet-store";
 import styles from "./page-sheet.module.css";
 
 /*
@@ -16,12 +15,13 @@ import styles from "./page-sheet.module.css";
  * sheet fades off it. Only opacity moves, so nothing ever cuts across the page
  * underneath. A long load keeps the drawing going: its lines move from the
  * machine to the desk, the bench and the network until the page is there. The
- * doors and links across RIVET hosts use the same sheet, but the page left
- * holds only the night: a browser may stop painting it as soon as the next
- * document starts loading (iOS Safari does), and a drawing stopped there stays
- * half drawn until that document paints. The next page draws it instead.
- * Full-document arrivals resume behind a pre-paint cover; product pages keep
- * their short entrance.
+ * doors and links across RIVET hosts use the same sheet, but a browser may
+ * stop painting a page as soon as the next document starts loading (iOS
+ * Safari does), so the drawing plays on the page being left: it draws itself
+ * while the next page's stylesheets are fetched, and that page is only asked
+ * for once it is fully drawn. The next page opens on the same drawing (its
+ * pre-paint cover, `sheet-entry`), which lifts as soon as that page has
+ * painted. Product pages keep their short entrance.
  */
 
 const loadDrawing = () => import("@/app/login/sign-in-art");
@@ -47,16 +47,15 @@ const LIFT_MS = 460;
 const DOCK_MS = 760;
 /** Landing, how far into the glide the page's own words fade in: once the drawing has moved off them. */
 const WORDS_MS = 380;
-/** The least time from the click to the lift, so the drawing is seen, not flashed. */
-const HOLD_MS = 900;
+/**
+ * The least time from the click to the lift: the first drawing is fully drawn
+ * by then (`DrawingLoop` at DRAW_PACE draws for 1080ms), so a lift never cuts it off.
+ */
+const HOLD_MS = 1150;
 /** Going to sign in, long enough for the machine to be fully drawn when it lands. */
 const DOCK_HOLD_MS = 1250;
-/**
- * A page that arrives as a new document (another RIVET host) has kept the
- * visitor waiting through its load already, so its sheet lifts sooner; the
- * drawing finishes as it glides onto the panel.
- */
-const ARRIVAL_HOLD_MS = 800;
+/** Leaving for another host, the latest the next page is asked for if the drawing has not come to rest. */
+const DEPART_LIMIT_MS = 2400;
 /**
  * A page on this host that has not arrived by then is loaded the ordinary way.
  * One on another host is already loading that way, so the sheet only lifts.
@@ -90,6 +89,30 @@ function preconnect(href: string) {
   document.head.appendChild(link);
 }
 
+const warmed = new Set<string>();
+
+/**
+ * Fetches the stylesheets a page on another host needs before it can paint,
+ * while the drawing plays. Every RIVET host serves the same build, so they are
+ * this page's own, from that host. Its scripts stay on their own host
+ * (`script-src 'self'`); the page paints without them.
+ */
+function warmStylesheets(target: string) {
+  const { origin } = new URL(target);
+  for (const sheet of document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href]')) {
+    const url = new URL(sheet.href);
+    if (url.origin !== window.location.origin || !url.pathname.startsWith("/_next/static/")) continue;
+    const href = `${origin}${url.pathname}${url.search}`;
+    if (warmed.has(href)) continue;
+    warmed.add(href);
+    const link = document.createElement("link");
+    link.rel = "preload";
+    link.as = "style";
+    link.href = href;
+    document.head.appendChild(link);
+  }
+}
+
 /** The art panel a sheet can land its drawing on, when it is on screen. */
 function dockFor(dock: SheetDock | null): HTMLElement | null {
   if (!dock) return null;
@@ -113,7 +136,8 @@ export function startSheet(href: string): boolean {
   const target = sheetTarget(href, window.location.href);
   if (!target) return false;
   const route = sheetRoute(new URL(target, window.location.href).pathname)!;
-  if (!crossesHost(target)) void loadDrawing();
+  void loadDrawing();
+  if (crossesHost(target)) warmStylesheets(target);
   sheetStore.set({
     phase: "rack",
     target,
@@ -180,36 +204,25 @@ export function PageSheet() {
     landed.current.rested = true;
     if (landed.current.placed) settle();
   }, []);
+  // Leaving for another host: the next page is asked for once, when the drawing is fully drawn.
+  const departed = useRef(-1);
+  const depart = useCallback(() => {
+    const current = sheetStore.get();
+    if ((current.phase !== "rack" && current.phase !== "hold") || !crossesHost(current.target) || departed.current === current.startedAt) return;
+    departed.current = current.startedAt;
+    window.location.assign(current.target);
+  }, []);
 
   useEffect(() => sheetStore.addPlayer(), []);
 
-  // A hard navigation has a pre-paint cover. A plain Next link or browser Back
-  // to the landing also gets an arrival, without requiring every caller to use
-  // SheetLink. An existing in-app sheet already owns the arrival and is kept.
+  // A plain Next link or browser Back to the landing also gets an arrival,
+  // without requiring every caller to use SheetLink. An existing in-app sheet
+  // already owns the arrival and is kept. A full document lifts its own
+  // pre-paint cover once painted (`sheet-entry`), without waiting for this.
   useLayoutEffect(() => {
-    const entry = document.getElementById(SHEET_ENTRY_ID);
     const returningHome = pathname === "/" && previousPath.current !== pathname;
     previousPath.current = pathname;
-    if (!entry && !returningHome) return;
-    let frame = 0;
-    const enter = () => {
-      if (sheetStore.get().phase === "idle") arrive(pathname);
-      entry?.remove();
-    };
-    // Keep the pre-paint cover through the initial commit, then let the shared
-    // player take over on the next frame without exposing the page between them.
-    const hydrated = () => { frame = requestAnimationFrame(enter); };
-    if ((document as Document & { prerendering?: boolean }).prerendering) {
-      document.addEventListener("prerenderingchange", hydrated, { once: true });
-    } else if (entry) {
-      hydrated();
-    } else {
-      enter();
-    }
-    return () => {
-      document.removeEventListener("prerenderingchange", hydrated);
-      cancelAnimationFrame(frame);
-    };
+    if (returningHome && sheetStore.get().phase === "idle") arrive(pathname);
   }, [pathname]);
 
   // Back/forward supersedes an in-flight sheet, including its delayed push.
@@ -244,6 +257,7 @@ export function PageSheet() {
 
   // Covered: go. The next page is told it is under the sheet (`data-page-covered`), so its
   // entrance waits for the sheet to fade, and the sign-in page that its drawing is coming.
+  // A page on another host is asked for later, once the drawing has drawn itself (`depart`).
   useEffect(() => {
     if (sheet.phase !== "rack") return;
     const crossingHost = crossesHost(sheet.target);
@@ -252,8 +266,7 @@ export function PageSheet() {
       document.documentElement.setAttribute("data-page-covered", "");
       if (sheet.dock) document.documentElement.setAttribute("data-sheet-docking", "");
       sheetStore.set({ ...sheet, phase: "hold" });
-      if (crossingHost) window.location.assign(sheet.target);
-      else router.push(sheet.target);
+      if (!crossingHost) router.push(sheet.target);
     }, RACK_MS);
     return () => window.clearTimeout(timer);
   }, [sheet, router]);
@@ -263,14 +276,21 @@ export function PageSheet() {
     if (sheet.phase !== "hold") return;
     const elapsed = performance.now() - sheet.startedAt;
     if (pathname === sheet.from) {
-      // Assigning a slow page on another host again would start its load over.
-      const stalled = crossesHost(sheet.target) ? settle : () => window.location.assign(sheet.target);
-      const timer = window.setTimeout(stalled, Math.max(0, STALL_MS - elapsed));
-      return () => window.clearTimeout(timer);
+      if (!crossesHost(sheet.target)) {
+        const timer = window.setTimeout(() => window.location.assign(sheet.target), Math.max(0, STALL_MS - elapsed));
+        return () => window.clearTimeout(timer);
+      }
+      // The drawing's rest asks for the page (`depart`); this asks if it never rests.
+      // Assigning a slow page again would start its load over, so a stall only lifts.
+      const late = window.setTimeout(depart, Math.max(0, DEPART_LIMIT_MS - elapsed));
+      const stalled = window.setTimeout(settle, Math.max(0, STALL_MS - elapsed));
+      return () => {
+        window.clearTimeout(late);
+        window.clearTimeout(stalled);
+      };
     }
     let frame = 0;
-    const arrival = sheet.from === "";
-    const hold = arrival ? ARRIVAL_HOLD_MS : dockFor(sheet.dock) ? DOCK_HOLD_MS : HOLD_MS;
+    const hold = dockFor(sheet.dock) ? DOCK_HOLD_MS : HOLD_MS;
     const lift = () => {
       const landing = Boolean(dockFor(sheet.dock));
       // Landing, the page's words wait for the drawing to move off them (the lift effect below).
@@ -289,7 +309,7 @@ export function PageSheet() {
       window.clearTimeout(timer);
       cancelAnimationFrame(frame);
     };
-  }, [sheet, pathname]);
+  }, [sheet, pathname, depart]);
 
   // Uncovering: the drawing either glides onto the page's art panel or fades with the sheet.
   useLayoutEffect(() => {
@@ -327,6 +347,8 @@ export function PageSheet() {
 
   if (sheet.phase === "idle") return null;
   const lifting = sheet.phase === "lift";
+  // Leaving for another host, the drawing stays on the one it opened on: the one the next page opens on.
+  const departing = crossesHost(sheet.target);
   return (
     <div
       className={cn(styles.sheet, sheet.phase === "rack" && styles.covering, lifting && styles.lifting)}
@@ -334,14 +356,16 @@ export function PageSheet() {
       data-page-sheet={sheet.phase}
     >
       <div className={styles.cover} />
-      {/* Leaving for another host, the night alone: the next page draws. */}
-      {crossesHost(sheet.target) ? null : (
-        <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
-          <Suspense fallback={null}>
-            <SheetDrawing pace={DRAW_PACE} startOn={sheet.dock} endOn={lifting && sheet.landing ? sheet.dock : null} onRest={rest} />
-          </Suspense>
-        </div>
-      )}
+      <div ref={drawingRef} className={cn(styles.drawing, lifting && !sheet.landing && styles.leaving)}>
+        <Suspense fallback={null}>
+          <SheetDrawing
+            pace={DRAW_PACE}
+            startOn={sheet.dock}
+            endOn={departing ? (sheet.dock ?? OPENING_DRAWING) : lifting && sheet.landing ? sheet.dock : null}
+            onRest={departing ? depart : rest}
+          />
+        </Suspense>
+      </div>
     </div>
   );
 }

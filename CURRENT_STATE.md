@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## 12 October 2026 — cross-host doors play the drawing while loading
+
+Elias, after the two entries below: going from the sign-in chooser to Gym team
+or Gym member showed plain black, then the drawing started, was cut off, and
+the sign-in page appeared. The drawing should play while the page loads, not
+after. iOS Safari stops repainting a page once a cross-host document load
+starts, so the drawing cannot play on the old page during that load. The
+11 October fix therefore left that page on a plain night sheet. The new page
+then waited for its scripts behind a black cover, drew its drawing, and lifted
+after 800ms, before the drawing (1080ms) had finished.
+
+Now:
+
+- **Leaving page.** A sheet to another RIVET host plays the door's own drawing
+  (`startOn`, from the entry below) on the page being left. The next page is
+  requested only once that drawing is fully drawn, about 1.1s after the tap
+  (2.4s at most if the drawing never loads). While it plays, the destination
+  host's copies of this build's stylesheets are preloaded. Scripts stay
+  same-host under `script-src 'self'`.
+- **New page.** Its pre-paint cover (`sheet-entry.ts`) shows the same night,
+  grid and fully drawn drawing, as an inline SVG image built from the drawing
+  data. The root layout's cover carries the machine (`/`, `/login`). Each door
+  page adds its own drawing with `SheetEntryArt`. The cover lifts by itself
+  (the sheet's 460ms fade) two frames after the document has parsed. It no
+  longer waits for hydration, and a prerendered page lifts it on activation.
+  `PageSheet` no longer runs an arrival for full documents, so the 800ms
+  new-document hold (below) is gone. In-app returns home and Back/bfcache
+  arrivals remain.
+- **Same-host sheets.** They lift no sooner than 1150ms (was 900ms), after the
+  first drawing has finished (1080ms), so it is never cut off.
+- **Drawing data.** The drawing geometry moved from `sign-in-art.tsx` (a client
+  module) to `sign-in-drawings.ts`, so the server can render it.
+
+Read first: `apps/web/src/components/motion/page-sheet.tsx`, `sheet-entry.ts`,
+`sheet-entry-art.tsx`, `apps/web/src/app/login/sign-in-drawings.ts`,
+`e2e/page-motion.spec.ts`.
+
 ## 12 October 2026 — Each door's loading screen is its own drawing; one address
 
 Elias saw the pulley machine as the loading screen for every door and "2 link

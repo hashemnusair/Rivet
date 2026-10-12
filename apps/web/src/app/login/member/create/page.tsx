@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SheetEntryArt } from "@/components/motion/sheet-entry-art";
 import { SignedInGuard } from "@/components/public/signed-in-guard";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { CustomerSignupClient } from "../../../customer/signup/customer-signup.client";
@@ -15,6 +16,7 @@ export const generateMetadata = (): Promise<Metadata> => pageTitle("auth.pageTit
 export default function MemberSignUpPage() {
   return (
     <>
+      <SheetEntryArt door="member" />
       <SignedInGuard demoOnly />
       {DEMO_AUTH_BYPASS ? <PreviewMemberSignupNotice /> : <CustomerSignupClient />}
     </>

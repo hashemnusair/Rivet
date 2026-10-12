@@ -2,6 +2,39 @@ import { expect, test, type Page } from "@playwright/test";
 
 test.use({ contextOptions: { reducedMotion: "no-preference" } });
 
+type SheetTrace = { entryAdded?: number; entryRemoved?: number };
+
+/**
+ * Records, in every document, when the pre-paint cover (`#rivet-sheet-entry`)
+ * comes and goes, and logs as a document starts to leave (`beforeunload`,
+ * while it is still the page on screen) whether its sheet's drawing had
+ * finished drawing and how long the sheet had been up.
+ */
+async function traceSheets(page: Page) {
+  await page.addInitScript(() => {
+    const trace: { entryAdded?: number; entryRemoved?: number } = {};
+    (window as unknown as { __sheetTrace: typeof trace }).__sheetTrace = trace;
+    let sheetSeen = 0;
+    new MutationObserver(() => {
+      const entry = document.getElementById("rivet-sheet-entry");
+      if (entry && trace.entryAdded === undefined) trace.entryAdded = performance.now();
+      if (!entry && trace.entryAdded !== undefined && trace.entryRemoved === undefined) trace.entryRemoved = performance.now();
+      if (!sheetSeen && document.querySelector("[data-page-sheet]")) sheetSeen = performance.now();
+    }).observe(document, { childList: true, subtree: true });
+    addEventListener("beforeunload", () => {
+      const sheet = document.querySelector("[data-page-sheet]");
+      if (!sheet) return;
+      const drawing = document.getAnimations().filter((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target;
+        return target instanceof Element && sheet.contains(target) && target.closest("svg") !== null && animation.playState === "running";
+      }).length;
+      console.log(`sheet-left svg=${sheet.querySelectorAll("svg").length} drawing=${drawing} after=${Math.round(performance.now() - sheetSeen)}`);
+    });
+  });
+}
+
+const sheetTrace = (page: Page) => page.evaluate(() => (window as unknown as { __sheetTrace: SheetTrace }).__sheetTrace);
+
 async function settled(page: Page) {
   await expect(page.locator("[data-page-sheet]")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveAttribute("data-page-covered", "");
@@ -47,6 +80,9 @@ test("mobile sign-in doors and home animate across real host boundaries", async 
   await page.setViewportSize({ width: 390, height: 844 });
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(`${page.url()}: ${error.message}`));
+  const left: string[] = [];
+  page.on("console", message => { if (message.text().startsWith("sheet-left")) left.push(message.text()); });
+  await traceSheets(page);
   // Serve production-shaped hosts from the isolated local mock server. The
   // browser performs genuine cross-origin document navigations, without using
   // production accounts, providers or data.
@@ -74,18 +110,24 @@ test("mobile sign-in doors and home animate across real host boundaries", async 
     await page.goto("https://www.rivetjo.com/login");
     await expect(page.locator("body")).toHaveAttribute("data-demo-auth", "true");
     await settled(page);
+    // The drawing plays on the page being left, and that page is left only once it is drawn.
     await page.getByRole("link", { name, exact: true }).click();
-    await expect(page.locator("[data-page-sheet]")).toBeVisible();
+    await expect(page.locator("[data-page-sheet] svg")).toBeVisible();
     await expect(page).toHaveURL(`https://${host}${path}`);
     await expect(page.locator("body")).toHaveAttribute("data-demo-auth", "true");
-    await expect(page.locator("[data-page-sheet]")).toBeVisible();
+    await expect.poll(() => left.length).toBe(1);
+    expect(left.pop()).toMatch(/^sheet-left svg=1 drawing=0 after=(1[0-9]{3}|2[0-4][0-9]{2})$/);
+    // The next page opens on the drawn sheet and lifts it once painted.
+    await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
     await settled(page);
     await expect(page.getByTestId(path === "/login/gym" ? "sign-in-button" : "member-continue")).toBeVisible();
 
     await page.getByRole("link", { name: "RIVET home", exact: true }).filter({ visible: true }).click();
-    await expect(page.locator("[data-page-sheet]")).toBeVisible();
+    await expect(page.locator("[data-page-sheet] svg")).toBeVisible();
     await expect(page).toHaveURL("https://www.rivetjo.com/");
-    await expect(page.locator("[data-page-sheet]")).toBeVisible();
+    await expect.poll(() => left.length).toBe(1);
+    expect(left.pop()).toMatch(/^sheet-left svg=1 drawing=0 after=(1[0-9]{3}|2[0-4][0-9]{2})$/);
+    await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
     await settled(page);
     await expect(page.locator("[data-landing-header]")).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
@@ -95,8 +137,10 @@ test("mobile sign-in doors and home animate across real host boundaries", async 
 
 test("landing arrival plays on a full load and browser Back", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await traceSheets(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("[data-page-sheet]")).toBeVisible();
+  // A full load opens on the drawn sheet, which lifts by itself once the page has painted.
+  await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
   await settled(page);
   await page.getByRole("link", { name: "Privacy policy", exact: true }).click();
   await expect(page).toHaveURL(/\/privacy$/);
