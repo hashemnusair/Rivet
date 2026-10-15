@@ -1573,6 +1573,53 @@ export default defineSchema({
     .index("by_occurred", ["occurredAt"])
     .index("by_entity", ["entityType", "entityPublicId"]),
 
+  // Gyms RIVET plans to invite to a pilot (platform console → Prospects).
+  // Not tenant data: a prospect is a sales conversation, not a workspace.
+  // Text fields use "" for "not known"; dates are Amman calendar days.
+  platformProspects: defineTable({
+    publicId: v.string(),
+    code: v.string(),
+    source: v.union(v.literal("import"), v.literal("manual")),
+    gymName: v.string(),
+    area: v.string(),
+    batch: v.union(v.literal("selected"), v.literal("reserve"), v.literal("hold")),
+    stage: v.union(
+      v.literal("not_contacted"),
+      v.literal("contacted"),
+      v.literal("replied"),
+      v.literal("demo_scheduled"),
+      v.literal("pilot_agreed"),
+      v.literal("pilot_active"),
+      v.literal("paid"),
+      v.literal("not_interested"),
+      v.literal("on_hold"),
+    ),
+    ownerUserId: v.optional(v.id("users")),
+    nextAction: v.string(),
+    followUpOn: v.string(),
+    notes: v.string(),
+    route: v.string(),
+    phone: v.string(),
+    whatsapp: v.string(),
+    instagram: v.string(),
+    facebook: v.string(),
+    email: v.string(),
+    evidence: v.union(v.literal("official"), v.literal("corroborated"), v.literal("recheck")),
+    checkedOn: v.string(),
+    contactNotes: v.string(),
+    sources: v.array(v.string()),
+    draftStatus: v.union(v.literal("needs_review"), v.literal("approved"), v.literal("needs_revision"), v.literal("sent")),
+    openingMessage: v.string(),
+    proposalMessage: v.string(),
+    draftNotes: v.string(),
+    createdByName: v.string(),
+    updatedByName: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_public_id", ["publicId"])
+    .index("by_code", ["code"]),
+
   organizationMemberships: defineTable({
     organizationId: v.id("organizations"),
     userId: v.id("users"),

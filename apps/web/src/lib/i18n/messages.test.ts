@@ -68,7 +68,8 @@ describe("message catalogues", () => {
     const ALLOWED_LATIN = /\b(RIVET|CliQ|QR|JOD|CSV|PDF|SMS|VIP|Esc|English|Visa|Google|WhatsApp|Instagram|Enter|PT|ID|SHA|JPEG|PNG|WebP|HTTP|HTTPS|UTC|Starter|Growth|Pro|STOP|Excel|xlsx)\b|™/g;
     const raw = [...arLeaves.entries()].flatMap(([key, leaf]) =>
       strings(leaf)
-        .filter(() => key !== "crm.newLead.emailPlaceholder") // Literal email example, not product prose.
+        // Literal email and link examples, not product prose.
+        .filter(() => !["crm.newLead.emailPlaceholder", "platformConsole.prospects.form.linkPlaceholder", "platformConsole.prospects.errors.invalidUrl"].includes(key))
         .map((text) => text.replace(/\{\w+\}/g, "").replace(ALLOWED_LATIN, ""))
         // Accepted source-file enum values are shown verbatim beside their Arabic equivalents.
         .map((text) => key === "memberMigration.columnsHint" ? text.replace(/\b(?:male|female)\b/g, "") : text)

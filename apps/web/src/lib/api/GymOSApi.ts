@@ -1247,6 +1247,15 @@ export interface GymOSApi {
   /** Fill in the printable twin of a drawn signature stored before the PDF existed. */
   attachAgreementPrintSignature(input: import("@/lib/domain/types").AttachPrintSignatureInput): Promise<import("@/lib/domain/types").SubscriptionAgreement>;
 
+  // Platform console → Prospects (gyms RIVET plans to invite to a pilot)
+  listPlatformProspects(): Promise<import("@/lib/platform/prospects").PlatformProspectsView>;
+  /** Newest first, ending with how the prospect was added. */
+  listPlatformProspectHistory(prospectId: UUID): Promise<import("@/lib/platform/prospects").PlatformProspectHistoryEntry[]>;
+  createPlatformProspect(input: import("@/lib/platform/prospects").CreatePlatformProspectInput): Promise<import("@/lib/platform/prospects").PlatformProspect>;
+  updatePlatformProspect(input: import("@/lib/platform/prospects").UpdatePlatformProspectInput): Promise<import("@/lib/platform/prospects").PlatformProspect>;
+  /** Loads the Amman pilot list; codes already present are left as they are. */
+  importAmmanPilotProspects(): Promise<import("@/lib/platform/prospects").ImportPilotProspectsResult>;
+
   // Supplier payables and supplier payments (Growth+ operations module)
   listPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesPage>;
   exportPayables(query?: import("@/lib/domain/types").PayablesQuery): Promise<import("@/lib/domain/types").PayablesExport>;

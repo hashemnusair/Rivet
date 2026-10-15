@@ -10,6 +10,8 @@ import { systemMessage } from "@/lib/i18n/system-messages";
 import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
+import { MockProspectStore } from "./prospects";
+import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
   AuditQuery,
   DashboardQuery,
@@ -538,7 +540,7 @@ type PageParams = { page?: number; pageSize?: number; sort?: string; search?: st
 type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
 
 type MockPlatformAuditEvent = PlatformGymActivity & {
-  entityType: "platform_gym" | "platform_plan" | "subscription_agreement";
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects";
   entityPublicId: string;
   entityLabel: string;
   reason: string;
@@ -728,6 +730,7 @@ export class MockGymOSApi implements GymOSApi {
   private provisionedMockGymIds = new Set<string>([PROVISIONED_MOCK_GYM_ID]);
   private provisionedTenants = new Map<string, MockProvisionedTenant>();
   private platformAuditEvents: MockPlatformAuditEvent[] = [];
+  private readonly prospects = new MockProspectStore();
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
   private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
   private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
@@ -3553,6 +3556,7 @@ export class MockGymOSApi implements GymOSApi {
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
     this.db = buildSeed();
+    this.prospects.reset();
     this.memberImports.clear();
     this.memberImportIdempotency.clear();
     this.publicApplicationIdempotency.clear();
@@ -11241,6 +11245,39 @@ export class MockGymOSApi implements GymOSApi {
       row.updatedAt = nowISO();
       this.recordPlatformAudit({ action: "agreement.id_revealed", summary: `Revealed the signatory ID number on ${row.reference}`, entityType: "subscription_agreement", entityPublicId: row.id, entityLabel: row.reference, reason: input.reason.trim(), after: { revealCount: row.idRevealCount } });
       return { idNumber: row.signatory.idNumber, idType: row.signatory.idType, revealCount: row.idRevealCount };
+    });
+  }
+
+  listPlatformProspects(): Promise<PlatformProspectsView> {
+    return this.respond(() => this.prospects.list());
+  }
+
+  listPlatformProspectHistory(prospectId: T.UUID): Promise<PlatformProspectHistoryEntry[]> {
+    return this.respond(() => this.prospects.historyOf(prospectId));
+  }
+
+  createPlatformProspect(input: CreatePlatformProspectInput): Promise<PlatformProspect> {
+    return this.respond(() => {
+      const created = this.prospects.create(input, this.actor().name, nowISO());
+      this.recordPlatformAudit({ action: "prospect.created", summary: `Added ${created.gymName} (${created.code}) to prospects`, entityType: "platform_prospect", entityPublicId: created.id, entityLabel: `${created.gymName} (${created.code})`, reason: "" });
+      return created;
+    });
+  }
+
+  updatePlatformProspect(input: UpdatePlatformProspectInput): Promise<PlatformProspect> {
+    return this.respond(() => {
+      const before = this.prospects.list().prospects.find((prospect) => prospect.id === input.prospectId);
+      const updated = this.prospects.update(input, this.actor().name, nowISO());
+      if (before && updated.updatedAt !== before.updatedAt) this.recordPlatformAudit({ action: "prospect.updated", summary: `Updated ${updated.gymName} (${updated.code})`, entityType: "platform_prospect", entityPublicId: updated.id, entityLabel: `${updated.gymName} (${updated.code})`, reason: "" });
+      return updated;
+    });
+  }
+
+  importAmmanPilotProspects(): Promise<ImportPilotProspectsResult> {
+    return this.respond(() => {
+      const result = this.prospects.importAmman(this.actor().name, nowISO());
+      if (result.added) this.recordPlatformAudit({ action: "prospects.imported", summary: `Added ${result.added} gyms from the Amman pilot list`, entityType: "platform_prospects", entityPublicId: "amman-pilot", entityLabel: "Amman pilot list", reason: "" });
+      return result;
     });
   }
 

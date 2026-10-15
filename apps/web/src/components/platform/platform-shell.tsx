@@ -4,7 +4,7 @@ import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -25,6 +25,7 @@ import { applicationStatusLabel, invoiceStatusLabel, subscriptionStatusLabel, su
 
 const NAVIGATION: Array<{ href: string; labelKey: TKey; icon: typeof LayoutDashboard; exact?: boolean }> = [
   { href: "/platform", labelKey: "platformConsole.navigation.overview", icon: LayoutDashboard, exact: true },
+  { href: "/platform/prospects", labelKey: "platformConsole.navigation.prospects", icon: Handshake },
   { href: "/platform/applications", labelKey: "platformConsole.navigation.applications", icon: ClipboardList },
   { href: "/platform/gyms", labelKey: "platformConsole.navigation.gyms", icon: Building2 },
   { href: "/platform/subscriptions", labelKey: "platformConsole.navigation.entitlements", icon: BadgeDollarSign },

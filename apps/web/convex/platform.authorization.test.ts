@@ -72,7 +72,7 @@ describe("platform operation authorization", () => {
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-platform-auth-owner" });
 
-    for (const operation of ["platform.applications", "platform.marketingMigration.preview", "platform.snapshot", "platform.gym.detail"]) {
+    for (const operation of ["platform.applications", "platform.marketingMigration.preview", "platform.snapshot", "platform.gym.detail", "platform.prospects.list", "platform.prospect.history"]) {
       await expectCode(owner.query(api.domain.query, request(operation, operation === "platform.gym.detail" ? { gymId: "unknown" } : {})), "FORBIDDEN");
     }
   });
@@ -96,6 +96,9 @@ describe("platform operation authorization", () => {
       "platform.support.reply": { caseId: "unknown", body: "test" },
       "platform.support.reopen": { caseId: "unknown" },
       "platform.support.assign": { caseId: "unknown" },
+      "platform.prospects.import_amman": {},
+      "platform.prospect.create": { fields: { gymName: "Test" } },
+      "platform.prospect.update": { prospectId: "unknown", changes: { stage: "contacted" } },
     };
 
     for (const [operation, input] of Object.entries(inputs)) {

@@ -402,7 +402,8 @@ slugs and masked emails only; they are safe to paste into the handoff.
 - Global rows without tenant data: `platformAuditEvents` (including the purge
   events), `publicRequestGuards`, `publicRequestIdempotency`,
   `marketingPreferenceMigrations`, `messagingWorkerState`,
-  `maintenanceState`, `operationalEmailWebhookEvents`.
+  `maintenanceState`, `operationalEmailWebhookEvents`, `platformProspects`
+  (the platform console's pilot prospect list).
 - Users with `platformAdmin: true`, always. Other users only go through
   `deleteResidue`, by the ids you pass.
 

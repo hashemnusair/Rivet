@@ -69,6 +69,7 @@ import type * as platformInvoiceDocument from "../platformInvoiceDocument.js";
 import type * as platformInvoicePdf from "../platformInvoicePdf.js";
 import type * as platformOverview from "../platformOverview.js";
 import type * as platformPlanCatalog from "../platformPlanCatalog.js";
+import type * as platformProspects from "../platformProspects.js";
 import type * as platformProvisioning from "../platformProvisioning.js";
 import type * as platformProvisioningAction from "../platformProvisioningAction.js";
 import type * as ptJobs from "../ptJobs.js";
@@ -155,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   platformInvoicePdf: typeof platformInvoicePdf;
   platformOverview: typeof platformOverview;
   platformPlanCatalog: typeof platformPlanCatalog;
+  platformProspects: typeof platformProspects;
   platformProvisioning: typeof platformProvisioning;
   platformProvisioningAction: typeof platformProvisioningAction;
   ptJobs: typeof ptJobs;

@@ -56,6 +56,7 @@ import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
 import type { CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
+import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 
 export type ConvexOperationArgs = {
   operation: string;
@@ -733,6 +734,11 @@ export class ConvexGymOSApi implements GymOSApi {
   countersignPlatformAgreement(input: T.CountersignAgreementInput): Promise<T.SubscriptionAgreement> { return this.mutate("platform.agreement.countersign", input); }
   voidPlatformAgreement(input: T.VoidAgreementInput): Promise<T.SubscriptionAgreement> { return this.mutate("platform.agreement.void", input); }
   attachAgreementPrintSignature(input: T.AttachPrintSignatureInput): Promise<T.SubscriptionAgreement> { return this.mutate("legal.agreement.attach_print_signature", input); }
+  listPlatformProspects(): Promise<PlatformProspectsView> { return this.query("platform.prospects.list", {}); }
+  listPlatformProspectHistory(prospectId: T.UUID): Promise<PlatformProspectHistoryEntry[]> { return this.query("platform.prospect.history", { prospectId }); }
+  createPlatformProspect(input: CreatePlatformProspectInput): Promise<PlatformProspect> { return this.mutatePlatform("platform.prospect.create", input); }
+  updatePlatformProspect(input: UpdatePlatformProspectInput): Promise<PlatformProspect> { return this.mutatePlatform("platform.prospect.update", input); }
+  importAmmanPilotProspects(): Promise<ImportPilotProspectsResult> { return this.mutatePlatform("platform.prospects.import_amman", {}); }
   listPayables(query: T.PayablesQuery = {}): Promise<T.PayablesPage> { return this.query("operations.payables.list", query); }
   exportPayables(query: T.PayablesQuery = {}): Promise<T.PayablesExport> { return this.query("operations.payables.export", query); }
   listPayablesReconciliation(query: { branchId?: T.UUID } = {}): Promise<T.PayablesReconciliation> { return this.query("operations.payables.reconciliation", query); }

@@ -48,6 +48,8 @@ export const qk = {
   myPlatformInvoices: ["billing", "invoices"] as const,
   platformAgreements: ["platform", "agreements"] as const,
   platformEmailDeliveries: ["platform", "email", "deliveries"] as const,
+  platformProspects: ["platform", "prospects"] as const,
+  platformProspectHistory: (id: string) => ["platform", "prospects", "history", id] as const,
   platformAgreement: (id: string) => ["platform", "agreements", "detail", id] as const,
   supplierPayments: (params?: unknown) => ["supplierPayments", params] as const,
   supplierPayment: (id: string) => ["supplierPayments", "detail", id] as const,

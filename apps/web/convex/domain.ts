@@ -56,6 +56,7 @@ import { BRAND_PALETTE_PRESETS, DEFAULT_BRAND_PALETTE, deriveBrandTokens, isBran
 import { operationsMutation, operationsQuery } from "./operations";
 import { payablesMutation, payablesQuery, supplierCashShiftMovements, supplierPaymentsForDay } from "./payables";
 import { agreementSessionState, agreementSummaryForOrganization, legalAgreementMutation, legalAgreementQuery } from "./legalAgreement";
+import { PLATFORM_PROSPECT_MUTATIONS, PLATFORM_PROSPECT_QUERIES, platformProspectsMutation, platformProspectsQuery } from "./platformProspects";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
@@ -5225,6 +5226,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     return await legalAgreementQuery(ctx, operation, input, request);
   }
 
+  if ((PLATFORM_PROSPECT_QUERIES as readonly string[]).includes(operation)) {
+    return await platformProspectsQuery(ctx, operation, input, request);
+  }
+
   if (operation === "health") {
     return { status: "ok", serverTime: Date.now() };
   }
@@ -8297,6 +8302,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
 
   if (operation === "legal.agreement.sign" || operation === "platform.agreement.reveal_id" || operation === "platform.agreement.countersign" || operation === "platform.agreement.resend_copies" || operation === "legal.agreement.attach_print_signature" || operation === "platform.agreement.void") {
     return await legalAgreementMutation(ctx, operation, input, request);
+  }
+
+  if ((PLATFORM_PROSPECT_MUTATIONS as readonly string[]).includes(operation)) {
+    return await platformProspectsMutation(ctx, operation, input, request);
   }
 
   if (operation === "platform.marketingMigration.apply") {

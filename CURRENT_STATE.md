@@ -1,5 +1,52 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Pilot prospects page in the platform console
+
+Elias asked for the "RIVET — Amman Pilot Prospects & Outreach" spreadsheet
+(three tabs: Prospects, Contacts, Drafts; 12 gyms) to become a simpler page in
+the admin console. It is now **Platform → Prospects** (`/platform/prospects`).
+
+- **Page.** One list grouped like the sheet (Selected, Reserve, Hold), filters
+  (To contact, In talks, Pilots, Closed, Follow-up due), search by gym, area or
+  phone typed any way. One gym open at a time: stage, owner and follow-up date
+  save on change; a one-click next step ("Mark as contacted", "They replied"…);
+  next step and notes save together. The Arabic opening message and offer show
+  in Plex Sans Arabic with Copy and **Open in WhatsApp** (wa.me link with the
+  message filled in; afterwards "Did you send the message?" marks it Sent and
+  the gym Contacted). Contact details, how sure we are, sources and a history
+  of who changed what. Add gym / Edit details in one dialog. Phone layout shows
+  the list, then the gym with Back to list. English and Arabic.
+- **Data.** New Convex table `platformProspects` (global, not tenant data) and
+  module `convex/platformProspects.ts`, reached through `domain.query` /
+  `domain.mutate` operations `platform.prospects.list`,
+  `platform.prospect.history`, `platform.prospect.create`,
+  `platform.prospect.update`, `platform.prospects.import_amman`. All require a
+  platform administrator; every change writes a `platformAuditEvents` row
+  (`entityType: platform_prospect`) with the changed fields, which is also the
+  page's history. Owners are active platform administrators.
+- **First run on Production.** The table starts empty. The page then shows
+  **Add the Amman pilot list**, which loads the 12 gyms from the sheet once
+  (bundled in `src/lib/platform/prospects.ts`, checked cell by cell against the
+  spreadsheet). Running it again adds nothing and never overwrites edits. The
+  preview (mock) adapter starts with the list already loaded.
+- **Assumptions.** Batch keeps the sheet's words (Selected, Reserve, Hold).
+  "Not verified" and "Not found" contact cells became empty fields shown as
+  "Not known". Duplicate Source 1/Source 2 links were merged. Prospects are not
+  deleted; use Not interested or On hold.
+- `convex/_generated/api.d.ts` was edited by hand to add the module (the same
+  two lines codegen writes); CI's codegen check will confirm.
+
+Checked: 4 Convex tests (`convex/platformProspects.test.ts`: access, import
+once, history, validation), platform authorization test extended, 7 rule tests,
+6 page tests, message catalogue parity, typecheck (web + Convex), lint, secret
+audit; the page driven in the mock preview at 1440px, 390px and in Arabic.
+Not done: Convex deploy (needs `pnpm convex:deploy -- --yes` after merge), a
+check on Production with real admin accounts.
+
+Read first: `apps/web/src/lib/platform/prospects.ts`,
+`apps/web/convex/platformProspects.ts`,
+`apps/web/src/app/platform/prospects/`.
+
 ## 15 October 2026 — RIVET launches as a beta
 
 Elias: "since we are close to launch, lets promote as Rivet Beta now, add a
