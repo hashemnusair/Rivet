@@ -85,6 +85,7 @@ export const auth = {
     emailLabel: "Email address",
     emailPlaceholder: "Enter email",
     passwordPlaceholder: "Enter password",
+    forgotPassword: "Forgot password?",
     newMember: "New member?",
     createFreeAccount: "Create a free account",
     errors: {
@@ -97,6 +98,23 @@ export const auth = {
       notFinished: "Sign-in is not finished yet. Try again.",
       resendFailed: "We could not send a new code. Try again.",
       startOverFailed: "We could not start over. Try again.",
+      resetFailed: "We could not save your new password. Try again.",
+    },
+    /** Forgot password: email, then the emailed code with a new password. */
+    reset: {
+      emailTitle: "Reset your password",
+      emailBody: "Enter your email. We will send you a code.",
+      sendCode: "Send code",
+      notFound: "We could not find an account with this email.",
+      codeTitle: "Check your email",
+      codeSent: "Enter the code we sent to your email. Then choose a new password.",
+      passwordTitle: "Choose a new password",
+      codeAccepted: "The code is correct.",
+      codeLegend: "Reset code",
+      newPasswordLabel: "New password",
+      newPasswordPlaceholder: "Enter new password",
+      submit: "Save password and sign in",
+      useAnotherEmail: "Use another email",
     },
     verify: {
       emailTitle: "Check your email",

@@ -5993,7 +5993,7 @@
         },
         {
           "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
-          "line": 259
+          "line": 277
         },
         {
           "path": "apps/web/src/lib/i18n/messages/en/common.ts",
@@ -6009,7 +6009,13 @@
         }
       ],
       "status": "in progress",
-      "remaining": "Exact Arabic catalog mapping: auth.pageTitle.signIn, auth.invitation.signIn, common.action.signIn, marketing.actions.signIn, marketing.footer.signIn. 13 current source locations remain candidates only; verify contextual usage and missing states before completion."
+      "remaining": "Exact Arabic catalog mapping: auth.pageTitle.signIn, auth.invitation.signIn, common.action.signIn, marketing.actions.signIn, marketing.footer.signIn. 13 current source locations remain candidates only; verify contextual usage and missing states before completion.",
+      "composedKeys": [
+        {
+          "key": "auth.signIn.reset.submit",
+          "template": "حفظ كلمة المرور و{approved}"
+        }
+      ]
     },
     {
       "id": "create-account",
@@ -6029,7 +6035,7 @@
         },
         {
           "path": "apps/web/src/lib/i18n/messages/en/auth.ts",
-          "line": 284
+          "line": 302
         },
         {
           "path": "apps/web/src/lib/i18n/messages/en/marketing.ts",
@@ -6055,11 +6061,20 @@
         {
           "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
           "line": 518
+        },
+        {
+          "path": "apps/web/src/app/login/password-sign-in.client.tsx",
+          "line": 424
         }
       ],
       "status": "in progress",
       "remaining": "Current used key mapping is asserted for exact approved wording/placeholders by apps/web/src/lib/i18n/messages.test.ts: authErrors.emailCode. Current source call sites are listed as candidates for route-level review.",
-      "composedKeys": []
+      "composedKeys": [
+        {
+          "key": "auth.signIn.reset.codeSent",
+          "template": "{approved} بعد ذلك، يرجى اختيار كلمة مرور جديدة."
+        }
+      ]
     },
     {
       "id": "resend-code",
@@ -6077,6 +6092,10 @@
         {
           "path": "apps/web/src/app/customer/signup/customer-signup.client.tsx",
           "line": 525
+        },
+        {
+          "path": "apps/web/src/app/login/password-sign-in.client.tsx",
+          "line": 451
         }
       ],
       "status": "in progress",

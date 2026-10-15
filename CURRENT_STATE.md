@@ -1,5 +1,104 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Forgot password on RIVET's own sign-in form
+
+RIVET had no password reset since 9 Sep 2026 (`b8e64bf3`). Until then the doors
+rendered Clerk's prebuilt `<SignIn>` widget, whose "Forgot password?" link
+worked; the switch to RIVET's own `PasswordSignIn` form dropped it and nothing
+replaced it. `docs/04` lists password reset as an auth requirement. Both doors
+(gym and member) share the form, so both now have it. **Branch only, not
+merged, not deployed, not tried against real Clerk.**
+
+- **Flow** (`apps/web/src/app/login/password-sign-in.client.tsx`). A
+  "Forgot password?" button sits in the password label row (the end side, so it
+  flips in Arabic). It opens a card in the same place: **email** (carries over
+  whatever was typed) → **Send code** → **code boxes + new password on one
+  screen** → **Save password and sign in** → the same redirect as a normal
+  sign-in. Back links: "Back to sign in" (email step), "Use another email" and
+  "Send a new code" (code step).
+- **Clerk 7.6.3 calls**, all through the same `useSignIn()` hook the form
+  already used: `signIn.create({ identifier })`, then
+  `signIn.resetPasswordEmailCode.sendCode()`, then on submit
+  `.verifyCode({ code })` and
+  `.submitPassword({ password, signOutOfOtherSessions: true })`, then the
+  existing `finish()` (`signIn.finalize`). A retry skips steps Clerk has already
+  taken: once the status is `needs_new_password` only the password is asked for
+  (the code boxes give way to the password field), and once it is `complete`
+  only the finalize is retried.
+- **Second factor.** The post-first-factor routing was pulled out of
+  `submitPassword` into `continueSignIn()` and is shared: `complete` finishes;
+  `needs_client_trust` / `needs_second_factor` clears the reset code and
+  password and goes to the existing second step (`beginVerification`, the same
+  card, "Use another account" starts over and also leaves the reset); any other
+  status says "Sign-in needs another step".
+- **Errors and busy state** follow the form: Clerk codes go through
+  `authMessage` (wrong code, expired code, weak or compromised password,
+  rate limit all already mapped), unknown or thrown errors fall back to plain
+  fixed sentences, no provider text is shown, the submit uses the same
+  `submitting` / `fetchStatus` busy flag and stays gated on `clerkLoaded`.
+  Field-level hook errors are not repeated; one alert under the form, as the
+  second step does.
+- **Mock preview and CI.** Unchanged. With demo auth on, the doors show the
+  seeded accounts and never mount `PasswordSignIn`, so credential-free CI never
+  sees the reset. It adds no hook and no Convex use; only the existing
+  `useSignIn` / `useClerk`.
+- **Words** (`auth.signIn.forgotPassword`, `auth.signIn.reset.*`,
+  `auth.signIn.errors.resetFailed`, English and Arabic). Plain English per
+  `docs/22`. Arabic follows `docs/arabic`: approved `email-code` sentence is
+  the first sentence of the code step, `resend-code` reuses `authErrors.resend`
+  exactly, sign-in is the approved `تسجيل الدخول`, the save failure follows
+  `save-failed`, labels are verbal nouns. `decision-coverage.json` gained two
+  `composedKeys` (`email-code`, `sign-in`) so the existing test pins the exact
+  approved wording; `verify-lock.py` passes (revision 607, 247 agreements).
+  **Voice note:** the new Arabic is singular (`بريدك`, `أدخل`) like the
+  approved decisions and `authErrors`; the older `auth.signIn.verify.*` and
+  placeholder strings next to it are plural (`بريدكم`, `أدخلوا`). The second step
+  after a reset therefore shifts voice. Left alone on purpose; align them
+  together in one Arabic pass.
+
+Assumptions to confirm or flip:
+
+1. An unknown email says "We could not find an account with this email."
+   (RIVET's member sign-up already reveals existing emails.) Hiding it would
+   mean showing the code step anyway and failing at the code, which strands
+   someone who mistyped.
+2. The new password signs out the person's other sessions
+   (`signOutOfOtherSessions: true`), the safer default after a reset. A
+   manager resetting at the front desk will sign out their phone.
+3. The form does not check password length or strength itself; Clerk's
+   instance policy decides and its refusal is shown in plain words.
+
+Checked: 15 new tests in `password-sign-in.test.tsx` (the link and typed email
+carried over, send gated on Clerk and an email, send code, unknown email, send
+failure / rate limit / thrown rejection, wrong code keeps everything typed and
+never reaches the password, resend and use another email, success with
+`signOutOfOtherSessions` and the safe redirect, refused password does not repeat
+the accepted code, finalize failure retries only the finalize, second-factor
+handoff with nothing carried over and the way back, unsupported status, the
+whole reset in Arabic with email, code and passwords left to right and Arabic
+digits sent as Latin, a retained error re-translated on language switch with no
+second request); the 10 earlier tests in that file and the rest of `src/app/login`
+and `src/lib/i18n` pass (23 files, 157 tests); `tsc --noEmit`, ESLint on the
+changed folders and `python3 docs/arabic/verify-lock.py` pass. One full
+`vitest run` (336 files) passed everything except one of the new tests, which
+had been caught by this branch's own wording change mid-run; fixed and the
+affected folders re-run green. Not run: Playwright, `pnpm build`, and anything
+against real Clerk.
+
+**For Elias, against the dev Clerk instance** (no credentials were entered by
+the agent): on `/login/gym` and `/login/member` use a throwaway dev account and
+check that the email arrives with a code; a wrong code is refused in plain words
+and keeps the boxes; a weak password is refused and the code is not asked for
+again; a good password lands on the same page a normal sign-in does and other
+sessions end; a new device after the reset goes to the "Check your email"
+second step; the same in Arabic. If **Send code** fails for a real account, the
+dev instance's Clerk settings are the first suspect (the reset needs email
+verification codes available for that account); the form shows only a plain
+"We could not send your code" sentence, so read the network response for the
+real Clerk error code. `docs/19` still
+says no Clerk password-reset email is verified as live; that stays true until
+this check is done.
+
 ## 15 October 2026 — Pilot prospects page in the platform console
 
 Elias asked for the "RIVET — Amman Pilot Prospects & Outreach" spreadsheet
