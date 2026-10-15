@@ -258,7 +258,7 @@ function AgreementDialog({ agreementId, summary, onClose }: { agreementId: strin
           )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> {t("platformConsole.agreements.downloadPdf")}</Button>
+          <Button variant="secondary" disabled={!agreement} onClick={() => { if (agreement) void downloadAgreementPdf(agreement); }} data-testid="download-agreement-pdf"><Download /> {t("platformConsole.agreements.downloadPdf")}</Button>
           <Button variant="secondary" onClick={onClose}>{t("common.action.close")}</Button>
         </DialogFooter>
       </DialogContent>

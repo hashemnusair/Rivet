@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils/cn";
 import { BATCH_KEYS, FILTERS, STAGE_COPY, type ProspectFilter } from "./prospect-copy";
 import { ProspectDetail } from "./prospect-detail";
 import { ProspectFormDialog } from "./prospect-form-dialog";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 const PLATFORM_TIMEZONE = "Asia/Amman";
 
@@ -78,7 +79,7 @@ export function PlatformProspects() {
       else params.delete(key);
     }
     const next = params.toString();
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, next ? `${pathname}?${next}` : pathname);
   };
 
   const importList = useApiMutation((api) => api.importAmmanPilotProspects(), {

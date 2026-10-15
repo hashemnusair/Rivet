@@ -22,6 +22,7 @@ import { useExperience, useMarketplaceGyms } from "@/lib/providers/experience-pr
 import type { MarketplaceGym } from "@/lib/public/experience-data";
 import { cn } from "@/lib/utils/cn";
 import { money } from "@/lib/utils/money";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 const ALL = "All gyms";
 
@@ -52,7 +53,7 @@ function DiscoverGyms() {
       else next.delete(key);
     }
     const value = next.toString();
-    router.replace(value ? `${pathname}?${value}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, value ? `${pathname}?${value}` : pathname);
   };
 
   // The search text is shareable, but only once typing settles.
@@ -68,7 +69,7 @@ function DiscoverGyms() {
   }), [category, gyms, search, t]);
   const clear = () => {
     setSearch("");
-    router.replace(pathname, { scroll: false });
+    replaceQueryInPlace(router, pathname);
   };
 
   return (

@@ -26,6 +26,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { getApi } from "@/lib/api/client";
 import { addDays, todayISODate } from "@/lib/utils/dates";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 // Default visible day; the window stretches automatically when a class is
 // scheduled outside it, so nothing can render off-grid.
@@ -92,7 +93,7 @@ function ClassesWorkspace() {
   const updateView = (changes: Record<string, string>) => {
     const next = new URLSearchParams(params.toString());
     Object.entries(changes).forEach(([key, value]) => next.set(key, value));
-    router.replace(`${pathname}?${next}`, { scroll: false });
+    replaceQueryInPlace(router, `${pathname}?${next}`);
   };
   const { session } = useApp();
   const permissions = usePermissions();

@@ -33,6 +33,7 @@ import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { CreateTaskDialog } from "@/features/members/create-task-dialog";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -103,7 +104,7 @@ export default function MemberDetailPageClient() {
           if (tab === "overview") params.delete("tab");
           else params.set("tab", tab);
           const query = params.toString();
-          router.replace(query ? `/members/${memberId}?${query}` : `/members/${memberId}`, { scroll: false });
+          replaceQueryInPlace(router, query ? `/members/${memberId}?${query}` : `/members/${memberId}`);
         }}>
           <div className="min-w-0">
             <TabsList aria-label={t("memberProfile.page.sectionsLabel")}>
@@ -140,7 +141,7 @@ export default function MemberDetailPageClient() {
           {can("members.write") ? (
             <div className="flex flex-wrap gap-2" aria-label={t("memberProfile.page.contactActionsLabel")}>
               <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />
-              <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") router.replace(`/members/${memberId}`, { scroll: false }); }} />
+              <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") replaceQueryInPlace(router, `/members/${memberId}`); }} />
               <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
                 <StickyNote /> {t("memberProfile.page.addNote")}
               </Button>

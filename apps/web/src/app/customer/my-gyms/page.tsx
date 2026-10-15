@@ -15,6 +15,7 @@ import { membershipDisplayStatus } from "@/lib/public/membership-status";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 export default function MemberDashboardPage() {
   return (
@@ -60,7 +61,7 @@ function MemberHome() {
   const closePass = (open: boolean) => {
     if (open) return;
     setPassFor(undefined);
-    if (searchParams.get("entry")) router.replace("/customer/my-gyms", { scroll: false });
+    if (searchParams.get("entry")) replaceQueryInPlace(router, "/customer/my-gyms");
   };
 
   return (

@@ -31,6 +31,7 @@ import { buildPayablesCsv } from "./payables-export";
 import { LedgerStatusBadge } from "./ledger-status";
 import { RecordSupplierPaymentDialog } from "./record-supplier-payment-dialog";
 import { SupplierPaymentHistoryDialog, supplierPaymentHref } from "./supplier-payment-history-dialog";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 const STATUS_FILTERS: Array<{ value: PayableStatusFilter; label: TKey }> = [
   { value: "open", label: "payablesWorkspace.notFull" },
@@ -99,7 +100,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams.toString());
     if (value) next.set(key, value); else next.delete(key);
-    router.replace(`${pathname}?${next}`, { scroll: false });
+    replaceQueryInPlace(router, `${pathname}?${next}`);
   };
   const filterQuery = searchParams.toString();
   useEffect(() => {

@@ -22,6 +22,7 @@ import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DeleteDialog, FormPanel, LoadingGrid, ReadOnlyNotice, SectionHeader, minorValue, useOperationsNumberProblems, newKey, type OperationsMutations } from "./operations-shared";
 import { PurchaseOrderForm } from "./purchasing-tabs";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 export function ProductForm({ currency, branchId, product, availableQuantity, pending, onCancel, onSubmit, onRequestDelete }: { currency: string; branchId?: string; product?: Product; availableQuantity?: number; pending: boolean; onCancel: () => void; onSubmit: (input: UpsertProductInput) => void; onRequestDelete?: () => void }) {
   const t = useT();
@@ -99,7 +100,7 @@ export function InventoryTab({ branchId, branchLabel, branches, currency, writeE
     const next = new URLSearchParams(params.toString());
     if (attention) next.set("stock", "attention"); else next.delete("stock");
     if (term) next.set("stockSearch", term); else next.delete("stockSearch");
-    router.replace(`/operations?${next}`, { scroll: false });
+    replaceQueryInPlace(router, `/operations?${next}`);
   };
   const [deleteTarget, setDeleteTarget] = useState<{ type: "product"; id: string; label: string }>();
   const productName = useMemo(() => new Map(products.map((product) => [product.id, product.name])), [products]);

@@ -17,6 +17,7 @@ import { getApi } from "@/lib/api/client";
 import { localizeApiError } from "@/lib/api/errors";
 import type { GymApplicationStatus, PlatformGymApplication, ProvisionGymInput, ReviewGymApplicationInput } from "@/lib/api/GymOSApi";
 import { cn } from "@/lib/utils/cn";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type Filter = "all" | GymApplicationStatus;
 
@@ -62,7 +63,7 @@ export default function PlatformApplicationsPage() {
     if (next === "all") params.delete("status");
     else params.set("status", next);
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, query ? `${pathname}?${query}` : pathname);
   };
   const requestedApplicationIdRef = useRef<string | undefined>(requestedApplicationId);
   const initialLoadRef = useRef(true);

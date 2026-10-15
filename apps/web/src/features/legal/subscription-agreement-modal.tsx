@@ -371,7 +371,7 @@ function SignedConfirmation({ agreement, finishing, onContinue }: { agreement: S
         <p className="mt-5 max-w-md text-[12.5px] text-ink-3">{t("agreementFlow.copyBody")}</p>
       </div>
       <Footer>
-        <Button variant="secondary" onClick={() => downloadAgreementPdf(agreement)} data-testid="download-agreement-pdf"><Download /> {t("agreementFlow.download")}</Button>
+        <Button variant="secondary" onClick={() => void downloadAgreementPdf(agreement)} data-testid="download-agreement-pdf"><Download /> {t("agreementFlow.download")}</Button>
         <Button size="lg" loading={finishing} onClick={onContinue} data-testid="agreement-continue">{t("agreementFlow.continueRivet")} <ArrowRight className="rtl:rotate-180" /></Button>
       </Footer>
     </div>

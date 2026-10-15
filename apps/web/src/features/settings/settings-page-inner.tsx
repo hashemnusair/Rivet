@@ -35,6 +35,7 @@ import { permissionCopy } from "@/lib/i18n/permissions";
 import type { TFunction } from "@/lib/i18n/core";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ContextLabel } from "@/components/ui/typography";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 interface SettingsEntry {
   id: string;
@@ -159,7 +160,7 @@ export function SettingsPageInner() {
       setActiveSection(id);
       const nextSearch = new URLSearchParams(searchParams.toString());
       nextSearch.set("section", id);
-      router.replace(`${pathname}?${nextSearch.toString()}`, { scroll: false });
+      replaceQueryInPlace(router, `${pathname}?${nextSearch.toString()}`);
     });
 
   // Manual activation: arrows and Home/End move focus along the rail, Enter or

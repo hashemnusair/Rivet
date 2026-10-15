@@ -27,6 +27,7 @@ import { loadTransactionsInRange, summarizeRange } from "@/features/reports/over
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import type { TFunction, TKey } from "@/lib/i18n/core";
 import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, type ReportScope } from "@/features/reports/report-scope";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 function paymentMethodLabel(method: string, t: TFunction): string {
   return ["cash", "card", "bank_transfer", "cliq", "other"].includes(method) ? t(`domain.paymentMethod.${method}` as TKey) : method;
@@ -77,13 +78,13 @@ function ReportsPageInner() {
     const pending = pendingScopeRef.current;
     if (!pending) return;
     event.preventDefault();
-    router.replace(hrefFor(nextView, pending), { scroll: false });
+    replaceQueryInPlace(router, hrefFor(nextView, pending));
   };
   const changeScope = (patch: Partial<ReportScope>) => {
     const nextScope = { ...(pendingScopeRef.current ?? scope), ...patch };
     pendingScopeRef.current = nextScope;
     setTransactionPage(1);
-    router.replace(hrefFor(pendingViewRef.current ?? view, nextScope), { scroll: false });
+    replaceQueryInPlace(router, hrefFor(pendingViewRef.current ?? view, nextScope));
   };
   const canRead = can("reports.financial.read");
   const overviewEnabled = Boolean(session) && canRead && view === "overview";

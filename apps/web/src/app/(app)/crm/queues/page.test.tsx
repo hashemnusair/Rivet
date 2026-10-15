@@ -57,9 +57,17 @@ vi.mock("next/navigation", async () => {
   return {
     usePathname: () => "/crm/queues",
     useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
-    useRouter: () => ({ replace: (url: string) => { window.history.replaceState({}, "", url); window.dispatchEvent(new Event("test:navigation")); } }),
+    useRouter: () => ({ replace: (url: string) => window.history.replaceState({}, "", url) }),
   };
 });
+
+// Next keeps useSearchParams in sync with the native history API, which the
+// page's filters now write through. Model that integration for the mocks.
+const nativeReplaceState = window.history.replaceState.bind(window.history);
+window.history.replaceState = (data: unknown, unused: string, url?: string | URL | null) => {
+  nativeReplaceState(data, unused, url);
+  window.dispatchEvent(new Event("test:navigation"));
+};
 
 vi.mock("@/lib/providers/app-providers", () => ({
   useApp: () => ({ session: { activeBranchId: "branch-1", permissions: ["memberships.sell", "payments.collect"], organization: { timezone: "Asia/Amman" } } }),

@@ -26,6 +26,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
 import { membershipStatusLabel, roleLabel } from "@/lib/i18n/labels";
 import { searchKey } from "@/lib/utils/text";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type GymArchiveApi = { archivePlatformGym?: (input: ArchivePlatformGymInput) => Promise<void> };
 
@@ -166,7 +167,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         if (tab === "info") params.delete("tab");
         else params.set("tab", tab);
         const query = params.toString();
-        router.replace(query ? `/platform/gyms/${gymId}?${query}` : `/platform/gyms/${gymId}`, { scroll: false });
+        replaceQueryInPlace(router, query ? `/platform/gyms/${gymId}?${query}` : `/platform/gyms/${gymId}`);
       }}>
         <TabsList aria-label={t("platformFinance.detail.sections")}>
           {GYM_TABS.map((tab) => {

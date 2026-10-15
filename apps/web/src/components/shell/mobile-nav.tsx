@@ -4,7 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Building2, X } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
+import { IntentPrefetchLink } from "./intent-prefetch-link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils/cn";
@@ -87,7 +87,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                       const active = navIsActive(item.href, pathname);
                       return (
                         <li key={item.href}>
-                          <Link
+                          <IntentPrefetchLink
                             href={item.href}
                             aria-current={active ? "page" : undefined}
                             className={cn(
@@ -102,7 +102,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                               aria-hidden
                             />
                             <span className="truncate">{t(item.labelKey)}</span>
-                          </Link>
+                          </IntentPrefetchLink>
                         </li>
                       );
                     })}

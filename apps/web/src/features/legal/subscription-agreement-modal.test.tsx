@@ -124,7 +124,8 @@ describe("subscription agreement modal", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL: (blob: Blob) => { saved.push({ name: "", type: blob.type, bytes: blob.size }); return "blob:agreement"; }, revokeObjectURL: () => {} });
     const clicks = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { saved[saved.length - 1]!.name = this.download; });
     await user.click(within(done).getByTestId("download-agreement-pdf"));
-    expect(saved).toEqual([{ name: expect.stringMatching(/^RIVET-agreement-RVT-\d{8}-[A-Z2-9]{5}\.pdf$/), type: "application/pdf", bytes: expect.any(Number) }]);
+    // The PDF builder loads on demand, so the file is saved a moment later.
+    await waitFor(() => expect(saved).toEqual([{ name: expect.stringMatching(/^RIVET-agreement-RVT-\d{8}-[A-Z2-9]{5}\.pdf$/), type: "application/pdf", bytes: expect.any(Number) }]));
     expect(saved[0]!.bytes).toBeGreaterThan(2000);
     clicks.mockRestore();
     vi.unstubAllGlobals();

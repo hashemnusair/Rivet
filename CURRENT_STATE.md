@@ -1,5 +1,107 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Performance pass: startup, screen opens, page flips, scrolling
+
+Branch `claude/app-performance-optimization-82474c` only. **Not committed, not
+merged, not deployed.** Every fix was measured before and after on built
+bundles, not the dev server.
+
+**How it was measured.** Mock preview bundles (`next build --webpack`, served
+by `next start`), headless Chromium, 4× CPU throttle, 60 ms RTT / 9 Mbps,
+1440×900, owner persona. Before and after builds ran alternately, 5 runs each;
+the figures are medians. A production (Convex-mode) build cannot be served
+locally without Clerk keys, so its startup JS was read from the build output by
+matching chunk IDs against the real HTML script lists. Convex reads were counted
+by running the real `ConvexReactClient` and `ConvexGymOSApi` over a fake
+WebSocket. The scripts stayed in the session scratchpad and were not committed.
+
+| What | Before | After |
+|---|---|---|
+| Startup JS, production, compressed: dashboard | 1,396 KB | ≈700 KB (−50%) |
+| … Members / Reception | 1,277 / 1,312 KB | ≈590 / ≈620 KB |
+| … landing / gym sign-in / member app | 674 / 706 / 702 KB | ≈525 / ≈556 / ≈551 KB |
+| Cold start to a loaded dashboard (mock bundle) | 3,815 ms | 3,163 ms (−17%) |
+| Main-thread blocking during that start | 650 ms | 497 ms (−24%) |
+| Member list, next page | 329–399 ms | 256–298 ms (−20 to −25%) |
+| Member list, back to a loaded page | 157–173 ms | 112–114 ms (−29 to −34%) |
+| First open of a screen from the sidebar (150 ms hover first) | Members 508, Reception 265, Payments 381, CRM 407 ms | 328, 181, 287, 315 ms (−22 to −35%) |
+| Wheel event accepted while the page is busy | 208 ms | ≈82 ms |
+| Convex server queries: two live screens opening | 4 | 2 |
+| Prefetch requests on every workspace load | 35 | 25 |
+
+What changed:
+
+- **PDF builder loads on click** (`features/legal/agreement-pdf.ts`,
+  `document-pdf.ts`). The agreement and legal-document PDF code, with its
+  embedded fonts and font engine (about 1.5 MB of script), was in the startup
+  bundle of every workspace screen because the agreement gate imports it. It is
+  now a dynamic `import()` in the download functions. `shortDate` moved from
+  `convex/legalAgreementPdf.ts` to `convex/legalAgreementText.ts` so the record
+  view no longer pulls in the PDF module. The downloads are async now; the
+  modal test waits for the file.
+- **No mock database in production bundles** (`next.config.mjs`,
+  `src/lib/mock/MockGymOSApi.unavailable.ts`). Browser bundles built without
+  `NEXT_PUBLIC_DATA_MODE=mock` get a fail-closed stub instead of
+  `MockGymOSApi` and the seed (about 700 KB on every screen, including the
+  landing page). Mock and preview builds, dev and Vitest are unchanged. The
+  public catalogue now takes its two branch IDs from `lib/mock/store.ts`
+  instead of `seed.ts`. A `turbopack: {}` entry keeps `dev:turbo` starting;
+  Next 16 otherwise exits when a `webpack` hook exists.
+- **List pages, tabs and filters update the address in place**
+  (`src/lib/routing/replace-query.ts`, 31 call sites). `router.replace` on a
+  dynamic route asked the server for the page again before anything moved.
+  Same-path query changes now use `history.replaceState`, which Next 16 keeps in
+  sync with `useSearchParams`. Path changes still use the router. Back/Forward
+  was checked to behave as before.
+- **One read correlation ID per page load** (`ConvexGymOSApi.ts`). Every read
+  carried a fresh random `correlationId`, so identical reads never shared a
+  Convex subscription or result, and a live screen read its projection twice
+  while its watch connected. Writes keep a fresh ID each.
+- **Sidebar and drawer links prefetch on intent**
+  (`components/shell/intent-prefetch-link.tsx`). The default prefetch sent 35
+  requests per load and still left a server round trip on every click.
+  `prefetch={true}` for all links made opens faster but startup slower (all
+  route code loaded at start: warm reload +15%, startup blocking +55%). The
+  links now prefetch fully when the pointer, focus or a touch reaches them.
+- **Root wheel listener is passive** (`use-damped-root-overscroll.ts`). The
+  root bounce is already off on fine pointers through
+  `overscroll-behavior-y: none`, so cancelling the event added nothing visible
+  but made scrolling wait for the main thread. The page-edge check now runs
+  before the computed-style walk. The unit test and `happy-path.spec.ts` now
+  expect the event not to be cancelled; the 7 px edge response is unchanged.
+
+Not changed, measured:
+
+- **Scrolling** was already smooth on the members list and dashboard (p95
+  frame 18 ms, no long frames) and stayed so.
+- **The dashboard query grows with history.** In `convex-test`, a 300-member
+  gym's `dashboard` query took 336 ms with 7 days of history, 1.66 s with 60
+  days and 5.3 s with 180 days (51k records). It reads every check-in,
+  timeline event and payment on each load. Retention alerts need each member's
+  last check-in, so a correct fix stores that summary (and lead progress) at
+  write time with a backfill, then reads only recent windows. At this rate a
+  busy gym passes Convex's per-query read limit within months. This needs its
+  own change and a Convex deploy.
+- **Both language catalogues ship to everyone** (about 1.2 MB raw, Arabic
+  ~60%). Splitting them per locale is the next largest startup item. Convex PDF
+  and email code use the same translator for Arabic, so it needs care under
+  `docs/arabic`.
+- **The root layout asks Clerk and Convex for the saved language on every
+  signed-in request** (`lib/i18n/server.ts`). This could not be measured
+  without real credentials.
+- **Fonts:** every page preloads 10 files (≈258 KB), including four Arabic
+  weights for English readers. Left alone, because removing the preload would
+  make Arabic text and the landing headline swap fonts visibly.
+
+Deploy notes: web only. The two `convex/` edits move `shortDate` without
+changing behaviour, so no Convex deploy is required for this change.
+
+Checked: `tsc` (app and Convex), ESLint with `--max-warnings 0`, secret-output
+audit, Vitest 2,121/2,121, node script tests, and the full credential-free
+Playwright suite against the built mock bundle: 221 passed, 14 skipped
+(credential-gated), 0 failed, including the PDF download and scroll-edge specs
+and the Mac screenshot references. CI has not run.
+
 ## 15 October 2026 — Forgot password on RIVET's own sign-in form
 
 RIVET had no password reset since 9 Sep 2026 (`b8e64bf3`). Until then the doors

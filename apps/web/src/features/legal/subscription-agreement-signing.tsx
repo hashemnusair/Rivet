@@ -29,7 +29,7 @@ export function SubscriptionAgreementSigning({ embedded = false }: { embedded?: 
   if (context.agreement) {
     return (
       <div className="space-y-5">
-        {!embedded ? <PageHeader title={t("agreementFlow.recordTitle")} description={context.agreement.status === "countersigned" ? t("agreementFlow.recordCompleted") : t("agreementFlow.recordAwaiting")} actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> {t("agreementFlow.download")}</Button>} /> : null}
+        {!embedded ? <PageHeader title={t("agreementFlow.recordTitle")} description={context.agreement.status === "countersigned" ? t("agreementFlow.recordCompleted") : t("agreementFlow.recordAwaiting")} actions={<Button variant="secondary" onClick={() => void downloadAgreementPdf(context.agreement!, context.sections)} data-testid="download-agreement-pdf"><Download /> {t("agreementFlow.download")}</Button>} /> : null}
         <AgreementRecord agreement={context.agreement} sections={context.sections} />
         {!embedded ? <p className="text-[12.5px] text-ink-3">{t("agreementFlow.contact")} <a href={RIVET_CONTACT.whatsappHref} className="underline underline-offset-4" dir="ltr">{RIVET_CONTACT.phoneDisplay}</a>{t("members.bulk.toast.end")}</p> : null}
       </div>

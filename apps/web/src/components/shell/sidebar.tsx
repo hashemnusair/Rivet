@@ -3,6 +3,7 @@
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { IntentPrefetchLink } from "./intent-prefetch-link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
@@ -96,7 +97,7 @@ export function Sidebar() {
                   {visible.map((item) => {
                     const active = navIsActive(item.href, pathname);
                     const link = (
-                      <Link
+                      <IntentPrefetchLink
                         href={item.href}
                         aria-current={active ? "page" : undefined}
                         className={cn(
@@ -110,7 +111,7 @@ export function Sidebar() {
                           <item.icon className={cn("size-4", active ? "text-night-ink" : "text-night-ink-3 group-hover:text-night-ink-2")} />
                         </span>
                         {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t(item.labelKey)}</span> : null}
-                      </Link>
+                      </IntentPrefetchLink>
                     );
                     return (
                       <li key={item.href}>

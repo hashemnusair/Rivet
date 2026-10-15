@@ -19,6 +19,7 @@ import { EquipmentTab } from "./equipment-tab";
 import { InventoryTab } from "./inventory-tab";
 import { CURRENCY_FALLBACK, LoadingGrid, useOperationsMutations } from "./operations-shared";
 import { PurchaseOrdersTab, SuppliersTab } from "./purchasing-tabs";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 const TABS = ["inventory", "orders", "suppliers", "payables", "equipment"] as const;
 type StockTab = (typeof TABS)[number];
@@ -119,7 +120,7 @@ export function StockPurchasingWorkspace() {
         const next = new URLSearchParams(searchParams.toString());
         next.set("tab", value);
         if (branchId) next.set("branch", branchId);
-        router.replace(`/operations?${next}`, { scroll: false });
+        replaceQueryInPlace(router, `/operations?${next}`);
       }}>
         <TabsList aria-label={t("stockWorkspace.workspaceLabel")}>
           <TabsTrigger value="inventory"><Boxes className="size-3.5" />{" "}{t("dashboard.today.kind.low_stock")}</TabsTrigger>
@@ -131,7 +132,7 @@ export function StockPurchasingWorkspace() {
         <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center"><div className="col-span-2 min-w-0 sm:w-64"><label htmlFor="operations-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
             const next = new URLSearchParams(searchParams.toString());
             if (value === "all") next.delete("branch"); else next.set("branch", value);
-            router.replace(`/operations?${next}`, { scroll: false }); }}><SelectTrigger id="operations-branch" aria-label={t("common.label.branch")} className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild className="h-11"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart />{" "}{t("nav.item.checkout")}</Link></Button> : null}<Button asChild className="h-11" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck />{" "}{t("palette.pages.maintenance")}</Link></Button></div>
+            replaceQueryInPlace(router, `/operations?${next}`); }}><SelectTrigger id="operations-branch" aria-label={t("common.label.branch")} className="h-11 w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div>{canCheckout ? <Button asChild className="h-11"><Link href={branchId ? `/checkout?branchId=${encodeURIComponent(branchId)}` : "/checkout"}><ShoppingCart />{" "}{t("nav.item.checkout")}</Link></Button> : null}<Button asChild className="h-11" variant="secondary"><Link href={`/maintenance${branchQuery}`}><ClipboardCheck />{" "}{t("palette.pages.maintenance")}</Link></Button></div>
         <TabsContent value="inventory"><InventoryTab branchId={branchId} branchLabel={branchLabel} branches={branches} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} inventory={inventory} alerts={alerts} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} onSell={sell} /></TabsContent>
         <TabsContent value="orders"><PurchaseOrdersTab branchId={branchId} currency={currency} writeEnabled={writeEnabled} products={products} suppliers={suppliers} orders={orders} loading={inventoryLoading} error={inventoryError} onRetry={retryInventory} mutations={mutations} highlightOrderId={highlightOrderId} /></TabsContent>
         <TabsContent value="suppliers"><SuppliersTab branchId={branchId} branches={branches} writeEnabled={writeEnabled} suppliers={suppliers} loading={supplierQuery.isLoading} error={supplierQuery.error} onRetry={() => void supplierQuery.refetch()} mutations={mutations} /></TabsContent>

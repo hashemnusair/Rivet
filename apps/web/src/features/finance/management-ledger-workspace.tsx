@@ -61,6 +61,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState, ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type LedgerTab = "overview" | "journals" | "sources" | "periods";
 const LEDGER_TABS: readonly LedgerTab[] = ["overview", "journals", "sources", "periods"];
@@ -513,7 +514,7 @@ export function ManagementLedgerWorkspace() {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "overview") params.delete("tab"); else params.set("tab", next);
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, query ? `${pathname}?${query}` : pathname);
   };
   const [periodFilter, setPeriodFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<AccountingSourceStatus | "all">("all");

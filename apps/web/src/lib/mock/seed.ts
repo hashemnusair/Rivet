@@ -34,7 +34,7 @@ import { BRAND_PALETTE_PRESETS, deriveBrandTokens } from "@/lib/domain/brand";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { money } from "@/lib/utils/money";
 import type { LeadRecord, MemberRecord, MembershipRecord, MockDb } from "./store";
-import { resetUuidCounter, seedUuid } from "./store";
+import { BRANCH_ABD, BRANCH_SWF, resetUuidCounter, seedUuid } from "./store";
 import {
   ARABIC_NAMES,
   CALL_NOTE_POOL,
@@ -64,8 +64,7 @@ function mulberry32(seed: number) {
 }
 
 const ORG_ID = seedUuid(1);
-export const BRANCH_ABD = seedUuid(2);
-export const BRANCH_SWF = seedUuid(3);
+export { BRANCH_ABD, BRANCH_SWF };
 
 // Staff IDs
 export const U = {

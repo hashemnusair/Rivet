@@ -38,6 +38,7 @@ import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
 import { OfferWorkPanel } from "@/features/crm/offer-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { useFormat } from "@/lib/i18n/format";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
@@ -65,7 +66,7 @@ export default function LeadDetailPageClient() {
   const [contactOpen, setContactOpen] = useState(searchParams.get("action") === "contact");
   const closeContact = () => {
     setContactOpen(false);
-    if (searchParams.get("action") === "contact") router.replace(`/crm/leads/${leadId}`, { scroll: false });
+    if (searchParams.get("action") === "contact") replaceQueryInPlace(router, `/crm/leads/${leadId}`);
   };
   const [saleOpen, setSaleOpen] = useState(false);
   const [notSuccessfulOpen, setNotSuccessfulOpen] = useState(false);

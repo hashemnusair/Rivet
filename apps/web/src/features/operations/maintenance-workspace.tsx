@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { FacilityTaskWorkspace } from "./facility-task-workspace";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 /**
  * Maintenance has its own page: cleaning, inspections and incidents by gym
@@ -44,7 +45,7 @@ export function MaintenanceWorkspace() {
             const next = new URLSearchParams(searchParams.toString());
             if (value === "all") next.delete("branch"); else next.set("branch", value);
             next.delete("zone"); next.delete("action");
-            router.replace(`/maintenance?${next}`, { scroll: false }); }}><SelectTrigger id="maintenance-branch" aria-label={t("common.label.branch")} className="min-w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div><Button asChild variant="secondary" size="sm"><Link href={branchId ? `/operations?branch=${encodeURIComponent(branchId)}` : "/operations"}><Boxes />{" "}{t("nav.item.operations")}</Link></Button></div>} />
+            replaceQueryInPlace(router, `/maintenance?${next}`); }}><SelectTrigger id="maintenance-branch" aria-label={t("common.label.branch")} className="min-w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{t("common.label.allBranches")}</SelectItem>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent></Select></div><Button asChild variant="secondary" size="sm"><Link href={branchId ? `/operations?branch=${encodeURIComponent(branchId)}` : "/operations"}><Boxes />{" "}{t("nav.item.operations")}</Link></Button></div>} />
       {branchId && zonesQuery.isError ? <QueryErrorState error={zonesQuery.error} onRetry={() => void zonesQuery.refetch()} /> : branchId && zonesQuery.isLoading ? <div className="panel h-40 animate-pulse" aria-label={t("operationsWorkspace.loadingAreas")} /> : branchId ? <FacilityTaskWorkspace key={branchId} branchId={branchId} zones={zonesQuery.data ?? []} writeEnabled={writeEnabled} /> : <StatePanel icon={ClipboardCheck} title={t("operationsWorkspace.chooseBranch")} description={t("operationsWorkspace.branchMaintenanceHint")} className="mt-2" />}
     </div>
   );

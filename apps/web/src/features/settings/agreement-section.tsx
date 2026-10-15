@@ -49,7 +49,7 @@ export function AgreementSection() {
     <SettingsSection
       title={t("settingsCore.text182")}
       description={<>{t("settingsDetails.text101")}{" "}{agreement.version} · {status}</>}
-      actions={<Button variant="secondary" onClick={() => downloadAgreementPdf(agreement, context.sections)} data-testid="download-agreement-pdf"><Download /> {" "}{t("settingsDetails.text102")}</Button>}
+      actions={<Button variant="secondary" onClick={() => void downloadAgreementPdf(agreement, context.sections)} data-testid="download-agreement-pdf"><Download /> {" "}{t("settingsDetails.text102")}</Button>}
     >
       <AgreementRecord agreement={agreement} sections={context.sections} />
     </SettingsSection>

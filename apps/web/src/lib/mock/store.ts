@@ -200,6 +200,11 @@ export function seedUuid(n: number): UUID {
   return `10000000-0000-4a00-8a00-${hex}`;
 }
 
+/** The two seeded branches. Here rather than in seed.ts so the public preview
+ * catalogue can name them without bundling the whole seeded database. */
+export const BRANCH_ABD = seedUuid(2);
+export const BRANCH_SWF = seedUuid(3);
+
 export function currentUser(db: MockDb): StaffUser {
   const u = db.users.find((x) => x.id === db.session.userId);
   if (!u) throw new Error("Mock session user missing");

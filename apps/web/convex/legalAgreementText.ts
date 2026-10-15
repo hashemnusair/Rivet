@@ -127,6 +127,15 @@ export function agreementSectionsForVersion(version: string): readonly Agreement
 export function agreementVersionForLanguage(language: "en" | "ar" = "en"): string { return language === "ar" ? SUBSCRIPTION_AGREEMENT_VERSION_AR : SUBSCRIPTION_AGREEMENT_VERSION; }
 export function agreementLanguageForVersion(version: string): "en" | "ar" { return version === SUBSCRIPTION_AGREEMENT_VERSION_AR ? "ar" : "en"; }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** "3 Sep 2026" from an ISO date; anything else is returned as it came. */
+export function shortDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${Number.parseInt(match[3]!, 10)} ${MONTHS[Number.parseInt(match[2]!, 10) - 1]} ${match[1]}`;
+}
+
 export const SUBSCRIPTION_AGREEMENT_PREAMBLE = "Subscription agreement between RIVET, Amman, the Hashemite Kingdom of Jordan (\"RIVET\"), and the Customer identified in the signature block (the gym).";
 
 /** The exact string that is hashed. Never reformat it: whitespace is part of the fingerprint. */

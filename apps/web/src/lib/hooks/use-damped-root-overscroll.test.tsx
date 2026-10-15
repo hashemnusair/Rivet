@@ -46,7 +46,7 @@ describe("root overscroll gesture isolation and recovery", () => {
 
   it.each([1000 / 120, 1000 / 60, 1000 / 30, 100, 250, 1000])("keeps the page bounded and settles after %dms frame intervals", (interval) => {
     renderHook(() => useDampedRootOverscroll({ current: shell }, true));
-    expect(wheel(0, -240).defaultPrevented).toBe(true);
+    expect(wheel(0, -240).defaultPrevented).toBe(false);
     expect(shell.style.transform).toContain("7px");
     let timestamp = 0;
     for (let frame = 0; frame < 150 && frames.size; frame++) {
@@ -63,6 +63,12 @@ describe("root overscroll gesture isolation and recovery", () => {
     expect(frames.size).toBe(0);
     expect(shell.style.transform).toBe("");
     expect(shell.style.willChange).toBe("");
+  });
+
+  it("listens passively, so scrolling never waits for the main thread", () => {
+    const listen = vi.spyOn(window, "addEventListener");
+    renderHook(() => useDampedRootOverscroll({ current: shell }, true));
+    expect(listen).toHaveBeenCalledWith("wheel", expect.any(Function), { passive: true });
   });
 
   it("switches to native scrolling immediately when phone emulation is enabled mid-pull", () => {

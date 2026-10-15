@@ -95,13 +95,15 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
     };
 
     const dampBoundaryDelta = (deltaY: number, event: WheelEvent): boolean => {
-      if (deltaY === 0 || nestedScrollerCanConsume(event.target, deltaY)) return false;
+      if (deltaY === 0) return false;
+      // Most wheel events arrive mid-page. Settle those from the scroll
+      // position before walking the target's ancestors' computed styles.
       const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       const atTop = window.scrollY <= 1;
       const atBottom = window.scrollY >= maxScroll - 1;
       if (!((deltaY < 0 && atTop) || (deltaY > 0 && atBottom))) return false;
+      if (nestedScrollerCanConsume(event.target, deltaY)) return false;
 
-      if (event.cancelable) event.preventDefault();
       offset = Math.max(-MAX_PULL_PX, Math.min(MAX_PULL_PX, offset - deltaY * DAMPING));
       if (!reducedMotion.matches) {
         shell.style.transform = `translate3d(0, ${offset}px, 0)`;
@@ -123,7 +125,11 @@ export function useDampedRootOverscroll(shellRef: RefObject<HTMLElement | null>,
 
     syncPointerMode();
     coarsePointer.addEventListener("change", syncPointerMode);
-    window.addEventListener("wheel", onWheel, { passive: false });
+    // The root's own bounce is already off on fine pointers
+    // (`overscroll-behavior-y: none` in globals.css), so this listener only
+    // draws the small edge response and never cancels the event. Passive, so
+    // the browser scrolls without first waiting for a busy main thread.
+    window.addEventListener("wheel", onWheel, { passive: true });
     // Touch gestures always belong to the browser, including horizontal
     // swipes and pull-to-refresh on devices that also expose a fine pointer.
     return () => {

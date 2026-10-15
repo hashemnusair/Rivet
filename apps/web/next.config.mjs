@@ -39,6 +39,21 @@ const nextConfig = {
   // Pin the trace root to the pnpm workspace. Without this, Next walks up and
   // may pick an unrelated lockfile in a parent directory, which it warns about.
   outputFileTracingRoot: join(__dirname, "../.."),
+  webpack(config, { dev, isServer, webpack }) {
+    // A production bundle selects seeded mock data only when it was built
+    // with NEXT_PUBLIC_DATA_MODE=mock (see dataMode()). Every other production
+    // browser bundle gets a fail-closed stub instead of the seeded database.
+    if (!dev && !isServer && process.env.NEXT_PUBLIC_DATA_MODE !== "mock") {
+      config.plugins.push(new webpack.NormalModuleReplacementPlugin(
+        /[\\/]src[\\/]lib[\\/]mock[\\/]MockGymOSApi\.ts$/,
+        join(__dirname, "src/lib/mock/MockGymOSApi.unavailable.ts"),
+      ));
+    }
+    return config;
+  },
+  // `dev:turbo` keeps working beside the webpack hook above; the stub only
+  // matters for production bundles, which are always built with --webpack.
+  turbopack: {},
 };
 
 export default nextConfig;

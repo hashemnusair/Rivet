@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; labelKey: TKey; hintKey: TKey }> = [
@@ -89,7 +90,7 @@ function PipelinePageInner() {
     const next = new URLSearchParams(searchParams.toString());
     Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
     if (!("page" in changes)) next.delete("page");
-    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname);
   };
   useEffect(() => {
     if ((searchParams.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });

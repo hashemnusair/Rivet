@@ -1,7 +1,10 @@
 "use client";
 
-import { encodeBase64, type PdfBlock } from "../../../convex/pdfDocument";
-import { documentPdfFilename, renderDocumentPdf, type DocumentPdfOptions } from "../../../convex/documentPdf";
+import type { PdfBlock } from "../../../convex/pdfDocument";
+import type { DocumentPdfOptions } from "../../../convex/documentPdf";
+
+/** The PDF builder and its fonts load only when a file is asked for. */
+const pdfBuilder = () => import("../../../convex/documentPdf");
 
 const text = (node: Node): string => (node.textContent ?? "").replace(/\s+/g, " ").trim();
 
@@ -42,7 +45,8 @@ export function documentBlocksFromElement(root: HTMLElement): PdfBlock[] {
 }
 
 /** Build the PDF from the document on the page and save it. */
-export function downloadDocumentPdf(options: DocumentPdfOptions & { version: string }, root: HTMLElement): void {
+export async function downloadDocumentPdf(options: DocumentPdfOptions & { version: string }, root: HTMLElement): Promise<void> {
+  const { documentPdfFilename, renderDocumentPdf } = await pdfBuilder();
   const bytes = renderDocumentPdf({ ...options, locale: options.locale ?? (root.closest("[lang]")?.getAttribute("lang") === "ar" ? "ar" : "en") }, documentBlocksFromElement(root));
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
@@ -56,6 +60,7 @@ export function downloadDocumentPdf(options: DocumentPdfOptions & { version: str
 }
 
 /** The same bytes as base64, for tests and for anything that mails them. */
-export function documentPdfBase64(options: DocumentPdfOptions, root: HTMLElement): string {
+export async function documentPdfBase64(options: DocumentPdfOptions, root: HTMLElement): Promise<string> {
+  const [{ renderDocumentPdf }, { encodeBase64 }] = await Promise.all([pdfBuilder(), import("../../../convex/pdfDocument")]);
   return encodeBase64(renderDocumentPdf({ ...options, locale: options.locale ?? (root.closest("[lang]")?.getAttribute("lang") === "ar" ? "ar" : "en") }, documentBlocksFromElement(root)));
 }

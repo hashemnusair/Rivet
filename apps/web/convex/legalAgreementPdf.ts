@@ -1,7 +1,7 @@
 import { createTranslator } from "../src/lib/i18n/core";
 import { makeFormatters } from "../src/lib/i18n/formatters";
 import { isolate, isolateLtr } from "../src/lib/i18n/bidi";
-import { agreementLanguageForVersion } from "./legalAgreementText";
+import { agreementLanguageForVersion, shortDate } from "./legalAgreementText";
 /**
  * The signed subscription agreement as a PDF: what RIVET attaches to the
  * copies it emails, and what the "Download PDF" action produces in the app.
@@ -42,15 +42,6 @@ export function agreementPdfFilename(reference: string): string {
 function fullAddress(input: AgreementPdfInput): string {
   const { address, city } = input.customer;
   return city && !address.toLowerCase().includes(city.toLowerCase()) ? `${address}, ${city}` : address;
-}
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
-
-/** "3 Sep 2026" from an ISO date; anything else is returned as it came. */
-export function shortDate(value: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!match) return value;
-  return `${Number.parseInt(match[3]!, 10)} ${MONTHS[Number.parseInt(match[2]!, 10) - 1]} ${match[1]}`;
 }
 
 /** "3 Sep 2026" from a local timestamp such as "3 September 2026, 14:32". */

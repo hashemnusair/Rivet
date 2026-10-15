@@ -2,7 +2,7 @@
 
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { agreementLanguageForVersion, agreementSectionsForVersion } from "../../../convex/legalAgreementText";
-import { agreementPdfFilename, renderAgreementPdf, type AgreementPdfInput } from "../../../convex/legalAgreementPdf";
+import type { AgreementPdfInput } from "../../../convex/legalAgreementPdf";
 import type { AgreementTextSection, SubscriptionAgreement } from "@/lib/domain/types";
 
 /** The record as the PDF builder wants it. Shared with the server copy. */
@@ -35,8 +35,15 @@ function sectionsFor(agreement: SubscriptionAgreement, sections?: AgreementTextS
   return agreementSectionsForVersion(agreement.version);
 }
 
-/** Build the PDF in the browser and save it. Same bytes as the emailed copy. */
-export function downloadAgreementPdf(agreement: SubscriptionAgreement, sections?: AgreementTextSection[]): void {
+/**
+ * Build the PDF in the browser and save it. Same bytes as the emailed copy.
+ *
+ * The builder carries its own fonts and a font engine (about 1.5 MB of
+ * script), so it loads when a file is asked for instead of with every screen
+ * that shows the button.
+ */
+export async function downloadAgreementPdf(agreement: SubscriptionAgreement, sections?: AgreementTextSection[]): Promise<void> {
+  const { agreementPdfFilename, renderAgreementPdf } = await import("../../../convex/legalAgreementPdf");
   const bytes = renderAgreementPdf(agreementPdfInput(agreement), sectionsFor(agreement, sections));
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);

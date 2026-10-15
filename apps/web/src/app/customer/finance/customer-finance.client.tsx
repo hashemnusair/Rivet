@@ -25,6 +25,7 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { downloadTextFile } from "@/lib/exports/download";
 import { cn } from "@/lib/utils/cn";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 const TYPE_LABELS: Record<CustomerTransaction["type"], TKey> = { payment: "customerPortal.payment", refund: "customerPortal.refund", void: "customerPortal.cancelledPayment", retail_sale: "customerPortal.shopPurchase" };
 const STATUS_LABELS: Record<CustomerTransaction["status"], TKey> = { completed: "customerPortal.completed", partially_refunded: "customerPortal.partlyRefunded", refunded: "customerPortal.refunded", voided: "customerPortal.cancelled" };
@@ -70,11 +71,11 @@ export function CustomerFinanceClient() {
     }
     if (!("page" in changes)) next.delete("page");
     const value = next.toString();
-    router.replace(value ? `${pathname}?${value}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, value ? `${pathname}?${value}` : pathname);
   };
   const clearFilters = () => {
     setSearch("");
-    router.replace(pathname, { scroll: false });
+    replaceQueryInPlace(router, pathname);
   };
 
   useEffect(() => {

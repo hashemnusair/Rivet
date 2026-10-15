@@ -13,13 +13,18 @@ vi.mock("next/navigation", async () => {
     usePathname: () => "/members",
     useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
     useRouter: () => ({
-      replace: (url: string) => {
-        window.history.replaceState({}, "", url);
-        window.dispatchEvent(new Event("test:navigation"));
-      },
+      replace: (url: string) => window.history.replaceState({}, "", url),
     }),
   };
 });
+
+// Next keeps useSearchParams in sync with the native history API, which the
+// URL state now writes through. Model that integration for the mocked hooks.
+const nativeReplaceState = window.history.replaceState.bind(window.history);
+window.history.replaceState = (data: unknown, unused: string, url?: string | URL | null) => {
+  nativeReplaceState(data, unused, url);
+  window.dispatchEvent(new Event("test:navigation"));
+};
 
 function navigateTo(search: string) {
   window.history.pushState({}, "", `/members${search}`);

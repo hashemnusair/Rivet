@@ -19,6 +19,7 @@ import { sortGymDirectory } from "@/lib/platform/gym-directory";
 import { PageHeader } from "@/components/shared/chrome";
 import { ContextLabel } from "@/components/ui/typography";
 import { searchKey } from "@/lib/utils/text";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type GymFilter = "all" | MarketplaceGym["subscriptionStatus"];
 
@@ -61,7 +62,7 @@ export default function PlatformGymsPage() {
     if (nextFilter !== DEFAULT_FILTER) params.set("status", nextFilter);
     if (nextQuery.trim()) params.set("q", nextQuery.trim());
     const search = params.toString();
-    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, search ? `${pathname}?${search}` : pathname);
   };
   const changeFilter = (next: GymFilter) => { setFilter(next); sync(next, query); };
   const changeQuery = (next: string) => { setQuery(next); sync(filter, next); };

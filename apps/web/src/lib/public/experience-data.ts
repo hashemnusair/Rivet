@@ -1,5 +1,5 @@
 import type { Money, PlanKind, TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
-import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/seed";
+import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/store";
 
 export interface MarketplaceBranch {
   id: string;

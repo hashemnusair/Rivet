@@ -3,13 +3,14 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDebouncedValue } from "./use-debounced";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 /**
- * Writes list state into the current URL with `router.replace`, so filters,
- * sections and pages survive a refresh and Back/Forward without adding a
- * history entry per keystroke. Empty values delete their key. `page` is
- * dropped whenever a change does not name it, because every other change
- * invalidates the current page number.
+ * Writes list state into the current URL in place (`replaceQueryInPlace`),
+ * so filters, sections and pages survive a refresh and Back/Forward without
+ * adding a history entry per keystroke or waiting for the server. Empty
+ * values delete their key. `page` is dropped whenever a change does not name
+ * it, because every other change invalidates the current page number.
  */
 export function useReplaceSearchParams() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export function useReplaceSearchParams() {
       }
       if (!("page" in changes) && !options?.keepPage) next.delete("page");
       const query = next.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      replaceQueryInPlace(router, query ? `${pathname}?${query}` : pathname);
     },
     [params, pathname, router],
   );

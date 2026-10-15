@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils/cn";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { latinDigits } from "@/lib/utils/text";
 import { money } from "@/lib/utils/money";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type Section = "membership" | "classes" | "pt";
 
@@ -103,7 +104,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
     if (next === "membership") params.delete("section");
     else params.set("section", next);
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, query ? `${pathname}?${query}` : pathname);
   };
 
   // A membership card, its QR and its balance are never shown to a visitor.

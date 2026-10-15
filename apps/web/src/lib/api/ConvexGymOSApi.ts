@@ -95,6 +95,20 @@ function correlationId(): string {
   return `web-${crypto.randomUUID()}`;
 }
 
+/**
+ * Reads carry one correlation ID per page load instead of a new one per call.
+ * Convex shares a subscription, its local result and its server-side query
+ * cache only between calls with identical arguments, so a fresh ID on every
+ * read ran the same projection on the server again each time: a live screen
+ * read it twice while its watch connected, and nothing was ever served from
+ * cache. Writes keep a fresh ID each for the audit trail.
+ */
+let pageLoadReadId: string | undefined;
+function readCorrelationId(): string {
+  pageLoadReadId ??= correlationId();
+  return pageLoadReadId;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -218,7 +232,7 @@ export class ConvexGymOSApi implements GymOSApi {
   private async query<T>(operation: string, input: object = {}): Promise<T> {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
-      const result = await this.transport.query(api.domain.query, { operation, input: this.input(input), organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() });
+      const result = await this.transport.query(api.domain.query, { operation, input: this.input(input), organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: readCorrelationId() });
       return result as T;
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
@@ -273,7 +287,7 @@ export class ConvexGymOSApi implements GymOSApi {
       input: this.input(input),
       organizationId: this.organizationId,
       activeBranchId: this.activeBranchId,
-      correlationId: correlationId(),
+      correlationId: readCorrelationId(),
     };
 
     if (this.transport.subscribe) {

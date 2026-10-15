@@ -340,7 +340,9 @@ test.describe("settings navigation", () => {
       window.dispatchEvent(event);
       return { prevented: event.defaultPrevented, transform: shell?.style.transform ?? "" };
     });
-    expect(dampedEdge.prevented).toBe(true);
+    // The listener is passive: CSS keeps the native bounce off and the
+    // shell draws the small edge response without cancelling the event.
+    expect(dampedEdge.prevented).toBe(false);
     expect(dampedEdge.transform).toMatch(/^translate3d\(0(?:px)?, 7px, 0(?:px)?\)$/);
     const topbarDuringPull = await page.getByTestId("app-topbar").boundingBox();
     expect(topbarBeforePull).not.toBeNull();

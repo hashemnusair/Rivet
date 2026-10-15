@@ -46,6 +46,7 @@ import type { StatementTextMessage } from "@/lib/domain/statement-messages";
 import type { TFunction, TKey } from "@/lib/i18n/core";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 import { accountingAccountName } from "@/lib/i18n/accounting";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 export type ManagementStatementKind = "income" | "balance" | "cashflow";
 
@@ -460,7 +461,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
       if (nextBranchFilter !== effectiveBranchFilter) setBranchFilter(nextBranchFilter);
     } else {
       pendingCanonicalHrefRef.current = null;
-      if (currentHref !== nextHref) router.replace(nextHref, { scroll: false });
+      if (currentHref !== nextHref) replaceQueryInPlace(router, nextHref);
     }
   }, [availableBranches, currentHref, defaults.from, defaults.to, effectiveBranchFilter, fromDate, pathname, router, searchParams, searchParamsKey, session, sessionBranchKey, sessionLoading, toDate]);
 
@@ -480,7 +481,7 @@ export function ManagementStatementPage({ kind }: { kind: ManagementStatementKin
       if (pendingCanonicalHrefRef.current !== desiredHref) return;
       pendingCanonicalHrefRef.current = null;
     }
-    if (currentHref !== desiredHref) router.replace(desiredHref, { scroll: false });
+    if (currentHref !== desiredHref) replaceQueryInPlace(router, desiredHref);
   }, [currentHref, desiredHref, hasScopeParams, pathname, router, searchParams, session]);
 
   const report = statementQuery.data;

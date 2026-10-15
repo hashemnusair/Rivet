@@ -1,13 +1,12 @@
 import { createTranslator } from "@/lib/i18n/core";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { isolate } from "@/lib/i18n/bidi";
-import { agreementLanguageForVersion } from "../../../convex/legalAgreementText";
+import { agreementLanguageForVersion, shortDate } from "../../../convex/legalAgreementText";
 import Link from "next/link";
 import type { AgreementTextSection, SubscriptionAgreement } from "@/lib/domain/types";
 import { DocumentRows, DocumentSection, DocumentSheet, DocumentSignature, type DocumentTone } from "./document-sheet";
 import { planSummary } from "../../../convex/planCatalogue";
 import { BRAND_LEGAL } from "../../../convex/brandTokens";
-import { shortDate } from "../../../convex/legalAgreementPdf";
 
 export const AGREEMENT_ID_TYPE_LABELS = { national: "Jordanian national ID", passport: "Passport" } as const;
 

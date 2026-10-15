@@ -17,7 +17,7 @@ export function DownloadDocumentButton({ target, version, ...options }: Document
       data-testid="download-document-pdf"
       onClick={() => {
         const root = document.querySelector<HTMLElement>(`[data-document-body="${target}"]`);
-        if (root) downloadDocumentPdf({ ...options, version }, root);
+        if (root) void downloadDocumentPdf({ ...options, version }, root);
       }}
     >
       <Download /> {t("agreementFlow.download")}

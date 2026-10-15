@@ -23,6 +23,7 @@ import { qk } from "@/lib/api/keys";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import type { ChecklistRun, ChecklistRunItem, SetChecklistItemInput, Zone } from "@/lib/domain/types";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 interface ProblemDialogState {
   run: ChecklistRun;
@@ -63,7 +64,7 @@ export default function ChecklistsPage() {
   // workspace branch.
   const branchId = branches.find((branch) => branch.id === requestedBranch)?.id ?? session?.activeBranchId ?? branches[0]?.id;
   const branchName = branches.find((branch) => branch.id === branchId)?.name;
-  const chooseBranch = (id: string) => { router.replace(`/checklists?branch=${encodeURIComponent(id)}`, { scroll: false }); setProblem(undefined); setEscalate(undefined); };
+  const chooseBranch = (id: string) => { replaceQueryInPlace(router, `/checklists?branch=${encodeURIComponent(id)}`); setProblem(undefined); setEscalate(undefined); };
 
   const dayQuery = useApiQuery(qk.checklistDay(branchId ?? ""), (api) => api.getChecklistDay({ branchId: branchId! }), { enabled: Boolean(branchId) });
   const invalidate = useInvalidate();

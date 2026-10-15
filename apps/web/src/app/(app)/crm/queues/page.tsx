@@ -34,6 +34,7 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
 import { latinDigits, searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type RenewalBucket = "expiring" | "expired";
 
@@ -55,7 +56,7 @@ function useRetentionParams() {
     for (const [key, value] of Object.entries(changes)) {
       if (value) next.set(key, value); else next.delete(key);
     }
-    router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false });
+    replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname);
   };
   return { params, update };
 }
