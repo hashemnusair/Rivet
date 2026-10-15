@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { ContextLabel } from "@/components/ui/typography";
+import { BetaBadge, BetaNote } from "@/components/shared/beta-badge";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -54,8 +55,16 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
           {/* Brand + close */}
           <div className="flex h-16 shrink-0 items-center justify-between border-b border-night-line px-4">
             <div className="flex min-w-0 flex-col">
-              <Image src={brandLogo ?? "/brand/rivet-lockup-rev-488.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
+              <span className="flex items-center gap-2">
+                <Image src={brandLogo ?? "/brand/rivet-lockup-rev-488.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} priority unoptimized={Boolean(brandLogo)} />
+                {brandLogo ? null : <BetaBadge />}
+              </span>
+              {brandLogo ? (
+                <span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[12px] text-night-ink-3">
+                  {t("nav.sidebar.operatedBy")}
+                  <BetaBadge className="h-4 px-1 text-[11px]" />
+                </span>
+              ) : null}
             </div>
             <DialogPrimitive.Close
               className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
@@ -135,6 +144,8 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               )}
             </div>
           ) : null}
+
+          <BetaNote className="shrink-0 border-t border-night-line px-4 py-3" />
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

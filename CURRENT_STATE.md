@@ -1,5 +1,103 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — RIVET launches as a beta
+
+Elias: "since we are close to launch, lets promote as Rivet Beta now, add a
+little beta text next to the logo and add disclaimers".
+
+- **One switch.** `RIVET_IN_BETA` in `apps/web/src/lib/release/beta.ts`. Set
+  it to `false` at general release and every mark and notice below goes.
+- **Beta mark.** `BetaBadge` (`components/shared/beta-badge.tsx`) is a small
+  sentence-case "Beta" / "تجريبي" label with a 4px radius, drawn in the
+  surrounding text colour (no mono, no capitals, no red). It sits beside the
+  RIVET lockup on the landing and document header (`cinematic-header.tsx`),
+  the public footer, the sign-in bar and art panel (`login-chrome.tsx`), the
+  member app header (`public-shell.tsx`), and the gym sidebar and phone
+  drawer. When a gym shows its own logo, the mark goes on the "Operated by
+  RIVET" line instead of beside the gym's logo. The collapsed sidebar shows
+  only the glyph. The platform console is unchanged, because only the
+  founders use it.
+- **Phones.** The landing header has no width to spare: it was tuned to fit
+  down to 320px, and an inline mark pushed the Arabic Menu off-screen at
+  375px. At 720px and below the mark hangs under the end of the wordmark
+  (`.brandBeta` in `landing-cinematic.module.css`). Checked at 320px in
+  English and 375px in Arabic: no sideways scroll, and Menu stays in place.
+  The sign-in bar is a fixed 40px, so a mark hung there overlapped "Back to
+  sign in" on short screens. That mark therefore stays inline (`.barBrand`,
+  which also hides that lockup from 1024px up). The one long bar link,
+  "Already have an account? Sign in", now wraps to two end-aligned lines in
+  the empty space above the heading, as the bar's comment already allows.
+- **Notices.** `BetaNotice` ("RIVET is in beta. Some features may still change
+  or not work as expected.") appears under the footer intro on every public
+  page, and above the links at the foot of every sign-in and sign-up page.
+  `BetaNote` ("RIVET is in beta." plus "Report a problem on WhatsApp", linking
+  `RIVET_CONTACT.whatsappHref`) appears at the foot of the expanded gym
+  sidebar and of the phone drawer.
+- **Arabic.** New wording is in `common.beta`. The mark is `تجريبي`. The notice
+  starts `منصة RIVET في مرحلة الإطلاق التجريبي` so it does not read as the demo's
+  `نسخة تجريبية`. The link is `الإبلاغ عن مشكلة عبر واتساب`. All of it follows
+  docs/arabic/STANDARD.md: RIVET stays in Latin script, actions are verbal
+  nouns, and واتساب is used as approved. No founder vote was needed.
+- **Terms 1.2 (Elias, same day: "add a short beta clause to the Terms of
+  service as version 1.2, in English and Arabic, flagged for the lawyer
+  review").** The new section 11, "Beta period" (`id="beta-period"`,
+  `publicTerms.text095`–`text098`), comes right after section 10,
+  Availability and support. It says:
+  - features may change at short notice, and the Platform may have errors
+    or miss the section 10 availability aim;
+  - the Customer should check payments, unpaid amounts and membership dates
+    before relying on them, and report errors;
+  - the beta ends when RIVET announces general availability on the Terms
+    page;
+  - it does not change data ownership, the section 09 duties, or rights
+    that cannot be limited by law.
+
+  The sections after it moved up by one (old 11–19 are now 12–20), and the
+  notices clause now points to section 20 in both languages. The version is
+  `1.2 · 15 October 2026`. `legal-versions.ts` now carries each document's
+  own date (`TERMS_OF_SERVICE_DATE`, `PRIVACY_POLICY_DATE`), and
+  `legal-document.tsx` uses it for the Arabic version line, which before
+  hard-coded 14 September for both documents. Arabic follows the standard
+  (`verify-lock.py` passes): `مرحلة الإطلاق التجريبي`, `الدفعات`,
+  `المبالغ المتبقية`, `تواريخ الاشتراكات`. The privacy policy and the
+  subscription agreement (1.2, signed text) are unchanged. 1.1 of the Terms
+  remains in git and in the 7 October review snapshots.
+- **Flagged for counsel.** `docs/legal-review/2026-10-07/REVIEW_BRIEF.md`
+  item 10 gives the clause in both languages, with four questions:
+  - Agreement 1.2 section 07 still states the 99.5% aim, and the agreement
+    prevails, so the clause may not take effect for signing gyms without a
+    matching agreement version.
+  - Gyms that signed before 15 October are bound by Terms 1.1, and the
+    Changes notice may apply to them.
+  - Is announcing the end of the beta on the Terms page enough notice?
+  - Does loss from a Platform error during the beta need wording?
+
+  docs/19 lists it under the open legal facts, and its prevailing-language
+  reference now says Terms section 19.
+- Checked: typecheck, eslint on the changed files, and 50 unit-test files
+  (now including `beta-badge.test.tsx` and a footer case) all pass. Mock
+  preview checked at 1440px, 375px and 320px on the landing film, the
+  document header, the footer, the member create door, the wide sign-in panel,
+  the gym sidebar and drawer, and the member app. The only console errors
+  were the existing dev-only Clerk telemetry CSP blocks.
+- After the Terms change, the full unit suite passed (333 files, 2,088
+  tests), along with typecheck and eslint on the changed areas. `/terms` was
+  read back in both languages: the version line, section 11, contents
+  numbering to 20, and the notices reference. `/terms` is not in any
+  screenshot spec.
+- **Screenshots.** The eight screenshot specs (workflow passes 1–7 and
+  design-system-visual, 97 tests) were run against a built mock preview
+  bundle, as CI runs them: 94 passed at first. A reports test failed once
+  because a click was dropped, and passed when run alone. The sign-in pages
+  changed on purpose, so four macOS references were inspected and replaced:
+  `pass-4-login-member-390`, `pass-7-login-gym-390`,
+  `pass-7-login-admin-390` and `pass-7-invitation-complete-390`. After that,
+  passes 4 and 7 ran 41/41. **Open:** each of those four also has a
+  `-linux.png` reference that CI compares at 390px, and it cannot be made on
+  macOS. The first CI run will fail those two tests. Take the actual images
+  from that run's `playwright-failures-*` artifact, inspect them, and commit
+  them over the four `-linux.png` files.
+
 ## 12 October 2026 — cross-host doors glide their drawing onto the panel again
 
 Elias, after the entry below: going to Gym team or Gym member sign-in should

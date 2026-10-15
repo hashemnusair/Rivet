@@ -1,12 +1,18 @@
 "use client";
 import { useLocale } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
-import { PRIVACY_POLICY_VERSION, TERMS_OF_SERVICE_VERSION } from "@/lib/legal/legal-versions";
+import { PRIVACY_POLICY_DATE, PRIVACY_POLICY_VERSION, TERMS_OF_SERVICE_DATE, TERMS_OF_SERVICE_VERSION } from "@/lib/legal/legal-versions";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { RIVET_CONTACT } from "@/lib/rivet-contact";
 import { DocumentSection, DocumentSheet } from "./document-sheet";
 import { DownloadDocumentButton } from "./download-document-button";
+
+/** Each published document's date, so the Arabic version line names it in Arabic. */
+const PUBLISHED_DATES: Record<string, string> = {
+  [PRIVACY_POLICY_VERSION]: PRIVACY_POLICY_DATE,
+  [TERMS_OF_SERVICE_VERSION]: TERMS_OF_SERVICE_DATE,
+};
 
 export interface LegalSection {
   id: string;
@@ -28,7 +34,8 @@ export function LegalDocument({ context, label, title, summary, version, section
   const { locale, t } = useLocale();
   const f = useFormat();
   const versionNumber = version.split(" ·")[0] ?? version;
-  const displayVersion = locale === "ar" && (version === PRIVACY_POLICY_VERSION || version === TERMS_OF_SERVICE_VERSION) ? `${versionNumber} · ${f.date("2026-09-14")}` : version;
+  const publishedDate = PUBLISHED_DATES[version];
+  const displayVersion = locale === "ar" && publishedDate ? `${versionNumber} · ${f.date(publishedDate)}` : version;
   const meta = t("publicDocuments.legalMeta", { version: displayVersion });
   const reference = t("publicDocuments.version", { version: versionNumber });
   const target = documentId ?? label.toLowerCase().replace(/\s+/g, "-");

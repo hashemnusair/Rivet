@@ -1,4 +1,9 @@
-/** Published English v1.1 is unchanged; numbered keys remain stable when wording is edited. */
+/**
+ * Published English v1.2 (15 October 2026) adds section 11, the beta period
+ * (text095–text098), and moves the contact reference to section 20. v1.1 is
+ * kept in git and in docs/legal-review/2026-10-07. Numbered keys remain stable
+ * when wording is edited.
+ */
 export const publicTerms = {
   "text001": "The agreement",
   "text002": "These terms are a contract between RIVET, Amman, Jordan (“RIVET”, “we”, “us”) and you. If you use the website, they apply to that use. If you subscribe to the RIVET platform on behalf of a gym, they apply to the gym and to everyone the gym lets use its account, together with the subscription agreement the gym signs and the privacy policy.",
@@ -84,7 +89,7 @@ export const publicTerms = {
   "text082": "This agreement is governed by the laws of the Hashemite Kingdom of Jordan. If a dispute arises, the parties will first try to resolve it in good faith between senior representatives within 30 days of written notice. Failing that, the courts of Amman have exclusive jurisdiction.",
   "text083": "The parties agree that the subscription agreement may be signed electronically and that an electronic signature captured through RIVET’s signing page, with its record of the signatory, time, and the fingerprint of the document signed, has the same effect as a handwritten signature, as provided by the Electronic Transactions Law No. 15 of 2015.",
   "text084": "General",
-  "text085": "Notices are given in writing by email or WhatsApp to the contacts in the subscription agreement, or to RIVET at the details in section 19.",
+  "text085": "Notices are given in writing by email or WhatsApp to the contacts in the subscription agreement, or to RIVET at the details in section 20.",
   "text086": "Neither party may transfer this agreement without the other’s consent, except that RIVET may transfer it to a successor that takes over its business, with notice.",
   "text087": "Neither party is liable for delay caused by events outside its reasonable control, other than payment obligations.",
   "text088": "If a provision is unenforceable, the rest of the agreement continues.",
@@ -93,5 +98,9 @@ export const publicTerms = {
   "text091": "Contact",
   "text092": "Terms of service",
   "text093": "The terms on which RIVET provides this website and the RIVET platform. Gyms that subscribe also sign a subscription agreement, which sets the plan, fees and dates and incorporates these terms and the data processing addendum in section 09.",
-  "text094": "Privacy policy"
+  "text094": "Privacy policy",
+  "text095": "Beta period",
+  "text096": "RIVET is in its beta period. We are still finishing and improving the Platform, so features may be added, changed or removed at short notice, and the Platform may have errors or be unavailable for longer than the aim in section 10 allows.",
+  "text097": "The Customer should check important records, such as payments, unpaid amounts and membership dates, before relying on them, and report any error to us so we can correct it.",
+  "text098": "The beta period ends on the date we announce on this page that the Platform is generally available. This section does not change the Customer’s ownership of Customer Data, our duties under section 09, or any right that cannot be limited by law."
 };

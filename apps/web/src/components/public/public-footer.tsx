@@ -9,6 +9,7 @@ import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import { publicDestinationCopy } from "@/components/public/public-plan-copy";
 import { SheetLink } from "@/components/motion/page-sheet";
+import { BetaBadge, BetaNotice } from "@/components/shared/beta-badge";
 
 /**
  * The public site's footer — the site map lives here, so every area is one
@@ -55,10 +56,14 @@ export function PublicFooter() {
     <footer className="night-surface bg-night text-night-ink">
       <div className="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr] lg:px-12">
         <div>
+          <div className="flex items-center gap-3">
             <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={140} height={36} />
+            <BetaBadge />
+          </div>
           <p className="mt-5 max-w-xs text-[13.5px] leading-relaxed text-night-ink-2">
             {t("publicCompletion.footer.intro")}
           </p>
+          <BetaNotice className="mt-3 max-w-xs text-[12px] leading-relaxed text-night-ink-3" />
           <p className="mt-6 text-[12px] font-medium text-night-ink-3">{t("publicCompletion.footer.madeIn")}</p>
         </div>
         <FooterColumn title={t("marketing.footer.product")} links={productLinks} />

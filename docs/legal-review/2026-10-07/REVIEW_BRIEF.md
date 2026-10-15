@@ -107,6 +107,66 @@ remains unchanged at implementation `0f5a92f`:
    older `rivet.jo` legal links; current public host is `www.rivetjo.com`.
    Issue a new reviewed version and preserve existing signed versions/hashes.
 
+10. **Added after the snapshot: Terms 1.2 beta clause (15 October 2026).**
+    The founders asked for a short beta clause. It was drafted without
+    counsel and published as Terms 1.2, section 11 "Beta period", right
+    after section 10 "Availability and support". The sections after it moved
+    up by one (old 11–19 are now 12–20). The notices clause now points to
+    section 20 for RIVET's contact details. The snapshots above still show
+    1.1. Source: `apps/web/src/lib/i18n/messages/en/publicTerms.ts` and
+    `ar/publicTerms.ts`, keys `text095`–`text098`.
+
+    English as published:
+
+    > **11. Beta period**
+    >
+    > RIVET is in its beta period. We are still finishing and improving the
+    > Platform, so features may be added, changed or removed at short notice,
+    > and the Platform may have errors or be unavailable for longer than the
+    > aim in section 10 allows.
+    >
+    > The Customer should check important records, such as payments, unpaid
+    > amounts and membership dates, before relying on them, and report any
+    > error to us so we can correct it.
+    >
+    > The beta period ends on the date we announce on this page that the
+    > Platform is generally available. This section does not change the
+    > Customer’s ownership of Customer Data, our duties under section 09, or
+    > any right that cannot be limited by law.
+
+    Arabic as published (drafted to docs/arabic/STANDARD.md, not legally
+    reviewed):
+
+    > **11. مرحلة الإطلاق التجريبي**
+    >
+    > منصة RIVET في مرحلة الإطلاق التجريبي. ما زلنا نستكمل المنصة ونحسّنها، لذا
+    > قد نضيف ميزات أو نغيّرها أو نوقفها بإشعار قصير، وقد تظهر فيها أخطاء أو
+    > تتعذّر إتاحتها لفترات تتجاوز ما يسمح به الهدف الوارد في القسم 10.
+    >
+    > ينبغي للعميل التحقق من السجلات المهمة، مثل الدفعات والمبالغ المتبقية
+    > وتواريخ الاشتراكات، قبل الاعتماد عليها، وإبلاغنا بأي خطأ لنصححه.
+    >
+    > تنتهي مرحلة الإطلاق التجريبي في التاريخ الذي نعلن فيه في هذه الصفحة أن
+    > المنصة أصبحت متاحة للاستخدام العام. ولا يغيّر هذا القسم ملكية العميل
+    > لبيانات العميل، أو التزاماتنا بموجب القسم 09، أو أي حق لا يجوز تقييده
+    > قانونًا.
+
+    **Questions for counsel:**
+    - Agreement 1.2 section 07 repeats the 99.5% availability aim, and the
+      agreement prevails for anything it sets out expressly. Does the beta
+      clause need a matching new agreement version to take effect for
+      signing gyms, or does the precedence clause make it ineffective for
+      them?
+    - Agreement 1.2 incorporates the Terms "as they stand on the date of
+      signing". Gyms that signed before 15 October are bound by Terms 1.1.
+      Confirm this, and whether the 30-day notice in the Changes clause
+      (now section 18) applies to them.
+    - Is "the date we announce on this page" a sufficient way to end the
+      beta period, or should notice go to each Customer?
+    - Is asking the Customer to check records and report errors enough, or
+      should the clause also address loss caused by a Platform error during
+      the beta, alongside the liability section (now section 15)?
+
 Requested outputs: annotated English drafts, complete reviewed Arabic drafts,
 a decision list for founders, prioritized launch blockers, scope/fee estimate
 and expected turnaround. Counsel should distinguish legal requirements from

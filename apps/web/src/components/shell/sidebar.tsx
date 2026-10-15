@@ -10,6 +10,7 @@ import { useLocale } from "@/lib/i18n/provider";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/misc";
 import { ContextLabel } from "@/components/ui/typography";
+import { BetaBadge, BetaNote } from "@/components/shared/beta-badge";
 
 /** The route itself and its descendants, never a route that merely shares a prefix. */
 function isRouteOrChild(href: string, pathname: string): boolean {
@@ -54,15 +55,23 @@ export function Sidebar() {
             when collapsed so the brand never jumps between sidebar states. */}
         <Link
           href="/dashboard"
-          className={cn("flex h-full shrink-0 flex-col justify-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[140px]")}
+          className={cn("flex h-full shrink-0 flex-col justify-center overflow-hidden", sidebarCollapsed ? "w-6" : "w-[196px]")}
           aria-label={t("nav.sidebar.home", { name: brandName })}
         >
           {sidebarCollapsed ? (
             <Image src={brandLogo ?? "/brand/rivet-glyph-rev.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={18} height={28} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
           ) : (
             <>
-              <Image src={brandLogo ?? "/brand/rivet-lockup-rev-488.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
-              {brandLogo ? <span className="mt-1 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">{t("nav.sidebar.operatedBy")}</span> : null}
+              <span className="flex items-center gap-2">
+                <Image src={brandLogo ?? "/brand/rivet-lockup-rev-488.png"} alt={brandLogo ? brandName : t("common.brand.name")} width={110} height={28} style={brandLogo ? { height: "auto", maxHeight: 30, width: "auto", maxWidth: 132 } : undefined} className="shrink-0" priority unoptimized={Boolean(brandLogo)} />
+                {brandLogo ? null : <BetaBadge />}
+              </span>
+              {brandLogo ? (
+                <span className="mt-1 flex items-center gap-2 whitespace-nowrap text-[12px] uppercase tracking-[0.14em] text-night-ink-3">
+                  {t("nav.sidebar.operatedBy")}
+                  <BetaBadge className="h-4 px-1 text-[11px] normal-case tracking-normal" />
+                </span>
+              ) : null}
             </>
           )}
         </Link>
@@ -125,6 +134,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-night-line p-2">
+        {!sidebarCollapsed ? <BetaNote className="px-3.5 pb-2 pt-1" /> : null}
         <button
           type="button"
           onClick={toggleSidebar}

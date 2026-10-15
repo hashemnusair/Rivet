@@ -254,7 +254,7 @@ page currently contains a plural spelling in its prose.
 | Document | Where | Status |
 |---|---|---|
 | Privacy policy | `/privacy` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
-| Terms of service with the data processing addendum | `/terms` | Draft 1.1 · 14 September 2026 (WhatsApp-only wording) |
+| Terms of service with the data processing addendum | `/terms` | Draft 1.2 · 15 October 2026: adds section 11, Beta period, for counsel review (see the review brief addendum). 1.1 · 14 September 2026 is in git and the 7 October snapshot. |
 | Subscription agreement, signed at onboarding | blocking modal in the app shell (owner); copy under `/settings?section=agreement`; `/platform/agreements` (RIVET) | Version 1.2 · 4 September 2026; counsel review outstanding |
 
 These are existing draft commitments, not verified legal approval. The Terms'
@@ -345,8 +345,11 @@ section 02 points to RIVET's written quote or published prices and section
   records
 - Whether the ID number should be collected at all, and the wording gyms
   must show members if they collect member IDs
+- The Terms 1.2 beta clause (section 11). Agreement 1.2 still states the
+  99.5% availability aim and prevails over the Terms, so it may need a
+  matching agreement version. See item 10 of the review brief.
 - Arabic versions of all three documents and which language prevails
-  (Terms section 18 currently says English unless the law requires otherwise)
+  (Terms section 19 currently says English unless the law requires otherwise)
 
 ### Branding: email, PDF and invoice
 

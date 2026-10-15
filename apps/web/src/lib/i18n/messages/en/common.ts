@@ -147,4 +147,10 @@ export const common = {
     name: "RIVET",
     tagline: "Every member. Every dinar. Every shift.",
   },
+  beta: {
+    label: "Beta",
+    notice: "RIVET is in beta. Some features may still change or not work as expected.",
+    short: "RIVET is in beta.",
+    reportProblem: "Report a problem on WhatsApp",
+  },
 };

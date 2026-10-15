@@ -11,6 +11,7 @@ import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { LEGAL_LINKS } from "@/lib/rivet-contact";
 import { cn } from "@/lib/utils/cn";
 import { publicDestinationCopy } from "@/components/public/public-plan-copy";
+import { BetaBadge } from "@/components/shared/beta-badge";
 import styles from "./landing-cinematic.module.css";
 
 export const NAV_ITEMS = [
@@ -333,6 +334,7 @@ export function CinematicHeader({
           onClick={onLanding ? (event) => navigate(event, "#top") : undefined}
         >
           <Image src={open || night ? "/brand/rivet-lockup-rev-488.png" : "/brand/rivet-lockup-488.png"} alt={t("common.brand.name")} width={122} height={31} priority />
+          <BetaBadge className={styles.brandBeta} />
         </SheetLink>
 
         <div className={styles.headerActions}>

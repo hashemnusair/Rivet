@@ -135,6 +135,17 @@ const sectionsFor = (t: TFunction): LegalSection[] => [
     ),
   },
   {
+    id: "beta-period",
+    title: t("publicTerms.text095"),
+    body: (
+      <>
+        <p>{t("publicTerms.text096")}</p>
+        <p>{t("publicTerms.text097")}</p>
+        <p>{t("publicTerms.text098")}</p>
+      </>
+    ),
+  },
+  {
     id: "intellectual-property",
     title: t("publicTerms.text067"),
     body: <p>{t("publicTerms.text068")}</p>,

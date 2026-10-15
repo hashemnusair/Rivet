@@ -35,7 +35,7 @@ describe("documents as PDF, built from the page", () => {
     const { container } = render(<TermsOfService />);
     const blocks = documentBlocksFromElement(container.querySelector<HTMLElement>('[data-document-body="terms-of-service"]')!);
     const headings = blocks.filter((block) => block.type === "heading").map((block) => (block as { text: string }).text);
-    expect(headings).toHaveLength(19);
+    expect(headings).toHaveLength(20);
     expect(headings.some((heading) => /Data and the processing addendum/.test(heading))).toBe(true);
     expect(JSON.stringify(blocks)).toContain("Electronic Transactions Law No. 15 of 2015");
   });

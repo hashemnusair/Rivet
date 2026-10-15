@@ -15,9 +15,9 @@ const evidence = process.env.RIVET_ARABIC_DOCUMENT_EVIDENCE;
 afterEach(cleanup);
 describe("Arabic public documents", () => {
   it.each([
-    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الاستخدام", sections: 19, version: TERMS_OF_SERVICE_VERSION },
-    { kind: "privacy", Component: PrivacyPolicy, target: "privacy-policy", title: "سياسة الخصوصية", sections: 15, version: PRIVACY_POLICY_VERSION },
-  ])("preserves $kind anchors, published version and complete PDF content", ({ kind, Component, target, title, sections, version }) => {
+    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الاستخدام", sections: 20, version: TERMS_OF_SERVICE_VERSION, published: "1.2 · 15 October 2026", number: "1.2", arabicVersion: "1.2 · 15 تشرين الأول 2026" },
+    { kind: "privacy", Component: PrivacyPolicy, target: "privacy-policy", title: "سياسة الخصوصية", sections: 15, version: PRIVACY_POLICY_VERSION, published: "1.1 · 14 September 2026", number: "1.1", arabicVersion: "1.1 · 14 أيلول 2026" },
+  ])("preserves $kind anchors, published version and complete PDF content", ({ kind, Component, target, title, sections, version, published, number, arabicVersion }) => {
     const t = createTranslator("ar");
     const { container } = render(<LocaleProvider initialLocale="ar"><Component /></LocaleProvider>);
     expect(screen.getByRole("heading", { level: 1, name: title })).toBeInTheDocument();
@@ -26,8 +26,8 @@ describe("Arabic public documents", () => {
     const links = within(screen.getByRole("navigation", { name: "المحتويات" })).getAllByRole("link");
     expect(links).toHaveLength(sections);
     for (const link of links) expect(container.querySelector(link.getAttribute("href")!)).toBeTruthy();
-    expect(version).toBe("1.1 · 14 September 2026");
-    expect(container.textContent).toContain("1.1 · 14 أيلول 2026");
+    expect(version).toBe(published);
+    expect(container.textContent).toContain(arabicVersion);
     const blocks = documentBlocksFromElement(container.querySelector<HTMLElement>(`[data-document-body="${target}"]`)!);
     expect(blocks.filter(block => block.type === "heading")).toHaveLength(sections);
     expect(blocks.some(block => block.type === "table")).toBe(true);
@@ -39,13 +39,16 @@ describe("Arabic public documents", () => {
       expect(text).toContain("60 يومًا");
       expect(text).toContain("7 أيام");
       expect(text).toContain("الإنجليزية");
+      expect(text).toContain("مرحلة الإطلاق التجريبي");
+      expect(text).toContain("الهدف الوارد في القسم 10");
+      expect(text).toContain("البيانات الواردة في القسم 20");
     } else {
       expect(text).toContain("24 لسنة 2023");
       expect(text).toContain("STOP");
       expect(text).toContain("30 يومًا");
       expect(text).toContain("90 يومًا");
     }
-    const bytes = renderDocumentPdf({ locale: "ar", title, label: title, meta: t("publicDocuments.legalMeta", { version: "1.1 · 14 أيلول 2026" }), reference: t("publicDocuments.version", { version: "1.1" }) }, blocks);
+    const bytes = renderDocumentPdf({ locale: "ar", title, label: title, meta: t("publicDocuments.legalMeta", { version: arabicVersion }), reference: t("publicDocuments.version", { version: number }) }, blocks);
     const pdf = new TextDecoder("latin1").decode(bytes);
     expect(pdf).toContain("/ToUnicode");
     expect(pdf).toContain("/ActualText");

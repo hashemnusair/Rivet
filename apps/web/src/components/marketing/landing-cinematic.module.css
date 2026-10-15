@@ -121,6 +121,10 @@
   height: auto;
 }
 
+.brandBeta {
+  margin-inline-start: 0.65rem;
+}
+
 .headerActions {
   display: flex;
   align-items: center;
@@ -2039,6 +2043,13 @@
     position: relative;
     top: auto;
   }
+}
+
+/* Phones have no width to spare beside the logo, so the Beta mark hangs under
+   the end of the wordmark instead. */
+@media (max-width: 720px) {
+  .brand { flex-direction: column; align-items: flex-end; gap: 0.2rem; }
+  .brandBeta { height: 1rem; margin-inline-start: 0; padding-inline: 0.25rem; font-size: 0.6875rem; }
 }
 
 /* Narrow phones carry the language switch, sign in and the menu beside the logo. */

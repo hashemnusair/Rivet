@@ -6,6 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { RivetMarkLoader } from "@/components/motion/rivet-mark-loader";
+import { BetaBadge, BetaNotice } from "@/components/shared/beta-badge";
 import { monaSansText } from "@/components/marketing/mona-sans";
 import { LOCALE_LABELS } from "@/lib/i18n/config";
 import { useLocale, useT } from "@/lib/i18n/provider";
@@ -52,8 +53,9 @@ export function LoginLayout({
 
         <div className={styles.column}>
           <div className={styles.bar}>
-            <SheetLink href={publicHref} aria-label={t("auth.chrome.homeLabel")} className="lg:hidden">
+            <SheetLink href={publicHref} aria-label={t("auth.chrome.homeLabel")} className={styles.barBrand}>
               <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={112} height={29} priority />
+              <BetaBadge />
             </SheetLink>
             <div className={styles.barLinks}>
               <LanguageLink />
@@ -72,6 +74,7 @@ export function LoginLayout({
           </main>
 
           <div className={styles.footer}>
+            <BetaNotice className="mb-3 text-[12px] leading-relaxed text-ink-3" />
             {footer ?? (
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
                 <a href={RIVET_CONTACT.whatsappHref} target="_blank" rel="noreferrer" className="hover:text-ink" dir={dir === "rtl" ? undefined : "ltr"}>{t("auth.chrome.whatsapp", { phone: isolateLtr(RIVET_CONTACT.phoneDisplay) })}</a>
@@ -142,8 +145,9 @@ function LoginArt({ brand, homeHref }: { brand: "chooser" | Portal["id"]; homeHr
     <aside className={styles.panel} data-sheet-dock={artDoor(brand)}>
       <SignInArt door={artDoor(brand)} />
 
-      <SheetLink href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={styles.panelBrand}>
+      <SheetLink href={homeHref} aria-label={t("auth.chrome.homeLabel")} className={cn(styles.panelBrand, "flex items-center gap-2.5")}>
         <Image src="/brand/rivet-lockup-rev-488.png" alt={t("common.brand.name")} width={122} height={31} priority />
+        <BetaBadge />
       </SheetLink>
 
       <span aria-hidden className={styles.panelEdge} />

@@ -21,10 +21,23 @@ describe("public legal documents", () => {
   it("renders the terms with the data processing addendum and electronic-signature clause", () => {
     render(<TermsOfService />);
     expect(screen.getByRole("heading", { level: 1, name: "Terms of service" })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link")).toHaveLength(19);
+    expect(within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link")).toHaveLength(20);
     expect(screen.getByRole("heading", { level: 2, name: /Data and the processing addendum/ })).toBeInTheDocument();
     expect(screen.getByText(/Electronic Transactions Law No. 15 of 2015/)).toBeInTheDocument();
     expect(screen.getByText(/09:00 to 21:00 Amman time/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", "/privacy");
+  });
+
+  it("publishes version 1.2 with the beta period right after availability, and points notices at the contact section", () => {
+    render(<TermsOfService />);
+    expect(screen.getByText(/Version 1\.2 · 15 October 2026/)).toBeInTheDocument();
+    const titles = within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((link) => link.textContent);
+    expect(titles[9]).toMatch(/Availability and support/);
+    expect(titles[10]).toMatch(/Beta period/);
+    expect(titles[19]).toMatch(/Contact/);
+    expect(within(screen.getByRole("navigation", { name: "Contents" })).getByRole("link", { name: /Beta period/ })).toHaveAttribute("href", "#beta-period");
+    expect(screen.getByText(/unavailable for longer than the aim in section 10 allows/)).toBeInTheDocument();
+    expect(screen.getByText(/check important records, such as payments, unpaid amounts and membership dates/)).toBeInTheDocument();
+    expect(screen.getByText(/to RIVET at the details in section 20\./)).toBeInTheDocument();
   });
 });
