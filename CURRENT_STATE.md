@@ -238,11 +238,29 @@ little beta text next to the logo and add disclaimers".
   changed on purpose, so four macOS references were inspected and replaced:
   `pass-4-login-member-390`, `pass-7-login-gym-390`,
   `pass-7-login-admin-390` and `pass-7-invitation-complete-390`. After that,
-  passes 4 and 7 ran 41/41. **Open:** each of those four also has a
-  `-linux.png` reference that CI compares at 390px, and it cannot be made on
-  macOS. The first CI run will fail those two tests. Take the actual images
-  from that run's `playwright-failures-*` artifact, inspect them, and commit
-  them over the four `-linux.png` files.
+  passes 4 and 7 ran 41/41.
+- **Back-link spacing and Linux references (same day).** Main CI
+  (run 38745458179) failed only on the stale `-linux.png` sign-in
+  references; a supplier-payment dialog test also failed once and passed on
+  re-run. The Linux gym image showed the cost of the taller footer: on a
+  full door (the gym's four roles) the centred form rose until "Back to
+  sign in", which hangs 3.5rem above the heading, met the lockup at 390px
+  and covered it on 667px phones. `.main` in `login.module.css` now shares
+  the space above and below the form through two flexible spacers; on a
+  door (`.main:has(.back)`) the space above never closes past the link's
+  height and the space below gives way first. Measured on every sign-in
+  page at 360/390×844, 390×667, 360×640, 768×1000 and 1440×1000: only the
+  gym door moved; the link sits 14px under the lockup with no scroll at
+  844px. The 390px macOS gym reference was refreshed, and all four
+  `-linux.png` references were taken from CI runs on a throwaway branch
+  (soft screenshot checks, so every diff was recorded), inspected and
+  committed. On macOS, 96 of the 97 screenshot tests passed against the
+  fix and the gym one passed after its refresh; CI run 38754723437 passed
+  in full (one unit-test job was re-run after `pnpm install` timed out
+  fetching the landing font).
+  **Open:** other references that predate the beta mark still pass inside
+  the 4% ceiling, so CI does not flag them; `pass-7-login-390-linux.png`
+  (the chooser) has no Beta mark. They need a separate review.
 
 ## 12 October 2026 — cross-host doors glide their drawing onto the panel again
 
