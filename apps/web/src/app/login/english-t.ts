@@ -1,7 +1,7 @@
 import { DEFAULT_LOCALE } from "@/lib/i18n/config";
 import { translate, type MessageTree } from "@/lib/i18n/dictionary";
 import type { TFunction } from "@/lib/i18n/provider";
-import { en } from "@/lib/i18n/messages";
+import { en } from "@/lib/i18n/messages/en";
 
 /**
  * A translate function that is always English. It is the default for the

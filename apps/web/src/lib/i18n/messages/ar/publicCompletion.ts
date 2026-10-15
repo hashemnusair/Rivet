@@ -1,5 +1,6 @@
 import { plural } from "../../dictionary";
 import type { publicCompletion as EnPublicCompletion } from "../en/publicCompletion";
+import { regionTitle } from "./regionTitle";
 
 /** Approved Arabic wording follows docs/arabic/STANDARD.md and DECISIONS.md. */
 export const publicCompletion: typeof EnPublicCompletion = {
@@ -193,7 +194,7 @@ export const publicCompletion: typeof EnPublicCompletion = {
     },
     region: {
       eyebrow: "مصمم للمنطقة",
-      title: "صُنع في عمّان.",
+      title: regionTitle,
       lead: "يلائم طريقة عمل الأندية هنا، مع إظهار التفاصيل المهمة في الأردن.",
     },
   },

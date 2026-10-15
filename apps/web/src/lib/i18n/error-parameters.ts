@@ -1,17 +1,25 @@
-import { errorValues as arValues } from "./messages/ar/errorValues";
 import { errorValues as enValues } from "./messages/en/errorValues";
+import { arabicMessages } from "./core";
 import { makeFormatters } from "./formatters";
 import { isolate, isolateLtr } from "./bidi";
 import type { MessageVars } from "./dictionary";
 import type { Locale } from "./locale";
 
 const normalize = (value: string) => value.replace(/[_\s-]/g, "").toLowerCase();
-const names = new Map<string, string>();
-for (const [key, value] of Object.entries(enValues.field)) {
-  const arabic = arValues.field[key as keyof typeof arValues.field];
-  names.set(normalize(key), arabic); names.set(normalize(value), arabic);
+
+/** Built on the first Arabic message: browser bundles load Arabic on demand, not at startup. */
+let arabicNames: Map<string, string> | undefined;
+function arabicFieldNames(arValues: typeof enValues): Map<string, string> {
+  if (arabicNames) return arabicNames;
+  const names = new Map<string, string>();
+  for (const [key, value] of Object.entries(enValues.field)) {
+    const arabic = arValues.field[key as keyof typeof arValues.field];
+    names.set(normalize(key), arabic); names.set(normalize(value), arabic);
+  }
+  for (const [alias, target] of Object.entries({ branchId: "branch", memberId: "member", leadId: "lead", productId: "product", supplierId: "supplier", durationMinutes: "duration", startMinute: "startTime", dayOfWeek: "weekday", websiteUrl: "website", instagramUrl: "instagram", workOrder: "repair", equipmentAsset: "equipment", facilityTask: "maintenance" })) names.set(normalize(alias), arValues.field[target as keyof typeof arValues.field]);
+  arabicNames = names;
+  return names;
 }
-for (const [alias, target] of Object.entries({ branchId: "branch", memberId: "member", leadId: "lead", productId: "product", supplierId: "supplier", durationMinutes: "duration", startMinute: "startTime", dayOfWeek: "weekday", websiteUrl: "website", instagramUrl: "instagram", workOrder: "repair", equipmentAsset: "equipment", facilityTask: "maintenance" })) names.set(normalize(alias), arValues.field[target as keyof typeof arValues.field]);
 
 function choice(values: Record<string, string>, value: string, fallback: string): string {
   const key = Object.keys(values).find(key => normalize(key) === normalize(value));
@@ -23,6 +31,8 @@ function choice(values: Record<string, string>, value: string, fallback: string)
  */
 export function localizeErrorParameters(params: MessageVars | undefined, locale: Locale): MessageVars | undefined {
   if (!params || locale !== "ar") return params;
+  const arValues = arabicMessages().errorValues;
+  const names = arabicFieldNames(arValues);
   const format = makeFormatters(locale, "", "UTC");
   return Object.fromEntries(Object.entries(params).map(([key, raw]) => {
     if (typeof raw === "number") return [key, raw];

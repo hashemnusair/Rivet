@@ -1,7 +1,8 @@
 "use client";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
-import * as messages from "@/lib/i18n/messages";
+import { en } from "@/lib/i18n/messages/en";
+import { regionTitle as arabicRegionTitle } from "@/lib/i18n/messages/ar/regionTitle";
 
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent } from "react";
 import { Reveal } from "@/components/marketing/reveal";
@@ -838,8 +839,8 @@ export function AccountabilityLedger() {
 export function RegionProof() {
   const { t, locale } = useLocale();
   const echo = locale === "ar"
-    ? { lang: "en", dir: "ltr", text: messages.en.publicCompletion.story.region.title } as const
-    : { lang: "ar", dir: "rtl", text: messages.ar.publicCompletion.story.region.title } as const;
+    ? { lang: "en", dir: "ltr", text: en.publicCompletion.story.region.title } as const
+    : { lang: "ar", dir: "rtl", text: arabicRegionTitle } as const;
   return (
     <section
       id="region"

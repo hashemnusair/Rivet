@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { createTranslator } from "@/lib/i18n/core";
+import { useT, useTranslatorFor } from "@/lib/i18n/provider";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { isolate } from "@/lib/i18n/bidi";
 import { agreementLanguageForVersion, shortDate } from "../../../convex/legalAgreementText";
@@ -38,14 +40,29 @@ export interface AgreementPreview {
 
 
 /**
+ * An agreement is shown in its own language, which can be Arabic on an English
+ * screen; browsers load Arabic on first use, and this shows until it is here.
+ */
+function AgreementLoading() {
+  const t = useT();
+  return <p role="status" className="py-6 text-[13px] text-ink-3">{t("common.state.loading")}</p>;
+}
+
+interface AgreementTextProps { version: string; sections: AgreementTextSection[]; reference?: string; preview?: AgreementPreview }
+
+/**
  * The agreement as the owner reads it before signing: the whole document in
  * order. Sections 1 and 2 are the signature block, so they show the details
  * RIVET already holds and mark what the next step will confirm; the clauses
  * follow; the signatures close it.
  */
-export function AgreementText({ version, sections, reference, preview }: { version: string; sections: AgreementTextSection[]; reference?: string; preview?: AgreementPreview }) {
+export function AgreementText(props: AgreementTextProps) {
+  return <Suspense fallback={<AgreementLoading />}><AgreementTextBody {...props} /></Suspense>;
+}
+
+function AgreementTextBody({ version, sections, reference, preview }: AgreementTextProps) {
   const language = agreementLanguageForVersion(version);
-  const t = createTranslator(language);
+  const t = useTranslatorFor(language);
   const value = (text: string) => language === "ar" ? isolate(text) : text;
   const date = (iso: string) => language === "ar" ? makeFormatters(language, "").date(iso) : shortDate(iso);
   const lastNumber = sections.length > 0 ? Number.parseInt(sections[sections.length - 1]!.number, 10) + 1 : 13;
@@ -113,9 +130,15 @@ export function agreementStatusChip(agreement: Pick<SubscriptionAgreement, "stat
  * console can reveal it. Optional details a signing did not record are left
  * out rather than shown empty.
  */
-export function AgreementRecord({ agreement, sections, idNumberOverride }: { agreement: SubscriptionAgreement; sections?: AgreementTextSection[]; idNumberOverride?: string }) {
+export function AgreementRecord(props: AgreementRecordProps) {
+  return <Suspense fallback={<AgreementLoading />}><AgreementRecordBody {...props} /></Suspense>;
+}
+
+interface AgreementRecordProps { agreement: SubscriptionAgreement; sections?: AgreementTextSection[]; idNumberOverride?: string }
+
+function AgreementRecordBody({ agreement, sections, idNumberOverride }: AgreementRecordProps) {
   const language = agreementLanguageForVersion(agreement.version);
-  const t = createTranslator(language);
+  const t = useTranslatorFor(language);
   const value = (text: string) => language === "ar" ? isolate(text) : text;
   const date = (iso: string) => language === "ar" ? makeFormatters(language, "", agreement.timezone).date(iso) : shortDate(iso);
   const { customer, subscription, signatory } = agreement;

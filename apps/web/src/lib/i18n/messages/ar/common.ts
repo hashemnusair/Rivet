@@ -141,6 +141,7 @@ export const common: typeof EnCommon = {
   language: {
     switchTo: "التبديل إلى {language}",
     label: "اللغة",
+    loadFailed: "لم تُحمَّل اللغة العربية. تحقق من الاتصال وأعد المحاولة.",
     english: "English",
     arabic: "العربية",
   },

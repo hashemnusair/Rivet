@@ -1,5 +1,6 @@
 "use client";
-import { useLocale, type TKey } from "@/lib/i18n/provider";
+import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
+import type { CommunicationLanguage } from "@/lib/i18n/communication";
 
 import { Check, Clock3, Copy, Link2, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -18,9 +19,6 @@ import { WhatsAppHandoff } from "./whatsapp-handoff";
 import { useFormat } from "@/lib/i18n/format";
 import { latinDigits } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
-import { useApp } from "@/lib/providers/app-providers";
-import { createTranslator } from "@/lib/i18n/core";
-import { followUpHandoffDraft } from "../../../convex/followupAssist";
 
 const OFFER_STATUS_KEYS = {
   draft: "crmCompletion.offers.draftStatus",
@@ -123,19 +121,12 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
 
 function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
   const { t, locale, isolate, isolateLtr } = useLocale();
-  const { session } = useApp();
   const format = useFormat();
   const invalidate = useInvalidate();
   const [origin, setOrigin] = useState("");
   /** How the link was last shared from here; "Confirm sent" records that channel, not a guess. */
   const [shareChannel, setShareChannel] = useState<"whatsapp" | "manual">("manual");
   const { offer } = props;
-  const recipientLanguage = followUpHandoffDraft(
-    { fullName: props.leadName },
-    props.organizationName,
-    session?.organization.defaultLanguage,
-  ).language;
-  const recipientT = createTranslator(recipientLanguage);
   const recipientFirstName = props.leadName.trim().split(/\s+/)[0] || props.leadName;
   const path = offer.publicToken ? `/offers/${offer.publicToken}` : undefined;
   const url = path && origin ? `${origin}${path}` : path;
@@ -169,7 +160,7 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
         <Badge variant={variant}>{Object.hasOwn(OFFER_STATUS_KEYS, offer.status) ? t(OFFER_STATUS_KEYS[offer.status]) : offer.status}</Badge>
       </div>
       {path ? <a href={path} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex min-h-9 items-center text-[12px] font-medium underline underline-offset-4">{t("crmCompletion.offers.open")}</a> : <p className="mt-2 text-[12px] text-warning-deep">{t("crmCompletion.offers.oldOffer")}</p>}
-      {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> {t("crmCompletion.offers.copyLink")}</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={recipientT("crmCompletion.offers.whatsappDraft", { name: recipientLanguage === "ar" ? isolate(recipientFirstName) : recipientFirstName, gym: recipientLanguage === "ar" ? isolate(props.organizationName) : props.organizationName, url: isolateLtr(url ?? "") })} buttonLabel={t("crmCompletion.offers.openWhatsApp")} className="" onLogged={() => setShareChannel("whatsapp")} /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> {t(shareChannel === "whatsapp" ? "crmCompletion.offers.confirmSentViaWhatsApp" : "crmCompletion.offers.confirmSent")}</Button></div> : null}
+      {path && offer.status === "draft" ? <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => void copy()}><Copy /> {t("crmCompletion.offers.copyLink")}</Button><WhatsAppHandoff subject="lead" subjectId={props.leadId} recipientName={props.leadName} phone={props.phone} organizationName={props.organizationName} defaultCountryCallingCode={props.defaultCountryCallingCode} initialMessage={(recipientT: TFunction, recipientLanguage: CommunicationLanguage) => recipientT("crmCompletion.offers.whatsappDraft", { name: recipientLanguage === "ar" ? isolate(recipientFirstName) : recipientFirstName, gym: recipientLanguage === "ar" ? isolate(props.organizationName) : props.organizationName, url: isolateLtr(url ?? "") })} buttonLabel={t("crmCompletion.offers.openWhatsApp")} className="" onLogged={() => setShareChannel("whatsapp")} /><Button type="button" size="sm" loading={confirmSent.isPending} onClick={() => confirmSent.mutate()}><Check /> {t(shareChannel === "whatsapp" ? "crmCompletion.offers.confirmSentViaWhatsApp" : "crmCompletion.offers.confirmSent")}</Button></div> : null}
       {offer.status === "sent" ? <p className="mt-3 flex items-center gap-1.5 text-[12px] text-warning-deep"><Clock3 className="size-3.5" /> {t("crmCompletion.offers.waiting")}</p> : null}
       {offer.status === "accepted" ? <p className="mt-3 text-[12px] font-medium text-success-deep">{t("crmCompletion.offers.acceptedDetail")}</p> : null}
       {offer.status === "declined" && offer.responseReason ? <p className="mt-3 text-[12px] text-ink-2" dir="auto">{t("crmCompletion.offers.reason", { reason: isolate(offer.responseReason) })}</p> : null}

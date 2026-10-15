@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, use, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { ARABIC_ENABLED, DEFAULT_LOCALE, LOCALE_COOKIE, dirFor, isLocale, type Direction, type Locale } from "./config";
 import { isolate as isolateText, isolateLtr as isolateLtrText } from "./bidi";
-import { createTranslator, type TFunction } from "./core";
+import { createTranslator, hasCatalogue, loadCatalogue, type TFunction } from "./core";
 import { UI_PREFERENCE_COOKIE, UI_PREFERENCE_STORAGE, encodeUiPreference, localeCookieSuffix, parseUiPreference, type UiLocalePreference } from "./preference";
 export type { TKey, TFunction } from "./core";
 
@@ -52,17 +53,42 @@ export function LocaleProvider({ children, initialLocale = DEFAULT_LOCALE, initi
   const effectiveInitialLocale = ARABIC_ENABLED ? initialLocale : DEFAULT_LOCALE;
   const initial: UiLocalePreference = { version: 1, locale: effectiveInitialLocale, owner: initialOwner, ...(initialPending ? { pending: initialPending } : {}) };
   const [locale, setLocaleState] = useState<Locale>(effectiveInitialLocale);
+  // An Arabic first load: the server HTML is already Arabic and the root
+  // layout preloads the Arabic chunk (<ArabicCatalogue />); hydration waits
+  // here until it is registered rather than render English.
+  if (!hasCatalogue(locale)) use(loadCatalogue(locale));
+  const shownLocale = useRef(locale);
+  const showRequest = useRef(0);
   const [preferenceStatus, setPreferenceStatus] = useState<PreferenceStatus>(initialPending ? "pending" : initialOwner ? "saved" : "device");
   const preference = useRef(initial);
   const saveLocale = useRef<SaveLocale | undefined>(undefined);
   const syncing = useRef(false);
 
+  /**
+   * Paints a language once its catalogue is here. In the browser Arabic loads
+   * on first use, so the page stays in the current language until then; a
+   * newer request wins over one still loading. The saved choice is not
+   * held back, only the paint.
+   */
+  const show = useCallback((next: Locale) => {
+    const request = ++showRequest.current;
+    const paint = () => {
+      if (request !== showRequest.current) return;
+      shownLocale.current = next;
+      setLocaleState(next);
+      applyToDocument(next);
+    };
+    if (hasCatalogue(next)) { paint(); return; }
+    loadCatalogue(next).then(paint, () => {
+      if (request === showRequest.current) toast.error(createTranslator(shownLocale.current)("common.language.loadFailed"));
+    });
+  }, []);
+
   const apply = useCallback((next: UiLocalePreference, broadcast = true) => {
     preference.current = next;
-    setLocaleState(next.locale);
-    applyToDocument(next.locale);
+    show(next.locale);
     persistBrowser(next, broadcast);
-  }, []);
+  }, [show]);
 
   const flush = useCallback(() => {
     if (!ARABIC_ENABLED || syncing.current || !saveLocale.current || !preference.current.owner || !preference.current.pending) return;
@@ -154,3 +180,13 @@ const FALLBACK: LocaleContextValue = {
 };
 export function useLocale(): LocaleContextValue { return useContext(LocaleContext) ?? FALLBACK; }
 export function useT(): TFunction { return useLocale().t; }
+
+/**
+ * A translator for a language other than the reader's own: a member's WhatsApp
+ * draft or an Arabic agreement on an English screen. In the browser it
+ * suspends while Arabic loads, so render it inside a <Suspense> boundary.
+ */
+export function useTranslatorFor(locale: Locale): TFunction {
+  if (!hasCatalogue(locale)) use(loadCatalogue(locale));
+  return useMemo(() => createTranslator(locale), [locale]);
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, MessageCircle, Send } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,7 +9,8 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { useLocale } from "@/lib/i18n/provider";
+import { useLocale, useTranslatorFor, type TFunction } from "@/lib/i18n/provider";
+import { resolveRecipientLanguage, type CommunicationLanguage } from "@/lib/i18n/communication";
 import type { PreferredLanguage } from "@/lib/domain/types";
 import { buildWhatsAppUrl, DEFAULT_PHONE_COUNTRY_CALLING_CODE } from "@/lib/utils/contact";
 import { addDays, localDateTimeToISO, todayISODate } from "@/lib/utils/dates";
@@ -23,7 +24,8 @@ interface WhatsAppHandoffProps {
   phone: string;
   organizationName?: string;
   defaultCountryCallingCode?: string;
-  initialMessage?: string;
+  /** The prepared text, or how to write it with the recipient's language. */
+  initialMessage?: string | ((recipientT: TFunction, language: CommunicationLanguage) => string);
   buttonLabel?: string;
   onLogged?: () => void;
   className?: string;
@@ -44,8 +46,30 @@ export function whatsAppHandoffNotes(message: string): string {
  * Opens WhatsApp with a prefilled message, then records only that the handoff
  * was opened. RIVET deliberately does not claim delivery or a read receipt,
  * and it records nothing at all when the window never opened.
+ *
+ * The draft is in the recipient's language, which can be Arabic on an English
+ * screen. Browsers load Arabic on first use, so until then the button shows
+ * but cannot be pressed.
  */
-export function WhatsAppHandoff({
+export function WhatsAppHandoff(props: WhatsAppHandoffProps) {
+  return (
+    <Suspense fallback={<WhatsAppHandoffTrigger hidden={props.hideTrigger} label={props.buttonLabel} className={props.className} disabled />}>
+      <WhatsAppHandoffDialog {...props} />
+    </Suspense>
+  );
+}
+
+function WhatsAppHandoffTrigger({ hidden, label, className, disabled, onClick }: { hidden?: boolean; label?: string; className?: string; disabled?: boolean; onClick?: () => void }) {
+  const { t } = useLocale();
+  if (hidden) return null;
+  return (
+    <Button type="button" variant="secondary" size="sm" className={className} disabled={disabled} onClick={onClick}>
+      <MessageCircle /> {label ?? t("domain.leadSource.whatsapp")}
+    </Button>
+  );
+}
+
+function WhatsAppHandoffDialog({
   subject,
   subjectId,
   recipientName,
@@ -66,7 +90,10 @@ export function WhatsAppHandoff({
   const invalidate = useInvalidate();
   const gymName = organizationName ?? session?.organization.name ?? "RIVET";
   const callingCode = defaultCountryCallingCode ?? session?.organization.phoneCountryCallingCode ?? DEFAULT_PHONE_COUNTRY_CALLING_CODE;
-  const preparedMessage = initialMessage?.trim() || followUpHandoffDraft(
+  const recipientLanguage = resolveRecipientLanguage(recipientPreferredLanguage, session?.organization.defaultLanguage).language;
+  const recipientT = useTranslatorFor(recipientLanguage);
+  const prepared = typeof initialMessage === "function" ? initialMessage(recipientT, recipientLanguage) : initialMessage;
+  const preparedMessage = prepared?.trim() || followUpHandoffDraft(
     { fullName: recipientName, preferredLanguage: recipientPreferredLanguage },
     gymName,
     session?.organization.defaultLanguage,
@@ -145,11 +172,7 @@ export function WhatsAppHandoff({
 
   return (
     <>
-      {hideTrigger ? null : (
-        <Button type="button" variant="secondary" size="sm" className={className} onClick={() => setOpen(true)}>
-          <MessageCircle /> {buttonLabel ?? t("domain.leadSource.whatsapp")}
-        </Button>
-      )}
+      <WhatsAppHandoffTrigger hidden={hideTrigger} label={buttonLabel} className={className} onClick={() => setOpen(true)} />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>

@@ -49,10 +49,21 @@ const nextConfig = {
         join(__dirname, "src/lib/mock/MockGymOSApi.unavailable.ts"),
       ));
     }
+    // Browser bundles (dev and production) leave Arabic out of the startup
+    // code. Arabic readers get it from the root layout's <ArabicCatalogue />,
+    // and the language switch loads it on demand (src/lib/i18n/core.ts).
+    // Server, Convex and Vitest keep both catalogues for emails and PDFs.
+    if (!isServer) {
+      config.plugins.push(new webpack.NormalModuleReplacementPlugin(
+        /[\\/]src[\\/]lib[\\/]i18n[\\/]arabic-catalogue\.ts$/,
+        join(__dirname, "src/lib/i18n/arabic-catalogue.browser.ts"),
+      ));
+    }
     return config;
   },
-  // `dev:turbo` keeps working beside the webpack hook above; the stub only
-  // matters for production bundles, which are always built with --webpack.
+  // `dev:turbo` keeps working beside the webpack hook above; the stubs only
+  // matter for webpack bundles (production is always built with --webpack),
+  // so Turbopack's dev bundles still carry both catalogues.
   turbopack: {},
 };
 

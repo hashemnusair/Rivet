@@ -1,10 +1,125 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — English readers no longer download the Arabic catalogue
+
+Every browser downloaded both message catalogues at startup: one shared chunk
+of 1.26 MB raw, Arabic about 60% of it. That was the largest item left after
+the performance pass below. Now only Arabic readers download Arabic.
+**Pushed to main on 16 Oct 2026** with the dashboard change below. Web only:
+no Convex change, no Convex deploy needed for this part.
+
+**How it works.**
+
+- `src/lib/i18n/core.ts` keeps a catalogue registry. English is always there.
+  Arabic comes from `arabic-catalogue.ts`, which `next.config.mjs` swaps for
+  an empty stand-in (`arabic-catalogue.browser.ts`) in browser bundles, dev
+  and production, the same way the mock database is swapped out. Server code,
+  Convex (emails, PDFs, system messages), SSR and Vitest are unchanged: they
+  still call `createTranslator("ar")` synchronously with both catalogues.
+- In the browser, `createTranslator("ar")` before Arabic has loaded throws.
+  It never falls back to English. `loadCatalogue("ar")` fetches the one Arabic
+  chunk (`i18n-ar`, 183 KB compressed, 741 KB raw).
+- **Arabic first paint.** The server already renders Arabic HTML from the
+  cookie. For Arabic readers the root layout also renders `<ArabicCatalogue />`
+  (`arabic-catalogue-loader.tsx`), a `next/dynamic` import that puts a preload
+  for the Arabic chunk in the HTML, so it downloads with the startup code.
+  `LocaleProvider` waits for it (React `use()`) before hydrating. A plain
+  client component would not work: Next loads every client component the root
+  layout imports on every page, rendered or not, so a first attempt still sent
+  Arabic to English readers.
+- **Language switch without a reload.** `LocaleProvider` saves the choice at
+  once (cookie, account preference) but repaints only when the catalogue is
+  there; until then the page stays wholly English. Every switch path (account
+  menu, other tabs, the saved account preference after sign-in) goes through
+  this. If the download fails, the page stays English and a toast says
+  "Arabic could not be loaded. Check your connection and try again."
+  (`common.language.loadFailed`; Arabic `لم تُحمَّل اللغة العربية. تحقق من
+  الاتصال وأعد المحاولة.`, modelled on the approved `save-failed`). Pressing
+  the switch again retries.
+- **Arabic on an English screen.** Some screens write in someone else's
+  language. They now load Arabic first:
+  - WhatsApp handoffs: members and leads drafted in their own language.
+    `WhatsAppHandoff` has its own Suspense boundary, and the button stays
+    disabled until the draft language is loaded. The CRM queue and offer panels
+    now pass their draft as a function of the recipient's translator.
+  - Agreement text and records shown in the agreement's language
+    (`AgreementText`, `AgreementRecord`), with a loading line meanwhile.
+  - The agreement PDF download.
+  - The mock data layer's Arabic agreement fee label.
+  The hook is `useTranslatorFor(locale)` in `provider.tsx`.
+- Smaller leaks closed: the landing page imported the whole catalogue index
+  for one Arabic heading (now `messages/ar/regionTitle.ts`), the login
+  English translator and page titles imported the index, and Arabic error
+  field names were a static import (now read from the loaded catalogue).
+- Deliberately still in English startup code: Arabic page names for the
+  command palette (search accepts both languages, `navigation.ts`), and the
+  Arabic subscription agreement text in `convex/legalAgreementText.ts` (about
+  10k Arabic letters, part of the signed-document source, not the catalogue).
+- A Vitest guard (`browser-catalogue.test.tsx`) fails if browser code imports
+  the Arabic catalogue outside those reviewed places, or if the
+  `next.config.mjs` swap stops matching.
+
+**Measured** on mock preview bundles (`next build --webpack`, served by
+`next start`), headless Chromium, cache off, owner persona. Startup JS is
+every script requested before the load event; compressed is gzip on the wire.
+
+| Route, English reader | Before (KB gz / raw) | After (KB gz / raw) |
+|---|---|---|
+| `/` landing | 866 / 2,926 | 682 / 2,187 (−21%) |
+| `/login/gym` | 914 / 3,038 | 730 / 2,299 (−20%) |
+| `/dashboard` | 1,112 / 3,646 | 931 / 2,919 (−16%) |
+| `/members` | 963 / 3,157 | 783 / 2,430 (−19%) |
+| `/reception` | 1,008 / 3,295 | 828 / 2,567 (−18%) |
+| `/payments` | 994 / 3,241 | 814 / 2,514 (−18%) |
+| `/crm/queues` | 1,001 / 3,270 | 820 / 2,543 (−18%) |
+| `/settings` | 1,679 / 4,829 | 1,499 / 4,102 (−11%) |
+| `/customer/my-gyms` | 915 / 3,002 | 732 / 2,262 (−20%) |
+
+Arabic readers download the same as before plus 2–5 KB (the loader and a
+separate file compress slightly worse), e.g. dashboard 1,112 → 1,116 KB.
+Arabic letters in English startup JS: about 260,600 → 10,000 (landing,
+login, member app) and 16,000 (workspace, with the palette names). The mock
+figures include the mock database. A production-class (Convex-mode) build was
+checked from its output, as it cannot be served here without Clerk keys:
+before, the shared catalogue chunk was in the root layout's client manifest
+(so on every page); after, none of the 81 route manifests references the
+Arabic chunk, which is reachable only through the dynamic import and the
+Arabic readers' preload (186 KB gzip, 741 KB raw).
+
+Time until React has hydrated the page (first button with React props),
+4× CPU throttle, 60 ms RTT / 9 Mbps, 1440×900, before and after builds run
+alternately, median of 5:
+
+| | Before | After |
+|---|---|---|
+| English landing / dashboard | 1,881 / 1,967 ms | 1,604 / 1,777 ms |
+| Arabic landing / dashboard | 1,835 / 1,986 ms | 1,727 / 1,887 ms |
+
+Switching an English dashboard to Arabic from the account menu (no reload,
+unthrottled) downloads the one Arabic chunk and the page is Arabic about
+0.4 s after opening the menu; no console or page errors on any measured route
+in either language. The measuring scripts stayed in the session scratchpad.
+
+Checked: `python3 docs/arabic/verify-lock.py` (revision 607, 247
+agreements), `tsc` (app and Convex), ESLint with `--max-warnings 0` and the
+secret-output audit, Vitest 2,133/2,133 (11 new: the browser catalogue path,
+the switch, a failed download, hydration waiting, the import guard, and the
+WhatsApp handoff on an English screen), `git diff --check`, and the full
+credential-free Playwright suite against the built mock bundle: 220 passed,
+14 skipped (credential-gated), 1 failed with a `socket hang up` while
+`page-motion.spec.ts` proxied a static file under two workers; that spec then
+passed 9/9 on its own. That run includes `arabic-browser-verification`
+(Arabic first paint, keyboard switching with a kept draft, the Arabic terms
+PDF), `arabic-review`, `rtl-audit`, `legal-agreement` and `happy-path`.
+Not checked: real Clerk/Convex sign-in with a saved Arabic account preference
+(the `bindAccount` path is unit-tested only), and Turbopack (`dev:turbo` still
+bundles both catalogues; production always builds with webpack).
+
 ## 15 October 2026 — Owner dashboard no longer reads a gym's whole history
 
-**Branch only:** `claude/suspicious-herschel-2dd289`, not merged. **A Convex
-deploy is owed** (`pnpm convex:deploy`, run by Elias; see docs/12, newest entry).
-Pushing to GitHub ships nothing here: every change is in `apps/web/convex/`.
+**Pushed to main on 16 Oct 2026; Convex not deployed.** **A Convex deploy is
+owed** (`pnpm convex:deploy`, run by Elias; see docs/12, newest entry). The push
+shipped nothing here: every change is in `apps/web/convex/`.
 
 The performance pass above measured the `dashboard` query reading every
 check-in, timeline event and payment the gym had ever written. It now reads only

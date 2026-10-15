@@ -5,7 +5,7 @@ import { describeEquipmentRationale } from "../domain/equipment-rationale";
 import { describeMemberImportError } from "@/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "@/lib/domain/workspace-module-error";
 import { makeFormatters } from "@/lib/i18n/formatters";
-import { createTranslator } from "@/lib/i18n/core";
+import { createTranslator, loadCatalogue } from "@/lib/i18n/core";
 import { systemMessage } from "@/lib/i18n/system-messages";
 import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
@@ -11112,6 +11112,8 @@ export class MockGymOSApi implements GymOSApi {
       const version = current?.version ?? agreementVersionForLanguage(options.language);
       const sections = agreementSectionsForVersion(version) ?? [];
       const textBody = canonicalAgreementText(version, sections);
+      // The fee label is in the agreement's language; browsers load Arabic on demand.
+      await loadCatalogue(agreementLanguageForVersion(version));
       const organization = this.db.organization;
       const branches = this.db.branches.filter((branch) => branch.status === "active");
       return {
@@ -11186,6 +11188,7 @@ export class MockGymOSApi implements GymOSApi {
       const version = input.agreementVersion ?? SUBSCRIPTION_AGREEMENT_VERSION;
       field([SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR].includes(version), "agreementVersion", "Reload the agreement before signing.");
       const language = agreementLanguageForVersion(version);
+      await loadCatalogue(language);
       const documentSha256 = await sha256Hex(canonicalAgreementText(version));
       const clientDocumentSha256 = input.clientDocumentSha256?.trim().toLowerCase() || undefined;
       const now = nowISO();

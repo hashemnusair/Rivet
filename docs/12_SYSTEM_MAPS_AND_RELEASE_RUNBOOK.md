@@ -2,9 +2,10 @@
 
 ## Dashboard reads scale with today, not history — 15 October 2026 (Convex deploy owed)
 
-Branch `claude/suspicious-herschel-2dd289`; see the newest CURRENT_STATE.md
-entry. This change is in `apps/web/convex/**`, so a Vercel deploy alone does not
-ship it. Release order after merge:
+On main since 16 October 2026 (pushed with the Arabic catalogue split, which is
+web only); see its CURRENT_STATE.md entry. This change is in
+`apps/web/convex/**`, so the Vercel deploy from that push did not ship it.
+Release order:
 
 1. Elias runs `pnpm convex:deploy` (the guarded wrapper; never a raw or
    verbose deploy). The deploy adds one index,

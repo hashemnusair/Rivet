@@ -1,5 +1,6 @@
 "use client";
 
+import { loadCatalogue } from "@/lib/i18n/core";
 import { makeFormatters } from "@/lib/i18n/formatters";
 import { agreementLanguageForVersion, agreementSectionsForVersion } from "../../../convex/legalAgreementText";
 import type { AgreementPdfInput } from "../../../convex/legalAgreementPdf";
@@ -43,7 +44,8 @@ function sectionsFor(agreement: SubscriptionAgreement, sections?: AgreementTextS
  * that shows the button.
  */
 export async function downloadAgreementPdf(agreement: SubscriptionAgreement, sections?: AgreementTextSection[]): Promise<void> {
-  const { agreementPdfFilename, renderAgreementPdf } = await import("../../../convex/legalAgreementPdf");
+  // The builder writes in the agreement's language, which may be Arabic on an English screen.
+  const [{ agreementPdfFilename, renderAgreementPdf }] = await Promise.all([import("../../../convex/legalAgreementPdf"), loadCatalogue(agreementLanguageForVersion(agreement.version))]);
   const bytes = renderAgreementPdf(agreementPdfInput(agreement), sectionsFor(agreement, sections));
   const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);

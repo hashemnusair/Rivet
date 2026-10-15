@@ -1,7 +1,6 @@
 "use client";
-import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
-import { createTranslator } from "@/lib/i18n/core";
-import { followUpHandoffDraft } from "../../../../../convex/followupAssist";
+import { useLocale, useT, type TFunction, type TKey } from "@/lib/i18n/provider";
+import type { CommunicationLanguage } from "@/lib/i18n/communication";
 
 
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
@@ -177,13 +176,8 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
     : item.reasons.some((reason) => reason.kind === "expiring")
       ? "crmCompletion.queues.expiringMessage"
       : "crmCompletion.queues.inactiveMessage";
-  const recipientLanguage = followUpHandoffDraft(
-    { fullName: item.member.fullName, preferredLanguage: item.member.preferredLanguage },
-    session?.organization.name ?? "RIVET",
-    session?.organization.defaultLanguage,
-  ).language;
-  const recipientT = createTranslator(recipientLanguage);
-  const initialMessage = recipientT(messageKey, { name: recipientLanguage === "ar" ? isolate(firstName) : firstName });
+  // Written in the member's language, which the handoff resolves and loads.
+  const initialMessage = (recipientT: TFunction, recipientLanguage: CommunicationLanguage) => recipientT(messageKey, { name: recipientLanguage === "ar" ? isolate(firstName) : firstName });
   return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="at-risk-panel">
     <FollowUpHeader member={item.member} onClose={onClose} />
     <div className="space-y-4 px-4 py-4">

@@ -140,6 +140,7 @@ export const common = {
   language: {
     switchTo: "Switch to {language}",
     label: "Language",
+    loadFailed: "Arabic could not be loaded. Check your connection and try again.",
     english: "English",
     arabic: "العربية",
   },
