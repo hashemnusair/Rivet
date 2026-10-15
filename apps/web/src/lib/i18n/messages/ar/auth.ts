@@ -121,6 +121,16 @@ export const auth: typeof En = {
     },
   },
 
+  email: {
+    codeHeadline: "رمز التحقق",
+    resetCodeHeadline: "رمز إعادة تعيين كلمة المرور",
+    codeLabel: "الرمز",
+    codeNote: "يرجى تجاهل هذه الرسالة إذا لم يُطلب هذا الرمز.",
+    invitationHeadline: "تمت دعوتك إلى RIVET",
+    invitationButton: "قبول الدعوة",
+    linkButton: "فتح الرابط",
+  },
+
   preview: {
     heading: "معاينة حساب",
     member: "معاينة حساب عضو",

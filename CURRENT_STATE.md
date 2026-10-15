@@ -30,17 +30,66 @@ only, not pushed, not deployed to Convex, no inbox checked.**
   and the address/owner/email/contact entries of `.text` are no longer used.
   They were left in place so the Arabic catalogue and coverage ledger did not
   move.
-- **Not covered here**: Clerk's own emails (sign-in codes, the password-reset
-  code, invitations). Until the per-template cutover in docs/19, Clerk sends
-  them with its own template and sender, so only the Clerk dashboard can
-  brand them.
-- **Checks**: `vitest run convex src/lib/release src/lib/i18n` passed (122
-  files, 751 tests), and both `tsc --noEmit` and the Convex typecheck passed.
-  ESLint passed on the changed files, as did the secret-output audit and
-  `verify-lock.py`. Sample English, Arabic and 390px renders were checked
+- **Clerk's emails** (sign-in codes, the password-reset code, invitations)
+  get the same template through the webhook route (next entry), and the
+  route now sends as `rivetSender(RESEND_FROM_EMAIL)` too. Until the
+  per-template cutover in docs/19, though, Clerk still sends them itself,
+  with its own template and sender. Until then only the Clerk dashboard can
+  brand those live emails.
+- **Checks**: after merging the Clerk half, the full web unit suite passed
+  (337 files, 2,143 tests), and both `tsc --noEmit` and the Convex typecheck
+  passed. ESLint passed on the changed files, as did the secret-output audit
+  and `verify-lock.py`. Sample English, Arabic and 390px renders were checked
   with headless Chromium.
 - **Deploy**: the changes are under `convex/`, so a Vercel push alone does not
   ship them. Run `pnpm convex:deploy -- --yes` after merging.
+
+## 15 October 2026 — Clerk's code and invitation emails in RIVET's branded template
+
+Elias: "make sure to brand the emails too with rivet beta for now, all emails
+should be like that." This is the Clerk half. The route that carries Clerk's
+authentication email (`apps/web/src/app/api/webhooks/clerk-email/route.ts`,
+`docs/19`) used to forward Clerk's rendered HTML to Resend untouched. It now
+builds RIVET's own email with `renderBrandedEmail` (`convex/emailTemplate.ts`)
+when the event carries a code or a link. **Branch only, not merged, not
+deployed.** The "Beta" mark and footer line come from the template change made
+separately; nothing here tests or depends on them.
+
+- **Code emails** (`reset_password_code`, `verification_code`, and any slug
+  whose `data.otp_code` is a non-empty string): headline ("Your password reset
+  code" for `reset_password_code`, otherwise "Your verification code"), the
+  code as a mono row, and one note: "If you did not ask for this code, ignore
+  this email."
+- **Link emails** (`data.action_url` is an http(s) string): one button to that
+  link. `invitation` and `organization_invitation` get "You are invited to
+  RIVET" and "Accept invitation". Any other link email (a magic link, say) uses
+  Clerk's own subject as the headline and the button "Open link", so it is
+  never called an invitation. A code wins if an email has both.
+- **Fallback.** Anything else forwards Clerk's body and plain text exactly as
+  before: an unknown template, no `data`, a missing, empty, blank or
+  non-string code or link, a link that is not http(s), or a render that lost
+  its code or link (the route checks the rendered text and HTML contain it).
+  An email never goes out without its code or link.
+- **Unchanged:** Clerk's subject, the sender address (its display name is
+  now "RIVET Beta", from the entry above), the retry key
+  (`clerk-email/<id>`), the 503/400/502 behaviour, and nothing is logged. The
+  audience is `member` with no gym, so the footer has no gym email-preferences
+  link. The event names no language, so it is English; the Arabic is in the
+  catalogue (`auth.email.*`, English and Arabic) for when it does.
+- **No decision-ledger change:** none of the new Arabic embeds an approved
+  decision's wording, so there is nothing to add to `decision-coverage.json`
+  (`verify-lock.py` passes).
+- **Still off for live users.** Each Clerk email template must have "Delivered
+  by Clerk" switched off (`docs/19`) before the webhook sends anything, so
+  today's live mail is Clerk's own. No dashboard setting was changed.
+
+Checked: 19 new tests in the route's test file (reset code, verification and
+unknown code slugs, invitation with an escaped link, another link email, code
+beating link, no code or link, ten broken-field cases that forward Clerk's body,
+Arabic and plain-text-only fallback, nothing logged); with the branding switched
+off six of them fail. `tsc --noEmit`, ESLint on the changed files, the
+`src/app/api`, `src/app/login` and `src/lib/i18n` suites (199 tests) and
+`python3 docs/arabic/verify-lock.py` pass. Not run: a real send, Clerk, Resend.
 
 ## 15 October 2026 — Forgot password on RIVET's own sign-in form
 
@@ -48,8 +97,9 @@ RIVET had no password reset since 9 Sep 2026 (`b8e64bf3`). Until then the doors
 rendered Clerk's prebuilt `<SignIn>` widget, whose "Forgot password?" link
 worked; the switch to RIVET's own `PasswordSignIn` form dropped it and nothing
 replaced it. `docs/04` lists password reset as an auth requirement. Both doors
-(gym and member) share the form, so both now have it. **Branch only, not
-merged, not deployed, not tried against real Clerk.**
+(gym and member) share the form, so both now have it. **Pushed to main in
+`8f0a7c2b`. The Vercel deploy was not checked, and it has not been tried
+against real Clerk.**
 
 - **Flow** (`apps/web/src/app/login/password-sign-in.client.tsx`). A
   "Forgot password?" button sits in the password label row (the end side, so it
