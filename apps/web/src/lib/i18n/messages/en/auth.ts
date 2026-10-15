@@ -133,6 +133,21 @@ export const auth = {
     },
   },
 
+  /**
+   * The sign-in emails Clerk asks RIVET to send: codes and links. The signed
+   * event carries no language, so these go out in English; the Arabic is ready
+   * for when it does.
+   */
+  email: {
+    codeHeadline: "Your verification code",
+    resetCodeHeadline: "Your password reset code",
+    codeLabel: "Code",
+    codeNote: "If you did not ask for this code, ignore this email.",
+    invitationHeadline: "You are invited to RIVET",
+    invitationButton: "Accept invitation",
+    linkButton: "Open link",
+  },
+
   /** Seeded preview accounts, shown only in the demo build. */
   preview: {
     heading: "Preview an account",
