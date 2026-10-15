@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Every RIVET email is branded "RIVET Beta"
+
+Elias asked for every email to carry the beta branding while RIVET is in beta.
+All of it hangs off `RIVET_IN_BETA` in `apps/web/src/lib/release/beta.ts`, so
+it goes away with the rest of the beta marks at general release. **Branch
+only, not pushed, not deployed to Convex, no inbox checked.**
+
+- **Template** (`convex/emailTemplate.ts`). The lockup now has the product's
+  "Beta" / "تجريبي" mark beside it: sentence case, hairline border, painted
+  on paper like every other surface so Gmail's dark mode leaves it alone. It
+  sits on the left of an Arabic message without the logo being mirrored. The
+  footer adds "RIVET is in beta." (`common.beta.short`) before the copyright,
+  and the plain-text copy opens with "RIVET Beta". No new strings were added.
+- **Sender name**. `rivetSender()` keeps the address configured in
+  `RESEND_FROM_EMAIL` and replaces its display name with "RIVET Beta". The
+  Convex worker (`operationalEmail.processDue`) uses it. No environment value
+  changed.
+- **Gym application emails** (`convex/gymApplicationEmail.ts`). These were
+  the only RIVET emails still sent as plain Arial HTML. The applicant's
+  received, approved and rejected copies and RIVET's internal notice now use
+  the branded template. The applicant copies keep their existing English and
+  Arabic wording. The internal notice stays English and gains an "Open in the
+  console" button to `/platform/applications`. A new `public` audience
+  covers readers outside any gym account: no email-preferences link, no gym
+  accent, and an optional `reason` line in place of "service message about
+  your RIVET account". Template versions moved to received/approved/rejected
+  v3 and internal v2. `communicationCompletion.email.application.receivedText`
+  and the address/owner/email/contact entries of `.text` are no longer used.
+  They were left in place so the Arabic catalogue and coverage ledger did not
+  move.
+- **Not covered here**: Clerk's own emails (sign-in codes, the password-reset
+  code, invitations). Until the per-template cutover in docs/19, Clerk sends
+  them with its own template and sender, so only the Clerk dashboard can
+  brand them.
+- **Checks**: `vitest run convex src/lib/release src/lib/i18n` passed (122
+  files, 751 tests), and both `tsc --noEmit` and the Convex typecheck passed.
+  ESLint passed on the changed files, as did the secret-output audit and
+  `verify-lock.py`. Sample English, Arabic and 390px renders were checked
+  with headless Chromium.
+- **Deploy**: the changes are under `convex/`, so a Vercel push alone does not
+  ship them. Run `pnpm convex:deploy -- --yes` after merging.
+
 ## 15 October 2026 — Forgot password on RIVET's own sign-in form
 
 RIVET had no password reset since 9 Sep 2026 (`b8e64bf3`). Until then the doors

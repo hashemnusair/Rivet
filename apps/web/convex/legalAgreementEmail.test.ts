@@ -65,8 +65,9 @@ describe("agreement copy email", () => {
     expect(lines[2]).toBe("Support 09:00–21:00 Amman time, Saturday to Thursday");
     expect(lines[3]).toBe("Privacy policy · Terms of service · Email preferences");
     expect(lines[4]).toBe("This is a service message about your RIVET account.");
-    expect(lines[5]).toBe("© 2026 RIVET. All rights reserved.");
-    expect(lines).toHaveLength(6);
+    expect(lines[5]).toBe("RIVET is in beta.");
+    expect(lines[6]).toBe("© 2026 RIVET. All rights reserved.");
+    expect(lines).toHaveLength(7);
     for (const line of lines) expect(rendered.text).toContain(line);
     expect(rendered.html).toContain("https://www.rivetjo.com/privacy");
     expect(rendered.html).not.toContain("Unsubscribe");
