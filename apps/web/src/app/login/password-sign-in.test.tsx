@@ -9,7 +9,7 @@ const clerk = vi.hoisted(() => ({
   loaded: true,
   hook: {
     signIn: null as unknown,
-    errors: { fields: { identifier: null, password: null, code: null } },
+    errors: { fields: { identifier: null, password: null, code: null } } as { fields: Record<"identifier" | "password" | "code", unknown> },
     fetchStatus: "idle" as const,
   },
 }));
@@ -328,6 +328,25 @@ describe("PasswordSignIn", () => {
     expect(container.querySelector("#login-password")).toHaveValue("wrong-password");
     expect(password).toHaveBeenCalledOnce();
     expect(container).not.toHaveTextContent("private");
+  });
+
+  it("says a wrong password once, at the password field, as Clerk reports it", async () => {
+    // Clerk returns the rejection and also files it under errors.fields.password.
+    const rejection = { code: "form_password_incorrect", longMessage: "Password is incorrect.", meta: { paramName: "password" } };
+    const password = vi.fn().mockImplementation(async () => {
+      clerk.hook = { ...clerk.hook, errors: { fields: { identifier: null, password: rejection, code: null } } };
+      return { error: { errors: [rejection] } };
+    });
+    clerk.hook = { signIn: { status: "needs_first_factor", password, supportedSecondFactors: [], mfa: {}, finalize: vi.fn() }, errors: NO_FIELD_ERRORS, fetchStatus: "idle" };
+    const { container } = render(<LocaleProvider initialLocale="en"><PasswordSignIn /></LocaleProvider>);
+    fireEvent.change(container.querySelector("#login-email")!, { target: { value: "member@example.com" } });
+    fireEvent.change(container.querySelector("#login-password")!, { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Your password is incorrect."));
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getAllByText("Your password is incorrect.")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toHaveAttribute("id", "login-password-error");
+    expect(container.querySelector("#login-password")).toHaveAttribute("aria-invalid", "true");
   });
 
   describe("forgot password", () => {

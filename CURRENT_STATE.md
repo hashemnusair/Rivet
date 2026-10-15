@@ -1,5 +1,18 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Wrong password shown once
+
+Elias saw "Your password is incorrect" twice on the sign-in form. Clerk's
+`useSignIn()` files a rejected password under `errors.fields.password`, which
+the form shows under the password field, and the form also showed the returned
+error as an alert below. Both were `role="alert"`, so screen readers heard it
+twice as well. `password-sign-in.client.tsx` now keeps the message on the field
+it belongs to and shows the form-level alert only when no field already says
+the same thing. The backup-code step had the same duplicate and gets the same
+rule. The unit tests had mocked Clerk's field errors as always empty, so they
+never saw it; a new test reproduces Clerk's behaviour and fails on the old form.
+Not tried against real Clerk; the mock preview never mounts this form.
+
 ## 15 October 2026 — Performance pass: startup, screen opens, page flips, scrolling
 
 Branch `claude/app-performance-optimization-82474c` only. **Not committed, not

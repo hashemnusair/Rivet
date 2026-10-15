@@ -324,8 +324,18 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     }
   };
 
+  // Clerk also files a field's error on that field. Say it once, at the field,
+  // and keep the form-level alert for what no field shows.
+  const formAlert = (...shownOnFields: Array<string | undefined>) => {
+    if (!localError) return undefined;
+    const text = renderAuthMessage(localError, t);
+    return shownOnFields.includes(text) ? undefined : text;
+  };
+
   if (verification) {
     const sentCode = verification === "email_code" || verification === "phone_code";
+    const codeError = verification === "backup_code" && errors.fields.code ? authErrorText(errors.fields.code, "auth.signIn.errors.codeIncorrect", t) : undefined;
+    const codeAlert = formAlert(codeError);
     const codeReady = verification === "backup_code" ? Boolean(code.trim()) : code.length === VERIFICATION_CODE_LENGTH;
     const title = verification === "email_code"
       ? t("auth.signIn.verify.emailTitle")
@@ -349,7 +359,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
         </div>
         <form onSubmit={submitCode} className="mt-6 space-y-5" noValidate>
           {verification === "backup_code" ? (
-            <Field label={t("auth.signIn.verify.backupLabel")} htmlFor="login-code" error={errors.fields.code ? authErrorText(errors.fields.code, "auth.signIn.errors.codeIncorrect", t) : undefined} required>
+            <Field label={t("auth.signIn.verify.backupLabel")} htmlFor="login-code" error={codeError} required>
               <Input
                 id="login-code"
                 value={code}
@@ -363,7 +373,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           ) : (
             <VerificationCodeInput value={code} onChange={setCode} t={t} invalid={Boolean(errors.fields.code || localError)} />
           )}
-          {localError ? <p className="text-center text-[12px] text-danger" role="alert">{renderAuthMessage(localError, t)}</p> : null}
+          {codeAlert ? <p className="text-center text-[12px] text-danger" role="alert">{codeAlert}</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!codeReady}>
             {t("auth.signIn.verify.submit")} <ArrowRight className="rtl:rotate-180" />
           </Button>
@@ -456,9 +466,13 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     );
   }
 
+  const identifierError = errors.fields.identifier ? authErrorText(errors.fields.identifier, "auth.signIn.errors.incorrect", t) : undefined;
+  const passwordError = errors.fields.password ? authErrorText(errors.fields.password, "auth.signIn.errors.incorrect", t) : undefined;
+  const signInAlert = formAlert(identifierError, passwordError);
+
   return (
     <form onSubmit={submitPassword} className="mt-7 space-y-4" noValidate>
-      <Field label={t("auth.signIn.emailLabel")} htmlFor="login-email" error={errors.fields.identifier ? authErrorText(errors.fields.identifier, "auth.signIn.errors.incorrect", t) : undefined} required>
+      <Field label={t("auth.signIn.emailLabel")} htmlFor="login-email" error={identifierError} required>
         <Input
           ref={emailRef}
           id="login-email"
@@ -487,7 +501,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
             {t("auth.signIn.forgotPassword")}
           </button>
         </div>
-        <Field htmlFor="login-password" error={errors.fields.password ? authErrorText(errors.fields.password, "auth.signIn.errors.incorrect", t) : undefined}>
+        <Field htmlFor="login-password" error={passwordError}>
           <PasswordInput
             ref={passwordRef}
             id="login-password"
@@ -500,7 +514,7 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
           />
         </Field>
       </div>
-      {localError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{renderAuthMessage(localError, t)}</p> : null}
+      {signInAlert ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{signInAlert}</p> : null}
       <Button
         type="submit"
         size="lg"
