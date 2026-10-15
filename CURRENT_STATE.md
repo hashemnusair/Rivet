@@ -12,12 +12,14 @@ the same thing. The backup-code step had the same duplicate and gets the same
 rule. The unit tests had mocked Clerk's field errors as always empty, so they
 never saw it; a new test reproduces Clerk's behaviour and fails on the old form.
 Not tried against real Clerk; the mock preview never mounts this form.
+**Released:** on main as `d84c6936` and deployed with the performance pass
+below.
 
 ## 15 October 2026 — Performance pass: startup, screen opens, page flips, scrolling
 
-Branch `claude/app-performance-optimization-82474c` only. **Not committed, not
-merged, not deployed.** Every fix was measured before and after on built
-bundles, not the dev server.
+**Released:** on main as `c32fb819` (fast-forward, with `d84c6936`) and
+deployed to Vercel Production. Every fix was measured before and after on
+built bundles, not the dev server.
 
 **How it was measured.** Mock preview bundles (`next build --webpack`, served
 by `next start`), headless Chromium, 4× CPU throttle, 60 ms RTT / 9 Mbps,
@@ -113,7 +115,13 @@ Checked: `tsc` (app and Convex), ESLint with `--max-warnings 0`, secret-output
 audit, Vitest 2,121/2,121, node script tests, and the full credential-free
 Playwright suite against the built mock bundle: 221 passed, 14 skipped
 (credential-gated), 0 failed, including the PDF download and scroll-edge specs
-and the Mac screenshot references. CI has not run.
+and the Mac screenshot references. Main CI
+[run 38771351097](https://github.com/hashemnusair/Rivet/actions/runs/38771351097)
+passed all 13 jobs, including the Linux screenshot references. After the
+deploy, the live landing page loads 605 KB of compressed startup script
+(674 KB before; the live figure includes Clerk's own script) and no live
+chunk carries the mock database. The convex/ edits were not deployed; the live
+backend behaves the same.
 
 ## 15 October 2026 — Forgot password on RIVET's own sign-in form
 
