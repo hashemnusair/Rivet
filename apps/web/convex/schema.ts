@@ -1890,6 +1890,10 @@ export default defineSchema({
     .index("by_organization_branch_type_created", ["organizationId", "branchId", "entityType", "createdAt"])
     .index("by_organization_member_type", ["organizationId", "memberPublicId", "entityType"])
     .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
+    // Business time, not write time: dashboard windows and the newest
+    // timeline read only the slice they show. Records without an ISO
+    // `data.occurredAt` index under undefined and sort first.
+    .index("by_organization_type_occurred", ["organizationId", "entityType", "data.occurredAt"])
     .index("by_type_customer_user", ["entityType", "customerUserPublicId"])
     .index("by_type_customer_profile", ["entityType", "customerProfilePublicId"])
     .index("by_type_export_expiry", ["entityType", "exportExpiresAt"])

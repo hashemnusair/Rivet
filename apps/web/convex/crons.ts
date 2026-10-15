@@ -13,5 +13,6 @@ crons.daily("clean expired profile media", { hourUTC: 2, minuteUTC: 20 }, intern
 crons.interval("clean public request controls", { hours: 1 }, internal.publicAbuse.cleanupExpired, {});
 crons.interval("purge expired export files", { hours: 1 }, internal.qolMaintenance.purgeExpiredExports, {});
 crons.interval("backfill customer membership identity", { minutes: 15 }, internal.qolMaintenance.backfillCustomerMembershipIdentity, {});
+crons.interval("backfill member visit summaries", { minutes: 15 }, internal.qolMaintenance.backfillMemberVisits, {});
 
 export default crons;

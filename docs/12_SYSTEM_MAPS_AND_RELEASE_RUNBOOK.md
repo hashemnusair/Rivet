@@ -1,5 +1,35 @@
 # 12 — System Maps and Release Runbook
 
+## Dashboard reads scale with today, not history — 15 October 2026 (Convex deploy owed)
+
+Branch `claude/suspicious-herschel-2dd289`; see the newest CURRENT_STATE.md
+entry. This change is in `apps/web/convex/**`, so a Vercel deploy alone does not
+ship it. Release order after merge:
+
+1. Elias runs `pnpm convex:deploy` (the guarded wrapper; never a raw or
+   verbose deploy). The deploy adds one index,
+   `domainRecords.by_organization_type_occurred`, and Convex builds it before the
+   new functions go live. It deletes no index and needs no new environment
+   variable.
+2. The `backfill member visit summaries` cron starts within 15 minutes and then
+   runs batch after batch until every check-in is folded in. Until it finishes,
+   the dashboard's at-risk list keeps reading every check-in, so nothing is wrong
+   in the meantime; it is only slower.
+3. Check in the Convex dashboard's data view (read-only): table
+   `maintenanceState` has a row with key `member_visit_summary_v1` and
+   status `completed`. `member_visit_backfill_v1` holds the walk's counts.
+4. Open the owner dashboard. Figures, at-risk list and Today queue must match
+   what they showed before the deploy.
+
+Rollback: redeploying the previous functions is safe. The extra index and the
+`memberVisit` rows are additive and ignored by older code; do not delete them
+by hand. Older code does not write visit summaries, so before shipping this
+change again after a rollback, rename both state keys in
+`convex/qolMaintenance.ts` (`member_visit_backfill_v1`,
+`member_visit_summary_v1`) to `_v2`. The backfill then runs again and folds in
+the check-ins taken while the old code was live; summaries only move forward,
+so existing rows stay correct.
+
 ## PR #9 — approved Satoshi landing, 11 October 2026
 
 Released as `60b1bdb` after all 13 PR CI checks passed on the identical source

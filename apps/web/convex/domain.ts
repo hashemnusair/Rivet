@@ -86,6 +86,7 @@ import {
 import { instantFallsInTenantDateRange } from "../src/lib/utils/dates";
 import { finalizeTodayQueue, type TodayQueueSortableItem } from "../src/lib/dashboard/today-queue";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefScope, type BriefSourceInput, type BriefSourceKey, type OperatingBrief } from "./operatingBrief";
+import { memberVisitsReady, recordMemberVisit } from "./qolMaintenance";
 import { buildDuplicateCandidatePairs, type DuplicateCandidatePair } from "../src/lib/members/duplicate-candidates";
 import { MAX_LOOKUP_CANDIDATES, resolveMemberLookup } from "../src/lib/members/lookup";
 import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, isContactOutcome, resolveFollowUpTasks, shouldClearLeadFollowUp } from "../src/lib/crm/contact-outcomes";
@@ -1037,13 +1038,54 @@ async function zoneByPublicId(ctx: ReadContext, organizationId: Id<"organization
   return await ctx.db.query("zones").withIndex("by_public_id", (q) => q.eq("organizationId", organizationId).eq("publicId", id)).unique();
 }
 
+function inActorScope(actor: ActorContext, record: DomainRecord): boolean {
+  return actor.branchScope === "all" || !record.branchId || actor.branchIds.includes(record.branchId);
+}
+
 async function recordsOf(ctx: ReadContext, actor: ActorContext, entityType: string): Promise<DomainRecord[]> {
   const records = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", entityType))
     .collect();
   if (actor.branchScope === "all") return records;
-  return records.filter((record) => !record.branchId || actor.branchIds.includes(record.branchId));
+  return records.filter((record) => inActorScope(actor, record));
+}
+
+/**
+ * Records whose `occurredAt` can fall on a tenant-local date in [from, to].
+ * A UTC offset moves a date by less than a day, so the two-day margin keeps
+ * every zone; callers still filter by business date.
+ */
+async function recordsOccurredBetween(ctx: ReadContext, actor: ActorContext, entityType: string, from: string, to: string): Promise<DomainRecord[]> {
+  const records = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type_occurred", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", entityType).gte("data.occurredAt", addDays(from, -2)).lt("data.occurredAt", addDays(to, 3)))
+    .collect();
+  return records.filter((record) => inActorScope(actor, record));
+}
+
+/**
+ * The newest timeline events in the actor's scope, newest first and, on a
+ * tie, in the order they were written: the same result as sorting the whole
+ * timeline, read from the business-time index instead.
+ */
+async function recentTimelineEvents(ctx: ReadContext, actor: ActorContext, limit: number): Promise<Data[]> {
+  const rows: DomainRecord[] = [];
+  const timeline = ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type_occurred", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "timeline"))
+    .order("desc");
+  for await (const record of timeline) {
+    if (!inActorScope(actor, record)) continue;
+    // Keep reading past the limit only while events tie with the last one kept.
+    if (rows.length >= limit && stringValue(data(record.data).occurredAt) !== stringValue(data(rows[limit - 1]!.data).occurredAt)) break;
+    rows.push(record);
+  }
+  return rows
+    .sort((a, b) => a._creationTime - b._creationTime)
+    .map((record) => data(record.data))
+    .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)))
+    .slice(0, limit);
 }
 
 async function recordsOfBranch(ctx: ReadContext, actor: ActorContext, entityType: string, branchPublicId: string): Promise<DomainRecord[]> {
@@ -11253,6 +11295,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision, reasonCodes: evaluation.reasonCodes, actorId: publicUserId(actor.user), actorName: actor.user.fullName, occurredAt: isoNow() };
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
       if (decision !== "blocked") {
+        await recordMemberVisit(ctx, { organizationId: actor.organization._id, memberId: stringValue(member.id), branchPublicId: branchId, branchId: (await branchByPublicId(ctx, actor.organization._id, branchId))?._id, occurredAt: checkIn.occurredAt });
         const membership = await currentMembership(ctx, actor, member.id);
         if (membership && membership.remainingVisits != null) {
           const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id));
@@ -11277,6 +11320,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const evaluation = await evaluateCheckIn(ctx, actor, member, branchId, true);
       const checkIn = { id: newPublicId(), memberId: member.id, memberName: member.fullName, memberNumber: member.memberNumber, branchId, branchName: (await branchByPublicId(ctx, actor.organization._id, branchId))?.name ?? "—", decision: "overridden", reasonCodes: [...arrayValue(evaluation.reasonCodes).filter((code) => code !== "OK"), "MANUAL_OVERRIDE"], actorId: publicUserId(actor.user), actorName: actor.user.fullName, overrideReason: stringValue(input.reason), occurredAt: isoNow() };
       await insertRecord(ctx, actor, "checkIn", checkIn, { branchId, memberPublicId: member.id });
+      await recordMemberVisit(ctx, { organizationId: actor.organization._id, memberId: stringValue(member.id), branchPublicId: branchId, branchId: (await branchByPublicId(ctx, actor.organization._id, branchId))?._id, occurredAt: checkIn.occurredAt });
       const membership = await currentMembership(ctx, actor, member.id);
       if (membership && membership.remainingVisits != null) { const membershipRecord = await recordOf(ctx, actor, "membership", stringValue(membership.id)); await patchRecord(ctx, actor, membershipRecord, { remainingVisits: Math.max(0, numberValue(membership.remainingVisits) - 1) }); }
       await insertTimeline(ctx, actor, { memberId: member.id, branchId, type: "check_in", title: `Checked in — ${checkIn.branchName}`, titleMessage: systemMessage("communicationCompletion.timeline.checkedIn", { branch: checkIn.branchName }), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { decision: "overridden" } });
@@ -12154,23 +12198,36 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     const date = businessDate(stringValue(value[field]), actor.organization.timezone || TZ_FALLBACK);
     return date >= from && date <= to;
   };
-  const allPayments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter(inBranch);
+  // Revenue covers the requested range, this month and last month; older
+  // payments cannot change a figure. An unreadable range keeps the full read.
+  const currentMonthStart = `${today.slice(0, 7)}-01`;
+  const previousMonthStart = `${addDays(currentMonthStart, -1).slice(0, 7)}-01`;
+  const currentMonthEnd = addDays(`${addDays(currentMonthStart, 31).slice(0, 7)}-01`, -1);
+  const paymentRows = validImportDate(from) && validImportDate(to)
+    ? await recordsOccurredBetween(ctx, actor, "payment", from < previousMonthStart ? from : previousMonthStart, to > currentMonthEnd ? to : currentMonthEnd)
+    : await paymentRecords(ctx, actor);
+  const allPayments = paymentRows.map((record) => data(record.data)).filter(inBranch);
   const validPayments = allPayments.filter((payment) => payment.status !== "voided" && inRange(payment, "occurredAt"));
   const allValidPayments = allPayments.filter((payment) => payment.status !== "voided");
   const revenueSummary = dashboardRevenueSummary(
     allPayments.map((payment) => ({ type: stringValue(payment.type), status: optionalString(payment.status), amount: amountOf(payment.amount), occurredAt: stringValue(payment.occurredAt) })),
     { today, from, to, timezone: actor.organization.timezone || TZ_FALLBACK },
   );
-  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, timelineRecords, offerRecords, trialBookingRecords, retentionStateRows] = await Promise.all([
+  // Every check-in count is for today and only when today is in the range.
+  const todayInRange = today >= from && today <= to;
+  const [memberRows, membershipRows, planRows, leadRows, taskRows, checkinRows, chargeRows, shiftRows, leadTimelineRecords, offerRecords, trialBookingRecords, retentionStateRows] = await Promise.all([
     memberRecords(ctx, actor),
     membershipRecords(ctx, actor),
     recordsOf(ctx, actor, "plan"),
     recordsOf(ctx, actor, "lead"),
     recordsOf(ctx, actor, "task"),
-    recordsOf(ctx, actor, "checkIn"),
+    todayInRange ? recordsOccurredBetween(ctx, actor, "checkIn", today, today) : Promise.resolve([]),
     chargeRecords(ctx, actor),
     recordsOf(ctx, actor, "shift"),
-    recordsOf(ctx, actor, "timeline"),
+    // Lead progress and last contact need only lead-linked timeline, a small
+    // slice of a timeline that is mostly member activity.
+    ctx.db.query("domainRecords").withIndex("by_organization_lead_type", (q) => q.eq("organizationId", actor.organization._id).gt("leadPublicId", "")).collect()
+      .then((records) => records.filter((record) => record.entityType === "timeline" && inActorScope(actor, record))),
     recordsOf(ctx, actor, "offer"),
     recordsOf(ctx, actor, "trialBooking"),
     recordsOf(ctx, actor, "retentionState"),
@@ -12190,12 +12247,11 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
       ? leadBranchById.get(stringValue(task.leadId))
       : optionalString(task.branchId);
   const tasks = taskRows.map((record) => data(record.data)).filter((task) => { const taskBranch = taskBranchOf(task); return !branchId || !taskBranch || taskBranch === branchId; });
-  const allCheckins = checkinRows.map((record) => data(record.data)).filter(inBranch);
-  const checkins = allCheckins.filter((checkin) => inRange(checkin, "occurredAt"));
+  const checkins = checkinRows.map((record) => data(record.data)).filter(inBranch).filter((checkin) => inRange(checkin, "occurredAt"));
   const charges = chargeRows.map((record) => data(record.data));
   const shifts = shiftRows.map((record) => data(record.data)).filter(inBranch);
   const activitiesByLead = new Map<string, Data[]>();
-  for (const record of timelineRecords) {
+  for (const record of leadTimelineRecords) {
     const event = data(record.data);
     const leadId = optionalString(event.leadId);
     if (!leadId) continue;
@@ -12309,7 +12365,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     // no open task already represents it, so nothing shows twice.
     const leadsWithOpenTasks = new Set(tasks.filter((task) => stringValue(task.status, "open") === "open").map((task) => optionalString(task.leadId)).filter(Boolean));
     const lastLeadContactOutcome = new Map<string, { occurredAt: string; outcome?: string }>();
-    for (const record of timelineRecords) {
+    for (const record of leadTimelineRecords) {
       const event = data(record.data);
       const leadId = optionalString(event.leadId);
       if (!leadId || event.type !== "call_attempt") continue;
@@ -12373,6 +12429,12 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     const operationalPolicies = data((await settingsData(ctx, actor)).operationalPolicies);
     const retentionPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.retention, ...data(operationalPolicies.retention) };
     const membershipPolicy = { ...DEFAULT_OPERATIONAL_POLICIES.membership, ...data(operationalPolicies.membership) };
+    // Each member's latest admitted visit per branch. Until the one-off
+    // backfill has summarised older check-ins, read every check-in instead.
+    const visitRows = await memberVisitsReady(ctx) ? await recordsOf(ctx, actor, "memberVisit") : await recordsOf(ctx, actor, "checkIn");
+    const visits = visitRows.map((record) => ({ entityType: record.entityType, value: data(record.data) })).filter(({ value }) => inBranch(value)).map(({ entityType, value }) => entityType === "memberVisit"
+      ? { memberId: stringValue(value.memberId), decision: "allowed", occurredAt: stringValue(value.lastVisitAt) }
+      : { memberId: stringValue(value.memberId), decision: stringValue(value.decision), occurredAt: stringValue(value.occurredAt) });
     const retentionRisks = deriveRetentionRisks({
       today,
       inactivityDays: numberValue(retentionPolicy.inactivityDays, 14),
@@ -12380,7 +12442,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
       expiredWinBackDays: numberValue(retentionPolicy.expiredWinBackDays, 90),
       members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
       memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
-      checkIns: allCheckins.map((checkIn) => ({ memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) })),
+      checkIns: visits,
       snoozes: retentionStateRows.map((row) => { const state = data(row.data); return { memberId: stringValue(state.memberId), snoozedUntil: optionalString(state.snoozedUntil) }; }),
     }).filter((risk) => queueBranchVisible(risk.branchId))
       .filter((risk) => actor.role !== "sales" || risk.assignedSalespersonId === actorPublicId)
@@ -12522,7 +12584,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
   }
   queueItems.push(...(await checklistTodayQueueItems(ctx, actor, queueBranchVisible)) as Array<Data & TodayQueueSortableItem>);
   const todayQueue = finalizeTodayQueue(queueItems, isoNow(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
-  const timeline = timelineRecords.map((record) => data(record.data)).sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt))).slice(0, 10);
+  const timeline = await recentTimelineEvents(ctx, actor, 10);
   return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };
 }
 

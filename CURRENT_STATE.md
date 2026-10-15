@@ -1,5 +1,107 @@
 # GymOS / RIVET current implementation state
 
+## 15 October 2026 — Owner dashboard no longer reads a gym's whole history
+
+**Branch only:** `claude/suspicious-herschel-2dd289`, not merged. **A Convex
+deploy is owed** (`pnpm convex:deploy`, run by Elias; see docs/12, newest entry).
+Pushing to GitHub ships nothing here: every change is in `apps/web/convex/`.
+
+The performance pass above measured the `dashboard` query reading every
+check-in, timeline event and payment the gym had ever written. It now reads only
+what its figures can use:
+
+| Dashboard source | Before | Now |
+|---|---|---|
+| Revenue today / this month / last month, series, branch revenue, leaderboard | every payment | payments dated from the start of last month (or the range start, if earlier) to the end of this month (or the range end) |
+| Check-ins today, refused-entry items | every check-in | today's check-ins, and only when today is in the range (as before) |
+| At-risk "last visit" | every check-in | one `memberVisit` row per member and branch: the latest admitted visit |
+| Lead funnel, active leads, "last contact" on lead follow-ups | every timeline event | timeline events linked to a lead |
+| Recent activity (10 newest) | every timeline event, sorted | the newest events, read newest-first |
+
+How:
+
+- **New index** `domainRecords.by_organization_type_occurred` on
+  `data.occurredAt` (business time, not write time). Payments, today's
+  check-ins and recent activity read it. Date windows keep a two-day margin and
+  are then filtered by the gym's own date as before, so timezone edges are
+  unchanged. A range the API cannot read as a date falls back to the old full
+  read.
+- **`memberVisit` rows** (in `domainRecords`, so tenant purge covers them):
+  `checkins.create` (admitted only) and `checkins.override` write them with
+  `recordMemberVisit` in `convex/qolMaintenance.ts`; the demo seed does too.
+  They keep the check-in's branch, so a branch view or a branch-scoped manager
+  still sees only visits at their branches. **Any new code that writes an
+  admitted check-in must call `recordMemberVisit`.**
+- **Backfill:** `qolMaintenance.backfillMemberVisits` folds existing check-ins
+  in batches of 500, each batch scheduling the next; a 15-minute cron starts it.
+  Until it writes `maintenanceState` key `member_visit_summary_v1` = completed,
+  the at-risk list keeps reading every check-in, so the result is right
+  throughout and only the speed changes.
+
+**Output unchanged.** `convex/domain.dashboard-history.test.ts` was written and
+committed first (`0f8f38a0`) against the old query: a fixed clock, two branches,
+owner / branch manager / receptionist / salesperson, members idle for days to
+100 days, refused and overridden entries, payments on the gym's day and month
+edges (UTC date differs), voids, refunds, retail, leads at every stage and ties
+at the recent-activity cut-off. It pins the KPIs, at-risk alerts, Today queue
+and twelve whole dashboard views, including an impossible date, a future range,
+a long range and one day at one branch (that last set was recorded by swapping
+the original `domain.ts` back in). The new query matches every view before and
+after the backfill, and after live check-ins the summary path matches a full
+check-in read. `qolMaintenance.test.ts` covers the backfill over three batches
+and two gyms with refusals carrying newer times. Money figures did not change.
+
+**Benchmark** (`RIVET_DASHBOARD_BENCH=1 vitest run
+convex/domain.dashboard-history.bench.test.ts`; 300 members, 2 branches, about
+180 check-ins a day, a timeline event per two check-ins, a monthly payment per
+member; one owner dashboard load):
+
+| History | Documents read before | Now, after backfill | Now, before backfill | Index ranges now |
+|---|---|---|---|---|
+| 7 days | 3,079 (1.4 MB) | 1,971 (0.9 MB) | 2,930 | 34 |
+| 60 days | 17,901 (8.3 MB) | 2,348 (1.1 MB) | 12,847 | 34 |
+| 180 days | 51,479 (23.8 MB) — over Convex's 32,000-document and 16 MiB limits | 2,348 (1.1 MB) | 34,447 — over the limit | 34 |
+
+Reads are flat from 60 days on. Wall time in convex-test is not a fair measure
+of Convex: the mock answers every index range by walking the whole table, so
+even a one-row lookup slows as history grows (the benchmark prints that floor
+next to each timing; at 180 days the floor alone was 1.6 s against 1.1 s for the
+whole dashboard). Before the change the 180-day load took 5.4 s.
+
+Still growing with history, measured but not changed (outside this task):
+
+- The dashboard still reads every member, membership, charge, lead, offer,
+  trial booking, task and lead-linked record. These grow with members and
+  renewals, not with daily traffic: about 300 more memberships and charges a
+  month in the benchmark gym.
+- **Checking a member in reads every check-in the gym has.**
+  `evaluateCheckIn` (`domain.ts`, run by `checkins.create`, `checkins.override`
+  and the check-in preview) loads all of them to spot a repeat entry within the
+  last few minutes. At the benchmark gym's 180-day size that is over Convex's
+  read limit, so the front desk would fail before the dashboard did. A windowed
+  read on the new index fixes it. `syncCustomerMembershipProjection` (a
+  mutation), member list summaries (`toMemberSummaries`), the CRM at-risk queue
+  (`retention.queue`) and `checkins.list` without a branch also read every
+  check-in; the last-visit ones can use `memberVisit` rows.
+- Before the backfill finishes, a gym with half a year of busy history would
+  still be over the read limit (34,447 documents at 180 days). Production gyms
+  started after the 17 September purge, so none is near that today.
+
+Found while pinning, not fixed: a closed cash shift that is **short** and
+awaiting review makes the whole dashboard fail for anyone who can see
+reconciliation ("Money must be a non-negative integer amount"). The Today item
+builds the variance with `money()`, which rejects negatives; shift close stores
+it with `signedMoney()`. The pin fixture uses an overage until that is fixed.
+
+Checked: `tsc --noEmit` (app, which includes Convex) and `-p convex`; ESLint
+`--max-warnings 0` on the changed files; secret-output audit; all Convex tests
+(107 files, 622 tests, the opt-in benchmark skipped). The full Vitest run passed
+2,120 of 2,126 tests; the 5 failures were 5-second timeouts on a loaded machine
+(one was the new pin test, now given 30 s like other heavy tests) and all 5
+files pass when run on their own. Not tried against a real Convex deployment:
+nothing was deployed, and the index build and backfill have only run in
+convex-test.
+
 ## 15 October 2026 — Wrong password shown once
 
 Elias saw "Your password is incorrect" twice on the sign-in form. Clerk's

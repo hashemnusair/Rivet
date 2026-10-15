@@ -1,9 +1,11 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.{ts,js}");
+
+afterEach(() => vi.useRealTimers());
 
 describe("QoL maintenance", () => {
   it("purges an expired export body while retaining its audit-safe metadata", async () => {
@@ -90,4 +92,54 @@ describe("QoL maintenance", () => {
     });
   });
 
+  it("folds existing check-ins into one latest-visit row per member and branch, across batches and gyms", async () => {
+    vi.useFakeTimers();
+    const t = convexTest(schema, modules);
+    const expected = await t.run(async (ctx) => {
+      const now = Date.now();
+      const latest = new Map<string, string>();
+      for (const slug of ["visits-one", "visits-two"]) {
+        const organizationId = await ctx.db.insert("organizations", { publicId: slug, name: slug, slug, status: "active", currency: "JOD", timezone: "Asia/Amman", createdAt: now, updatedAt: now });
+        const branches = [
+          await ctx.db.insert("branches", { organizationId, publicId: `${slug}-a`, name: "A", code: "A", active: true, status: "active", createdAt: now, updatedAt: now }),
+          await ctx.db.insert("branches", { organizationId, publicId: `${slug}-b`, name: "B", code: "B", active: true, status: "active", createdAt: now, updatedAt: now }),
+        ];
+        // 650 check-ins per gym, written out of time order; every seventh is a refusal
+        // with the newest timestamp, which must never count as a visit.
+        for (let index = 0; index < 650; index += 1) {
+          const memberId = `${slug}-member-${index % 9}`;
+          const branch = index % 2;
+          const blocked = index % 7 === 0;
+          const occurredAt = new Date(Date.UTC(2026, 8, 1) + ((index * 37) % 650) * 3_600_000 + (blocked ? 10 ** 10 : 0)).toISOString();
+          await ctx.db.insert("domainRecords", { organizationId, entityType: "checkIn", publicId: `${slug}-ci-${index}`, branchId: branches[branch], memberPublicId: memberId, createdAt: now, updatedAt: now, data: { id: `${slug}-ci-${index}`, memberId, branchId: `${slug}-${branch ? "b" : "a"}`, decision: blocked ? "blocked" : index % 5 === 0 ? "overridden" : "allowed", occurredAt } });
+          if (blocked) continue;
+          const key = `${memberId}|${slug}-${branch ? "b" : "a"}`;
+          if ((latest.get(key) ?? "") < occurredAt) latest.set(key, occurredAt);
+        }
+      }
+      return Object.fromEntries(latest);
+    });
+
+    expect(await t.mutation(internal.qolMaintenance.backfillMemberVisits, {})).toMatchObject({ completed: false });
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", "member_visit_summary_v1")).unique()).toBeNull();
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.mutation(internal.qolMaintenance.backfillMemberVisits, {})).toEqual({ processed: 0, completed: true });
+
+    await t.run(async (ctx) => {
+      const visits = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "memberVisit")).collect();
+      expect(Object.fromEntries(visits.map((row) => {
+        const value = row.data as { memberId: string; branchId: string; lastVisitAt: string };
+        return [`${value.memberId}|${value.branchId}`, value.lastVisitAt];
+      }))).toEqual(expected);
+      for (const row of visits) {
+        const branch = row.branchId ? await ctx.db.get(row.branchId) : null;
+        expect(branch?.publicId).toBe((row.data as { branchId: string }).branchId);
+        expect(row.memberPublicId).toBe((row.data as { memberId: string }).memberId);
+      }
+      expect(await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", "member_visit_backfill_v1")).unique()).toMatchObject({ status: "completed", processedCount: 1_114, skippedCount: 186 });
+      expect(await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", "member_visit_summary_v1")).unique()).toMatchObject({ status: "completed" });
+    });
+  });
 });

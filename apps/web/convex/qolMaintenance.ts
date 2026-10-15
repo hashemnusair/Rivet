@@ -1,8 +1,53 @@
 import { v } from "convex/values";
-import { internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { internalMutation, type MutationCtx, type QueryCtx } from "./_generated/server";
 
 const BATCH_SIZE = 100;
 const CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY = "customer_membership_identity_v2";
+const MEMBER_VISIT_BACKFILL_STATE_KEY = "member_visit_backfill_v1";
+// Written once, when every older check-in has been folded in. Readers watch
+// only this row, so backfill progress does not re-run their subscriptions.
+const MEMBER_VISIT_READY_STATE_KEY = "member_visit_summary_v1";
+const MEMBER_VISIT_BATCH_SIZE = 500;
+
+/**
+ * A member's latest admitted visit at one branch, kept at write time so
+ * screens that need "last visit" read one row per member and branch instead
+ * of every check-in. Refused entries are not visits. The row carries the
+ * check-in's branch so branch-scoped staff see the same visits as before.
+ * Every path that writes an admitted check-in must call this; once the
+ * backfill is complete nothing else fills the gap.
+ */
+export async function recordMemberVisit(ctx: MutationCtx, visit: { organizationId: Id<"organizations">; memberId: string; branchPublicId?: string; branchId?: Id<"branches">; occurredAt: string }): Promise<void> {
+  const publicId = `visit:${visit.memberId}:${visit.branchPublicId ?? ""}`;
+  const existing = await ctx.db.query("domainRecords")
+    .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", visit.organizationId).eq("entityType", "memberVisit").eq("publicId", publicId))
+    .unique();
+  const now = Date.now();
+  if (existing) {
+    const current = (existing.data as Record<string, unknown>).lastVisitAt;
+    if (typeof current === "string" && current >= visit.occurredAt) return;
+    await ctx.db.patch(existing._id, { data: { ...(existing.data as Record<string, unknown>), lastVisitAt: visit.occurredAt }, updatedAt: now });
+    return;
+  }
+  await ctx.db.insert("domainRecords", {
+    organizationId: visit.organizationId,
+    entityType: "memberVisit",
+    publicId,
+    branchId: visit.branchId,
+    memberPublicId: visit.memberId,
+    createdAt: now,
+    updatedAt: now,
+    data: { id: publicId, memberId: visit.memberId, branchId: visit.branchPublicId, lastVisitAt: visit.occurredAt },
+  });
+}
+
+/** True once every check-in written before `recordMemberVisit` existed is summarised. */
+export async function memberVisitsReady(ctx: QueryCtx | MutationCtx): Promise<boolean> {
+  const ready = await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", MEMBER_VISIT_READY_STATE_KEY)).unique();
+  return ready?.status === "completed";
+}
 
 /**
  * Removes expired downloadable CSV bodies while retaining export metadata for
@@ -71,5 +116,55 @@ export const backfillCustomerMembershipIdentity = internalMutation({
     if (state) await ctx.db.patch(state._id, value);
     else await ctx.db.insert("maintenanceState", { key: CUSTOMER_MEMBERSHIP_INDEX_STATE_KEY, ...value });
     return { processed, completed };
+  },
+});
+
+/**
+ * Folds existing check-ins into member visit summaries in bounded batches.
+ * New check-ins write their summary directly, and a summary only ever moves
+ * forward, so batches may overlap live writes in any order. Each batch
+ * schedules the next until the walk ends; the cron restarts a stalled walk.
+ */
+export const backfillMemberVisits = internalMutation({
+  args: {},
+  returns: v.object({ processed: v.number(), completed: v.boolean() }),
+  handler: async (ctx): Promise<{ processed: number; completed: boolean }> => {
+    if (await memberVisitsReady(ctx)) return { processed: 0, completed: true };
+    const now = Date.now();
+    const state = await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", MEMBER_VISIT_BACKFILL_STATE_KEY)).unique();
+    const page = await ctx.db.query("domainRecords")
+      .withIndex("by_entity_type", (q) => q.eq("entityType", "checkIn"))
+      .paginate({ cursor: state?.cursor ?? null, numItems: MEMBER_VISIT_BATCH_SIZE });
+    const latest = new Map<string, Parameters<typeof recordMemberVisit>[1]>();
+    let skipped = 0;
+    for (const row of page.page) {
+      const value = row.data as Record<string, unknown>;
+      // Same attribution as the screens that read check-ins: the stored memberId.
+      const memberId = typeof value.memberId === "string" ? value.memberId : undefined;
+      if (value.decision === "blocked" || !memberId) {
+        skipped += 1;
+        continue;
+      }
+      const branchPublicId = typeof value.branchId === "string" ? value.branchId : undefined;
+      const occurredAt = typeof value.occurredAt === "string" ? value.occurredAt : "";
+      const key = `${row.organizationId}|${memberId}|${branchPublicId ?? ""}`;
+      const current = latest.get(key);
+      if (!current || current.occurredAt < occurredAt) latest.set(key, { organizationId: row.organizationId, memberId, branchPublicId, branchId: row.branchId, occurredAt });
+    }
+    for (const visit of latest.values()) await recordMemberVisit(ctx, visit);
+    const completed = page.isDone;
+    const value = {
+      status: completed ? "completed" as const : "pending" as const,
+      cursor: page.continueCursor,
+      processedCount: (state?.processedCount ?? 0) + page.page.length - skipped,
+      skippedCount: (state?.skippedCount ?? 0) + skipped,
+      updatedAt: now,
+      completedAt: completed ? now : undefined,
+    };
+    if (state) await ctx.db.patch(state._id, value);
+    else await ctx.db.insert("maintenanceState", { key: MEMBER_VISIT_BACKFILL_STATE_KEY, ...value });
+    if (completed) await ctx.db.insert("maintenanceState", { key: MEMBER_VISIT_READY_STATE_KEY, status: "completed", processedCount: value.processedCount, updatedAt: now, completedAt: now });
+    else await ctx.scheduler.runAfter(0, internal.qolMaintenance.backfillMemberVisits, {});
+    return { processed: page.page.length - skipped, completed };
   },
 });

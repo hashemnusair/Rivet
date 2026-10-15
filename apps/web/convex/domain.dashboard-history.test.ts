@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -204,9 +204,18 @@ const VIEWS: Array<{ name: string; subject: string; input: Record<string, unknow
   { name: "salesperson, branch B", subject: "clerk-dash-sales", input: { branchId: B }, activeBranchId: B },
 ];
 
-async function dashboardViews(t: TestConvex<typeof schema>): Promise<Record<string, Record<string, unknown>>> {
+// Ranges the dashboard page does not send but the API accepts: a date that
+// does not exist, a range after today, a long range and a single day.
+const UNUSUAL_RANGES: typeof VIEWS = [
+  { name: "owner, impossible start date", subject: "clerk-dash-owner", input: { from: "2026-02-30", to: "2026-10-15" } },
+  { name: "owner, future range", subject: "clerk-dash-owner", input: { from: "2026-10-20", to: "2026-10-31" } },
+  { name: "owner, since July", subject: "clerk-dash-owner", input: { from: "2026-07-01", to: "2026-10-15" } },
+  { name: "owner, today only, branch B", subject: "clerk-dash-owner", input: { from: "2026-10-15", to: "2026-10-15", branchId: B } },
+];
+
+async function dashboardViews(t: TestConvex<typeof schema>, list = VIEWS): Promise<Record<string, Record<string, unknown>>> {
   const views: Record<string, Record<string, unknown>> = {};
-  for (const view of VIEWS) views[view.name] = await t.withIdentity({ subject: view.subject }).query(api.domain.query, { ...operation("dashboard", view.input), activeBranchId: view.activeBranchId }) as Record<string, unknown>;
+  for (const view of list) views[view.name] = await t.withIdentity({ subject: view.subject }).query(api.domain.query, { ...operation("dashboard", view.input), activeBranchId: view.activeBranchId }) as Record<string, unknown>;
   return views;
 }
 
@@ -251,5 +260,50 @@ describe("dashboard over a gym with history", () => {
     expect(queueOf(owner).map((item) => item.id)).toMatchSnapshot("owner Today queue order");
     expect((owner.recentActivity as Array<{ id: string }>).map((event) => event.id)).toMatchSnapshot("owner recent activity");
     expect(views).toMatchSnapshot("every dashboard view");
-  });
+    const unusual = await dashboardViews(t, UNUSUAL_RANGES);
+    expect(unusual).toMatchSnapshot("unusual ranges");
+
+    // Once older check-ins are summarised, last visits come from the summary.
+    await summariseVisits(t);
+    expect(await dashboardViews(t)).toEqual(views);
+    expect(await dashboardViews(t, UNUSUAL_RANGES)).toEqual(unusual);
+  }, 30_000);
+
+  it("keeps last visits current as check-ins are written after the backfill", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    const t = convexTest(schema, modules);
+    await seedHistory(t);
+    await summariseVisits(t);
+    const desk = t.withIdentity({ subject: "clerk-dash-desk" });
+    const owner = t.withIdentity({ subject: "clerk-dash-owner" });
+
+    vi.setSystemTime(new Date("2026-10-15T09:05:00.000Z"));
+    await desk.mutation(api.domain.mutate, operation("checkins.create", { branchId: A, memberId: "dm-roamer" }));
+    await desk.mutation(api.domain.mutate, operation("checkins.create", { branchId: A, memberId: "dm-expired" }));
+    await owner.mutation(api.domain.mutate, { ...operation("checkins.override", { branchId: B, memberId: "dm-long-gone", reason: "Card at home" }), activeBranchId: B });
+    vi.setSystemTime(new Date("2026-10-15T09:10:00.000Z"));
+
+    const summarised = await dashboardViews(t);
+    const ownerQueue = queueOf(summarised["owner, all branches"]!).map((item) => item.id);
+    expect(ownerQueue).not.toContain("at-risk:dm-roamer");
+    expect(ownerQueue).not.toContain("at-risk:dm-long-gone");
+    // The refused entry is not a visit: the expired member stays on the list.
+    expect(ownerQueue).toContain("at-risk:dm-expired");
+    // Branch A never saw the override at B.
+    expect(queueOf(summarised["owner, branch A"]!).map((item) => item.id)).toContain("at-risk:dm-long-gone");
+
+    // Reading every check-in gives the same dashboard.
+    await t.run(async (ctx) => {
+      const ready = await ctx.db.query("maintenanceState").withIndex("by_key", (q) => q.eq("key", "member_visit_summary_v1")).unique();
+      await ctx.db.delete(ready!._id);
+    });
+    expect(await dashboardViews(t)).toEqual(summarised);
+  }, 30_000);
 });
+
+async function summariseVisits(t: TestConvex<typeof schema>): Promise<void> {
+  await t.mutation(internal.qolMaintenance.backfillMemberVisits, {});
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+  expect(await t.mutation(internal.qolMaintenance.backfillMemberVisits, {})).toEqual({ processed: 0, completed: true });
+}
