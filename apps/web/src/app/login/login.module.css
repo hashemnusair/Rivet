@@ -248,23 +248,44 @@
   font-family: var(--font-plex-arabic), sans-serif;
 }
 
-/* Every sign-in and sign-up page centres its content in the screen. */
+/* Every sign-in and sign-up page centres its content in the screen: the
+   space above and below it is shared evenly, and neither closes up past
+   its least size. */
 .main {
+  --back-hang: 3.5rem;
+  --space-above: 2rem;
+  --space-below: 2rem;
   display: flex;
   width: 100%;
   max-width: 27rem;
   flex: 1;
   flex-direction: column;
-  justify-content: center;
   margin-inline: auto;
-  padding-block: 2rem;
 }
 
-/* A short screen (a small phone) gives back the padding, so the longest
+.main::before,
+.main::after {
+  content: "";
+  flex: 1 1 0;
+}
+
+.main::before { min-height: var(--space-above); }
+.main::after { min-height: var(--space-below); }
+
+/* On a door, "Back to sign in" hangs in the space above the heading. A full
+   door (the gym's four roles) keeps room for it under the lockup, and the
+   space below gives way instead. */
+.main:has(.back) {
+  --space-above: calc(var(--back-hang) + 0.5rem);
+  --space-below: 1rem;
+}
+
+/* A short screen (a small phone) gives back the space, so the longest
    form, an account to create, still fits without scrolling. */
 @media (max-height: 760px) {
   .column { padding-block: 0.75rem; }
-  .main { padding-block: 0.25rem; }
+  .main { --space-above: 0.25rem; --space-below: 0.25rem; }
+  .main:has(.back) { --space-above: calc(var(--back-hang) + 0.25rem); --space-below: 0.25rem; }
   .footer { padding-top: 0.5rem; }
 }
 
@@ -279,7 +300,7 @@
 /* "Back to sign in" sits above a door's heading without pushing it down. */
 .back {
   position: absolute;
-  margin-top: -3.5rem;
+  margin-top: calc(-1 * var(--back-hang));
 }
 
 /* The door's heading and form fade in where they stand as the page opens:
