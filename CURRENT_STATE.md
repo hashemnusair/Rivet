@@ -132,6 +132,47 @@ console errors** on any route in either language or size.
   demo personas render after hydration. The live door measured 0.000 at the
   same size (3 runs, read-only), as did the live landing.
 
+**Timings in ms, before (`39ced2d2`) → after (`9cf5acab`).** Server: the
+busy-gym history above, median of 7, local Node with an in-memory database.
+convex-test answers every index lookup by scanning the whole table, which
+hides exactly this change, so the run used a copy of it that seeks a sorted
+index instead and first checked that every answer equals the full scan. Real
+Convex adds network and runtime time but scales the same way with documents
+read; before, the rows over 32,000 documents fail in production rather than
+run slowly.
+
+| Server operation | Before | After |
+|---|---|---|
+| At-risk follow-ups | 2,986 ms | 31 ms |
+| Renewal follow-ups | 1,603 ms | 27 ms |
+| Check-in search (runs the check-in rules) | 1,282 ms | 14 ms |
+| Members list | 1,218 ms | 14 ms |
+| A member's check-in tab | 1,167 ms | 1 ms |
+| Reception: today's list / inside now | 624 / 624 ms | 10 / 11 ms |
+| Leads list | 393 ms | 13 ms |
+| Member profile | 15 ms | 12 ms |
+| Owner dashboard (changed before both) | 161 ms | 158 ms |
+
+Web: mock preview builds of both commits, cold load, 4× CPU, 60 ms RTT /
+9 Mbps, 1440×900 unless noted, the two builds alternated, median of 5. "Ready"
+is when React has hydrated the first link or button.
+
+| Page | Ready | Largest paint | Long tasks |
+|---|---|---|---|
+| Platform billing | 2,014 → 1,325 ms | 2,276 → 1,592 ms | 126 → 15 ms |
+| Settings | 2,142 → 1,566 ms | 2,276 → 1,688 ms | 101 → 7 ms |
+| Dashboard | 1,696 → 1,557 ms | 2,260 → 2,032 ms | 269 → 178 ms |
+| Dashboard, phone | 1,718 → 1,548 ms | 2,244 → 2,040 ms | 231 → 185 ms |
+| Members, reception, memberships, supplier bills, landing | within 25 ms | within 25 ms | unchanged |
+
+First paint is unchanged everywhere (about 430–530 ms). **The cost:**
+opening an invoice PDF the first time on a page now waits for the renderer
+to download: 39 → 891 ms on this connection; a second open is unchanged
+(24 → 25 ms). Prefetching the renderer when the pointer reaches the button
+would shorten that first open without putting it back into startup. The
+scripts and the patched convex-test copy are in the shared notes folder
+(`timing-benchmarks/`), not in the repository.
+
 **Measured, not changed** (remaining bottlenecks, in rough order of impact):
 
 - **Live landing waits for Clerk before it paints.** The pre-paint guard
