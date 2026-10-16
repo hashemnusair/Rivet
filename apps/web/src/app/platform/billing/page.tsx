@@ -3,7 +3,7 @@ import { makeExportCopy } from "@/lib/exports/copy";
 import { useLocale, useT, type TFunction } from "@/lib/i18n/provider";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 
-import { openInvoicePdf } from "@/features/billing/invoice-pdf";
+import { invoicePdfIntent, openInvoicePdf } from "@/features/billing/invoice-pdf";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -350,7 +350,7 @@ function InvoiceRow({ invoice, focused, issuing, onIssue, onPastDue, onPayment, 
       <TableCell className="text-end text-[13px] font-semibold tabular">{amount}</TableCell>
       <TableCell><InvoiceStatusBadge status={invoice.status} renewal={renewal} /></TableCell>
       <TableCell className="pe-4 sm:pe-5"><div className="flex flex-wrap justify-end gap-1">
-        <Button size="sm" variant="secondary" onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={t("platformFinance.billing.table.viewPdf", { invoiceId: isolateLtr(invoice.id) })} data-testid="view-invoice-pdf"><FileText /><span dir="ltr">{t("platformFinance.billing.table.pdf")}</span></Button>
+        <Button size="sm" variant="secondary" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={t("platformFinance.billing.table.viewPdf", { invoiceId: isolateLtr(invoice.id) })} data-testid="view-invoice-pdf"><FileText /><span dir="ltr">{t("platformFinance.billing.table.pdf")}</span></Button>
         {invoice.status === "draft" ? <Button size="sm" loading={issuing} onClick={onIssue}><Send />{t("platformFinance.billing.table.issue")}</Button> : null}
         {invoice.status === "open" && (!renewal || isSubscriptionChange(invoice)) ? <Button size="sm" variant="secondary" onClick={onPastDue}><CircleAlert />{t("platformFinance.billing.table.pastDueAction")}</Button> : null}
         {outstanding ? <Button size="sm" onClick={onPayment}><CheckCircle2 /> {paymentLabel}</Button> : null}

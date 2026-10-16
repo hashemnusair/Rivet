@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { SubscriptionSection } from "./subscription-section";
+
+// Counts when the PDF renderer module is first loaded.
+const renderer = vi.hoisted(() => ({ loads: 0 }));
+vi.mock("../../../convex/platformInvoicePdf", async (importOriginal) => {
+  renderer.loads += 1;
+  return await importOriginal();
+});
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
 const experienceMock = vi.hoisted(() => ({ saasPlans: [{ name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, tone: "signal" }] }));
@@ -12,6 +19,18 @@ vi.mock("@/lib/providers/experience-provider", () => ({ useExperience: () => exp
 afterEach(() => { resetApiForTests(); vi.unstubAllGlobals(); });
 
 describe("subscription and invoices", () => {
+  it("starts loading the PDF renderer when the pointer reaches the button, before any click", async () => {
+    vi.stubGlobal("open", vi.fn());
+    await renderWithApp(<SubscriptionSection />, { role: "owner" });
+    const rows = await screen.findAllByTestId("subscription-invoice-row");
+    const button = within(rows[0]!).getByRole("button", { name: "View invoice RV-1046" });
+    // First test in the file: nothing has loaded the renderer yet.
+    expect(renderer.loads).toBe(0);
+    fireEvent.pointerEnter(button);
+    await waitFor(() => expect(renderer.loads).toBe(1));
+    expect(window.open).not.toHaveBeenCalled();
+  });
+
   it("lists the gym's own RIVET invoices and opens one as the PDF that was emailed", async () => {
     const user = userEvent.setup();
     const opened: Array<{ url: string; type?: string }> = [];

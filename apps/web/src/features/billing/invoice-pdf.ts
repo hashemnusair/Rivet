@@ -13,6 +13,18 @@ import type { InvoiceCustomer, InvoiceDocumentContext } from "../../../convex/pl
 const invoiceRenderer = () => Promise.all([import("../../../convex/platformInvoicePdf"), import("../../../convex/platformInvoiceDocument")]);
 
 /**
+ * Starts loading the renderer as soon as someone heads for a PDF button
+ * (pointer, keyboard focus or touch), so the click usually finds it ready.
+ * A failed prefetch is ignored; the click loads it again.
+ */
+export function prefetchInvoicePdf(): void {
+  void invoiceRenderer().catch(() => undefined);
+}
+
+/** Spread onto every button that opens an invoice PDF. */
+export const invoicePdfIntent = { onPointerEnter: prefetchInvoicePdf, onFocus: prefetchInvoicePdf, onTouchStart: prefetchInvoicePdf } as const;
+
+/**
  * The invoice as a PDF, built in the browser from the same record and the
  * same renderer the server uses for the emailed attachment, so what a
  * person opens here is the file the gym received.

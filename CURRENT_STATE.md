@@ -168,8 +168,13 @@ is when React has hydrated the first link or button.
 First paint is unchanged everywhere (about 430–530 ms). **The cost:**
 opening an invoice PDF the first time on a page now waits for the renderer
 to download: 39 → 891 ms on this connection; a second open is unchanged
-(24 → 25 ms). Prefetching the renderer when the pointer reaches the button
-would shorten that first open without putting it back into startup. The
+(24 → 25 ms). Since then the PDF buttons start loading the renderer when the
+pointer, keyboard focus or a touch reaches them (`invoicePdfIntent` in
+`features/billing/invoice-pdf.ts`), keeping it out of startup. Measured the
+same way, first open: 879 ms when clicked without pointing first, 552 ms
+after 300 ms on the button, 250 ms after 600 ms. Most sites avoid this
+entirely by storing the server-rendered PDF and linking to it; that would
+need Convex file storage and a deploy. The
 scripts and the patched convex-test copy are in the shared notes folder
 (`timing-benchmarks/`), not in the repository.
 
