@@ -1,5 +1,35 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — Short-phone supplier-payment test waits for the bills list
+
+CI on `main` went red on `workflow-pass-3.spec.ts` "branch work dialogs fit a
+short phone viewport": at 390×600 the "Record supplier payment" dialog's
+"Record payment" button was not in view after the test scrolled to it.
+
+Cause: a race in the test, not Linux fonts or the Amman/UTC date. Two async
+results grow this dialog after it opens. The cash-shift notice comes first.
+The supplier's open bills come later, because that request starts only when
+the page's supplier list fills the supplier field. The test waited for the
+notice only. When it scrolled before the bills arrived (scrollHeight 1066,
+scrollTop 516, button top 525), the bills then added 57 px (scrollHeight
+1123) and pushed the button to top 582, below the dialog's bottom edge at
+576. That is the "viewport ratio 0". The scroll position itself never reset.
+
+Evidence: a diagnostic run on GitHub's Linux runner (not merged) showed the
+same dialog heights and button boxes as macOS. The unchanged test also failed
+locally on macOS (5 of 10 repeats) and on Linux (2 of 12), both between 23:28
+and 23:36 UTC. The earlier "time-of-day" pattern came from timing luck.
+
+Fix (test only, no product change, assertion unchanged): after the shift
+notice, the test also waits for the bills result ("On bills: …", or "You owe …
+nothing right now.") before it scrolls. With the fix: 10 of 10 local repeats
+and 20 of 20 Linux repeats passed, inside the 21:00–24:00 UTC window.
+
+Seen while investigating, not changed here: while the bills load, the dialog
+header says "You owe Jordan Sports Supply: JOD 0.000". If Record payment is
+pressed before the page's supplier list loads, the supplier field shows "No
+active suppliers" for a moment.
+
 ## 17 October 2026 — Platform console and finance tabs prepare screens on intent
 
 The platform console sidebar (logo, the nine sections and "Gym workspace") and
