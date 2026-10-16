@@ -36,20 +36,19 @@ jobs:
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: date -u; echo "TZ=$TZ"
       - run: pnpm --filter web exec next build --webpack
-      - name: Diagnostic spec
+      - name: Unfixed test repeated (expect failures)
         continue-on-error: true
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
-          PLAYWRIGHT_WORKERS: "1"
-        run: date -u; pnpm test:e2e zz-diag-supplier-dialog.spec.ts --retries=0
-      - name: Original test repeated
-        continue-on-error: true
+          PLAYWRIGHT_WORKERS: "2"
+        run: date -u; pnpm test:e2e zz-unfixed-pass-3.spec.ts -g "short phone viewport" --retries=0 --repeat-each=12
+      - name: Fixed test repeated
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
-          PLAYWRIGHT_WORKERS: "1"
-        run: date -u; pnpm test:e2e workflow-pass-3.spec.ts -g "short phone viewport" --retries=0 --repeat-each=3 --trace=on --screenshot=on
+          PLAYWRIGHT_WORKERS: "2"
+        run: date -u; pnpm test:e2e workflow-pass-3.spec.ts -g "short phone viewport" --retries=0 --repeat-each=20; date -u
       - uses: actions/upload-artifact@v4
         if: always()
         with:

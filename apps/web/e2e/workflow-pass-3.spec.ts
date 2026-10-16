@@ -124,9 +124,13 @@ test("branch work dialogs fit a short phone viewport", async ({ page }) => {
     const dialog = page.getByRole("dialog", { name: title, exact: true });
     await expect(dialog).toBeVisible();
     if (title === "Record supplier payment") {
-      // The cash-shift result adds a taller notice after the dialog opens.
-      // Scroll only once that async content has settled, as a user would.
+      // Two async results grow this dialog after it opens: the cash-shift
+      // notice, and the supplier's open bills. The bills request waits for
+      // the page's supplier list to fill the supplier field, so it often
+      // lands after the notice; scrolling before it pushed the footer below
+      // the dialog's edge. Scroll only once both have settled, as a user would.
       await expect(dialog.getByText(/^(Open cash shift at|No cash shift is open at)/)).toBeVisible();
+      await expect(dialog.getByText(/^(On bills: |You owe .+ nothing right now\.)/)).toBeVisible();
     }
     const submit = dialog.getByRole("button", { name: action, exact: true });
     await submit.scrollIntoViewIfNeeded();
