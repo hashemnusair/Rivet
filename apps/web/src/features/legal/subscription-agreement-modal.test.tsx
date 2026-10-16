@@ -5,7 +5,7 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { useApp } from "@/lib/providers/app-providers";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { SUBSCRIPTION_AGREEMENT_VERSION_AR } from "../../../convex/legalAgreementText";
-import { SubscriptionAgreementGate } from "./subscription-agreement-modal";
+import { SubscriptionAgreementGate } from "./subscription-agreement-gate";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock, usePathname: () => "/members", useSearchParams: () => new URLSearchParams(), useParams: () => ({}) }));
@@ -41,7 +41,8 @@ describe("subscription agreement modal", () => {
     const signSpy = vi.spyOn(api, "signSubscriptionAgreement");
 
     const modal = await screen.findByTestId("agreement-modal");
-    expect(within(modal).getByTestId("agreement-text")).toHaveTextContent("Electronic signature");
+    // The flow loads on demand and then reads the agreement, so wait for the text.
+    expect(await within(modal).findByTestId("agreement-text")).toHaveTextContent("Electronic signature");
     // The reader sees the whole document in order: the signature block first,
     // with what the next step will confirm, then the clauses, then signatures.
     const text = within(modal).getByTestId("agreement-text");
@@ -148,7 +149,8 @@ it("retains details and signature while switching language, requires reading and
   const signSpy = vi.spyOn(api, "signSubscriptionAgreement");
   const modal = await screen.findByTestId("agreement-modal");
   const read = async () => {
-    const scroller = within(modal).getByTestId("agreement-scroll");
+    // The flow loads on demand and then reads the agreement, so wait for it.
+    const scroller = await within(modal).findByTestId("agreement-scroll");
     scroller.scrollTop = 1200;
     fireEvent.scroll(scroller);
     await waitFor(() => expect(within(modal).getByTestId("agree-continue")).toBeEnabled());

@@ -4,6 +4,7 @@ export const documents = {
   csvRowCount: "Data rows",
   csvNoRecords: "No records matched this export.",
   csvEmpty: "No records.",
+  openFailed: "The file could not be opened. Check your connection and try again.",
 
   "invoiceTitle": "Invoice",
   "draft": "Draft",

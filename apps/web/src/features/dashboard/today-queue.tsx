@@ -18,13 +18,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/misc";
-import { LogContactForm } from "@/features/crm/contact-work-panel";
 import type { TodayQueueData, TodayQueueItem, TodayQueueKind } from "@/lib/domain/types";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { translate } from "@/lib/i18n/dictionary";
@@ -48,6 +47,13 @@ const KIND_ICON: Record<TodayQueueKind, LucideIcon> = {
   low_stock: Boxes,
   support_case: LifeBuoy,
 };
+
+/**
+ * The contact form (and its form and validation libraries) loads when a
+ * follow-up is in the queue, not with every dashboard.
+ */
+const loadLogContactForm = () => import("@/features/crm/contact-work-panel");
+const LogContactForm = lazy(() => loadLogContactForm().then((module) => ({ default: module.LogContactForm })));
 
 const defaultT: TFunction = (key, vars) => translate({ messages: en, fallback: en, locale: "en" }, key, vars);
 
@@ -90,6 +96,7 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
         </DialogHeader>
         {logging?.subject ? (
           <DialogBody>
+            <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             <LogContactForm
               subject={logging.subject.kind}
               leadId={logging.subject.kind === "lead" ? logging.subject.id : undefined}
@@ -97,6 +104,7 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
               submitLabel={t("dashboard.today.dialog.saveAndFinish")}
               onLogged={() => setLogging(undefined)}
             />
+            </Suspense>
           </DialogBody>
         ) : null}
         <DialogFooter className="justify-between">
@@ -127,6 +135,9 @@ export function TodayQueue({
   const [expanded, setExpanded] = useState(false);
   const completion = useTodayQueueCompletion();
   const items = data?.items ?? [];
+  const hasFollowUps = items.some((item) => item.kind === "follow_up" && item.subject);
+  // Ready before "Done" is pressed on a follow-up, without delaying the dashboard.
+  useEffect(() => { if (hasFollowUps) void loadLogContactForm(); }, [hasFollowUps]);
   const visibleItems = expanded ? items : items.slice(0, initialVisible);
   const hiddenItems = Math.max(0, items.length - visibleItems.length);
 

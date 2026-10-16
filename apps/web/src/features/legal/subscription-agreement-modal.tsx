@@ -37,19 +37,8 @@ function newIdempotencyKey() {
   return `agreement-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * Mounted by the app shell. While the session says the owner still owes a
- * signature, the modal covers the workspace and cannot be closed. After a
- * successful signing it stays open on the confirmation until the owner
- * continues, even though the refreshed session no longer requires it.
- */
-export function SubscriptionAgreementGate({ required }: { required: boolean }) {
-  const [holdOpen, setHoldOpen] = useState(false);
-  if (!required && !holdOpen) return null;
-  return <SubscriptionAgreementModal onSigned={() => setHoldOpen(true)} onFinished={() => setHoldOpen(false)} />;
-}
-
-function SubscriptionAgreementModal({ onSigned, onFinished }: { onSigned: () => void; onFinished: () => void }) {
+/** The blocking signing flow; `SubscriptionAgreementGate` decides when it shows and loads it on demand. */
+export function SubscriptionAgreementModal({ onSigned, onFinished }: { onSigned: () => void; onFinished: () => void }) {
   const t = useT();
   const { refreshSession } = useApp();
   const invalidate = useInvalidate();

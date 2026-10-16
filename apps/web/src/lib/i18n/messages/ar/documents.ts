@@ -6,6 +6,7 @@ export const documents: typeof EnDocuments = {
   csvRowCount: "عدد صفوف البيانات",
   csvNoRecords: "لا توجد سجلات مطابقة لهذا التصدير.",
   csvEmpty: "لا توجد سجلات.",
+  openFailed: "لم يُفتح الملف. تحقق من الاتصال وأعد المحاولة.",
   "invoiceTitle": "فاتورة",
   "draft": "مسودة",
   "open": "غير مدفوعة",

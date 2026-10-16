@@ -1069,6 +1069,85 @@ async function recordsOccurredBetween(ctx: ReadContext, actor: ActorContext, ent
  * tie, in the order they were written: the same result as sorting the whole
  * timeline, read from the business-time index instead.
  */
+/**
+ * Check-ins that can have happened at or after `sinceMs`. Stored times are
+ * ISO strings; a one-day margin on the date keeps any stored UTC offset, and
+ * callers still compare instants themselves. Reads one day of the gym's
+ * check-ins instead of its whole history.
+ */
+async function checkInsSince(ctx: ReadContext, actor: ActorContext, sinceMs: number): Promise<DomainRecord[]> {
+  const records = await ctx.db
+    .query("domainRecords")
+    .withIndex("by_organization_type_occurred", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "checkIn").gte("data.occurredAt", addDays(new Date(sinceMs).toISOString().slice(0, 10), -1)))
+    .collect();
+  return records.filter((record) => inActorScope(actor, record));
+}
+
+/** Above this many members a list reads every summary row once instead of one index range per member. */
+const PER_MEMBER_READ_LIMIT = 60;
+
+/**
+ * Each member's latest admitted visit. Once the one-off backfill has
+ * summarised older check-ins this reads the `memberVisit` rows (one per
+ * member and branch); until then it reads the check-ins themselves, as
+ * before. A short list is read per member. `scoped` keeps only visits at the
+ * actor's branches,
+ * matching the list views; a single profile has always shown every branch.
+ */
+async function lastVisitByMember(ctx: ReadContext, actor: ActorContext, memberIds: readonly string[] | undefined, scoped: boolean): Promise<Map<string, string>> {
+  const latest = new Map<string, string>();
+  const keep = (memberId: string, occurredAt: string | undefined) => {
+    if (occurredAt && (!latest.has(memberId) || occurredAt > latest.get(memberId)!)) latest.set(memberId, occurredAt);
+  };
+  const organizationId = actor.organization._id;
+  const ids = memberIds ? [...new Set(memberIds)] : undefined;
+  const perMember = Boolean(ids && ids.length <= PER_MEMBER_READ_LIMIT);
+  const read = (entityType: "memberVisit" | "checkIn") => perMember
+    ? Promise.all(ids!.map((id) => ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", organizationId).eq("memberPublicId", id).eq("entityType", entityType)).collect())).then((rows) => rows.flat())
+    : ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect();
+  if (await memberVisitsReady(ctx)) {
+    for (const row of await read("memberVisit")) {
+      if (scoped && !inActorScope(actor, row)) continue;
+      const visit = data(row.data);
+      keep(stringValue(visit.memberId), optionalString(visit.lastVisitAt));
+    }
+    return latest;
+  }
+  for (const row of await read("checkIn")) {
+    if (scoped && !inActorScope(actor, row)) continue;
+    const checkIn = data(row.data);
+    if (checkIn.decision === "blocked") continue;
+    keep(stringValue(checkIn.memberId), optionalString(checkIn.occurredAt));
+  }
+  return latest;
+}
+
+/**
+ * Each member's call attempts, newest first: just these members' call
+ * events, not the gym's whole timeline (which is mostly check-ins).
+ */
+async function callAttemptsByMember(ctx: ReadContext, actor: ActorContext, memberIds: readonly string[]): Promise<Map<string, Data[]>> {
+  const ids = [...new Set(memberIds)];
+  const rows = await Promise.all(ids.map((id) => ctx.db.query("domainRecords").withIndex("by_organization_member_type_kind", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id).eq("entityType", "timeline").eq("data.type", "call_attempt")).collect()));
+  const calls = new Map<string, Data[]>();
+  for (const row of rows.flat()) {
+    if (!inActorScope(actor, row)) continue;
+    const event = data(row.data);
+    if (event.type !== "call_attempt" || !event.memberId) continue;
+    const list = calls.get(stringValue(event.memberId)) ?? [];
+    list.push(event);
+    calls.set(stringValue(event.memberId), list);
+  }
+  for (const list of calls.values()) list.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  return calls;
+}
+
+/** Timeline events linked to a lead: lead progress and contact history without the member timeline. */
+async function leadLinkedTimeline(ctx: ReadContext, actor: ActorContext): Promise<DomainRecord[]> {
+  const records = await ctx.db.query("domainRecords").withIndex("by_organization_lead_type", (q) => q.eq("organizationId", actor.organization._id).gt("leadPublicId", "")).collect();
+  return records.filter((record) => record.entityType === "timeline" && inActorScope(actor, record));
+}
+
 async function recentTimelineEvents(ctx: ReadContext, actor: ActorContext, limit: number): Promise<Data[]> {
   const rows: DomainRecord[] = [];
   const timeline = ctx.db
@@ -1104,9 +1183,10 @@ async function recordsOfMember(ctx: ReadContext, organizationId: Id<"organizatio
     .collect();
   if (indexed.length > 0) return indexed;
   // Compatibility for records created before relationship keys were added.
-  // Current writes always populate the index, so established tenants leave
-  // this fallback naturally as their operational history rolls forward.
-  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+  // Every current write sets the key, so only rows without one can hold an
+  // older link; reading just those keeps a member with no records (a first
+  // check-in, a new profile) from scanning the gym's whole history.
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", organizationId).eq("memberPublicId", undefined).eq("entityType", entityType)).collect())
     .filter((record) => optionalString(data(record.data).memberId) === memberPublicId);
 }
 
@@ -1116,7 +1196,8 @@ async function recordsOfLead(ctx: ReadContext, organizationId: Id<"organizations
     .withIndex("by_organization_lead_type", (q) => q.eq("organizationId", organizationId).eq("leadPublicId", leadPublicId).eq("entityType", entityType))
     .collect();
   if (indexed.length > 0) return indexed;
-  return (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", entityType)).collect())
+  // As for members: only rows written without a lead key can hold an older link.
+  return (await ctx.db.query("domainRecords").withIndex("by_organization_lead_type", (q) => q.eq("organizationId", organizationId).eq("leadPublicId", undefined).eq("entityType", entityType)).collect())
     .filter((record) => optionalString(data(record.data).leadId) === leadPublicId);
 }
 
@@ -1826,11 +1907,11 @@ async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input:
   requirePermission(actor, "crm.read");
   const branchId = optionalString(input.branchId);
   if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-  const [memberRows, membershipRows, checkInRows, timelineRows, snoozeRows] = await Promise.all([
+  const [memberRows, membershipRows, visits, snoozeRows] = await Promise.all([
     memberRecords(ctx, actor),
     membershipRecords(ctx, actor),
-    recordsOf(ctx, actor, "checkIn"),
-    recordsOf(ctx, actor, "timeline"),
+    // Inactivity needs each member's latest admitted visit, not every check-in.
+    lastVisitByMember(ctx, actor, undefined, true),
     recordsOf(ctx, actor, "retentionState"),
   ]);
   const policies = data((await settingsData(ctx, actor)).operationalPolicies);
@@ -1845,7 +1926,7 @@ async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input:
     expiredWinBackDays: numberValue(retention.expiredWinBackDays, 90),
     members: members.map((member) => ({ id: stringValue(member.id), status: stringValue(member.status), homeBranchId: stringValue(member.homeBranchId), assignedSalespersonId: optionalString(member.assignedSalespersonId), createdAt: stringValue(member.createdAt) })),
     memberships: memberships.map((membership) => ({ id: stringValue(membership.id), memberId: stringValue(membership.memberId), homeBranchId: stringValue(membership.homeBranchId), startDate: stringValue(membership.startDate), endDate: stringValue(membership.endDate), totalVisits: typeof membership.totalVisits === "number" ? membership.totalVisits : undefined, remainingVisits: typeof membership.remainingVisits === "number" ? membership.remainingVisits : undefined, cancelledAt: optionalString(membership.cancelledAt), previousMembershipId: optionalString(membership.previousMembershipId), activeFreeze: data(membership.activeFreeze) })),
-    checkIns: checkInRows.map((row) => { const checkIn = data(row.data); return { memberId: stringValue(checkIn.memberId), decision: stringValue(checkIn.decision), occurredAt: stringValue(checkIn.occurredAt) }; }),
+    checkIns: [...visits].map(([memberId, occurredAt]) => ({ memberId, decision: "allowed", occurredAt })),
     snoozes: snoozeRows.map((row) => { const snooze = data(row.data); return { memberId: stringValue(snooze.memberId), snoozedUntil: optionalString(snooze.snoozedUntil) }; }),
     includeSnoozed: booleanValue(input.includeSnoozed),
   }).filter((risk) => !branchId || risk.branchId === branchId)
@@ -1861,15 +1942,7 @@ async function retentionQueueItems(ctx: ReadContext, actor: ActorContext, input:
   ]);
   const memberSummaryById = new Map(memberSummaries.map((member) => [stringValue(member.id), member]));
   const membershipSummaryById = new Map(membershipSummaries.map((membership) => [stringValue(membership.id), membership]));
-  const contactsByMember = new Map<string, Data[]>();
-  for (const row of timelineRows) {
-    const event = data(row.data);
-    if (event.type !== "call_attempt" || !event.memberId) continue;
-    const contacts = contactsByMember.get(stringValue(event.memberId)) ?? [];
-    contacts.push(event);
-    contactsByMember.set(stringValue(event.memberId), contacts);
-  }
-  for (const contacts of contactsByMember.values()) contacts.sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  const contactsByMember = await callAttemptsByMember(ctx, actor, filtered.map((risk) => risk.memberId));
   const search = optionalString(input.search);
   return filtered.flatMap((risk) => {
     const member = memberSummaryById.get(risk.memberId);
@@ -1900,10 +1973,8 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
     .map((record) => data(record.data))
     .filter((charge) => identityIds.includes(stringValue(charge.memberId)) && collectibleOutstandingValue(charge, today) > 0)
     .map((charge) => chargeProjection(charge, today));
-  const checkins = (await recordsOfMemberIdentity(ctx, actor, stringValue(value.id), "checkIn"))
-    .map((record) => data(record.data))
-    .filter((checkin) => identityIds.includes(stringValue(checkin.memberId)) && checkin.decision !== "blocked")
-    .sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
+  const visits = await lastVisitByMember(ctx, actor, identityIds, false);
+  const lastCheckInAt = identityIds.map((id) => visits.get(id)).filter((at): at is string => Boolean(at)).sort().pop();
   return {
     id: stringValue(value.id),
     memberNumber: stringValue(value.memberNumber),
@@ -1920,7 +1991,7 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
     membershipEndDate: membership ? optionalString(membership.endDate) : undefined,
     outstanding: money(outstandingCharges.reduce((sum, charge) => sum + amountOf(charge.outstandingAmount), 0), actor.organization.currency),
     outstandingCharges,
-    lastCheckInAt: checkins[0] ? optionalString(checkins[0].occurredAt) : undefined,
+    lastCheckInAt,
     createdAt: stringValue(value.createdAt, isoNow()),
   };
 }
@@ -1934,11 +2005,12 @@ async function toMemberSummary(ctx: ReadContext, actor: ActorContext, value: Dat
  * feel frozen on larger gyms.
  */
 async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
-  const [memberships, plans, charges, checkIns] = await Promise.all([
+  const identityIds = values.flatMap((value) => [stringValue(value.id), ...arrayValue(value.mergedMemberIds).map(String)]);
+  const [memberships, plans, charges, visits] = await Promise.all([
     membershipRecords(ctx, actor),
     recordsOf(ctx, actor, "plan"),
     chargeRecords(ctx, actor),
-    recordsOf(ctx, actor, "checkIn"),
+    lastVisitByMember(ctx, actor, identityIds, true),
   ]);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const rank: Record<string, number> = { active: 0, expiring: 0, frozen: 0, depleted: 1, scheduled: 2, expired: 3, cancelled: 4 };
@@ -1968,13 +2040,9 @@ async function toMemberSummaries(ctx: ReadContext, actor: ActorContext, values: 
     chargesByMember.set(memberId, list);
   }
   const lastCheckInByMember = new Map<string, string>();
-  for (const record of checkIns) {
-    const checkIn = data(record.data);
-    if (checkIn.decision === "blocked") continue;
-    const memberId = canonicalByIdentityId.get(stringValue(checkIn.memberId)) ?? optionalString(checkIn.memberId);
-    if (!memberId) continue;
-    const occurredAt = optionalString(checkIn.occurredAt);
-    if (occurredAt && (!lastCheckInByMember.has(memberId) || occurredAt > lastCheckInByMember.get(memberId)!)) lastCheckInByMember.set(memberId, occurredAt);
+  for (const [visitorId, occurredAt] of visits) {
+    const memberId = canonicalByIdentityId.get(visitorId) ?? visitorId;
+    if (!lastCheckInByMember.has(memberId) || occurredAt > lastCheckInByMember.get(memberId)!) lastCheckInByMember.set(memberId, occurredAt);
   }
   return values.map((value) => {
     const memberId = stringValue(value.id);
@@ -2243,7 +2311,8 @@ async function toLeadSummaries(ctx: ReadContext, actor: ActorContext, values: Da
     ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
     ctx.db.query("users").collect(),
     ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
-    recordsOf(ctx, actor, "timeline"),
+    // Only events linked to a lead matter here; the member timeline is most of it.
+    leadLinkedTimeline(ctx, actor),
     recordsOf(ctx, actor, "offer"),
     recordsOf(ctx, actor, "trialBooking"),
   ]);
@@ -2908,7 +2977,8 @@ async function linkExactEmailMembersToCustomerProfile(ctx: MutationCtx, user: Us
     const marketplace = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
     const marketplaceValue = data(marketplace?.data);
     const charges = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "charge")).collect();
-    const checkIns = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "checkIn")).collect();
+    // This member's own check-ins, not the gym's.
+    const checkIns = await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", organization._id).eq("memberPublicId", memberRecord.publicId).eq("entityType", "checkIn")).collect();
     for (const { row: membershipRow, value: membership } of memberships) {
       const planRecord = optionalString(membership.planId)
         ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "plan").eq("publicId", stringValue(membership.planId))).unique()
@@ -6233,10 +6303,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       if (fromDate && toDate && diffDays(fromDate, toDate) < 0) domainError("VALIDATION_ERROR", "The follow-up start date must be before the end date.", { correlationId: actor.correlationId });
       const branchId = optionalString(input.branchId);
       if (branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
-      const [membershipRows, memberRows, timelineRows, taskRows] = await Promise.all([
+      const [membershipRows, memberRows, taskRows] = await Promise.all([
         branchId ? recordsOfBranch(ctx, actor, "membership", branchId) : membershipRecords(ctx, actor),
         memberRecords(ctx, actor),
-        recordsOf(ctx, actor, "timeline"),
         recordsOf(ctx, actor, "task"),
       ]);
       const terms = membershipRows.map((record) => data(record.data));
@@ -6256,21 +6325,15 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         }
         return bucket === "expired" ? daysUntil < 0 && daysUntil >= -requestedDays : daysUntil >= 0 && daysUntil <= requestedDays;
       });
-      const [memberSummaries, membershipSummaries] = await Promise.all([
-        toMemberSummaries(ctx, actor, members),
+      // Summaries and call history only for the members whose terms are listed.
+      const candidateMembers = [...new Set(candidateTerms.map((term) => stringValue(term.memberId)))].map((id) => membersById.get(id)).filter((member): member is Data => Boolean(member));
+      const [memberSummaries, membershipSummaries, callsByMember] = await Promise.all([
+        toMemberSummaries(ctx, actor, candidateMembers),
         toMembershipSummaries(ctx, actor, candidateTerms),
+        callAttemptsByMember(ctx, actor, candidateMembers.map((member) => stringValue(member.id))),
       ]);
       const memberSummaryById = new Map(memberSummaries.map((member) => [member.id, member]));
       const membershipSummaryById = new Map(membershipSummaries.map((membership) => [membership.id, membership]));
-      const callsByMember = new Map<string, Data[]>();
-      for (const record of timelineRows) {
-        const event = data(record.data);
-        if (event.type !== "call_attempt" || !event.memberId) continue;
-        const calls = callsByMember.get(event.memberId) ?? [];
-        calls.push(event);
-        callsByMember.set(event.memberId, calls);
-      }
-      for (const calls of callsByMember.values()) calls.sort((a, b) => stringValue(b.occurredAt).localeCompare(stringValue(a.occurredAt)));
       const openTaskByMember = new Map<string, Data>();
       for (const record of taskRows) {
         const task = data(record.data);
@@ -6329,9 +6392,20 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "checkins.list": {
       requirePermission(actor, "members.read");
-      const checkInRecords = input.branchId
-        ? await recordsOfBranch(ctx, actor, "checkIn", stringValue(input.branchId))
-        : await recordsOf(ctx, actor, "checkIn");
+      // Reception lists one business day and a profile one member; read only
+      // that slice. The filters below still apply exactly as before.
+      if (input.branchId) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, stringValue(input.branchId)));
+      const date = optionalString(input.date);
+      const since = optionalString(input.since);
+      const checkInRecords = validImportDate(date)
+        ? await recordsOccurredBetween(ctx, actor, "checkIn", date, date)
+        : since && Number.isFinite(Date.parse(since))
+          ? await checkInsSince(ctx, actor, Date.parse(since))
+          : optionalString(input.memberId)
+            ? (await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(input.memberId)).eq("entityType", "checkIn")).collect()).filter((record) => inActorScope(actor, record))
+            : input.branchId
+              ? await recordsOfBranch(ctx, actor, "checkIn", stringValue(input.branchId))
+              : await recordsOf(ctx, actor, "checkIn");
       let items = checkInRecords.map((record) => data(record.data));
       if (input.branchId) items = items.filter((item) => item.branchId === input.branchId);
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
@@ -6347,8 +6421,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
       assertBranchAccess(actor, branch);
       const cutoff = Date.now() - 90 * 60_000;
-      const rows = (await recordsOfBranch(ctx, actor, "checkIn", branchId)).map((record) => data(record.data)).filter((item) => item.branchId === branchId && item.decision !== "blocked");
       const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      // The last 90 minutes and today are all this reads, even just after midnight.
+      const rows = (await recordsOccurredBetween(ctx, actor, "checkIn", businessDate(new Date(cutoff).toISOString(), actor.organization.timezone || TZ_FALLBACK), today)).map((record) => data(record.data)).filter((item) => item.branchId === branchId && item.decision !== "blocked");
       const todayRows = rows.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK) === today);
       return { branchId, current: rows.filter((item) => new Date(stringValue(item.occurredAt)).getTime() >= cutoff).length, capacity: branch.capacity ?? 120, checkInsToday: todayRows.length, peakHour: peakHour(todayRows, actor.organization.timezone || TZ_FALLBACK) };
     }
@@ -6587,8 +6662,9 @@ async function evaluateCheckIn(ctx: ReadContext, actor: ActorContext, member: Da
   const entryPolicy = data(data(policies).entry);
   const membership = await currentMembership(ctx, actor, stringValue(member.id));
   const plan = membership ? await recordOfOptional(ctx, actor, "plan", stringValue(membership.planId)) : null;
-  const checks = (await recordsOf(ctx, actor, "checkIn")).map((record) => data(record.data));
   const duplicateWindow = numberValue(entryPolicy.duplicateScanWindowMinutes, 2);
+  // Only a recent scan can be a duplicate, so read the last day, not every check-in.
+  const checks = (await checkInsSince(ctx, actor, Date.now() - duplicateWindow * 60_000)).map((record) => data(record.data));
   const duplicate = checks.some((checkin) => checkin.memberId === member.id && checkin.branchId === branchId && checkin.decision !== "blocked" && Date.now() - new Date(stringValue(checkin.occurredAt)).getTime() < duplicateWindow * 60_000);
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const codes: string[] = [];
@@ -6830,7 +6906,9 @@ async function shiftTotals(ctx: ReadContext, actor: ActorContext, shift: Data): 
 }
 
 async function dailyReconciliation(ctx: ReadContext, actor: ActorContext, branchId: string, date: string): Promise<Data> {
-  const payments = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && payment.status !== "voided" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
+  // One business day, filtered by the gym's own date exactly as before; an unreadable date keeps the full read.
+  const candidates = validImportDate(date) ? await recordsOccurredBetween(ctx, actor, "payment", date, date) : await paymentRecords(ctx, actor);
+  const payments = candidates.map((record) => data(record.data)).filter((payment) => payment.branchId === branchId && payment.status !== "voided" && businessDate(stringValue(payment.occurredAt), actor.organization.timezone || TZ_FALLBACK) === date);
   const isCollection = (payment: Data) => payment.type === "payment" || payment.type === "retail_sale";
   const methods = ["cash", "card", "bank_transfer", "cliq", "other"];
   const totalsByMethod = methods.map((method) => {
@@ -8129,7 +8207,9 @@ async function syncCustomerMembershipProjection(ctx: MutationCtx, actor: ActorCo
       member = { ...member, ...customerProfileMemberFields(profile, utcIso(Date.now())) };
     }
   }
-  const checks = (await recordsOf(ctx, actor, "checkIn")).map((row) => data(row.data)).filter((item) => item.memberId === member.id && item.decision !== "blocked").sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
+  // This member's own check-ins, not the gym's.
+  const checks = (await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", stringValue(member.id)).eq("entityType", "checkIn")).collect())
+    .filter((row) => inActorScope(actor, row)).map((row) => data(row.data)).filter((item) => item.memberId === member.id && item.decision !== "blocked").sort((left, right) => stringValue(right.occurredAt).localeCompare(stringValue(left.occurredAt)));
   const month = todayIn(actor.organization.timezone || TZ_FALLBACK).slice(0, 7);
   const visitsThisMonth = checks.filter((item) => businessDate(stringValue(item.occurredAt), actor.organization.timezone || TZ_FALLBACK).startsWith(month)).length;
   const value = {
@@ -12226,8 +12306,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     recordsOf(ctx, actor, "shift"),
     // Lead progress and last contact need only lead-linked timeline, a small
     // slice of a timeline that is mostly member activity.
-    ctx.db.query("domainRecords").withIndex("by_organization_lead_type", (q) => q.eq("organizationId", actor.organization._id).gt("leadPublicId", "")).collect()
-      .then((records) => records.filter((record) => record.entityType === "timeline" && inActorScope(actor, record))),
+    leadLinkedTimeline(ctx, actor),
     recordsOf(ctx, actor, "offer"),
     recordsOf(ctx, actor, "trialBooking"),
     recordsOf(ctx, actor, "retentionState"),
@@ -12549,7 +12628,8 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         detail: `Shift opened by ${stringValue(shift.openedByName)}`,
         branchName: shiftBranchId ? branchNameById.get(shiftBranchId) : undefined,
         occurredAt: optionalString(shift.closedAt),
-        amount: money(amountOf(shift.variance), stringValue(data(shift.variance).currency, actor.organization.currency)),
+        // A short drawer is a negative difference; it must list, not fail the dashboard.
+        amount: signedMoney(amountOf(shift.variance), stringValue(data(shift.variance).currency, actor.organization.currency)),
         href: "/payments/shifts",
         action: { kind: "navigate", label: "Review" },
       });

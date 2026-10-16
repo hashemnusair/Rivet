@@ -92,7 +92,8 @@ describe("Today queue", () => {
     await user.click(screen.getByRole("button", { name: "Complete Call Dana about trial" }));
     const dialog = await screen.findByRole("dialog", { name: "What happened?" });
     expect(dialog).toHaveTextContent("Call Dana about trial");
-    expect(screen.getByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
+    // The contact form loads on demand.
+    expect(await screen.findByRole("radiogroup", { name: "Contact outcome" })).toBeInTheDocument();
     expect(completeTask).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Done, nothing to record" }));

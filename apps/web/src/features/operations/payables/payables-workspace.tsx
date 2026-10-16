@@ -24,7 +24,7 @@ import { DateText, MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/misc";
+import { Skeleton, TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ForbiddenState, QueryErrorState } from "@/components/ui/states";
 import { buildPayablesCsv } from "./payables-export";
@@ -190,7 +190,8 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
       </div>
       {toolbar}
 
-      {payablesQuery.isLoading ? <div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div>
+      {/* The placeholder has the bills table's shape too, so the sections below do not jump when it arrives. */}
+      {payablesQuery.isLoading ? <div key="payables-loading" className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div><div className="panel p-4"><TableSkeleton rows={4} cols={8} /></div></div>
         : payablesQuery.isError && (!page || (isApiError(payablesQuery.error) && ["FORBIDDEN", "UNAUTHENTICATED"].includes(payablesQuery.error.code))) ? <QueryErrorState error={payablesQuery.error} onRetry={() => void payablesQuery.refetch()} forbiddenDescription={t("payablesWorkspace.noBillsAccess")} />
           : page ? (
             <>

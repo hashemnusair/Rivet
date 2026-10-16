@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { lazy, Suspense, useEffect } from "react";
 import Link from "next/link";
 
 import { qk } from "@/lib/api/keys";
@@ -17,13 +18,22 @@ import { ErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { cn } from "@/lib/utils/cn";
 import { NeedsAttention } from "@/features/brief/needs-attention";
-import { BranchRevenueBars, RevenueChart } from "./charts";
+import { BranchRevenueBars } from "./charts";
+
+/**
+ * The chart library is the largest part of this screen; it loads after the
+ * dashboard has mounted, alongside the dashboard's data, in the space the
+ * chart will fill.
+ */
+const loadRevenueChart = () => import("./revenue-chart");
+const RevenueChart = lazy(() => loadRevenueChart().then((module) => ({ default: module.RevenueChart })));
 import { useDashboardScopeText, useGreeting } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
 import { ContextLabel } from "@/components/ui/typography";
 
 export function OwnerDashboard() {
   const { session } = useApp();
+  useEffect(() => { void loadRevenueChart(); }, []);
   const { t, isolateLtr } = useLocale();
   const format = useFormat();
   const branchId = session?.activeBranchId;
@@ -97,7 +107,7 @@ export function OwnerDashboard() {
       {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel p-4">
-          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <RevenueChart data={data.revenueSeries} currency={session?.organization.currency} />}
+          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <Suspense fallback={<Skeleton className="h-[220px] w-full" />}><RevenueChart data={data.revenueSeries} currency={session?.organization.currency} /></Suspense>}
         </section>
         <section className="panel p-4">
           <ContextLabel className="mb-3">{t("dashboard.owner.collectedByBranch")}</ContextLabel>
@@ -185,13 +195,15 @@ function KpiCell({
     <div className="px-4 py-3.5">
       <ContextLabel>{label}</ContextLabel>
       {loading ? (
-        <Skeleton className="mt-2 h-7 w-20" />
+        // The same box as the figure (22px line), so the strip keeps its height when figures arrive.
+        <Skeleton className="mt-1 h-[22px] w-20" />
       ) : (
         <div className={cn("mt-1 text-[22px] font-medium leading-none tabular tracking-tight", tone === "warning" && "text-warning-deep")}>
           {children}
         </div>
       )}
-      {context ? <div className="mt-1 text-[12px] text-ink-3">{context}</div> : null}
+      {/* Always one line, so a figure whose note arrives with the data (this month's change) does not grow its row on a phone. */}
+      <div className="mt-1 min-h-[1lh] text-[12px] text-ink-3">{context}</div>
     </div>
   );
 }

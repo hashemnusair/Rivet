@@ -55,7 +55,9 @@ export default function MemberDetailPageClient() {
   );
   const usersQuery = useApiQuery(qk.users({ role: "salesperson" }), (api) => api.listUsers({ role: "salesperson", pageSize: 20 }));
 
-  if (memberQuery.isLoading) {
+  // The header's status chips and current term come from the memberships, so
+  // wait for both rather than draw the header twice (it grows on a phone).
+  if (memberQuery.isLoading || membershipsQuery.isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-6 w-48" />

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { SubscriptionSection } from "./subscription-section";
@@ -16,7 +16,9 @@ describe("subscription and invoices", () => {
     const user = userEvent.setup();
     const opened: Array<{ url: string; type?: string }> = [];
     vi.stubGlobal("URL", { ...URL, createObjectURL: (blob: Blob) => { opened.push({ url: "blob:invoice", type: blob.type }); return "blob:invoice"; }, revokeObjectURL: () => {} });
-    const open = vi.fn(() => ({}) as Window);
+    // The tab opens inside the click and shows the file once the renderer has loaded.
+    const tab = { closed: false, opener: {} as unknown, location: { href: "" } };
+    const open = vi.fn(() => tab as unknown as Window);
     vi.stubGlobal("open", open);
 
     await renderWithApp(<SubscriptionSection />, { role: "owner" });
@@ -25,8 +27,10 @@ describe("subscription and invoices", () => {
     expect(within(rows[0]!).getByText("RV-1046")).toBeInTheDocument();
     expect(within(rows[0]!).getByText("Paid")).toBeInTheDocument();
     await user.click(within(rows[0]!).getByRole("button", { name: "View invoice RV-1046" }));
+    expect(open).toHaveBeenCalledWith("", "_blank");
+    await waitFor(() => expect(tab.location.href).toBe("blob:invoice"));
     expect(opened).toEqual([{ url: "blob:invoice", type: "application/pdf" }]);
-    expect(open).toHaveBeenCalledWith("blob:invoice", "_blank", "noopener");
+    expect(tab.opener).toBeNull();
   });
 
   it("states the plan, the cadence, the fee and the day the paid term ends", async () => {

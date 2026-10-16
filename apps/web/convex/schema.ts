@@ -1889,6 +1889,9 @@ export default defineSchema({
     // Retain the live chronological branch index during additive releases.
     .index("by_organization_branch_type_created", ["organizationId", "branchId", "entityType", "createdAt"])
     .index("by_organization_member_type", ["organizationId", "memberPublicId", "entityType"])
+    // One kind of a member's timeline (their call attempts) without reading
+    // the check-in events that make up most of it: the CRM queues' last contact.
+    .index("by_organization_member_type_kind", ["organizationId", "memberPublicId", "entityType", "data.type"])
     .index("by_organization_lead_type", ["organizationId", "leadPublicId", "entityType"])
     // Business time, not write time: dashboard windows and the newest
     // timeline read only the slice they show. Records without an ISO

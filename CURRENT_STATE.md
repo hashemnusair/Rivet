@@ -1,5 +1,181 @@
 # GymOS / RIVET current implementation state
 
+## 16 October 2026 — Second performance pass: the front desk at scale, heavy screens, jumps
+
+Elias asked for an app-wide speed pass. This round measured every route and the
+busiest server reads, fixed what the numbers showed, and left the rest listed
+below with numbers. **Pushed to main on 16 Oct 2026; the web part deploys
+with that push. The Convex part is not deployed.** The server part is in
+`apps/web/convex/` and needs the Convex deploy that is already owed for the
+dashboard change below: one `pnpm convex:deploy` ships both (docs/12, newest
+entry).
+
+**Server: the front desk and the CRM no longer read a gym's whole history.**
+Measured with `convex/domain.hot-paths.bench.test.ts` (opt-in:
+`RIVET_DASHBOARD_BENCH=1`), on a busy gym after 180 days: 300 members, two
+branches, about 180 check-ins a day, member-visit summaries in place. Convex
+refuses one request past 32,000 documents or 16 MiB, so every row marked
+"over" fails outright in production at that size.
+
+| Operation (who runs it) | Documents read before | After |
+|---|---|---|
+| Check a member in (reception) | 33,259 (over) | 885 |
+| Check-in search (reception) | 33,434 (over) | 1,167 |
+| Today's check-ins, live list (reception) | 12,967 | 427 |
+| "Inside now" (reception) | 12,968 | 427 |
+| A member's check-in tab | 32,406 (over) | 114 |
+| Members list | 33,307 (over) | 1,208 |
+| Member profile | 240 | 133 |
+| Leads list | 16,710 | 560 |
+| At-risk follow-ups | 82,961 (over) | 2,413 |
+| Renewal follow-ups | 50,561 (over) | 2,112 |
+| Payments list, palette search | 2,075 / 2,123 | unchanged |
+
+Reception's two lists are live subscriptions, so before this each re-ran its
+full read after every check-in at the branch, on every open reception screen.
+
+What changed in `convex/domain.ts`:
+
+- **Duplicate-scan check** reads the last day of check-ins
+  (`checkInsSince`), not all of them.
+- **Last visit** on member lists, the profile and the at-risk queue comes from
+  the per-member `memberVisit` summaries the dashboard change added
+  (`lastVisitByMember`; one index range per member for a short list). Until
+  the one-off backfill reports `completed` they read check-ins as before
+  (one member's own check-ins for a profile).
+- **Check-in lists** read only what their filters can match: one business day
+  (with the same two-day margin and exact date filter as the dashboard), a
+  "since" instant, or one member. "Inside now" reads the last 90 minutes and
+  today, also across midnight.
+- **Leads list** reads only lead-linked timeline events, like the dashboard.
+- **Both follow-up queues** read the listed members' call attempts through a
+  new index, `domainRecords.by_organization_member_type_kind`
+  (`data.type`), instead of the whole timeline. The renewal queue also builds
+  member summaries only for the members it lists.
+- **Customer projections** (a membership sale, linking a member's email) read
+  that member's own check-ins.
+- **Daily cash reconciliation** reads one business day of payments.
+- **Member and lead lookups** no longer scan a whole table when someone has
+  no rows yet (a first check-in, a new profile): the compatibility fallback now
+  reads only rows written without a member or lead key, which current code
+  never writes.
+- **Fixed: a short cash drawer awaiting review made the whole dashboard fail**
+  for anyone who can see reconciliation ("Money must be a non-negative integer
+  amount"). The Today item now carries the signed amount; the screen already
+  shows it signed. Found by the dashboard change, reproduced by a new test.
+
+Output is unchanged. `convex/domain.front-desk-history.test.ts` pins 22 views
+(check-in lists by day, "since" and member, occupancy, members list and
+profiles including a merged member's visits, leads list, both queues for
+owner, branch manager and sales, check-in search) over the shared history gym
+(`convex/history-fixture.test-support.ts`, moved out of the dashboard test).
+Its snapshot was recorded by swapping the previous `domain.ts` back in; the new
+code matches it before and after the visit backfill. A second test checks
+the duplicate-scan window and the profile's last visit after live check-ins.
+
+**Web: heavy screens and startup.**
+
+- **Invoice PDF loads on click** (`features/billing/invoice-pdf.ts`). The
+  settings and platform-billing screens carried the whole PDF renderer, its
+  fonts and the Arabic shaping engine (about 700 KB compressed). The tab now
+  opens inside the click (so popup blockers still allow it) and shows the file
+  once built; a blocked tab falls back to a download, a failed load closes the
+  tab and says "The file could not be opened…" (`documents.openFailed`,
+  Arabic modelled on the approved `save-failed`). This also fixes an old
+  quirk: `window.open(url, "_blank", "noopener")` always returns null, so
+  every view also triggered a download.
+- **Agreement signing flow loads only for an owner who must sign**
+  (`features/legal/subscription-agreement-gate.tsx`). The form, signature pad
+  and agreement text in both languages were on every staff screen. While it
+  loads, a transparent layer keeps the workspace out of reach.
+- **Dashboard chart and contact form load after the dashboard mounts**
+  (`features/dashboard/revenue-chart.tsx`, `today-queue.tsx`). Recharts is
+  the dashboard's largest part; it now loads alongside the data into the same
+  220 px placeholder. The Today queue's "What happened?" form (with its form
+  and validation libraries) loads once a follow-up is in the queue.
+- **Layout jumps fixed:** memberships no longer shows a freeze-request
+  placeholder that then vanishes and pulls the list up (CLS 0.042 → 0); the
+  supplier-bills placeholder has the bills table's shape (0.047 → ~0); the
+  owner dashboard's figure placeholders are the figures' height and each
+  figure keeps its note line (an 8 px desktop jump and a 39 px phone jump the
+  faster load exposed); a member profile waits for its memberships before
+  drawing the header, so the status chips and current term no longer arrive
+  after it.
+
+Measured on mock preview bundles (`next build --webpack`, `next start`),
+headless Chromium, cache off. Startup JS = scripts requested before the load
+event, gzip. Timings: 4× CPU throttle, 60 ms RTT / 9 Mbps, 1440×900, before
+and after builds alternated, median of 5.
+
+| Route | Startup JS before → after | Interactive | Largest paint |
+|---|---|---|---|
+| `/settings` | 1,499 → 800 KB | 2,056 → 1,519 ms | 2,164 → 1,628 ms |
+| `/platform/billing` | 1,416 → 719 KB | 1,903 → 1,278 ms | 2,156 → 1,548 ms |
+| `/dashboard` | 931 → 787 KB | 1,645 → 1,518 ms | 2,128 → 1,976 ms |
+| Other staff screens | 3–16 KB less each | not re-timed | |
+
+Whole-app survey, every route (67 across the public site, the gym owner,
+the member app and the platform console), English and Arabic at 1440×900
+and English at 390×844 (phone), cold, throttled as above: **no page or
+console errors** on any route in either language or size.
+
+- Arabic readers save the same: `/dashboard` 1,116 → 972 KB, `/settings`
+  1,684 → 985 KB, `/platform/billing` 1,601 → 904 KB.
+- Layout shift (CLS) above 0.01, before → after. Desktop, both languages:
+  memberships 0.042 → none, supplier bills 0.047 → none; nothing else above
+  0.01 before or after. Phone: owner dashboard 0.368 → under 0.01 (its
+  figure strip is two columns there, so a note arriving with the data grew a
+  row; every figure now keeps its note line), memberships 0.114 → 0.017,
+  supplier bills 0.044 → under 0.01, a member profile (0.036 on some loads,
+  when the membership chips arrived after the header) → under 0.01. The gym
+  sign-in door shows 0.11 on a phone in the mock preview only: its seeded
+  demo personas render after hydration. The live door measured 0.000 at the
+  same size (3 runs, read-only), as did the live landing.
+
+**Measured, not changed** (remaining bottlenecks, in rough order of impact):
+
+- **Live landing waits for Clerk before it paints.** The pre-paint guard
+  (`lib/auth/pre-paint-signed-in-guard.ts`) hides the page until Clerk's
+  `/v1/client` answers, so signed-in visitors never see it. Live, that request
+  takes about 240–270 ms and first paint follows it every time (FCP about
+  1.0–1.1 s). A preconnect to `clerk.rivetjo.com` was tested against the live
+  page (7 runs each, response edited in the test browser only) and made no
+  difference, so it was not added. Changing the guard is a product decision.
+- **Fonts.** The landing preloads 12 files (about 409 KB), staff screens 10
+  (about 268 KB), including four Arabic weights (139 KB) for English readers.
+  `next/font` cannot vary its preload by language, and dropping it would make
+  Arabic text swap fonts visibly, so it stays.
+- **The English catalogue** (about 660 KB of source) is on every page;
+  splitting it per route is a larger refactor.
+- **Landing long tasks** (about 430 ms at 4× CPU) are spread over module
+  evaluation and hydration of a large page; no single fix.
+- **Payments are still read whole** by palette search, the payments list,
+  shift totals, receipt detail and refunds (about 2,100 documents at 180 days;
+  payments grow far slower than check-ins). Shift totals were left alone on
+  purpose: a backdated payment recorded into an open shift could fall outside
+  a date window, and these are money totals.
+- The members list, the dashboard and both queues still read every member,
+  membership and charge (these grow with members and renewals, not daily
+  traffic). Before the visit backfill finishes, the members list and the
+  at-risk queue still read every check-in.
+
+Checked: `python3 docs/arabic/verify-lock.py`, `tsc` (app and Convex), ESLint
+`--max-warnings 0` and the secret-output audit, node script tests 14/14, Vitest
+2,139 passed (the two opt-in benchmarks skipped), all Convex tests, and
+the full credential-free Playwright suite against the final built mock bundle:
+221 passed, 14 skipped (credential-gated), 0 failed, including the Arabic,
+RTL, agreement-signing, PDF and Mac screenshot specs. The Linux screenshot
+references only run on CI. Not tried against a real Convex deployment: nothing was
+deployed, and the new index, reads and backfill have only run in convex-test.
+
+Files to read first: `convex/domain.ts` (`checkInsSince`,
+`lastVisitByMember`, `callAttemptsByMember`, `leadLinkedTimeline`),
+`convex/domain.front-desk-history.test.ts`,
+`convex/domain.hot-paths.bench.test.ts`, `convex/history-*.ts` helpers,
+`src/features/billing/invoice-pdf.ts`,
+`src/features/legal/subscription-agreement-gate.tsx`,
+`src/features/dashboard/{owner-dashboard,revenue-chart,today-queue}.tsx`.
+
 ## 15 October 2026 — English readers no longer download the Arabic catalogue
 
 Every browser downloaded both message catalogues at startup: one shared chunk

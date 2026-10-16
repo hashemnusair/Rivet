@@ -18,7 +18,7 @@ import { DaysUntilText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { MembershipStatusChip, PaymentStatusChip } from "@/components/shared/status-chip";
 import { Input, Textarea } from "@/components/ui/input";
-import { Skeleton, TableSkeleton } from "@/components/ui/misc";
+import { TableSkeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -242,7 +242,9 @@ function FreezeRequestsPanel() {
     successMessage: t("memberEnrollment.freezeAnswered"),
   });
 
-  if (requestsQuery.isLoading) return <Skeleton className="h-24 w-full" />;
+  // Usually there is nothing waiting, so loading draws nothing rather than a
+  // placeholder that would vanish and pull the list up.
+  if (requestsQuery.isLoading) return null;
   if (requestsQuery.isError) {
     return <section className="rounded-lg border border-line bg-surface p-4" aria-label={t("memberEnrollment.freezeRequests")}><ErrorState title={t("memberEnrollment.freezeRequestsFailed")} description={t("memberEnrollment.freezeRetryHint")} onRetry={() => requestsQuery.refetch()} /></section>;
   }

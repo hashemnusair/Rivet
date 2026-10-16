@@ -17,7 +17,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll";
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
-import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-modal";
+import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-gate";
 import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

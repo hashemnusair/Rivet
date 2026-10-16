@@ -1,5 +1,21 @@
 # 12 — System Maps and Release Runbook
 
+## Front desk and CRM reads scale with today, not history — 16 October 2026 (same Convex deploy)
+
+The second performance pass (see its CURRENT_STATE.md entry) changes
+`apps/web/convex/domain.ts` and `schema.ts` on top of the dashboard change
+below. One `pnpm convex:deploy` ships both; follow the release order below.
+The deploy adds a second index, `domainRecords.by_organization_member_type_kind`
+(member, record type and `data.type`: the CRM queues read a member's call
+attempts without the check-in events). Like the first it is additive, deletes
+nothing and needs no environment variable. After step 4 below, also open
+Reception (today's list and "inside now"), the members list, a member's
+profile, the leads list and both follow-up queues: each must show what it
+showed before the deploy. The members list and the at-risk queue use the same
+visit summaries as the dashboard, so until the backfill reports `completed`
+they read every check-in, as they do today. Checking a member in does not wait
+for the backfill.
+
 ## Dashboard reads scale with today, not history — 15 October 2026 (Convex deploy owed)
 
 On main since 16 October 2026 (pushed with the Arabic catalogue split, which is
