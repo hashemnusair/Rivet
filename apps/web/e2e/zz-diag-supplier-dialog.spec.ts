@@ -4,7 +4,7 @@ import path from "node:path";
 
 test.use({ locale: "en-US", timezoneId: "Asia/Amman", contextOptions: { reducedMotion: "reduce" }, colorScheme: "light" });
 const branch = "10000000-0000-4a00-8a00-000000000002";
-const out = path.resolve(__dirname, "../diag-out");
+const out = path.resolve(process.cwd(), "diag-out");
 fs.mkdirSync(out, { recursive: true });
 
 async function enter(page: Page, fixed: boolean) {
