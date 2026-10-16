@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — Platform console and finance tabs prepare screens on intent
+
+The platform console sidebar (logo, the nine sections and "Gym workspace") and
+the Payments / Shifts & cash tabs now use `IntentPrefetchLink`, like the gym
+sidebar since 15 October. Before, they used Next's default prefetch, which on
+these dynamic routes asked the server for every visible link on each page load
+and still made the click wait for the server.
+
+Measured on built mock bundles (`next start`), headless Chromium, 4× CPU,
+60 ms RTT / 9 Mbps, cache off, 1440×900; before and after alternating, 5 runs
+each, medians. "Open" is click to the next screen's heading with no loading
+placeholder left, after 150 ms of pointing at the link.
+
+| Click | Open, before → after | Prefetch requests per page load |
+|---|---|---|
+| Platform overview → Billing | 262 → 110 ms | 25 → 12 |
+| Platform billing → Gyms | 335 → 257 ms | 21 → 2 |
+| Platform gyms → Support | 224 → 133 ms | 21 → 4 |
+| Payments → Shifts & cash tab | 251 → 147 ms | 24 → 21 |
+| Shifts & cash → Payments tab | 412 → 317 ms | 5 → 2 |
+
+Before, every click still made one server request after the click; now the
+hover fetches the whole screen and the click makes none. Runs were tight
+(each set of five within 40 ms). This is the mock bundle, so data
+loading is not included; live, the screen's Convex query still starts when the
+screen opens.
+
+Not changed: links inside page content still use the default prefetch. On
+Payments, the table's member names, the receipt link and the `/dashboard`
+link prefetch on every load (21 requests on this seed); the platform gym rows
+do the same. Moving those to intent prefetch is the same one-line change per
+link, if the requests matter.
+
+Checked: the two new tests (`platform-shell.test.tsx` navigation case and
+`features/finance/finance-nav.ui.test.tsx`) fail against the old links and
+pass now; `tsc`, ESLint `--max-warnings 0` and the secret-output audit pass;
+Vitest 2,142 passed (2 opt-in benchmarks skipped); the 14 credential-free
+Playwright specs that visit the platform console or Payments (139 tests,
+including host routing, role routing, RTL and Arabic, and the console
+journeys) passed against the built mock bundle. Files: `components/platform/platform-shell.tsx`,
+`features/finance/finance-nav.tsx`, `components/shell/intent-prefetch-link.tsx`.
+
 ## 16 October 2026 — Second performance pass: the front desk at scale, heavy screens, jumps
 
 Elias asked for an app-wide speed pass. This round measured every route and the

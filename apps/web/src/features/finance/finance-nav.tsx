@@ -2,9 +2,9 @@
 import { useT, type TKey } from "@/lib/i18n/provider";
 
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
+import { IntentPrefetchLink } from "@/components/shell/intent-prefetch-link";
 
 import { ArrowLeftRight, Banknote } from "lucide-react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useApp } from "@/lib/providers/app-providers";
 import type { Session, WorkspaceModuleKey } from "@/lib/domain/types";
@@ -50,7 +50,7 @@ export function FinanceNav() {
       {links.map((item) => {
         const active = financeLinkIsActive(item.href, pathname);
         return (
-          <Link
+          <IntentPrefetchLink
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
@@ -58,7 +58,7 @@ export function FinanceNav() {
           >
             <item.icon className="size-3.5" aria-hidden />
             {t(item.labelKey)}
-          </Link>
+          </IntentPrefetchLink>
         );
       })}
     </nav>

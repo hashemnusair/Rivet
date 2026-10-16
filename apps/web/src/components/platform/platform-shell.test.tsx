@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PlatformShell } from "./platform-shell";
 
@@ -13,6 +13,16 @@ vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true }),
   useClerk: () => ({ signOut: state.clerkSignOut }),
 }));
+
+vi.mock("next/link", async () => {
+  const { forwardRef } = await import("react");
+  type Props = Omit<import("react").ComponentPropsWithoutRef<"a">, "href"> & { href: string; prefetch?: boolean | null };
+  return {
+    default: forwardRef<HTMLAnchorElement, Props>(function Link({ href, prefetch, ...props }, ref) {
+      return <a ref={ref} href={href} data-prefetch={String(prefetch)} {...props} />;
+    }),
+  };
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/platform",
@@ -98,5 +108,30 @@ describe("PlatformShell sign out", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(state.push).toHaveBeenCalledWith("/platform/support?case=SUP-2");
+  });
+});
+
+describe("PlatformShell navigation", () => {
+  it("prepares a console screen only when the administrator reaches for its link", () => {
+    render(<PlatformShell><div>Platform content</div></PlatformShell>);
+
+    const sidebar = screen.getByRole("navigation", { name: "Platform navigation" }).closest("aside")!;
+    const links = within(sidebar).getAllByRole("link");
+    expect(links).toHaveLength(11);
+    for (const link of links) expect(link).toHaveAttribute("data-prefetch", "false");
+
+    const nav = within(sidebar).getByRole("navigation", { name: "Platform navigation" });
+    const billing = within(nav).getByRole("link", { name: "Billing" });
+    fireEvent.pointerEnter(billing);
+    expect(billing).toHaveAttribute("data-prefetch", "true");
+    expect(within(nav).getByRole("link", { name: "Gyms" })).toHaveAttribute("data-prefetch", "false");
+
+    const support = within(nav).getByRole("link", { name: "Support" });
+    fireEvent.focus(support);
+    expect(support).toHaveAttribute("data-prefetch", "true");
+
+    const workspace = within(sidebar).getByRole("link", { name: "Gym workspace" });
+    fireEvent.touchStart(workspace);
+    expect(workspace).toHaveAttribute("data-prefetch", "true");
   });
 });

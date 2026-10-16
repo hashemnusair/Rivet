@@ -6,7 +6,6 @@ import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -19,6 +18,7 @@ import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
+import { IntentPrefetchLink } from "@/components/shell/intent-prefetch-link";
 import { NotificationCenter } from "@/components/shell/notification-center";
 import { ContextLabel } from "@/components/ui/typography";
 import { applicationStatusLabel, invoiceStatusLabel, subscriptionStatusLabel, supportStatusLabel } from "@/components/platform/platform-status";
@@ -167,10 +167,10 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
   return (
     <>
       <div className="px-5 pb-6 pt-5">
-        <Link href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label={t("platformConsole.navigation.overview")}>
+        <IntentPrefetchLink href="/platform" onClick={onNavigate} className="flex items-center gap-3" aria-label={t("platformConsole.navigation.overview")}>
           <Image src="/brand/rivet-lockup-rev-488.png" width={122} height={31} alt={t("common.brand.name")} />
           <span className="border-s border-night-line ps-3 text-[12px] font-medium text-night-ink-3">{t("platformConsole.navigation.platformName")}</span>
-        </Link>
+        </IntentPrefetchLink>
       </div>
       <nav className="flex-1 px-3" aria-label={t("platformConsole.navigation.label")}>
         <ContextLabel tone="night" className="px-3.5 pb-2">{t("platformConsole.navigation.network")}</ContextLabel>
@@ -178,7 +178,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
           {NAVIGATION.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             return (
-              <Link
+              <IntentPrefetchLink
                 key={item.href}
                 href={item.href}
                 onClick={onNavigate}
@@ -191,20 +191,20 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
               >
                 <item.icon className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")} aria-hidden />
                 <span className="truncate">{t(item.labelKey)}</span>
-              </Link>
+              </IntentPrefetchLink>
             );
           })}
         </div>
       </nav>
       <div className="border-t border-night-line p-3">
-        <Link
+        <IntentPrefetchLink
           href="/dashboard"
           onClick={onNavigate}
           data-touch-target
           className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
         >
           <Building2 className="size-4" aria-hidden /> {t("platformConsole.navigation.workspace")}
-        </Link>
+        </IntentPrefetchLink>
       </div>
     </>
   );
