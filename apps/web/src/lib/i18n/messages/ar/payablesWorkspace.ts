@@ -45,6 +45,7 @@ export const payablesWorkspace = {
   recordSupplierPayment: "تسجيل دفعة للمورّد",
   recordHint: "يرجى اختيار المورّد وإدخال المبلغ المدفوع، ثم تحديد الفواتير التي تغطيها الدفعة.",
   noActiveSuppliers: "لا يوجد مورّدون نشطون",
+  suppliersLoadFailed: "تعذّر تحميل قائمة المورّدين.",
   payingFrom: "الفرع الذي يدفع",
   cashBranchHint: "يُؤخذ الكاش من صندوق هذا الفرع.",
   payingBranchHint: "الفرع الذي أجرى الدفعة.",

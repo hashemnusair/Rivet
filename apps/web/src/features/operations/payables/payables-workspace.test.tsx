@@ -184,6 +184,36 @@ describe("payables workspace", () => {
     await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
   });
 
+  it("says the supplier list could not load, not that there are none, and loads it again on Retry", async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        if (failing) throw new Error("offline");
+        return listSuppliers(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    // The page retries once before it gives up, so the error line takes a moment.
+    const failure = await within(billsSection).findByText("The supplier list could not load.", {}, { timeout: 3_000 });
+    expect(failure).toHaveAttribute("role", "alert");
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toBeDisabled();
+    expect(supplierField).not.toHaveTextContent("No active suppliers");
+    expect(supplierField).not.toHaveTextContent("Loading…");
+    expect(billsSection).not.toHaveTextContent("Choose a supplier to see what you owe.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    failing = false;
+    await user.click(within(failure).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(supplierField).toBeEnabled();
+    expect(within(dialog).queryByText("The supplier list could not load.")).not.toBeInTheDocument();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+  });
+
   it("exports the filtered payables as a readable CSV", async () => {
     const user = userEvent.setup();
     await renderWithApp(<PayablesWorkspace />, { role: "owner" });

@@ -1,5 +1,54 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — Supplier-payment dialog says when the supplier list failed to load
+
+Follow-up to the entry below. If the page's supplier list *failed* to load
+(rather than being slow), the "Record supplier payment" dialog still said "No
+active suppliers" in the supplier field and "Choose a supplier to see what you
+owe." in the bills header. Both were false: the gym has suppliers, RIVET just
+could not read them.
+
+The page now also passes the supplier query's error state
+(`suppliersFailed`) and a retry (`onRetrySuppliers`, the query's `refetch`) to
+the dialog. When the list has failed:
+
+- The supplier field stays disabled with its usual "Choose a supplier"
+  placeholder. It no longer lists "No active suppliers".
+- The bills header shows no owed line.
+- The bills area shows "The supplier list could not load." with a "Try again"
+  button, the same style as the existing "The bills could not load." line.
+  Pressing it loads the list again; while it loads, the field reads
+  "Loading…", then fills as usual.
+
+The page already retries a failed read once, so this line appears only after
+the second failure. A background refresh that fails while an earlier list is on
+screen keeps showing that list, as before.
+
+New copy: `payablesWorkspace.suppliersLoadFailed`, English "The supplier list
+could not load." and Arabic "تعذّر تحميل قائمة المورّدين.". The Arabic follows
+the approved `supplier` term (مورّد) and the existing failure pattern
+("تعذّر تحميل الفواتير.", "تعذّر تحميل قائمة فريق العمل."). The button reuses
+`common.action.retry` ("إعادة المحاولة", decision `retry`).
+`python3 docs/arabic/verify-lock.py` passes.
+
+Checked: a new test in `payables-workspace.test.tsx` makes `listSuppliers`
+reject, checks the error line, the disabled field and the missing owed line,
+then presses Try again and sees the supplier and the real amount owed. It
+failed against the old dialog (the header said "Choose a supplier to see what
+you owe.") and passes now. A new case in `payables-arabic.test.tsx` checks the
+Arabic line and button. The payables Vitest files (16 tests) and the i18n
+tests pass; `tsc --noEmit` and ESLint on the changed files pass. Not checked
+in a browser: the mock preview cannot fail only `listSuppliers` past the
+page's automatic retry.
+
+Known limit, not changed: when the list arrives (after Retry or after a slow
+load), the dialog resets its form, so an amount or reference typed while the
+list was missing is cleared. Nothing is saved wrongly.
+
+Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
+`payables-workspace.tsx`, `payables-workspace.test.tsx`,
+`payables-arabic.test.tsx`, `lib/i18n/messages/{en,ar}/payablesWorkspace.ts`.
+
 ## 17 October 2026 — Supplier-payment dialog stops showing a false zero and "No active suppliers"
 
 Follow-up to the entry below. The "Record supplier payment" dialog had two
@@ -33,7 +82,7 @@ distinct" and the supplier-payables cash journey in
 
 Not changed: if the page's supplier list fails to load (not just slow), the
 field still says "No active suppliers"; that needs an error line and a retry,
-which means new copy. Opening the dialog from a bill's "Pay" button still
+which means new copy (fixed in the entry above). Opening the dialog from a bill's "Pay" button still
 starts the header with "You changed the amounts.", because that path pre-fills
 the bill's balance.
 
