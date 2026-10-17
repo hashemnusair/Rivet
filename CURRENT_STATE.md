@@ -76,6 +76,62 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 18 October 2026 — Review of the Convex batch, and three fixes it found
+
+Elias reported running the guarded `pnpm convex:deploy` for the pending batch
+on 17 October 2026 (dashboard and front-desk reads, visit summaries and their
+backfill, platform prospects, beta email branding and PR #20). This session did
+not see the deploy output and has not checked the backfill state or the screens
+listed in docs/12, so those checks are still open.
+
+Three Sonnet reviewers then read every production change in `apps/web/convex/`
+since `1ca43d8a` (the 7 October release), plus the Clerk email route and the
+prospects page. Each finding was rechecked by hand. They found nothing that
+shows a wrong figure, misses a refund or widens access: the new reads find the
+same records as the old whole-table reads, and branch scope is unchanged.
+
+**Fixed on `claude/signup-limit-phone-links-relay`:**
+
+- **Gym application limit per inbox** (`convex/gymApplications.ts`). The public
+  form's limit (five an hour) was keyed on email *and* phone together, so a
+  script could send the same address a new phone number each time and queue an
+  unlimited number of "RIVET Beta" applicant copies to someone's inbox. The key
+  is now the inbox alone; "+tag" addresses, and dots in Gmail addresses, count
+  as one inbox. **Convex change: it takes effect only after `pnpm
+  convex:deploy`.** The existing `gym_application` guard rows simply expire.
+- **Prospect phone and WhatsApp links** (`src/lib/platform/prospects.ts`). The
+  form accepted `79 097 9998`, `06 585 0000` and `+962 (0) 79…`, but the links
+  dialled `+7 909…` (Russia), `+06…` and `+9620…`. `whatsappDigits` now uses the
+  shared `normalizePhoneToE164` rules (no country code means Jordan; `+` and
+  `00` keep theirs) after dropping a written "(0)". Arabic-Indic digits work
+  too. Web only.
+- **Clerk email relay retries** (`src/app/api/webhooks/clerk-email/route.ts`).
+  Every Resend failure returned 502, so a permanent rejection (a malformed
+  address, a field Resend never accepts) made Clerk retry for days and could
+  deliver a stale code. 401, 403, 408, 409, 425, 429 and 5xx still return 502;
+  any other 4xx now returns 200 and logs one line with the status, Resend's
+  error name (only when it is a plain identifier) and Clerk's email id. Web
+  only; nothing changes for live users until the Clerk cutover in docs/19.
+- docs/19 section 2 now describes the branded relay, the retry rule and the
+  application limit.
+
+Checked: each new test fails against the old code and passes now
+(`gymApplications.email-queue.test.ts`, `prospects.test.ts`,
+`clerk-email/route.test.ts`).
+
+**Noted, not changed (scale, not wrong output today):**
+
+- `callAttemptsByMember` (`convex/domain.ts`) makes one index read per member
+  for the renewal and at-risk queues. A queue of several thousand members could
+  pass Convex's per-request index-range limit; pilot gyms are far below it.
+- `leadLinkedTimeline` reads every lead-keyed record (tasks, offers,
+  automation rows) and keeps the timeline ones. It would grow fast only with
+  automation rules switched on, and no screen can create one today.
+- Prospect import skips by code only, and an owner change between two
+  platform admins with the same display name is dropped (history compares
+  names, finds no change and skips the save). The first needs a direct API
+  call; the second, two admins sharing a name.
+
 ## 17 October 2026 — A member's payments no longer read every payment in the gym
 
 PR #20 review found and fixed a money regression before merge. A duplicate at

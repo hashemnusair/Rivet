@@ -72,11 +72,34 @@ describe("Clerk authentication email through Resend", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it.each([429, 500, 403])("allows webhook retries on provider HTTP %s", async (status) => {
+  it.each([401, 403, 408, 409, 425, 429, 500, 503])("allows webhook retries on provider HTTP %s", async (status) => {
     vi.mocked(fetch).mockResolvedValue(new Response("Private provider diagnostic", { status }));
     const response = await POST(signedRequest());
     expect(response.status).toBe(502);
     expect(await response.text()).not.toContain("Private");
+  });
+
+  it.each([400, 404, 422])("acknowledges a permanent provider rejection (HTTP %s) so Clerk stops retrying, logging only its status, error name and email id", async (status) => {
+    // Resend's message can quote the address; only the error name is read out.
+    vi.mocked(fetch).mockResolvedValue(Response.json({ statusCode: status, name: "validation_error", message: "Invalid `to` field: recipient@example.test" }, { status }));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await POST(signedRequest());
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("recipient@example.test");
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]?.[1]).toEqual({ status, error: "validation_error", emailId: "ema_test" });
+    const logged = JSON.stringify(log.mock.calls);
+    for (const privateValue of ["recipient@example.test", "RIVET invitation", "https://example.test/invitation"]) expect(logged).not.toContain(privateValue);
+  });
+
+  it("leaves out a provider error name that is not a plain identifier", async () => {
+    vi.mocked(fetch).mockResolvedValue(Response.json({ name: "recipient@example.test" }, { status: 422 }));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await POST(signedRequest())).status).toBe(200);
+    expect(log.mock.calls[0]?.[1]).toEqual({ status: 422, error: undefined, emailId: "ema_test" });
+    vi.mocked(fetch).mockResolvedValue(new Response("not json", { status: 422 }));
+    expect((await POST(signedRequest())).status).toBe(200);
+    expect(log.mock.calls[1]?.[1]).toEqual({ status: 422, error: undefined, emailId: "ema_test" });
   });
 
   it("allows retries for network and incomplete provider responses without echoing their data", async () => {

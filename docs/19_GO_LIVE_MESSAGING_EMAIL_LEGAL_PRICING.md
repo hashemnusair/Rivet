@@ -209,6 +209,11 @@ or indexes are removed.
   mandatory.
 - Every attempt records the mode and the address actually used; Settings →
   Operational email shows the mode in plain language.
+- The public gym application form accepts five submissions an hour per
+  applicant inbox, whatever phone number is sent. "+tag" addresses, and dots
+  in Gmail addresses, count as the same inbox. This bounds the applicant copy
+  (`gym_application_received_applicant`) once that kind is enabled through
+  `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES`.
 
 ### Before flipping `RIVET_EMAIL_MODE` to `live`
 
@@ -234,12 +239,21 @@ or indexes are removed.
 
 Implementation: `src/app/api/webhooks/clerk-email/route.ts`, public POST at
 `https://www.rivetjo.com/api/webhooks/clerk-email`. It verifies the Clerk
-signature via `verifyWebhook`, handles `email.created`, forwards Clerk's
-rendered HTML/plain text to Resend using the configured sender, and uses
-`clerk-email/<email-id>` as its retry key. Events already delivered by Clerk
-are acknowledged without a duplicate send. Missing configuration returns
-503; provider failures return 502 for webhook retry. No OTP, invitation link
-or rendered auth body is logged or stored in the staff-visible email ledger.
+signature via `verifyWebhook`, handles `email.created` and sends the email
+through Resend as "RIVET Beta" at the configured sender, with
+`clerk-email/<email-id>` as its retry key. An email that carries a code
+(`data.otp_code`) or an http(s) link (`data.action_url`) is rebuilt in RIVET's
+own branded template (`renderBrandedEmail` in `convex/emailTemplate.ts`, in
+English because the event names no language). Any other email, or a render
+that lost its code or link, goes out as Clerk's rendered HTML/plain text.
+Events already delivered by Clerk are acknowledged without a duplicate send.
+Missing configuration returns 503. Resend failures that can clear (401, 403,
+408, 409, 425, 429, 5xx, a network error or an incomplete response) return
+502 so Clerk retries. Any other 4xx is a permanent rejection: the route
+returns 200 so Clerk stops retrying a code that would arrive expired, and logs
+one line with the status, Resend's error name and Clerk's email id. No OTP,
+invitation link, address or rendered auth body is logged or stored in the
+staff-visible email ledger.
 
 1. Deploy the web handler. In Vercel server configuration, set
    `CLERK_WEBHOOK_SIGNING_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and
@@ -258,6 +272,8 @@ or rendered auth body is logged or stored in the staff-visible email ledger.
    without storing auth codes or invitation tokens. No fresh send is claimed
    by the current local tests.
 5. Check Clerk webhook failures and Resend delivery/bounce/complaint events.
+   A permanently rejected send counts as delivered in Clerk's webhook log; find
+   it in the Vercel function logs ("permanently rejected a message").
    Resend idempotency lasts 24 hours; avoid replaying old successful auth
    events after that window. Generate a fresh invite/code when needed.
 6. Roll back a template by restoring Delivered by Clerk, then reconcile any

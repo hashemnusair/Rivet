@@ -85,6 +85,18 @@ function cleanEmail(value: string): string {
   return email;
 }
 
+/**
+ * The inbox an address delivers to, for throttling only. Most providers ignore
+ * a "+tag" in the local part, and Gmail also ignores dots, so
+ * "a.b+1@gmail.com" and "ab@gmail.com" reach the same person.
+ */
+function throttleInbox(email: string): string {
+  const at = email.lastIndexOf("@");
+  const domain = email.slice(at + 1) === "googlemail.com" ? "gmail.com" : email.slice(at + 1);
+  const local = email.slice(0, at).split("+")[0] ?? "";
+  return `${domain === "gmail.com" ? local.replaceAll(".", "") : local}@${domain}`;
+}
+
 function cleanPhone(value: string): string {
   const phone = value.trim().replace(/\s+/g, " ");
   const digits = phone.replace(/\D/g, "");
@@ -172,9 +184,12 @@ export const create = internalMutation({
         await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
       }
     }
+    // Keyed on the inbox alone: the applicant's copy goes to this address, so
+    // a new phone number on each request must not open a fresh window and let
+    // one script mail the same person again and again.
     await enforcePublicRateLimit(ctx, {
       scope: "gym_application",
-      fingerprint: await privacyFingerprint({ email: values.email, contactNumber: values.canonicalContactNumber }),
+      fingerprint: await privacyFingerprint({ inbox: throttleInbox(values.email) }),
       maxRequests: 5,
       windowMs: 60 * 60 * 1000,
     });

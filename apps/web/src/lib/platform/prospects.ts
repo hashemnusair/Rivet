@@ -7,6 +7,8 @@
  * Kept free of path aliases and framework imports: Convex bundles it too.
  */
 
+import { normalizePhoneToE164, phoneDigits } from "../utils/contact";
+
 export const PROSPECT_STAGES = [
   "not_contacted",
   "contacted",
@@ -309,13 +311,17 @@ export function followUpState(followUpOn: string | undefined, today: string): Fo
   return followUpOn === today ? "today" : "upcoming";
 }
 
-/** Digits a WhatsApp link accepts: country code first, no plus or spaces. */
+/**
+ * Digits a WhatsApp link accepts: country code first, no plus or spaces.
+ * Uses the app's shared phone rules: a number written without a country code
+ * is Jordanian ("79 097 9998", "0790979998", "06 585 0000"), and a "+" or "00"
+ * number keeps its own code. The "(0)" sometimes written after the country
+ * code ("+962 (0) 79…") is not dialled, so it is dropped first.
+ */
 export function whatsappDigits(number: string): string {
-  const digits = number.replace(/[^0-9]/g, "");
-  if (digits.startsWith("00")) return digits.slice(2);
-  // A Jordanian mobile written locally (07…) gets the country code.
-  if (digits.startsWith("07") && digits.length === 10) return `962${digits.slice(1)}`;
-  return digits;
+  const dialled = number.replace(/\(\s*0\s*\)/g, "");
+  const e164 = normalizePhoneToE164(dialled);
+  return e164 ? e164.slice(1) : phoneDigits(dialled);
 }
 
 export function whatsappHref(number: string, text?: string): string {
