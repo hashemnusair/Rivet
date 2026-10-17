@@ -41,9 +41,30 @@ tests pass; `tsc --noEmit` and ESLint on the changed files pass. Not checked
 in a browser: the mock preview cannot fail only `listSuppliers` past the
 page's automatic retry.
 
-Known limit, not changed: when the list arrives (after Retry or after a slow
-load), the dialog resets its form, so an amount or reference typed while the
-list was missing is cleared. Nothing is saved wrongly.
+Fixed in a follow-up the same day: the supplier list arriving no longer clears
+the form. Before, one open effect reset everything (branch, method, amount,
+reference, notes, bill amounts, idempotency key, error) and re-ran whenever the
+supplier list changed: after a slow load, after Try again, or after a
+background refresh while the dialog was open. While the list was loading, the
+page passed a new empty list on every render, so any page re-render also
+cleared it. The effect is now split:
+
+- The form and its idempotency key reset only when the dialog opens, or when
+  the bill (`initialPayable`) or branch (`initialBranchId`) it opened for
+  changes.
+- The default supplier fills in only while no listed supplier is chosen: the
+  `?pay=1&supplier=` supplier if it is active, otherwise the only active
+  supplier. It never replaces the staff's own pick. The default branch works
+  the same way, so a session refresh that hands over a new branch list no
+  longer clears the form either.
+
+Opening from a bill's Pay button still pre-fills that bill's balance. Checked:
+a new case in `payables-workspace.test.tsx` holds `listSuppliers`, picks Bank
+transfer, types an amount and a reference, then lets the list arrive. The
+method, amount and reference stay, the supplier fills, and the payment records
+with them. It failed against the old dialog (the method went back to Cash) and
+passes now. The payables Vitest files (17 tests), `tsc --noEmit` and ESLint on
+the changed files pass. Not checked in a browser.
 
 Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
 `payables-workspace.tsx`, `payables-workspace.test.tsx`,

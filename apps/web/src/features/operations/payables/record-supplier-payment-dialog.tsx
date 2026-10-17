@@ -78,11 +78,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
   const [error, setError] = useState<unknown>(null);
 
+  // A fresh form and idempotency key only when the dialog opens (or opens for another bill or branch).
+  // The supplier and branch lists can arrive or refresh while it is open; that must not clear what staff typed.
   useEffect(() => {
     if (!open) return;
-    const fallbackBranch = branches.length === 1 ? branches[0]!.id : "";
-    setSupplierId(initialSupplierId && activeSuppliers.some((supplier) => supplier.id === initialSupplierId) ? initialSupplierId : activeSuppliers.length === 1 ? activeSuppliers[0]!.id : "");
-    setBranchId(initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : fallbackBranch);
+    setSupplierId("");
+    setBranchId("");
     setMethod("cash");
     setAmountText(initialPayable ? toMajorString(initialPayable.remaining) : "");
     setReference("");
@@ -91,7 +92,18 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
     setManualAllocation(Boolean(initialPayable));
     setIdempotencyKey(newIdempotencyKey());
     setError(null);
-  }, [open, activeSuppliers, branches, initialBranchId, initialSupplierId, initialPayable]);
+  }, [open, initialBranchId, initialPayable]);
+
+  // Defaults fill in only while nothing on the list is chosen, so they never replace the staff's own pick.
+  useEffect(() => {
+    if (!open || activeSuppliers.some((supplier) => supplier.id === supplierId)) return;
+    setSupplierId(initialSupplierId && activeSuppliers.some((supplier) => supplier.id === initialSupplierId) ? initialSupplierId : activeSuppliers.length === 1 ? activeSuppliers[0]!.id : "");
+  }, [open, activeSuppliers, initialSupplierId, supplierId]);
+
+  useEffect(() => {
+    if (!open || branches.some((branch) => branch.id === branchId)) return;
+    setBranchId(initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : branches.length === 1 ? branches[0]!.id : "");
+  }, [open, branches, initialBranchId, branchId]);
 
   const payablesQuery = useApiQuery(qk.payables({ kind: "open-for-supplier", supplierId }), (api) => api.listPayables({ supplierId, status: "open", pageSize: 100 }), { enabled: open && Boolean(supplierId) });
   const shiftQuery = useApiQuery(qk.currentShift(branchId), (api) => api.getCurrentCashShift(branchId), { enabled: open && method === "cash" && Boolean(branchId) });

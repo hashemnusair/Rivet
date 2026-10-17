@@ -184,6 +184,36 @@ describe("payables workspace", () => {
     await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
   });
 
+  it("keeps what staff typed when the supplier list arrives after the dialog opens", async () => {
+    const user = userEvent.setup();
+    const suppliers = gate();
+    const branchId = await seededBranchId();
+    const { api } = await renderWithApp(<><BranchChanger branchId={branchId} /><PayablesWorkspace /></>, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        await suppliers.opened;
+        return listSuppliers(query);
+      });
+    } });
+    const recordSpy = vi.spyOn(api, "recordSupplierPayment");
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Loading…");
+    await user.click(within(dialog).getByLabelText("Bank transfer"));
+    await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "650");
+    await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "TRF-2026-0091");
+    suppliers.open();
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(within(dialog).getByLabelText("Bank transfer")).toBeChecked();
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("650");
+    expect(within(dialog).getByRole("textbox", { name: "Bank transfer reference" })).toHaveValue("TRF-2026-0091");
+    const allocation = await within(dialog).findByRole("textbox", { name: /Amount for Purchase order/i });
+    await waitFor(() => expect(allocation).toHaveValue("650.000"));
+    await user.click(within(dialog).getByTestId("confirm-supplier-payment"));
+    await waitFor(() => expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ method: "bank_transfer", branchId, amount: { amount: 650_000, currency: "JOD" }, reference: "TRF-2026-0091" })));
+  });
+
   it("says the supplier list could not load, not that there are none, and loads it again on Retry", async () => {
     const user = userEvent.setup();
     let failing = true;
