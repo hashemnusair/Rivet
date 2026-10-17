@@ -18,7 +18,8 @@ scrollTop 516, button top 525), the bills then added 57 px (scrollHeight
 Evidence: a diagnostic run on GitHub's Linux runner (not merged) showed the
 same dialog heights and button boxes as macOS. The unchanged test also failed
 locally on macOS (5 of 10 repeats) and on Linux (2 of 12), both between 23:28
-and 23:36 UTC. The earlier "time-of-day" pattern came from timing luck.
+and 23:36 UTC. It failed again locally at 00:00 UTC (2 of 10), outside the
+21:00–24:00 UTC window. The earlier "time-of-day" pattern came from timing luck.
 
 Fix (test only, no product change, assertion unchanged): after the shift
 notice, the test also waits for the bills result ("On bills: …", or "You owe …
