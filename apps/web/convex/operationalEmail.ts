@@ -5,6 +5,7 @@ import { internalAction, internalMutation, type MutationCtx } from "./_generated
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
 import { parseEmailAllowlist, resolveEmailMode, routeEmail, sandboxSubject } from "./emailMode";
 import { attachmentSizeLabel, renderBrandedEmail, type EmailAudience, type EmailRow, type EmailStatusTone } from "./emailTemplate";
+import { rivetSender } from "../src/lib/release/beta";
 import { createTranslator, type TKey } from "../src/lib/i18n/core";
 import { makeFormatters } from "../src/lib/i18n/formatters";
 import { resolveRecipientLanguage, type CommunicationLanguageSource } from "../src/lib/i18n/communication";
@@ -729,7 +730,8 @@ export const processDue = internalAction({
     const sandboxTo = process.env.RIVET_EMAIL_SANDBOX_TO;
     const allowlist = parseEmailAllowlist(process.env.RIVET_EMAIL_ALLOWLIST);
     const apiKey = process.env.RESEND_API_KEY!.trim();
-    const from = process.env.RESEND_FROM_EMAIL!.trim();
+    // The configured address, shown as "RIVET Beta" while RIVET is in beta.
+    const from = rivetSender(process.env.RESEND_FROM_EMAIL!);
     const deliveries = await ctx.runMutation(internal.operationalEmail.leaseDue, { limit: 25 }) as Delivery[];
     let processed = 0;
     for (const delivery of deliveries) {

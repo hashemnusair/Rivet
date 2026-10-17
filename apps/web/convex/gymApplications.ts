@@ -4,7 +4,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { domainError, publicUserId, requirePlatformAdmin } from "./security";
 import { notifyPlatformAdmins } from "./notificationDelivery";
-import { applicantReceivedEmail, applicantReviewEmail } from "./gymApplicationEmail";
+import { applicantReceivedEmail, applicantReviewEmail, applicationInternalEmail } from "./gymApplicationEmail";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 
@@ -371,27 +371,6 @@ export const markReviewNotification = internalMutation({
   },
 });
 
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>'"]/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "'": "&#39;",
-    '"': "&quot;",
-  })[character] ?? character);
-}
-
-function detailsHtml(values: ApplicationInput): string {
-  return `<table style="border-collapse:collapse;width:100%;max-width:560px;font-family:Arial,sans-serif;font-size:14px">
-    <tr><td style="padding:8px 0;color:#777">Gym name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.gymName)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Gym address</td><td style="padding:8px 0">${escapeHtml(values.gymAddress)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Owner name</td><td style="padding:8px 0;font-weight:600">${escapeHtml(values.ownerName)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Email</td><td style="padding:8px 0"><a href="mailto:${encodeURIComponent(values.email)}">${escapeHtml(values.email)}</a></td></tr>
-    <tr><td style="padding:8px 0;color:#777">Contact number</td><td style="padding:8px 0">${escapeHtml(values.contactNumber)}</td></tr>
-    <tr><td style="padding:8px 0;color:#777">Chosen plan</td><td style="padding:8px 0">${escapeHtml(values.plan)} (${escapeHtml(values.billingInterval ?? "monthly")} billing)</td></tr>
-  </table>`;
-}
-
 function recipientList(value: string | undefined): string[] {
   return (value ?? "")
     .split(",")
@@ -418,12 +397,12 @@ export const submit = action({
 
     const recipients = recipientList(process.env.RIVET_APPLICATION_RECIPIENTS);
     const values = inputValues(args);
-    const summary = detailsHtml(values);
+    const internalCopy = applicationInternalEmail(values, process.env.RIVET_SITE_URL);
     const applicantLanguage = args.language ?? "en";
     const applicantCopy = applicantReceivedEmail(values, applicantLanguage);
     const applicant = await ctx.runMutation(internal.operationalEmail.enqueue, {
       kind: "gym_application_received_applicant",
-      templateVersion: "gym-application-received-v2",
+      templateVersion: "gym-application-received-v3",
       language: applicantLanguage,
       recipientReference: values.email,
       recipientEmail: values.email,
@@ -435,15 +414,13 @@ export const submit = action({
     const internalRecipients = recipients.length > 0 ? recipients : [undefined];
     const internalNotifications = await Promise.all(internalRecipients.map((recipient, index) => ctx.runMutation(internal.operationalEmail.enqueue, {
       kind: "gym_application_received_internal",
-      templateVersion: "gym-application-internal-v1",
+      templateVersion: "gym-application-internal-v2",
       recipientReference: recipient ?? "platform-applications",
       recipientEmail: recipient,
       dedupeKey: `gym-application-received-internal:${created.applicationId}:${index}`,
       relatedEntityType: "gym_application_submission",
       relatedEntityPublicId: created.applicationId,
-      subject: `New RIVET gym application · ${values.gymName}`,
-      html: `<div style="font-family:Arial,sans-serif;color:#1b1a15;line-height:1.6"><h2>New gym application</h2><p>A gym owner submitted an application through rivetjo.com.</p>${summary}<p style="color:#777;font-size:12px">Review the applicant before provisioning a gym workspace or sending access.</p></div>`,
-      text: `New RIVET gym application\n\nGym: ${values.gymName}\nAddress: ${values.gymAddress}\nOwner: ${values.ownerName}\nEmail: ${values.email}\nContact: ${values.contactNumber}\nPlan: ${values.plan}\n\nReview before provisioning access.`,
+      ...internalCopy,
     })));
     const results = [applicant, ...internalNotifications];
     const notificationStatus = results.some((result) => result.status === "suppressed") ? "not_configured" as const : "pending" as const;
@@ -488,7 +465,7 @@ export const review = action({
     const email = applicantReviewEmail({ gymName: publicReview.gymName, ownerName: publicReview.ownerName, plan: publicReview.plan }, args.decision, applicantLanguage ?? "en");
     const queued = await ctx.runMutation(internal.operationalEmail.enqueue, {
       kind: args.decision === "approved" ? "gym_application_approved" : "gym_application_rejected",
-      templateVersion: args.decision === "approved" ? "gym-application-approved-v2" : "gym-application-rejected-v2",
+      templateVersion: args.decision === "approved" ? "gym-application-approved-v3" : "gym-application-rejected-v3",
       language: applicantLanguage ?? "en",
       recipientReference: publicReview.email,
       recipientEmail: publicReview.email,

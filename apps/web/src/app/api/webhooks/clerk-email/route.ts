@@ -1,10 +1,57 @@
 import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import type { NextRequest } from "next/server";
+import { createTranslator } from "@/lib/i18n/core";
+import { rivetSender } from "@/lib/release/beta";
+import { renderBrandedEmail, type RenderedEmail } from "../../../../../convex/emailTemplate";
 
 export const runtime = "nodejs";
 
+const INVITATION_SLUGS = new Set(["invitation", "organization_invitation"]);
+
+/**
+ * RIVET's own version of an email that carries a code or a link, or `null` to
+ * send Clerk's rendered email as it is. The code or link is the point of the
+ * message, so anything else (an unknown template, a missing, empty or
+ * non-string field, a link that is not http(s), or a render that somehow lost
+ * it) falls back to Clerk's body rather than send an email without it.
+ *
+ * The event names no language, so this is English, and no gym, so the footer
+ * has no gym email-preferences link.
+ */
+function brandedEmail(slug: string | null | undefined, data: Record<string, unknown> | null | undefined, subject: string): RenderedEmail | null {
+  const code = typeof data?.otp_code === "string" ? data.otp_code.trim() : "";
+  const link = typeof data?.action_url === "string" ? data.action_url.trim() : "";
+  const t = createTranslator("en");
+  const base = { language: "en", audience: "member", paragraphs: [] as string[] } as const;
+  try {
+    if (code) {
+      const rendered = renderBrandedEmail(subject, {
+        ...base,
+        headline: t(slug === "reset_password_code" ? "auth.email.resetCodeHeadline" : "auth.email.codeHeadline"),
+        rows: [{ label: t("auth.email.codeLabel"), value: code, mono: true }],
+        note: t("auth.email.codeNote"),
+      });
+      return rendered.text.includes(code) && rendered.html.includes(code) ? rendered : null;
+    }
+    if (/^https?:\/\//i.test(link)) {
+      const invitation = INVITATION_SLUGS.has(slug ?? "");
+      const rendered = renderBrandedEmail(subject, {
+        ...base,
+        // Another link email (a magic link, say) is named by Clerk's own subject.
+        headline: invitation ? t("auth.email.invitationHeadline") : subject,
+        button: { label: t(invitation ? "auth.email.invitationButton" : "auth.email.linkButton"), href: link },
+      });
+      return rendered.text.includes(link) ? rendered : null;
+    }
+  } catch {
+    // Fall through to Clerk's email; never log what it carried.
+  }
+  return null;
+}
+
 /** Clerk owns identity, invitation links and verification codes. Resend only
- * transports the signed event's rendered email. Never log/persist its body in
+ * transports the signed event's email: RIVET's branded version when it carries
+ * a code or link, otherwise Clerk's rendered body. Never log/persist either in
  * the staff-visible operational outbox: it can contain authentication tokens. */
 export async function POST(request: NextRequest): Promise<Response> {
   if (!process.env.CLERK_WEBHOOK_SIGNING_SECRET?.trim()) {
@@ -30,6 +77,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     // misconfigured cutover instead of silently losing a sign-in email.
     return new Response("Authentication email delivery is not configured", { status: 503 });
   }
+  const branded = brandedEmail(email.slug, email.data, email.subject);
+  const html = branded ? branded.html : email.body;
+  const text = branded ? branded.text : email.body_plain;
   try {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -39,11 +89,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         "Idempotency-Key": `clerk-email/${email.id}`,
       },
       body: JSON.stringify({
-        from,
+        from: rivetSender(from),
         to: [email.to_email_address],
         subject: email.subject,
-        ...(email.body ? { html: email.body } : {}),
-        ...(email.body_plain ? { text: email.body_plain } : {}),
+        ...(html ? { html } : {}),
+        ...(text ? { text } : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });

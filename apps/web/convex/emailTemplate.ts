@@ -13,10 +13,14 @@
  */
 import { BRAND, BRAND_CONTACT, BRAND_YEAR, brandLegalLine } from "./brandTokens";
 import { createTranslator } from "../src/lib/i18n/core";
+import { RIVET_IN_BETA } from "../src/lib/release/beta";
 
 export type EmailLanguage = "en" | "ar";
-/** Who is reading: a gym's own team, or one of its members. */
-export type EmailAudience = "gym" | "member";
+/**
+ * Who is reading: a gym's own team, one of its members, or someone outside
+ * any gym account (an applicant, or RIVET's own inbox).
+ */
+export type EmailAudience = "gym" | "member" | "public";
 export type EmailStatusTone = "success" | "warning" | "danger";
 
 export interface EmailRow {
@@ -47,6 +51,8 @@ export interface BrandedEmail {
   siteUrl?: string;
   /** Marketing mail carries an unsubscribe line; service mail must not. */
   marketing?: boolean;
+  /** Why the reader got this, when neither the gym nor the account line fits. */
+  reason?: string;
 }
 
 export interface RenderedEmail {
@@ -105,10 +111,12 @@ export function footerLines(message: BrandedEmail): string[] {
   if (message.marketing) legal.push(t("communicationCompletion.email.footer.unsubscribe"));
   lines.push(legal.join(" · "));
   lines.push(
-    message.audience === "member" && message.gymName
-      ? t("communicationCompletion.email.footer.sentForGym", { gym: message.gymName })
-      : t("communicationCompletion.email.footer.serviceMessage"),
+    message.reason
+      ?? (message.audience === "member" && message.gymName
+        ? t("communicationCompletion.email.footer.sentForGym", { gym: message.gymName })
+        : t("communicationCompletion.email.footer.serviceMessage")),
   );
+  if (RIVET_IN_BETA) lines.push(t("common.beta.short"));
   lines.push(t("communicationCompletion.email.footer.copyright", { year: BRAND_YEAR }));
   const registered = brandLegalLine();
   if (registered) lines.push(registered);
@@ -119,7 +127,9 @@ function footerHtml(message: BrandedEmail, origin: string): string {
   const arabic = message.language === "ar";
   const t = createTranslator(message.language);
   const font = arabic ? SANS_AR : SANS;
-  const [contact, channels, hours, , why, copyright, legal] = footerLines(message);
+  const [contact, channels, hours, , why, ...closing] = footerLines(message);
+  const beta = RIVET_IN_BETA ? closing.shift() : undefined;
+  const [copyright, legal] = closing;
   const link = (label: string, path: string) => `<a href="${origin}${path}" style="${surface(origin, "sunken")};color:${BRAND.inkMuted};text-decoration:underline">${escapeHtml(label)}</a>`;
   const links = [link(t("communicationCompletion.email.footer.privacy"), "/privacy"), link(t("communicationCompletion.email.footer.terms"), "/terms")];
   if (message.audience === "gym") links.push(link(t("communicationCompletion.email.footer.preferences"), "/settings?section=email"));
@@ -132,6 +142,7 @@ function footerHtml(message: BrandedEmail, origin: string): string {
 <div>${escapeHtml(hours!)}</div>
 <div style="padding-top:8px">${links.join(" · ")}</div>
 <div style="padding-top:8px">${escapeHtml(why!)}</div>
+${beta ? `<div>${escapeHtml(beta)}</div>` : ""}
 <div style="padding-top:8px">${escapeHtml(copyright!)}</div>
 ${legal ? `<div style="color:${BRAND.inkMuted}">${escapeHtml(legal)}</div>` : ""}
 </td></tr></table></td></tr>`;
@@ -175,6 +186,23 @@ function attachmentHtml(attachment: { filename: string; sizeLabel: string }, ara
 function statusHtml(status: { label: string; tone: EmailStatusTone }, arabic: boolean): string {
   const colours = STATUS_COLOURS[status.tone];
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:${colours.background};border-radius:4px;padding:4px 8px;font-family:${arabic ? SANS_AR : SANS};font-size:12px;font-weight:600;color:${colours.ink}">${escapeHtml(status.label)}</td></tr></table>`;
+}
+
+/**
+ * The RIVET lockup, and while RIVET is in beta the same small "Beta" mark the
+ * product shows beside it: sentence case, a hairline border, the lockup's ink
+ * a step quieter. It sits after the lockup in reading order, so it lands on
+ * the left of an Arabic message without the logo itself being mirrored.
+ */
+function lockupHtml(language: EmailLanguage, origin: string): string {
+  const lockup = `<img src="${origin}/brand/rivet-lockup.png" width="112" alt="RIVET" style="width:112px;height:auto;display:block;border:0">`;
+  if (!RIVET_IN_BETA) return lockup;
+  const arabic = language === "ar";
+  const label = createTranslator(language)("common.beta.label");
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="middle" bgcolor="${BRAND.paper}" style="${surface(origin, "paper")}">${lockup}</td>
+<td valign="middle" bgcolor="${BRAND.paper}" style="${surface(origin, "paper")};padding-${arabic ? "right" : "left"}:10px"><span class="rv-beta rv-secondary" style="${surface(origin, "paper")};display:inline-block;border:1px solid ${BRAND.lineEmphasis};border-radius:4px;padding:3px 6px;font-family:${arabic ? SANS_AR : SANS};font-size:12px;line-height:1;font-weight:600;color:${BRAND.inkSecondary}">${escapeHtml(label)}</span></td>
+</tr></table>`;
 }
 
 /**
@@ -247,14 +275,14 @@ export function renderBrandedEmail(subject: string, message: BrandedEmail): Rend
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="rv-body" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")}"><tr><td align="center" class="rv-outer" bgcolor="${BRAND.sunken}" style="${surface(origin, "sunken")};padding:24px 12px">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="rv-frame" bgcolor="${BRAND.surface}" style="width:600px;max-width:100%;${surface(origin, "surface")};border:1px solid ${BRAND.lineStrong}" dir="${direction}">
 <tr><td class="rv-header rv-pad" align="${start}" bgcolor="${BRAND.paper}" style="${surface(origin, "paper")};border-bottom:1px solid ${BRAND.line};padding:32px">
-<img src="${origin}/brand/rivet-lockup.png" width="112" alt="RIVET" style="width:112px;height:auto;display:block;border:0">
+${lockupHtml(message.language, origin)}
 ${message.gymName ? `<div class="rv-muted" style="${surface(origin, "paper")};font-family:${font};font-size:13px;color:${BRAND.inkMuted};padding-top:12px">${escapeHtml(message.gymName)}</div>` : ""}
 </td></tr>
 <tr><td class="rv-pad" align="${start}" bgcolor="${BRAND.surface}" style="${surface(origin, "surface")};padding:32px 32px 12px"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${body}</table></td></tr>
 ${footerHtml(message, origin)}
 </table></td></tr></table></body></html>`;
 
-  const textLines = [message.headline, ""];
+  const textLines = RIVET_IN_BETA ? [`RIVET ${createTranslator(message.language)("common.beta.label")}`, "", message.headline, ""] : [message.headline, ""];
   if (message.status) textLines.push(message.status.label, "");
   textLines.push(...message.paragraphs, "");
   if (message.rows?.length) {
