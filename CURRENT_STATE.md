@@ -2,6 +2,14 @@
 
 ## 17 October 2026 — Paying from a bill no longer says "You changed the amounts."
 
+PR #19 review: added regression coverage that pays a newer bill in full while
+leaving an older bill untouched, preserves other bill allocations during manual
+editing, and checks reset, reopen and supplier switching. All 33 focused
+payables tests passed, as did the web typecheck, changed-file ESLint, the mock
+production build and six repeated Playwright checks (cash settlement/reversal,
+short-phone dialog and payment confirmation). No additional product-code fix
+was needed. These are local mock/handler checks; real payments were not created.
+
 Pressing Pay on one supplier bill opens "Record supplier payment" with that
 bill's balance filled in. Two things were wrong on that path:
 
