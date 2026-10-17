@@ -2,9 +2,9 @@
 import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 
-import { GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
+import { FilterX, GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
@@ -22,7 +22,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState, QueryErrorState } from "@/components/ui/states";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useDebouncedValue } from "@/lib/hooks/use-debounced";
+import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { NewLeadDialog } from "@/features/crm/new-lead-dialog";
 import { toast } from "sonner";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
@@ -31,7 +31,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
-import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; labelKey: TKey; hintKey: TKey }> = [
@@ -56,18 +55,24 @@ function columnLabel(column: PipelineColumn, t: ReturnType<typeof useT>): string
   return item ? t(item.labelKey) : column;
 }
 
+const LEAD_VIEWS = ["board", "list"] as const;
+
 function PipelinePageInner() {
   const { t, locale, isolate } = useLocale();
   const { session } = useApp();
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const replaceParams = useReplaceSearchParams();
   const invalidate = useInvalidate();
-  const [search, setSearch] = useState(searchParams.get("q") ?? "");
-  const debounced = useDebouncedValue(search, 250);
+  // Search, view and page live in the URL through the shared list-state hook,
+  // so Back/Forward and a pasted link reopen the same slice. Typing stays
+  // local until it settles: the page's own URL write can no longer land
+  // mid-word and put the older text back into the box.
+  const { text: search, setText: setSearch, settled: debounced } = useUrlSearchText();
   const [newOpen, setNewOpen] = useState(searchParams.get("new") === "1");
-  const [view, setView] = useState<"board" | "list">(searchParams.get("view") === "list" ? "list" : "board");
-  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1));
+  const urlView = searchParams.has("view") ? choiceFromParams(searchParams, "view", LEAD_VIEWS, "board") : undefined;
+  const [view, setView] = useState<"board" | "list">(urlView ?? "board");
+  const page = pageFromParams(searchParams);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkKind, setBulkKind] = useState<BulkOperationKind>("leads_create_follow_up");
@@ -86,25 +91,14 @@ function PipelinePageInner() {
     }
   }, []);
 
-  const replaceParams = (changes: Record<string, string | undefined>) => {
-    const next = new URLSearchParams(searchParams.toString());
-    Object.entries(changes).forEach(([key, value]) => { if (value) next.set(key, value); else next.delete(key); });
-    if (!("page" in changes)) next.delete("page");
-    replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname);
+  // The toggle answers at once; a Back/Forward that names a view follows it.
+  useEffect(() => {
+    if (urlView) setView(urlView);
+  }, [urlView]);
+  const chooseView = (next: "board" | "list") => {
+    setView(next);
+    replaceParams({ view: next });
   };
-  useEffect(() => {
-    if ((searchParams.get("q") ?? "") !== debounced) replaceParams({ q: debounced || undefined });
-    // Only settled search text drives this URL write.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced]);
-
-  const urlState = searchParams.toString();
-  useEffect(() => {
-    const next = new URLSearchParams(urlState);
-    setSearch(next.get("q") ?? "");
-    setPage(Math.max(1, Number(next.get("page")) || 1));
-    if (next.has("view")) setView(next.get("view") === "list" ? "list" : "board");
-  }, [urlState]);
 
   const query = useMemo(
     () => ({ branchId: session?.activeBranchId, search: searchKey(debounced) || undefined, page, pageSize: 100, sort: "nextFollowUpAt" as const }),
@@ -220,7 +214,7 @@ function PipelinePageInner() {
             <div className="flex rounded-md border border-line-2 p-0.5" role="group" aria-label={t("crm.pipeline.viewLabel")}>
               <button
                 type="button"
-                onClick={() => { setView("board"); replaceParams({ view: "board" }); }}
+                onClick={() => chooseView("board")}
                 aria-pressed={view === "board"}
                 className={cn("min-h-9 rounded-sm px-3 py-1 text-[13px] cursor-pointer", view === "board" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}
               >
@@ -228,7 +222,7 @@ function PipelinePageInner() {
               </button>
               <button
                 type="button"
-                onClick={() => { setView("list"); replaceParams({ view: "list" }); }}
+                onClick={() => chooseView("list")}
                 aria-pressed={view === "list"}
                 className={cn("min-h-9 rounded-sm px-3 py-1 text-[13px] cursor-pointer", view === "list" ? "bg-sunken text-ink" : "text-ink-2 hover:bg-sunken/50")}
               >
@@ -241,7 +235,9 @@ function PipelinePageInner() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="w-full max-w-xs"><Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={t("crmCompletion.pipeline.searchPlaceholder")} aria-label={t("crmCompletion.pipeline.searchLabel")} /></div>
+        <div className="w-full max-w-xs"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("crmCompletion.pipeline.searchPlaceholder")} aria-label={t("crmCompletion.pipeline.searchLabel")} /></div>
+        {search ? <Button variant="ghost" size="sm" onClick={() => setSearch("")}><FilterX /> {t("crmCompletion.pipeline.clearSearch")}</Button> : null}
+        {data && debounced ? <span className="text-[12px] tabular text-ink-3" role="status">{t("crmCompletion.pipeline.matchCount", { count: data.totalItems })}</span> : null}
       </div>
 
       {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{t("crmCompletion.pipeline.selected", { count: selected.size })}</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> {t("crmCompletion.pipeline.changeSelected")}</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>{t("members.list.clearSelection")}</button></div> : null}
@@ -260,6 +256,9 @@ function PipelinePageInner() {
       ) : view === "list" ? (
         <LeadListView
           leads={leads}
+          filtered={Boolean(debounced)}
+          onClearSearch={() => setSearch("")}
+          onNewLead={() => setNewOpen(true)}
           onNoAnswer={(lead) => moveLead.mutate({ lead, target: "no_answer" })}
           onNotSold={requestLossReason}
           selected={selected}
@@ -313,7 +312,7 @@ function PipelinePageInner() {
       )}
 
       {data && data.totalPages > 1 && view === "board" ? <p className="text-[12px] text-ink-2">{t("crmCompletion.pipeline.pageOnly")}</p> : null}
-      {data ? <DataPagination page={data} onPage={(next) => { setPage(next); replaceParams({ page: next === 1 ? undefined : String(next) }); }} className="border-t border-line pt-3" /> : null}
+      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} className="border-t border-line pt-3" /> : null}
 
       <NewLeadDialog open={newOpen} onOpenChange={setNewOpen} />
       <Dialog open={Boolean(lossLead)} onOpenChange={(open) => { if (!open) { setLossLead(undefined); setLossReason(""); setLossError(undefined); } }}>
@@ -438,10 +437,15 @@ function LeadCard({
   );
 }
 
-function LeadListView({ leads, onNoAnswer, onNotSold, selected, onSelectedChange }: { leads: LeadSummary[]; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void; selected: Set<string>; onSelectedChange: (selected: Set<string>) => void }) {
+function LeadListView({ leads, filtered, onClearSearch, onNewLead, onNoAnswer, onNotSold, selected, onSelectedChange }: { leads: LeadSummary[]; filtered: boolean; onClearSearch: () => void; onNewLead: () => void; onNoAnswer: (lead: LeadSummary) => void; onNotSold: (lead: LeadSummary) => void; selected: Set<string>; onSelectedChange: (selected: Set<string>) => void }) {
   const t = useT();
   if (leads.length === 0) {
-    return <EmptyState layout="section" title={t("crmCompletion.pipeline.emptySearchTitle")} description={t("crmCompletion.pipeline.emptySearchDescription")} />;
+    // An empty search result and an empty pipeline call for different next steps.
+    return filtered ? (
+      <EmptyState layout="section" title={t("crmCompletion.pipeline.emptySearchTitle")} description={t("crmCompletion.pipeline.emptySearchDescription")} action={<Button variant="secondary" size="sm" onClick={onClearSearch}><FilterX /> {t("crmCompletion.pipeline.clearSearch")}</Button>} />
+    ) : (
+      <EmptyState layout="section" title={t("crmCompletion.pipeline.emptyTitle")} description={t("crmCompletion.pipeline.emptyDescription")} action={<Button size="sm" onClick={onNewLead}><Plus /> {t("crm.newLead.title")}</Button>} />
+    );
   }
   return (
     <div className="panel overflow-hidden">
