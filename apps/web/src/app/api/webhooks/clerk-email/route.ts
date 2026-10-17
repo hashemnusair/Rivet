@@ -49,6 +49,29 @@ function brandedEmail(slug: string | null | undefined, data: Record<string, unkn
   return null;
 }
 
+/**
+ * Resend failures worth a webhook retry: a timeout, an idempotency race, rate
+ * limits, Resend's own outages, and a rejected API key or unverified domain
+ * that an operator can fix. Any other 4xx (an address or field Resend will
+ * never accept) fails the same way every time, and Clerk would keep retrying
+ * for days and could deliver a code long after it expired.
+ */
+function providerFailureIsRetryable(status: number): boolean {
+  return status >= 500 || [401, 403, 408, 409, 425, 429].includes(status);
+}
+
+/** Resend's error name ("validation_error"), only when it has that shape: its
+ * message can quote the recipient's address, so it is never read out. */
+async function providerErrorName(response: Response): Promise<string | undefined> {
+  try {
+    const body: unknown = await response.json();
+    const name = body && typeof body === "object" && "name" in body ? body.name : undefined;
+    return typeof name === "string" && /^[a-z_]{1,64}$/.test(name) ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Clerk owns identity, invitation links and verification codes. Resend only
  * transports the signed event's email: RIVET's branded version when it carries
  * a code or link, otherwise Clerk's rendered body. Never log/persist either in
@@ -97,7 +120,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return new Response("Email provider did not accept the message", { status: 502 });
+    if (!response.ok) {
+      if (providerFailureIsRetryable(response.status)) return new Response("Email provider did not accept the message", { status: 502 });
+      // Acknowledge so Clerk stops retrying, and leave the operator one line:
+      // the status, Resend's error name and Clerk's email id. Never the
+      // address, subject, body, code or link.
+      console.error("Clerk email relay: the email provider permanently rejected a message", { status: response.status, error: await providerErrorName(response), emailId: email.id });
+      return new Response("Email provider rejected the message; not retried", { status: 200 });
+    }
     const result: unknown = await response.json();
     if (!result || typeof result !== "object" || !("id" in result) || typeof result.id !== "string" || !result.id) {
       return new Response("Email provider response is incomplete", { status: 502 });

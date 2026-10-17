@@ -7,6 +7,7 @@ import {
   nextProspectCode,
   nextProspectStage,
   normalizeProspectChanges,
+  phoneHref,
   prospectChangeList,
   prospectStageGroup,
   sameGymName,
@@ -44,6 +45,19 @@ describe("prospect rules", () => {
     expect(whatsappDigits("00962 78 177 3917")).toBe("962781773917");
     expect(whatsappHref("+962 79 097 9998", "مرحبا")).toBe("https://wa.me/962790979998?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7");
     expect(whatsappHref("+962 79 097 9998", "  ")).toBe("https://wa.me/962790979998");
+  });
+
+  it("reads numbers without a country code as Jordanian and keeps explicit codes", () => {
+    // Each of these passes the form's phone check; before, the first three
+    // opened +7 (Russia), +06… and +9620… instead of the gym.
+    expect(whatsappDigits("79 097 9998")).toBe("962790979998");
+    expect(phoneHref("79 097 9998")).toBe("tel:+962790979998");
+    expect(phoneHref("06 585 0000")).toBe("tel:+96265850000");
+    expect(whatsappDigits("+962 (0) 79 097 9998")).toBe("962790979998");
+    expect(whatsappDigits("962 79 097 9998")).toBe("962790979998");
+    expect(whatsappDigits("٠٧٩٠٩٧٩٩٩٨")).toBe("962790979998");
+    expect(whatsappDigits("+44 20 7946 0958")).toBe("442079460958");
+    expect(whatsappDigits("0044 20 7946 0958")).toBe("442079460958");
   });
 
   it("numbers new gyms after the highest reference and spots duplicate names", () => {
