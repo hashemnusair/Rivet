@@ -1,5 +1,81 @@
 # GymOS / RIVET current implementation state
 
+## Current checkpoint — PR review and backlog reconciliation, 17 October 2026
+
+Start here for implementation status. The dated entries below preserve the
+evidence available at each point; older pending tasks and test counts do not
+override this checkpoint. The [canonical backlog](docs/13_PRODUCT_AND_OPERATIONS_TODO.md)
+owns remaining work and the [release runbook](docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md)
+owns deployment/acceptance steps. `FRONTEND_HANDOFF.md` remains frozen.
+
+### Reviewed and merged
+
+| Change | Tested head | Main merge | Verification |
+| --- | --- | --- | --- |
+| [PR #19](https://github.com/hashemnusair/Rivet/pull/19): supplier-payment allocations | `5836d1ee` | `6a8ecd5b` | All 13 jobs in [CI 39053212704](https://github.com/hashemnusair/Rivet/actions/runs/39053212704); all 13 post-merge jobs in [CI 39053794963](https://github.com/hashemnusair/Rivet/actions/runs/39053794963). |
+| [PR #20](https://github.com/hashemnusair/Rivet/pull/20): member payment reads, with review fix | `343c2a9d` (includes #19) | `00786778` | All 13 jobs in [CI 39053878577](https://github.com/hashemnusair/Rivet/actions/runs/39053878577). The merge has exactly the tested source tree. |
+
+The original #20 was unsafe for a branch manager when a member's duplicate had
+merged into a survivor at another branch. It could omit prior refunds and allow
+an over-refund, hide receipt links or refuse a valid PT refund. The repair
+retains the historical payment's member ID as well as resolved identities,
+while preserving tenant/branch authorization. Three regression tests fail on
+the original PR and pass on both pre-PR main and the repaired code. The complete
+seven-test history suite and unchanged snapshot also pass on the old and new
+implementations. #19 needed no additional product-code fix; the review added
+multi-bill, selected-bill, edit/reset, reopen and supplier-switch coverage.
+
+The final combined CI passed **2,191 Vitest tests across 346 files**, with two
+opt-in benchmark tests skipped, both TypeScript checks, lint/secret-output audit,
+repository safety tests, build/dependency audit, actual Convex code generation
+and all eight credential-free browser shards. Local review additionally passed
+40 focused tests together and six repeated payables browser checks. The full
+local suite before integrating #19 passed 2,188 tests. These are synthetic
+fixtures/mock-browser checks, not real-role or live-provider acceptance.
+
+The opt-in 180-day synthetic-gym benchmark was run separately after the repair:
+member Payments tab 20 documents, payment/refund receipt 23, payment refund 50,
+PT refund 35; all measured operations completed within the recorded read limits.
+Whole-gym payments (2,081) and guest retail receipts (1,782) retain their existing
+paths. This is local read-count evidence, not measured Production latency.
+
+Vercel Production reports success for the merged application source
+`00786778`: deployment `3pXbsBW6BurP1xZDGXbh17Abe2uC`, GitHub deployment record
+`7143270685`, completed 17 October at 17:35 UTC. This confirms the frontend
+release; it does not deploy the Convex functions. The subsequent documentation
+commits preserve that application source unchanged.
+
+### What remains
+
+- **Backend release:** the latest recorded Convex Production release remains
+  the 7 October batch. Dashboard/front-desk reads and visit-summary backfill,
+  platform prospects, operational-email beta branding and PR #20 are merged but
+  still await the guarded Convex deployment and verification in docs/12.
+- **Email:** finish the signed Resend callback, application-kind and reply-inbox
+  checks, separate Clerk template cutover, and fresh recipient-inbox acceptance.
+  The last provider/configuration inspection remains 7 October.
+- **Acceptance:** finish the recorded Hashem/Elias walkthrough follow-up,
+  credential-complete staging with real roles/concurrency and cleanup evidence,
+  and the final device/UI matrix. The September walkthrough and October route
+  surveys remain valid evidence; missing outcomes are unknown, not failures.
+- **Operations and decisions:** restore rehearsal, monitoring/incident ownership,
+  edge controls and measured pilot headroom; founder/counsel/accountant closure
+  on legal identity, commercial/accounting policy and document consistency.
+
+The six prioritized work items, completed/superseded tasks and separately scoped
+features are reconciled in docs/13. Arabic implementation, currency-correct new
+financial text, member photo storage and the earlier workflow fixes are built;
+Jev and automated WhatsApp/SMS are retired. No missing provider activation is
+being presented as missing application code.
+
+No Convex deployment, provider setting change, email send or Production data
+mutation was performed in this review. Next release commands are the guarded
+`pnpm convex:deploy -- --dry-run --yes` and matching `pnpm convex:deploy`, after
+the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
+607 (247 agreements), and the frozen frontend handoff is byte-for-byte unchanged.
+Documentation reconciliation changes only this file and docs/12, /13, /17, /19
+and /20; it adds no application behavior or new product scope.
+
 ## 17 October 2026 — A member's payments no longer read every payment in the gym
 
 PR #20 review found and fixed a money regression before merge. A duplicate at

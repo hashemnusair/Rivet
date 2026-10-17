@@ -2,10 +2,16 @@
 
 ## Pending release batch — reconciled 17 October 2026
 
-The latest implementation entries explicitly leave the following Convex work
+PRs #19 and #20 are merged; reviewed application source `00786778` has the
+same tree as the fully checked #20 head `343c2a9d`. #19 is frontend-only. The
+latest implementation entries explicitly leave the following Convex work
 undeployed. A successful Vercel Production deployment does not close this gate.
 The PR review/reconciliation session does not deploy Convex, activate providers
 or mutate Production data.
+
+Vercel Production completed for `00786778` at 17:35 UTC on 17 October
+(deployment `3pXbsBW6BurP1xZDGXbh17Abe2uC`, GitHub deployment `7143270685`).
+The documentation reconciliation preserves the same application source.
 
 | Pending backend work | Release implications |
 | --- | --- |

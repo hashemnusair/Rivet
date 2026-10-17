@@ -15,8 +15,8 @@ Do not create a second TODO file.
 - [ ] **Release the pending Convex batch.** Dashboard/front-desk history reads,
   visit summaries/backfill, platform prospects and operational email beta
   branding are implemented on main but still marked undeployed in the latest
-  release evidence. Include the reviewed member-payment optimization from
-  PR #20 once merged. Use the guarded `pnpm convex:deploy` procedure, record
+  release evidence. PR #20 is merged with its refund-safety review fix and
+  belongs in the same batch. Use the guarded `pnpm convex:deploy` procedure, record
   the exact source and target, confirm the summary backfill reaches
   `completed`, then verify the dashboard, reception, queues, member money
   views and platform prospects. Record actual read usage after release before
@@ -64,6 +64,11 @@ Do not create a second TODO file.
 
 ### Completed or superseded items
 
+- [x] PRs #19 and #20 reviewed, repaired where necessary, verified together and
+  merged on 17 October. Supplier-payment prefill/edit behavior has expanded
+  coverage; the payment-read optimization preserves historical refunds across
+  branch merges. See CURRENT_STATE for exact heads, merge SHAs and CI evidence.
+  The #20 runtime still needs the Convex release above.
 - [x] Currency-correct new payment, membership, retail, PT and shift text in
   both adapters: implemented 14 September, with release closure recorded later
   that day. Historical financial events were preserved.
