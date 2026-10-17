@@ -908,7 +908,10 @@ function VerdictPanel({
           </div>
         </div>
 
-        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 xl:grid-cols-4" data-testid="checkin-facts">
+        {/* Two columns until the lane is genuinely wide: four narrow cells cut
+            "10-Visit Pass" and the end date to an ellipsis at the moment the
+            desk needs to read them. */}
+        <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 2xl:grid-cols-4" data-testid="checkin-facts">
           <Cell label={t("reception.member.plan")} value={member.currentPlanName ?? t("deskCompletion.reception.verdict.noPlan")} muted={!member.currentPlanName} />
           <Cell label={termLabel} value={termValue} mono />
           <Cell
@@ -1020,7 +1023,7 @@ function Cell({
       <ContextLabel as="dt" tone="night">{label}</ContextLabel>
       <dd
         className={cn(
-          "mt-0.5 truncate text-[14px]",
+          "mt-0.5 break-words [overflow-wrap:anywhere] text-[14px]",
           mono && "tabular",
           tone === "warn" ? "text-warning" : muted ? "text-night-ink-3" : "text-night-ink",
         )}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LeadSummary } from "@/lib/domain/types";
@@ -27,10 +27,35 @@ const lead = {
   overdue: false,
 } as unknown as LeadSummary;
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => "/crm/pipeline",
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+// A navigation double that really updates the URL, so the page's URL-backed
+// search, view and page can be exercised the way a refresh, Back or a pasted
+// link would.
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (callback: () => void) => {
+    window.addEventListener("test:navigation", callback);
+    return () => window.removeEventListener("test:navigation", callback);
+  };
+  return {
+    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+    usePathname: () => "/crm/pipeline",
+    useRouter: () => ({
+      push: vi.fn(),
+      replace: (url: string) => {
+        window.history.replaceState({}, "", url);
+        window.dispatchEvent(new Event("test:navigation"));
+      },
+    }),
+  };
+});
+
+// The page rewrites its own query string in place; tell the double so the
+// search params it hands out follow, as Next's history sync does.
+vi.mock("@/lib/routing/replace-query", () => ({
+  replaceQueryInPlace: (_router: unknown, href: string) => {
+    window.history.replaceState({}, "", href);
+    window.dispatchEvent(new Event("test:navigation"));
+  },
 }));
 
 vi.mock("@/components/shared/saved-view-controls", () => ({ SavedViewControls: () => null }));
@@ -69,6 +94,7 @@ describe("CRM pipeline semantics", () => {
     state.mutationHookCall = 0;
     state.moveMutation.mockReset();
     state.closeMutation.mockReset();
+    window.history.replaceState({}, "", "/crm/pipeline");
     vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     vi.stubGlobal("ResizeObserver", class ResizeObserver { observe() {} unobserve() {} disconnect() {} });
     HTMLElement.prototype.scrollIntoView = () => undefined;
@@ -142,6 +168,7 @@ describe("CRM pipeline semantics", () => {
 
     expect(screen.getByText("Showing 1 to 100 of 101")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(window.location.search).toBe("?page=2");
     expect(state.queryKey).toEqual(qk.leads({
       branchId: "branch-1",
       search: undefined,
@@ -150,5 +177,41 @@ describe("CRM pipeline semantics", () => {
       sort: "nextFollowUpAt",
       stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"],
     }));
+  });
+
+  it("keeps the typed search in the box while the settled text moves into the URL and drops a stale page", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/crm/pipeline?page=2");
+    render(<PipelinePage />);
+
+    const input = screen.getByLabelText("Search leads");
+    await user.type(input, "Pipeline");
+    expect(input).toHaveValue("Pipeline");
+    await waitFor(() => expect(window.location.search).toBe("?q=Pipeline"));
+    expect(input).toHaveValue("Pipeline");
+    expect(screen.getByRole("status")).toHaveTextContent("101 leads match");
+    expect(state.queryKey).toEqual(qk.leads({
+      branchId: "branch-1",
+      search: "pipeline",
+      page: 1,
+      pageSize: 100,
+      sort: "nextFollowUpAt",
+      stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"],
+    }));
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(input).toHaveValue("");
+    await waitFor(() => expect(window.location.search).toBe(""));
+  });
+
+  it("refills the search box when the URL changes underneath it, as Back/Forward does", async () => {
+    render(<PipelinePage />);
+    expect(screen.getByLabelText("Search leads")).toHaveValue("");
+
+    window.history.pushState({}, "", "/crm/pipeline?q=Omar&view=list");
+    window.dispatchEvent(new Event("test:navigation"));
+
+    await waitFor(() => expect(screen.getByLabelText("Search leads")).toHaveValue("Omar"));
+    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
   });
 });

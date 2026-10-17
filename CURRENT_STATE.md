@@ -49,6 +49,45 @@ distinct". The full suites run in CI.
 Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
 `payables-workspace.test.tsx`.
 
+## 17 October 2026 — The 8 September workspace fixes that never reached main
+
+Elias asked for the fixes from the 8 Sep branch `polish/rivet-product-ux`
+(`b7669405`) that were meant to land but never did. That branch is 290
+commits behind, so the fixes were redone by hand on current main, with all
+copy in the en/ar catalogues. Main already had three of the original items:
+the human term date at reception, the Follow-ups page title and the renewal
+panel's end date. Those were skipped. UI only: nothing under `convex/`
+changed and no Convex deploy is needed.
+
+- **Member record.** Roles without `reports.financial.read` (reception, sales,
+  trainer) no longer get a Payments tab that always fails with "try again".
+  The tab is left out of the strip. A `?tab=payments` link shows "You don't
+  have access" and points to the paid status and the Timeline. The Timeline,
+  Memberships, Payments and Check-ins tabs use `QueryErrorState`, so a server
+  refusal is a permission state, not a retry. Empty profile fields say "Not
+  recorded" instead of a dash.
+- **Reception.** The check-in facts stay two across until `2xl` and wrap
+  instead of being cut off with an ellipsis.
+- **Lists.** Names in the Members and Memberships desktop tables are real
+  links (keyboard, new tab), and the Memberships phone rows are links instead
+  of buttons. The shared `TableRow` ignores clicks on a nested link, checkbox,
+  button or menu item, and clicks that end a text selection
+  (`rowClickShouldNavigate`), so the Members checkbox no longer needs
+  `stopPropagation`.
+- **Leads.** Search, view and page use the shared URL-state hooks
+  (`useUrlSearchText`, `useReplaceSearchParams`, `choiceFromParams`,
+  `pageFromParams`), so the page's own URL write can't replace text that is
+  still being typed. Added "Clear search", a match count, and separate "No
+  leads yet" and "No leads found" states in the list view.
+- **New copy:** `memberProfile.payments.forbiddenDescription`,
+  `memberProfile.details.notRecorded`, and `crmCompletion.pipeline.clearSearch`,
+  `.matchCount`, `.emptyTitle` and `.emptyDescription`, in English and Arabic.
+- **Tests:** `member-detail.test.tsx` covers the hidden tab, the deep-link
+  permission state and the allowed role. `member-tabs-states.test.tsx` covers
+  the refusal state and "Not recorded". `table.test.tsx` covers the row guard.
+  The pipeline test gains a URL-backed navigation double plus typing,
+  Clear search, match count and Back/Forward cases.
+
 ## 17 October 2026 — Supplier-payment dialog says when the supplier list failed to load
 
 Follow-up to the entry below. If the page's supplier list *failed* to load
