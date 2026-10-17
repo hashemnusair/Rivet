@@ -136,12 +136,47 @@ describe("branded email", () => {
   });
 
   it("keeps the footer complete, and unsubscribes only from marketing", () => {
-    // Six lines until RIVET's registered entity is filled in; the seventh appears then.
-    expect(footerLines({ ...base })).toHaveLength(6);
+    // Seven lines during the beta until RIVET's registered entity is filled in; the eighth appears then.
+    expect(footerLines({ ...base })).toHaveLength(7);
     expect(footerLines({ ...base }).join("\n")).toContain("Privacy policy · Terms of service · Email preferences");
     expect(footerLines({ ...base, marketing: true }).join("\n")).toContain("Unsubscribe");
     expect(footerLines({ ...base }).join("\n")).not.toContain("Unsubscribe");
     expect(footerLines({ ...base })[1]).toContain("sales@rivetjo.com");
+  });
+
+  it("marks every message as RIVET Beta while RIVET is in beta", () => {
+    const { html, text } = renderBrandedEmail("A RIVET invoice was issued", base);
+    // The mark sits beside the lockup, on paper, like the product's own.
+    const lockup = html.indexOf("/brand/rivet-lockup.png");
+    const mark = html.indexOf('class="rv-beta rv-secondary"');
+    expect(lockup).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(lockup);
+    expect(html.slice(mark, html.indexOf("</span>", mark))).toContain(">Beta");
+    expect(html.slice(mark, html.indexOf(">", mark))).toContain("background-image:url(https://www.rivetjo.com/brand/email-paper.png)");
+    expect(html).toContain("<div>RIVET is in beta.</div>");
+    // The plain-text copy has no lockup, so it opens with the name instead.
+    expect(text.startsWith("RIVET Beta\n\nA RIVET invoice was issued")).toBe(true);
+    expect(text).toContain("RIVET is in beta.");
+
+    const arabic = renderBrandedEmail("تم إصدار فاتورة RIVET", { ...base, language: "ar", headline: "تم إصدار فاتورة RIVET", paragraphs: ["الدفع مستحق."] });
+    expect(arabic.html).toContain(">تجريبي</span>");
+    expect(arabic.html).toContain("padding-right:10px\"><span class=\"rv-beta");
+    expect(arabic.text.startsWith("RIVET تجريبي\n")).toBe(true);
+    expect(arabic.text).toContain("منصة RIVET في مرحلة الإطلاق التجريبي.");
+  });
+
+  it("tells someone outside any gym account why they got it, without gym preferences or accent", () => {
+    const message = renderBrandedEmail("RIVET gym application received", {
+      ...base,
+      audience: "public",
+      accent: "#176E44",
+      button: { label: "Open", href: "https://www.rivetjo.com" },
+      reason: "This message was sent by RIVET. Please contact our team directly if you have questions.",
+    });
+    expect(message.text).toContain("This message was sent by RIVET. Please contact our team directly if you have questions.");
+    expect(message.text).not.toContain("This is a service message about your RIVET account.");
+    expect(message.html).not.toContain("Email preferences");
+    expect(message.html).not.toContain("#176E44");
   });
 
   it("sizes an attachment the way a reader reads it", () => {
