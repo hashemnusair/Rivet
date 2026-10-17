@@ -1911,7 +1911,11 @@ async function memberPaymentRecords(ctx: ReadContext, actor: ActorContext, membe
  */
 async function paymentsLinkedToMember(ctx: ReadContext, actor: ActorContext, memberId: string | undefined): Promise<DomainRecord[]> {
   if (!memberId) return await paymentRecords(ctx, actor);
-  return await memberPaymentRecords(ctx, actor, await memberIdentityIds(ctx, actor, memberId));
+  // Always retain the historical payment's own member. If a duplicate's
+  // survivor is outside the actor's branch, identity resolution cannot read
+  // its merged ids; dropping the original id would hide earlier refunds.
+  const identityIds = await memberIdentityIds(ctx, actor, memberId);
+  return await memberPaymentRecords(ctx, actor, [memberId, ...identityIds]);
 }
 
 async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data | undefined> {

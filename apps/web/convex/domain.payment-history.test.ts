@@ -223,6 +223,52 @@ async function paidPtOrder(t: TestConvex<typeof schema>, membershipId: string, m
 }
 
 describe("member-scoped payment reads and refunds: who may run them", () => {
+  /** A duplicate remains at A; its survivor is at B, outside A's manager scope. Historical money keeps A's member id. */
+  async function mergeIntoOtherBranch(t: TestConvex<typeof schema>, ids: Ids) {
+    await t.run(async (ctx) => {
+      const member = async (id: string) => (await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", ids.organization).eq("entityType", "member").eq("publicId", id)).unique())!;
+      const duplicate = await member("dm-active-a");
+      const survivor = await member("dm-frozen");
+      await ctx.db.patch(duplicate._id, { data: { ...duplicate.data, status: "archived", mergedIntoMemberId: survivor.publicId } });
+      await ctx.db.patch(survivor._id, { data: { ...survivor.data, mergedMemberIds: [duplicate.publicId] } });
+    });
+  }
+
+  it("keeps historical receipt links when a merged survivor is outside the manager's branch", async () => {
+    const { t, ids } = await historyGym();
+    await mergeIntoOtherBranch(t, ids);
+    const manager = client(t, MANAGER_A);
+    expect(await manager.query("receipts.get", { receiptId: "rc-card" })).toMatchObject({
+      relatedPayments: [{ id: "pay-card-refund-1" }, { id: "pay-card-refund-2" }],
+    });
+    expect(await manager.query("receipts.get", { receiptId: "rc-card-refund-1" })).toMatchObject({ relatedPayments: [{ id: "pay-card" }] });
+    expect(await manager.query("receipts.get", { receiptId: "rc-frozen-card" })).toEqual({ error: "NOT_FOUND" });
+  });
+
+  it("counts earlier refunds after a cross-branch merge and refuses an over-refund without writes", async () => {
+    const { t, ids } = await historyGym();
+    await mergeIntoOtherBranch(t, ids);
+    const manager = client(t, MANAGER_A);
+    const input = { paymentId: "pay-card", amount: money(9_001), reason: "Refund remaining balance", idempotencyKey: "cross-branch-over-refund" };
+    const before = await moneyWrites(t, ids);
+    expect(await manager.mutate("payments.refund", input)).toEqual({ error: "REFUND_EXCEEDS_AMOUNT" });
+    expect(await moneyWrites(t, ids)).toEqual(before);
+    expect(await manager.mutate("payments.refund", { ...input, amount: money(9_000), idempotencyKey: "cross-branch-remainder" })).toMatchObject({
+      payment: { amount: money(-9_000) },
+      relatedPayments: [{ id: "pay-card", status: "refunded", refundedAmount: money(12_000) }],
+    });
+  });
+
+  it("finds the original PT payments after their member merges into another branch", async () => {
+    const { t, ids } = await historyGym();
+    const { orderId, newerPaymentId } = await paidPtOrder(t, "ms-active-a", "dm-active-a");
+    await mergeIntoOtherBranch(t, ids);
+    const manager = client(t, MANAGER_A);
+    expect(await manager.mutate("pt.package.refund", { orderId, sessions: 2, reason: "Member relocating" })).toMatchObject({ refundedSessions: 2, refundedAmount: money(4_000) });
+    const refunds = (await manager.query("transactions.list", { memberId: "dm-active-a", type: "refund", sort: "-occurredAt" }) as Page).items;
+    expect(refunds[0]).toMatchObject({ originalPaymentId: newerPaymentId, amount: money(-4_000) });
+  });
+
   it("keep a member's Payments tab and receipts to staff with the permission, the branch and the gym", async () => {
     const { t } = await historyGym();
     const owner = client(t, OWNER);

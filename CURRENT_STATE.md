@@ -2,6 +2,20 @@
 
 ## 17 October 2026 — A member's payments no longer read every payment in the gym
 
+PR #20 review found and fixed a money regression before merge. A duplicate at
+branch A can point to a survivor at branch B, outside A's manager permissions.
+`memberIdentityIds` cannot read that survivor's merged IDs. The original PR then
+dropped A's historical member ID, hiding previous refunds, allowing an
+over-refund, omitting receipt links and rejecting a valid PT refund.
+`paymentsLinkedToMember` now always includes the payment's own member ID as
+well as any resolved identities; tenant and branch filters stay in place.
+Three new tests reproduce all three failures on the original PR and pass on
+both pre-PR main and the repaired code. The seven-test history suite, including
+its unchanged snapshot, also passes on both old and repaired implementations.
+Full local verification: 2,188 Vitest tests passed (two opt-in benchmarks
+skipped), repository script tests, web/Convex typechecks and full lint/secret
+audit passed. No Production mutation or backend deployment was performed.
+
 Follow-up to the 16 October speed pass, which left payments read whole.
 **This is a Convex change: it takes effect only after `pnpm convex:deploy`.
 Nothing was deployed.** No schema change, new index or backfill: it uses the
@@ -21,7 +35,7 @@ existing `by_organization_member_type` index.
 - `toTransactionSummaries` looks up only the members a list names when there
   are 60 or fewer, instead of reading every member.
 
-**Why the answers cannot change.** Every payment write since the first Convex
+**Compatibility evidence.** Every payment write since the first Convex
 integration (4 August 2026) sets the record's `memberPublicId` to the same
 value as `data.memberId`: collections (`paymentRecord`), payment refunds, PT
 refunds, retail sales and retail refunds (`operations.ts`) and the seed. A
@@ -37,8 +51,8 @@ data.
 
 - The receipt of a guest's or walk-in's retail sale has no member key, so it
   still reads every payment.
-- Shift totals and daily reconciliation: a backdated payment recorded into an
-  open shift could fall outside a date window, and these are money totals.
+- Shift totals and daily reconciliation retain their existing implementations;
+  this PR does not change their aggregation or time-window rules.
 - The Payments page and other lists without a member, the payments export,
   palette search and the dashboard's fallback read are not member-scoped and
   are unchanged.
