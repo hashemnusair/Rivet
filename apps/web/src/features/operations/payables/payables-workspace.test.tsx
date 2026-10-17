@@ -74,6 +74,19 @@ async function seededBranchId() {
   return session.branches[0]!.id;
 }
 
+async function addSecondBill(api: MockGymOSApi) {
+  const first = (await api.listPayables()).items[0]!;
+  const product = (await api.listProducts())[0]!;
+  const order = await api.createPurchaseOrder({
+    branchId: first.branchId,
+    supplierId: first.supplierId,
+    supplierInvoiceReference: "REVIEW-SECOND-BILL",
+    lines: [{ productId: product.id, quantity: 1, unitCost: { amount: 500_000, currency: "JOD" } }],
+  });
+  await api.approvePurchaseOrder(order.id);
+  await api.receivePurchaseOrder({ purchaseOrderId: order.id, idempotencyKey: "review-second-bill" });
+}
+
 /** A gate a spied api call waits on, so a test can look at the screen mid-load. */
 function gate() {
   let open!: () => void;
@@ -129,6 +142,98 @@ describe("payables workspace", () => {
     await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith(expect.stringMatching(/^\/operations\/payables\/payments\//)));
     const payables = await api.listPayables();
     expect(payables.items[0]).toMatchObject({ status: "partially_paid", remaining: { amount: 1_000_000, currency: "JOD" } });
+  });
+
+  it("treats the balance filled in from a bill's Pay button as a starting point, not a change", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner" });
+    await user.click(await screen.findByRole("button", { name: /^Pay Jordan Sports Supply/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    const allocation = await within(billsSection).findByRole("textbox", { name: /Amount for Purchase order/i });
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("1650.000");
+    expect(allocation).toHaveValue("1650.000");
+    expect(billsSection).not.toHaveTextContent("You changed the amounts.");
+    await user.clear(allocation);
+    await user.type(allocation, "600");
+    expect(billsSection).toHaveTextContent("You changed the amounts.");
+    await user.click(within(billsSection).getByRole("button", { name: "Reset to oldest first" }));
+    await waitFor(() => expect(allocation).toHaveValue("1650.000"));
+    expect(billsSection).toHaveTextContent("Oldest bills first.");
+    expect(billsSection).not.toHaveTextContent("You changed the amounts.");
+  });
+
+  it("pays only the chosen newer bill without reallocating it to an older bill", async () => {
+    const user = userEvent.setup();
+    const branchId = await seededBranchId();
+    const { api } = await renderWithApp(<PayablesWorkspace />, { role: "owner", branchId, prepare: addSecondBill });
+    const before = (await api.listPayables()).items;
+    const chosen = before.find((bill) => bill.externalReference === "REVIEW-SECOND-BILL")!;
+    const older = before.find((bill) => bill.id !== chosen.id)!;
+    const row = (await screen.findAllByTestId("payable-row")).find((candidate) => candidate.textContent?.includes("REVIEW-SECOND-BILL"))!;
+    await user.click(within(row).getByRole("button", { name: /^Pay / }));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const bills = within(dialog).getByRole("region", { name: "Bills this pays" });
+    await within(bills).findAllByRole("textbox", { name: /Amount for Purchase order/ });
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("500.000");
+    expect(within(bills).getAllByRole("textbox").map((input) => (input as HTMLInputElement).value).sort()).toEqual(["", "500.000"]);
+    expect(bills).not.toHaveTextContent("You changed the amounts.");
+    await user.click(within(dialog).getByLabelText("Bank transfer"));
+    await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "REVIEW-PAY-SECOND");
+    const recordSpy = vi.spyOn(api, "recordSupplierPayment");
+    await waitFor(() => expect(within(dialog).getByTestId("confirm-supplier-payment")).toBeEnabled());
+    await user.click(within(dialog).getByTestId("confirm-supplier-payment"));
+    await waitFor(() => expect(routerMock.push).toHaveBeenCalled());
+    expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ allocations: [{ payableId: chosen.id, amount: { amount: 500_000, currency: "JOD" } }] }));
+    const after = (await api.listPayables({ status: "all" })).items;
+    expect(after.find((bill) => bill.id === chosen.id)).toMatchObject({ status: "paid", remaining: { amount: 0 } });
+    expect(after.find((bill) => bill.id === older.id)?.remaining).toEqual(older.remaining);
+  });
+
+  it("preserves other suggested bill amounts while editing and resets allocations when reopening or switching supplier", async () => {
+    const user = userEvent.setup();
+    const branchId = await seededBranchId();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", branchId, prepare: async (api) => {
+      await addSecondBill(api);
+      const branchId = (await api.getSession()).branches[0]!.id;
+      await api.upsertSupplier({ name: "Supplier with no bills", branchIds: [branchId] });
+    } });
+    // Start from a bill, close it, then open the general payment flow.
+    await user.click((await screen.findAllByRole("button", { name: /^Pay Jordan Sports Supply/ }))[0]!);
+    let dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByTestId("open-record-supplier-payment"));
+    dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("");
+    const chooseSupplier = async (name: string) => {
+      fireEvent.keyDown(within(dialog).getByRole("combobox", { name: "Supplier" }), { key: "ArrowDown" });
+      await user.click(await screen.findByRole("option", { name }));
+    };
+    await chooseSupplier("Jordan Sports Supply");
+    await user.click(within(dialog).getByLabelText("Bank transfer"));
+    await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "REVIEW-MULTI-BILL");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Amount paid" }), { target: { value: "2000" } });
+    const bills = within(dialog).getByRole("region", { name: "Bills this pays" });
+    await waitFor(() => expect(within(bills).getAllByRole("textbox")).toHaveLength(2));
+    const [older, newer] = within(bills).getAllByRole("textbox");
+    expect(older).toHaveValue("1650.000");
+    expect(newer).toHaveValue("350.000");
+    fireEvent.change(older!, { target: { value: "1600" } });
+    expect(newer).toHaveValue("350.000");
+    expect(within(dialog).getByTestId("confirm-supplier-payment")).toBeDisabled();
+    fireEvent.change(newer!, { target: { value: "400" } });
+    expect(older).toHaveValue("1600");
+    expect(within(dialog).getByTestId("confirm-supplier-payment")).toBeEnabled();
+    await user.click(within(bills).getByRole("button", { name: "Reset to oldest first" }));
+    expect(older).toHaveValue("1650.000");
+    expect(newer).toHaveValue("350.000");
+    await chooseSupplier("Supplier with no bills");
+    await within(bills).findByText(/nothing right now/);
+    expect(within(dialog).getByTestId("confirm-supplier-payment")).toBeDisabled();
+    await chooseSupplier("Jordan Sports Supply");
+    await waitFor(() => expect(within(bills).getAllByRole("textbox").map((input) => (input as HTMLInputElement).value)).toEqual(["1650.000", "350.000"]));
+    expect(within(dialog).getByRole("textbox", { name: "Bank transfer reference" })).toHaveValue("REVIEW-MULTI-BILL");
   });
 
   it("requires a reference for a transfer and blocks the button until the allocation matches the amount", async () => {

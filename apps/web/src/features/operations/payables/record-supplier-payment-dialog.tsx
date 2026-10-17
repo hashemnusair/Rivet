@@ -29,6 +29,9 @@ const METHOD_HINTS: Record<SupplierPaymentMethod, TKey> = {
   cliq: "payablesWorkspace.cliqHint",
 };
 
+/** Who set the bill amounts: the dialog (oldest first), the bill staff pressed Pay on, or staff typing. Only the last one is a change. */
+type AllocationSource = "oldest_first" | "from_bill" | "edited";
+
 function newIdempotencyKey(): string {
   return `supplier-payment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -74,7 +77,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
   const [allocationText, setAllocationText] = useState<Record<string, string>>({});
-  const [manualAllocation, setManualAllocation] = useState(false);
+  const [allocationSource, setAllocationSource] = useState<AllocationSource>("oldest_first");
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
   const [error, setError] = useState<unknown>(null);
 
@@ -89,7 +92,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
     setReference("");
     setNotes("");
     setAllocationText(initialPayable ? { [initialPayable.id]: toMajorString(initialPayable.remaining) } : {});
-    setManualAllocation(Boolean(initialPayable));
+    setAllocationSource(initialPayable ? "from_bill" : "oldest_first");
     setIdempotencyKey(newIdempotencyKey());
     setError(null);
   }, [open, initialBranchId, initialPayable]);
@@ -110,15 +113,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
   const openPayables = useMemo(() => payablesQuery.data?.items ?? [], [payablesQuery.data]);
   const amountMinor = parseMajor(amountText, currency);
   const amountProblem = validate.amount(amountText, currency);
-  const invalidAllocations = openPayables.some(payable => Boolean(validate.amount(allocationText[payable.id] ?? "", currency)));
-
-  useEffect(() => {
-    if (!open || manualAllocation) return;
-    const suggestion = suggestPayableAllocations(openPayables, amountMinor ?? 0);
-    setAllocationText(Object.fromEntries(suggestion.allocations.map((allocation) => [allocation.payableId, toMajorString(money(allocation.amountMinor, currency))])));
-  }, [open, manualAllocation, openPayables, amountMinor, currency]);
-
-  const allocations = useMemo(() => openPayables.map((payable) => ({ payable, amountMinor: parseMajor(allocationText[payable.id] ?? "", currency) ?? 0 })), [openPayables, allocationText, currency]);
+  // Oldest-first amounts are worked out while rendering, not copied in by an effect. An effect would run as the dialog
+  // opens, still see the last opening's source, and wipe the balance a bill's Pay button just filled in.
+  const suggestedText = useMemo(() => (allocationSource === "oldest_first" ? Object.fromEntries(suggestPayableAllocations(openPayables, amountMinor ?? 0).allocations.map((allocation) => [allocation.payableId, toMajorString(money(allocation.amountMinor, currency))])) : null), [allocationSource, openPayables, amountMinor, currency]);
+  const billAmountText = suggestedText ?? allocationText;
+  const invalidAllocations = openPayables.some(payable => Boolean(validate.amount(billAmountText[payable.id] ?? "", currency)));
+  const allocations = useMemo(() => openPayables.map((payable) => ({ payable, amountMinor: parseMajor(billAmountText[payable.id] ?? "", currency) ?? 0 })), [openPayables, billAmountText, currency]);
   const allocatedMinor = allocations.reduce((sum, allocation) => sum + allocation.amountMinor, 0);
   const unallocatedMinor = (amountMinor ?? 0) - allocatedMinor;
   const overAllocated = allocations.filter((allocation) => allocation.amountMinor > allocation.payable.remaining.amount);
@@ -167,7 +167,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }} data-testid="record-supplier-payment-form">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("stockWorkspace.supplier")} required>
-                <Select value={supplierId || (suppliersUnknown ? "" : "none")} disabled={suppliersUnknown} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
+                <Select value={supplierId || (suppliersUnknown ? "" : "none")} disabled={suppliersUnknown} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setAllocationSource("oldest_first"); }}>
                   <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={suppliersLoading ? t("common.state.loading") : t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
                   <SelectContent>{suppliersUnknown ? null : activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
@@ -207,7 +207,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
 
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("payablesWorkspace.amountCurrency", { currency })} error={amountProblem} required>
-                <Input inputMode="decimal" dir="ltr" aria-invalid={Boolean(amountProblem) || undefined} value={amountText} onChange={(event) => { setAmountText(event.target.value); setManualAllocation(false); }} placeholder={toMajorString(money(0, currency))} aria-label={t("payablesWorkspace.amountPaid")} />
+                <Input inputMode="decimal" dir="ltr" aria-invalid={Boolean(amountProblem) || undefined} value={amountText} onChange={(event) => { setAmountText(event.target.value); setAllocationSource("oldest_first"); }} placeholder={toMajorString(money(0, currency))} aria-label={t("payablesWorkspace.amountPaid")} />
               </Field>
               {method !== "cash" ? (
                 <Field label={t("payablesWorkspace.methodReference", { method: supplierPaymentMethodLabel(method, t) })} hint={t("payablesWorkspace.copyReference")} required>
@@ -220,9 +220,9 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
                   <p className="text-[13px] font-medium">{t("payablesWorkspace.billsThisPays")}</p>
-                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{owedLine}</p>
+                  <p className="text-[12px] text-ink-3">{allocationSource === "edited" ? t("payablesWorkspace.manualAmounts") : allocationSource === "oldest_first" ? t("payablesWorkspace.oldestBillsFirst") : null}{owedLine}</p>
                 </div>
-                {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>{t("payablesWorkspace.resetOldest")}</Button> : null}
+                {allocationSource !== "oldest_first" && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setAllocationSource("oldest_first")}>{t("payablesWorkspace.resetOldest")}</Button> : null}
               </header>
               {billsPending ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
                 : !supplierId ? (suppliersFailed ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">{t("payablesWorkspace.suppliersLoadFailed")}{onRetrySuppliers ? <>{" "}<button type="button" className="font-medium underline" onClick={onRetrySuppliers}>{t("common.action.retry")}</button></> : null}</p> : null)
@@ -232,7 +232,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
                       <div className="divide-y divide-line">
                         {allocations.map(({ payable, amountMinor: allocated }) => {
                           const over = allocated > payable.remaining.amount;
-                          const allocationProblem = validate.amount(allocationText[payable.id] ?? "", currency);
+                          const allocationProblem = validate.amount(billAmountText[payable.id] ?? "", currency);
                           return (
                             <div key={payable.id} className="grid items-center gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_150px]">
                               <div className="min-w-0">
@@ -240,7 +240,7 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, sup
                                 <p className="text-[12px] text-ink-3">{t("payablesWorkspace.billReceived", { date: f.date(payable.receivedAt), age: t("payablesWorkspace.days", { count: payable.ageDays }), amount: isolateLtr(f.money(payable.remaining)) })}{payable.externalReference ? ` · ${payable.externalReference}` : ""}</p>
                                 {over ? <p role="alert" className="text-[12px] text-danger">{t("payablesWorkspace.moreThanBill")}</p> : null}
                               </div>
-                              <Input inputMode="decimal" dir="ltr" aria-label={t("payablesWorkspace.amountFor", { bill: payableSourceLabel(payable.sourceLabel, t) })} aria-invalid={over || Boolean(allocationProblem) || undefined} aria-describedby={allocationProblem ? `allocation-error-${payable.id}` : undefined} value={allocationText[payable.id] ?? ""} onChange={(event) => { setManualAllocation(true); setAllocationText((current) => ({ ...current, [payable.id]: event.target.value })); }} placeholder={toMajorString(money(0, currency))} className={cn((over || allocationProblem) && "border-danger")} />
+                              <Input inputMode="decimal" dir="ltr" aria-label={t("payablesWorkspace.amountFor", { bill: payableSourceLabel(payable.sourceLabel, t) })} aria-invalid={over || Boolean(allocationProblem) || undefined} aria-describedby={allocationProblem ? `allocation-error-${payable.id}` : undefined} value={billAmountText[payable.id] ?? ""} onChange={(event) => { setAllocationSource("edited"); setAllocationText({ ...billAmountText, [payable.id]: event.target.value }); }} placeholder={toMajorString(money(0, currency))} className={cn((over || allocationProblem) && "border-danger")} />
                               {allocationProblem ? <p id={`allocation-error-${payable.id}`} role="alert" className="text-[12px] text-danger sm:col-span-2">{allocationProblem}</p> : null}
                             </div>
                           );
