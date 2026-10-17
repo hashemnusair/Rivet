@@ -60,6 +60,13 @@ async function seededBranchId() {
   return session.branches[0]!.id;
 }
 
+/** A gate a spied api call waits on, so a test can look at the screen mid-load. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => { open = resolve; });
+  return { opened, open };
+}
+
 describe("payables workspace", () => {
   it("lists the seeded payable oldest-first with honest aging and totals", async () => {
     await renderWithApp(<PayablesWorkspace />, { role: "owner" });
@@ -129,6 +136,52 @@ describe("payables workspace", () => {
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "TRF-2026-0091");
     await waitFor(() => expect(confirm).toBeEnabled());
+  });
+
+  it("shows what the gym owes a supplier only once that supplier's bills have loaded", async () => {
+    const user = userEvent.setup();
+    const bills = gate();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listPayables = api.listPayables.bind(api);
+      vi.spyOn(api, "listPayables").mockImplementation(async (query) => {
+        if (query?.supplierId && query.status === "open") await bills.opened;
+        return listPayables(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "Supplier" })).toHaveTextContent("Jordan Sports Supply"));
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    expect(billsSection).toHaveTextContent("Oldest bills first.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    bills.open();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+    expect(billsSection).toHaveTextContent(/On bills: /);
+  });
+
+  it("says the suppliers are loading, not that there are none, when the dialog opens before the list arrives", async () => {
+    const user = userEvent.setup();
+    const suppliers = gate();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        await suppliers.opened;
+        return listSuppliers(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Loading…");
+    expect(supplierField).not.toHaveTextContent("No active suppliers");
+    expect(supplierField).toBeDisabled();
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    expect(billsSection).not.toHaveTextContent("Choose a supplier to see what you owe.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    suppliers.open();
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(supplierField).toBeEnabled();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
   });
 
   it("exports the filtered payables as a readable CSV", async () => {

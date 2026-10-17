@@ -42,6 +42,8 @@ export interface RecordSupplierPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   suppliers: Supplier[];
+  /** The page's supplier list is still on its way: show a loading field, never "No active suppliers". */
+  suppliersLoading?: boolean;
   branches: Session["branches"];
   currency: string;
   initialBranchId?: string;
@@ -57,7 +59,7 @@ export interface RecordSupplierPaymentDialogProps {
  * payment exactly before the button enables, so nothing is ever "left over"
  * as a credit balance.
  */
-export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
+export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, suppliersLoading = false, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
   const { t, locale, isolate, isolateLtr } = useLocale();
   const f = useFormat();
   const validate = useOperationsNumberProblems();
@@ -107,6 +109,10 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const overAllocated = allocations.filter((allocation) => allocation.amountMinor > allocation.payable.remaining.amount);
   const supplierOutstandingMinor = openPayables.reduce((sum, payable) => sum + payable.remaining.amount, 0);
   const supplier = activeSuppliers.find((candidate) => candidate.id === supplierId);
+  const billsPending = supplierId ? payablesQuery.isLoading : suppliersLoading;
+  // A total over bills that have not arrived would read as a real zero, so the owed amount waits for them.
+  const owedLine = supplier ? (payablesQuery.data ? t("payablesWorkspace.supplierOwed", { supplier: isolate(supplier.name), amount: isolateLtr(f.money(money(supplierOutstandingMinor, currency))) }) : null)
+    : suppliersLoading ? null : t("payablesWorkspace.chooseSupplierOwed");
   const branch = branches.find((candidate) => candidate.id === branchId);
   const shift = shiftQuery.data ?? null;
   const cashBlocked = method === "cash" && (shiftQuery.isLoading || shiftQuery.isError || !shift);
@@ -144,9 +150,9 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }} data-testid="record-supplier-payment-form">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("stockWorkspace.supplier")} required>
-                <Select value={supplierId || "none"} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
-                  <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
-                  <SelectContent>{activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
+                <Select value={supplierId || (suppliersLoading ? "" : "none")} disabled={suppliersLoading} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
+                  <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={suppliersLoading ? t("common.state.loading") : t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
+                  <SelectContent>{suppliersLoading ? null : activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label={t("payablesWorkspace.payingFrom")} hint={method === "cash" ? t("payablesWorkspace.cashBranchHint") : t("payablesWorkspace.payingBranchHint")} required>
@@ -197,11 +203,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
                   <p className="text-[13px] font-medium">{t("payablesWorkspace.billsThisPays")}</p>
-                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{supplier ? t("payablesWorkspace.supplierOwed", { supplier: isolate(supplier.name), amount: isolateLtr(f.money(money(supplierOutstandingMinor, currency))) }) : t("payablesWorkspace.chooseSupplierOwed")}</p>
+                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{owedLine}</p>
                 </div>
                 {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>{t("payablesWorkspace.resetOldest")}</Button> : null}
               </header>
-              {!supplierId ? null : payablesQuery.isLoading ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
+              {billsPending ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
+                : !supplierId ? null
                 : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">{t("payablesWorkspace.billsLoadFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</button></p>
                   : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">{t("payablesWorkspace.oweNothing", { supplier: isolate(supplier?.name ?? t("payablesWorkspace.thisSupplier")) })}</p>
                     : (
