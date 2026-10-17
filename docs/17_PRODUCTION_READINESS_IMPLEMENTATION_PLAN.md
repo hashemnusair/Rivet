@@ -1,5 +1,12 @@
 # 17 — Production Readiness Implementation Plan
 
+> Historical implementation plan. Reconciled 17 October 2026: the August
+> baseline, counts and phase ordering below are not the current backlog.
+> Start with the current priorities in `13_PRODUCT_AND_OPERATIONS_TODO.md`,
+> the newest `CURRENT_STATE.md` checkpoint and the release batch in docs/12.
+> Retain the acceptance criteria here as reference; do not restart completed
+> implementation or treat older undeployed claims as current evidence.
+
 Status: implementation plan; no product code or production data is changed by this document.
 
 ## Latest local implementation status — 28 August 2026

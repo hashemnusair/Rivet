@@ -1,69 +1,106 @@
 # RIVET product, engineering, and operations backlog
 
-## Walkthrough follow-up, 28 September 2026
+## Current priorities — reconciled 17 October 2026
 
-- [x] Recognize Hashem and Elias's 27 September exploratory walkthrough and
-  preserve its findings in `CURRENT_STATE.md`; do not restart its status at
-  “not tested”. Missing recorded outcomes remain unknown.
-- [x] Close the three browser CI failures on the feedback-pass release:
-  run `36437542914` at `c2866dc` passed all 13 jobs. Exact frontend and
-  matching Convex runtime evidence are recorded in docs/12.
-- [ ] Hashem will retest the feedback fixes personally later: invitations,
-  signup/profile recovery, own-profile settings, onboarding links, gym
-  address and device layout. Agent-driven Production mutations are excluded.
-- [ ] Email delivery: identify the RIVET Resend workspace, configure its
-  missing Production webhook secret securely, verify actual delivery mode
-  and suppression reasons, and inspect the affected Clerk invitation headers.
-  DNS presence is not proof that spam placement has been fixed. No sending
-  or delivery-mode activation is part of this diagnostic pass.
-- [x] Jev is retired in source by `c39590e`; its former funding/activation
-  blocker is historical, not a remaining product launch requirement.
+This is the single canonical backlog. The list below supersedes older unchecked
+items in this file. `CURRENT_STATE.md` records implementation/review evidence;
+`12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md` owns deployment and acceptance evidence.
+A merged change, a Vercel deployment, a Convex deployment and a tested live
+workflow are separate milestones. This reconciliation adds no product scope.
+Keep secret values and personal applicant/signatory details out of this file.
+Do not create a second TODO file.
 
+### Next release and acceptance work
 
-Updated 3 September 2026 for the approved product UI system refinement,
-credentialed release verification and the complete quality-of-life implementation batch,
-in addition to the 29 August 2026 Production backend closure, owner/platform
-acceptance, public QA cleanup, the current recovery export, the Jordan-first
-workflow-hardening sprint, the unified Today queue, clean-tenant imports,
-international WhatsApp handoffs, branded offers, facilities QR work, and the
-realistic-volume index pass, followed by the file-first import and
-plain-language maintenance repair.
-This is the single
-canonical backlog for
-confirmed bugs, release blockers, missing MVP behavior,
-production-verification findings, deferred work, and closure evidence. It
-consolidates the former
-`docs/14_TODO_AND_BUGS.md`; do not create a second TODO file. Keep secret
-values, applicant details, and provider credentials out of this file.
+- [ ] **Release the pending Convex batch.** Dashboard/front-desk history reads,
+  visit summaries/backfill, platform prospects and operational email beta
+  branding are implemented on main but still marked undeployed in the latest
+  release evidence. Include the reviewed member-payment optimization from
+  PR #20 once merged. Use the guarded `pnpm convex:deploy` procedure, record
+  the exact source and target, confirm the summary backfill reaches
+  `completed`, then verify the dashboard, reception, queues, member money
+  views and platform prospects. Record actual read usage after release before
+  claiming a Production performance gain. No deploy is claimed by this review.
+- [ ] **Complete email configuration and delivery acceptance.** The correct
+  Resend workspace/domain was found and verified on 7 October. The last
+  provider inspection still lacked its signed callback and Convex webhook
+  secret. Recheck configuration securely, finish the separate Clerk → Resend
+  per-template cutover, verify the reply inbox and application-kind gate,
+  and test fresh owner/staff invitations, reset/verification codes and the
+  selected operational email kinds in their recipient inboxes. Branding code
+  and provider acceptance alone do not close this item. See docs/19.
+- [ ] **Finish the recorded walkthrough follow-up and real-role checks.**
+  Hashem and Elias already performed an exploratory Production walkthrough on
+  27 September. Hashem will retest invitations, signup/profile recovery,
+  personal settings, onboarding, gym address and device layout. Record missing
+  outcomes rather than treating them as failures or restarting the walkthrough.
+  The isolated staging day with real owner/reception/trainer/member identities
+  still lacks credential-complete acceptance; ordinary CI skips those cases.
+  Include refunds, shift/report reconciliation, PT and branch/tenant denial;
+  retain cleanup ledgers and the outstanding concurrency evidence for money,
+  PT cancellation, profile synchronization and media publishing (TODO-007,
+  TODO-011 and TODO-012). Close the remaining read-only Production checks with
+  observed results, not an assumption that passing mock tests covers them.
+- [ ] **Prove recovery and assign operational ownership before expansion.**
+  Production exports exist (latest documented prelaunch export: 7 October),
+  but restore acceptance remains open. Record a restore rehearsal, rollback
+  procedure, monitoring/incident ownership and the outstanding edge/WAF controls.
+  The September capacity issue was reported resolved; remeasure headroom for
+  the intended pilot load instead of reopening that old incident.
+- [ ] **Close founder/counsel/accountant decisions.** Supply legal entity,
+  registration/address and tax facts; obtain document review and consistent
+  term/notice/beta wording, including the Terms 1.2 / Agreement 1.2 distinction.
+  Confirm the commercial catalogue and subscription-reconciliation policy.
+  Keep stronger accounting claims and historical backfills gated on the
+  outstanding recognition, valuation, closing and tax-policy decisions.
+  Reconciliation is implemented but was off at the last inspected baseline;
+  activation needs reviewed targets and recorded operator acceptance. See docs/19
+  and `legal-review/2026-10-07/REVIEW_BRIEF.md`.
+- [ ] **Finish UI acceptance.** All seven workflow passes are implemented.
+  The 16 October route survey adds broad English/Arabic/phone evidence, but
+  the final role/state/real-device matrix and Hashem's final acceptance remain
+  open in docs/20. Review screenshot references that predate the beta badge;
+  a passing tolerance does not prove those references are current.
 
-## Current coding backlog, reconciled 8 September 2026
+### Completed or superseded items
 
-The entries below are current. Older dated sections retain their historical verification and release evidence; an old unchecked item is not automatically an unimplemented feature. `CURRENT_STATE.md` owns the implementation matrix and docs/12 owns release verification.
+- [x] Currency-correct new payment, membership, retail, PT and shift text in
+  both adapters: implemented 14 September, with release closure recorded later
+  that day. Historical financial events were preserved.
+- [x] Arabic/RTL implementation and release: integrated from Elias's branch,
+  released 3 October (`11b0125`), with approved 247-decision lock retained.
+  Remaining interactive/founder acceptance is covered above, not a missing
+  translation implementation.
+- [x] Class cancellation, purchasing dates, checklist responsibility,
+  onboarding completion, customer identity backfill progress and the September
+  backend-integrity fixes are implemented. Their old release checkboxes do not
+  represent new coding tasks; see the dated release evidence.
+- [x] Jev was retired in September. Its previous funding/activation gates are
+  historical and are not launch requirements.
+- [x] Automated WhatsApp/SMS was removed from launch scope on 7 October.
+  Staff-initiated editable `wa.me` handoff remains. Meta templates, automated
+  STOP callbacks, Twilio setup and per-message pricing are no longer launch tasks.
+- [x] The normal CI suite runs against a built preview in eight browser shards.
+  Full CI on baseline `08913196` passed; later PR/release results belong in the
+  current checkpoint. This is not credentialed live-provider acceptance.
 
-- [x] 12 September: reject currency labels embedded inside money inputs, recognize the existing `US$` alias, and neutralize CSV formula prefixes after leading newlines or nonbreaking spaces. See `CURRENT_STATE.md` for scope and verification.
-- [x] 12 September: share currency precision between money inputs/displays and exports, recognize the configured currency code without a colloquial alias, and correct supplier-payment/reversal audit text and overpayment errors in both adapters with JOD/USD regressions.
-- [ ] Finish currency formatting for newly written membership, retail, member-payment, PT and cash-shift audit/timeline/notification text in both adapters. Several paths still divide minor units by 1,000 or label amounts JOD regardless of currency; USD 4,000 minor units can be displayed as USD 4.000 instead of USD 40.00. Preserve immutable historical events. The shared money/export precision and supplier-payment paths were corrected on 12 September; backend release remains separate.
-- [x] Fix customer identity backfill progress past unresolved/profile-only rows, with checkpoint and regression tests.
-- [x] Replace messaging history scans with bounded due indexes and fair source leasing. Provider completion is still deferred.
-- [x] Hide completed onboarding banners and show success only after a saved mutation.
-- [x] Cancel a single future class date with atomic booking/waitlist resolution, server authorization, audit, member timeline, and staff/member UI.
-- [x] Add validated expected delivery dates, audited changes, and an overdue purchasing filter.
-- [x] Add responsible staff to checklist templates and dated runs, preserve ownership snapshots, and show recent unresolved work at handover.
-- [x] Correct marketing claims for family accounts, installment schedules and full Arabic/RTL.
-- [x] Reconcile the living documentation while preserving `FRONTEND_HANDOFF.md`.
-- [ ] Release the combined additive Convex schema/functions and frontend, then verify the exact deployed revisions using docs/12. Code generation is not a release.
-- [x] Obtain a clean uninterrupted full browser run and investigate the remaining development-server navigation/script flakiness; keep snapshot tolerances and page-error checks intact. Closed 14 September 2026: CI runs the whole credential-free suite on a built preview bundle in eight shards, green on every push since `5e1c837` (see `CURRENT_STATE.md`).
-- [ ] Hashem and his partner perform the authenticated business-day and real-device walkthrough when ready.
-- [ ] Last: WhatsApp provider callbacks and inbound STOP handling, approved templates and allowlist acceptance (WhatsApp only, decided 14 September 2026); actual push delivery; supplier notification provider if required.
-- [ ] Separately scope family accounts, repayment schedules and full Arabic localization before advertising them as shipped.
+### Deferred scope and later improvements
 
-## Backend integrity, 8 September 2026
+Family accounts, repayment schedules, actual push delivery, optional supplier
+notification delivery, marketplaces, autonomous purchasing and statutory
+accounting need their own product decisions. The remaining measured performance
+work (large whole-gym payment lists, member/charge growth, catalogue/font cost,
+landing authentication wait) is documented in CURRENT_STATE; it is not evidence
+that the completed performance changes are already deployed to Convex.
 
-- [x] Reject impossible analytics dates, unblock expiry cleanup behind undated export/media rows, enforce renewal lease ownership, and check messaging eligibility/consent when leasing. See `CURRENT_STATE.md` for commits and focused regression evidence.
-- [ ] Separately authorize and verify the Convex release, including the optional renewal lease field and draining in-flight workers, following docs/12. No deployment is claimed by this code pass.
-- [x] Fix legacy customer-membership identity backfill progress. The v2 cursor and per-record issue markers are implemented; production execution/inspection remains part of the release checklist, not a completed data repair.
+## Historical evidence and issue identifiers
 
-## Current release index — 3 September 2026
+The dated sections and BUG/TODO IDs below are retained for traceability. Their
+status describes their own checkpoint unless explicitly reconciled later.
+Do not add up their unchecked boxes or use old provider/Arabic requirements as
+current launch gates. The six open work items above own current priorities.
+
+## Historical release index — 3 September 2026
 
 ### Product UI system refinement — 3 September 2026
 
@@ -111,10 +148,12 @@ The entries below are current. Older dated sections retain their historical veri
   gym's external-delivery switch and the global mode must both be on.
 - [x] Add the provisional-pricing notice and the docs/19 sign-off sheet.
 - [ ] Lawyer review of the three legal documents and Arabic versions.
-- [ ] Decide the email sending domain and flip Production email from
-  `allowlist` to `live` after two clean weeks (docs/19 checklist).
-- [ ] Meta business verification, WhatsApp template approval, inbound
-  STOP handling, and the messaging go-live decision (docs/19).
+- [x] Sender/domain decided and verified by 7 October. Email configuration,
+  delivery acceptance and any mode change remain open in the current priorities
+  and docs/19; domain selection itself is complete.
+- [x] Superseded 7 October: automated WhatsApp/SMS was removed from launch
+  scope. Meta approval and automated STOP handling are no longer release gates
+  (docs/19).
 - [ ] Sign the pricing sheet (docs/19) and remove the provisional notice.
 - [ ] Deploy the Convex backend to Production (owed for this whole batch;
   requires Hashem's explicit authorization).
@@ -130,7 +169,7 @@ The entries below are current. Older dated sections retain their historical veri
 - [ ] Deploy the Convex backend to Production (owed together with the
   payables/checkout sprint; requires Hashem's explicit authorization).
 
-## Current release index — 31 August 2026
+## Historical release index — 31 August 2026
 
 ### Supplier payables, supplier payments, and the canonical checkout — 2 September 2026
 
@@ -638,7 +677,9 @@ repository-hardening head is deployed to Convex or Vercel Production.
 
 ### Final Arabic and optimization pass
 
-- [ ] Keep `arabic-localisation` unmerged. Complete the RTL review and final Arabic pass when the native Arabic copy is ready.
+- [x] Superseded 3 October: Elias's Arabic branch was integrated and released
+  (`11b0125`). Preserve the approved lock; final founder/device acceptance is
+  tracked in the current priorities above.
 - [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
 
 ## Latest direct-main repair — unavailable gym-owner login — 23 August 2026
@@ -1152,7 +1193,7 @@ The 10 August local Playwright run also reproduced a preview-only route-transiti
 
 ---
 
-## P0 — Release blockers and correctness risks
+## Historical BUG/TODO register — consult the current priorities above
 
 The stable BUG/TODO identifiers below were imported from the former `docs/14_TODO_AND_BUGS.md` so existing commits and discussions remain traceable.
 

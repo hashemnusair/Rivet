@@ -1,5 +1,25 @@
 # Go-live decisions: messaging, operational email, legal documents, pricing
 
+## Current status — reconciled 17 October 2026
+
+The 7 October release below shipped the operational-email safeguards and the
+Clerk → Resend relay code. Strict recipient allowlisting, persistent hard-bounce
+and complaint suppression, and signed callback handling are implemented and
+released; provider configuration and fresh delivery acceptance remain open.
+The beta email branding added on 17 October is shipped on the web side but is
+still awaiting its Convex deployment. See the current checkpoint in
+[`CURRENT_STATE.md`](../CURRENT_STATE.md) and the pending batch in the
+[release runbook](12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md).
+
+The last recorded provider inspection is 7 October: Resend's domain was
+verified, its API-key/sender configuration names were present, and some agreement
+copies were found in the recipient inbox. The Resend callback/secret, monitored
+Reply-To acceptance, application-kind gate and separate Clerk template cutover
+were still open. No new provider/configuration inspection or email send was made
+in this PR review. Do not describe all email as unconfigured, or treat shipped
+relay code as evidence that Clerk has stopped delivering authentication mail.
+The remaining actions are in the [canonical backlog](13_PRODUCT_AND_OPERATIONS_TODO.md).
+
 ## Verification update — 7 October 2026
 
 This is a readiness review, **not an incident investigation** (Elias's
@@ -178,10 +198,11 @@ or indexes are removed.
   server. `off` is the default and the fallback for any unrecognised value.
   `sandbox` sends everything to `RIVET_EMAIL_SANDBOX_TO` with the original
   recipient in the subject. `allowlist` sends only to
-  `RIVET_EMAIL_ALLOWLIST` (addresses or `@domain`s), **plus trusted recipients
-  belonging to subscribed gyms**, and suppresses the rest with a visible
-  reason. It is not a strict pilot-only boundary. The old `RIVET_OPERATIONAL_EMAIL_LIVE=true` counts
-  as `live` only while the new variable is unset.
+  `RIVET_EMAIL_ALLOWLIST` (addresses or domains), and suppresses every other
+  recipient with a visible reason. Subscription, message kind and worker trust
+  never bypass this strict recipient gate. The old
+  `RIVET_OPERATIONAL_EMAIL_LIVE=true` counts as `live` only while the new
+  variable is unset.
 - Gym-controlled member service kinds still require the owner's confirmed
   preferences; RIVET-controlled platform kinds (invoices, subscription
   notices, and now the signed and countersigned agreement copies) are
@@ -197,9 +218,12 @@ or indexes are removed.
 - [x] Resend sending domain verified in the correct `rivetjo` workspace on
   7 October. DMARC is monitoring-only; review legitimate senders and receiver
   results before any enforcement change. Do not replace Spacemail root SPF.
-- [ ] Resend production key in the Convex environment; webhook secret set
-- [ ] Bounce and complaint webhooks handled (already recorded as delivery
-  events); a hard bounce must mark the address bad before go-live
+- [x] Production API-key/sender configuration names confirmed on 7 October;
+  values were not read. This is dated evidence, not a fresh configuration check.
+- [x] Signed callback processing and persistent hard-bounce/complaint address
+  suppression implemented, tested and released on 7 October.
+- [ ] Configure the Resend callback and its Convex webhook secret, then verify
+  delivery events, replay handling and suppression through the actual provider.
 - [ ] Templates reviewed in Arabic and English with RIVET's contact details
 - [ ] Reply-to routed to a monitored inbox
 - [ ] Two weeks in `allowlist` with RIVET staff and one pilot gym, zero

@@ -1,5 +1,34 @@
 # 12 — System Maps and Release Runbook
 
+## Pending release batch — reconciled 17 October 2026
+
+The latest implementation entries explicitly leave the following Convex work
+undeployed. A successful Vercel Production deployment does not close this gate.
+The PR review/reconciliation session does not deploy Convex, activate providers
+or mutate Production data.
+
+| Pending backend work | Release implications |
+| --- | --- |
+| Dashboard and front-desk/CRM history reads | Two additive `domainRecords` indexes: `by_organization_type_occurred` and `by_organization_member_type_kind`; the visit-summary backfill cron and its completion check below. |
+| Platform prospects | New `platformProspects` table with `by_public_id` / `by_code` indexes. A real platform-admin check remains open. The optional Amman-list import is a separate explicit write, not a deploy step. |
+| Operational email beta branding | Convex template/worker/application-mail changes. Deploying these does not configure callbacks, change delivery mode or cut over Clerk templates. |
+| PR #20 member payment reads | Existing index only; no schema change or additional backfill. Keep the reviewed fix that retains the historical member ID after cross-branch merges. |
+
+For the selected reviewed main revision, use the existing exact-target and
+backup procedure, then `pnpm convex:deploy -- --dry-run --yes` and the matching
+`pnpm convex:deploy` release. Do not infer a successful backend release from
+code generation or from a frontend Git SHA. Record the source SHA, deployment
+name, time, guarded deploy result, health result and backfill completion.
+
+Verify the dashboard, reception, member list/profile, CRM queues, member
+payments/receipts and platform prospects after release. Refund writes belong
+in isolated staging with disposable records; read-only Production verification
+must not create financial transactions. The visit-summary steps and rollback
+caveat below still apply. Email/provider acceptance, the real-role staging day,
+restore rehearsal and founder device acceptance remain separate open work in
+the canonical backlog. Provider configuration observations below are dated
+evidence, not a fresh inspection made on 17 October.
+
 ## Front desk and CRM reads scale with today, not history — 16 October 2026 (same Convex deploy)
 
 The second performance pass (see its CURRENT_STATE.md entry) changes

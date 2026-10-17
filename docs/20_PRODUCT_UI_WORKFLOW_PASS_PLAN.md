@@ -445,11 +445,19 @@ Release: after the approval, the final fetch found `origin/main` still at `b86f1
 
 ## Final closure
 
-**Status:** Not started
+**Status:** Open — partial route/browser evidence exists; final role/state/device and human acceptance pending
 **Baseline SHA:** To record
 **Finish SHA:** To record
 **Preview:** To record
 **Human approval:** Pending
+
+17 October reconciliation: the 16 October performance survey checked 67 routes
+in English and Arabic on desktop and English on a phone viewport, without page
+or console errors. Arabic release checks and the seven completed passes also
+provide evidence. These runs do not cover every real role, device or state and
+do not constitute Hashem's final acceptance. Keep the unchecked items below
+open until their specific evidence is recorded. Some pre-beta screenshot
+references pass within tolerance and still need deliberate review.
 
 Inventory and coverage:
 
