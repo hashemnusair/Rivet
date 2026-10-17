@@ -1,5 +1,86 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — A member's payments no longer read every payment in the gym
+
+Follow-up to the 16 October speed pass, which left payments read whole.
+**This is a Convex change: it takes effect only after `pnpm convex:deploy`.
+Nothing was deployed.** No schema change, new index or backfill: it uses the
+existing `by_organization_member_type` index.
+
+**What changed** (`convex/domain.ts`):
+
+- `transactions.list` with a `memberId` (the member record's Payments tab)
+  reads only that member's payments (`memberPaymentRecords`). It still lists
+  only payments recorded against that exact member id, as before, so a merged
+  duplicate's payments stay on the duplicate's own list.
+- Receipt detail, `payments.refund` and `pt.package.refund` find a payment's
+  refunds, its original, or the payments on a PT charge through
+  `paymentsLinkedToMember`: that member's payments plus their merged
+  duplicates' (`memberIdentityIds`). The receipt's own payment was already
+  read by its key.
+- `toTransactionSummaries` looks up only the members a list names when there
+  are 60 or fewer, instead of reading every member.
+
+**Why the answers cannot change.** Every payment write since the first Convex
+integration (4 August 2026) sets the record's `memberPublicId` to the same
+value as `data.memberId`: collections (`paymentRecord`), payment refunds, PT
+refunds, retail sales and retail refunds (`operations.ts`) and the seed. A
+guest's retail sale has neither. Merges do not rewrite payments. A refund
+carries its original's member, and a payment against a charge must be for the
+charge's member. The new reads keep the same branch-scope filter and sort by
+`_creationTime`, the order the whole-gym read returned. So ties resolve the
+same way, for example which of two PT payments with the same `createdAt` a PT
+refund draws from first. This was checked in the code, not against production
+data.
+
+**Left on the old path, on purpose:**
+
+- The receipt of a guest's or walk-in's retail sale has no member key, so it
+  still reads every payment.
+- Shift totals and daily reconciliation: a backdated payment recorded into an
+  open shift could fall outside a date window, and these are money totals.
+- The Payments page and other lists without a member, the payments export,
+  palette search and the dashboard's fallback read are not member-scoped and
+  are unchanged.
+
+**Documents read**, from `RIVET_DASHBOARD_BENCH=1 vitest run
+convex/domain.hot-paths.bench.test.ts` (300 members, 180 days; the benchmark
+now adds one member's card payment with two refunds, retail sales to that
+member and to a guest, and a paid PT package):
+
+| Operation | Before | After |
+|---|---|---|
+| `transactions.list`, member's Payments tab | 2,081 | 20 |
+| `receipts.get`, payment with refunds | 1,784 | 23 |
+| `receipts.get`, refund | 1,784 | 23 |
+| `receipts.get`, retail sale to a member | 1,782 | 21 |
+| `receipts.get`, guest retail sale | 1,782 | 1,782 (old path) |
+| `payments.refund` | 3,572 | 50 |
+| `pt.package.refund` | 1,796 | 35 |
+| `transactions.list`, whole gym | 2,081 | 2,081 |
+
+Index ranges barely move (at most two more per operation).
+
+**Checked.** `convex/domain.payment-history.test.ts` pins the Payments tab
+(filters, paging, sort, search, other-branch and merged members), receipts
+(payment, refund, merged duplicate, retail to a member and to a guest, PT),
+both refunds and the refund payments and audit events they write, over the
+shared history gym. The snapshot was recorded with the old `domain.ts`, and
+the file passes with both the old and the new one. Dropping the branch-scope
+filter from the new read fails it. The same file adds authorization tests
+for each touched operation:
+
+- the Payments tab needs the financial-report permission and shows nothing
+  from another branch or gym;
+- receipts need member access, the branch and the gym;
+- both refunds need their permission, a reason and the branch;
+- a refused refund writes nothing, and a permitted one writes one refund and
+  one audit event with the same fields as before.
+
+`tsc` (app and Convex), Convex Vitest (109 files, 632 tests; the two opt-in
+benchmarks skipped), ESLint `--max-warnings 0` on the changed files and the
+secret-output audit pass.
+
 ## 17 October 2026 — Supplier-payment dialog says when the supplier list failed to load
 
 Follow-up to the entry below. If the page's supplier list *failed* to load

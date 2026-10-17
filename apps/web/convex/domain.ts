@@ -1892,6 +1892,28 @@ async function paymentRecords(ctx: ReadContext, actor: ActorContext): Promise<Do
   return await recordsOf(ctx, actor, "payment");
 }
 
+/**
+ * These members' payments in the actor's scope, in the order `paymentRecords`
+ * returns them. Every payment write keys the record with the payment's own
+ * `memberId` (a guest's retail sale has neither), so filtering these rows by
+ * member gives the same answer as filtering every payment in the gym.
+ */
+async function memberPaymentRecords(ctx: ReadContext, actor: ActorContext, memberIds: readonly string[]): Promise<DomainRecord[]> {
+  const rows = await Promise.all([...new Set(memberIds)].map((id) => ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", id).eq("entityType", "payment")).collect()));
+  return rows.flat().filter((record) => inActorScope(actor, record)).sort((left, right) => left._creationTime - right._creationTime);
+}
+
+/**
+ * Payments that can be linked to a payment of this member: its refunds and
+ * its original carry the same member, as do the payments on that member's
+ * charge. Merged duplicates are read too. A payment without a member (a
+ * guest's retail sale) still reads every payment.
+ */
+async function paymentsLinkedToMember(ctx: ReadContext, actor: ActorContext, memberId: string | undefined): Promise<DomainRecord[]> {
+  if (!memberId) return await paymentRecords(ctx, actor);
+  return await memberPaymentRecords(ctx, actor, await memberIdentityIds(ctx, actor, memberId));
+}
+
 async function currentMembership(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<Data | undefined> {
   const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
   const identityIds = await memberIdentityIds(ctx, actor, memberId);
@@ -2447,8 +2469,12 @@ async function toTaskSummaries(ctx: ReadContext, actor: ActorContext, values: Da
 }
 
 async function toTransactionSummaries(ctx: ReadContext, actor: ActorContext, values: Data[]): Promise<Data[]> {
+  // A few members' payments (a Payments tab) look up just those members.
+  const memberIds = [...new Set(values.map((value) => stringValue(value.memberId)).filter(Boolean))];
   const [members, branches] = await Promise.all([
-    memberRecords(ctx, actor),
+    memberIds.length <= PER_MEMBER_READ_LIMIT
+      ? Promise.all(memberIds.map((id) => recordOfOptional(ctx, actor, "member", id))).then((rows) => rows.filter((row): row is DomainRecord => Boolean(row)))
+      : memberRecords(ctx, actor),
     ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect(),
   ]);
   const membersById = new Map(members.map((record) => [record.publicId, data(record.data)]));
@@ -2500,7 +2526,8 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
       idempotencyKey: sale.idempotencyKey,
       occurredAt: utcIso(sale.createdAt),
     };
-    const retailPayments = (await paymentRecords(ctx, actor)).map((row) => data(row.data));
+    // The sale's payment and its refunds all carry the sale's member.
+    const retailPayments = (await paymentsLinkedToMember(ctx, actor, sale.memberId)).map((row) => data(row.data));
     const receiptPaymentId = stringValue(receiptData.paymentId, originalPaymentId);
     const payment = retailPayments.find((item) => item.id === receiptPaymentId) ?? originalPayment;
     const relatedPayments = retailPayments.filter((item) => item.id !== payment.id && (item.originalPaymentId === originalPaymentId || item.id === originalPaymentId));
@@ -2546,7 +2573,7 @@ async function receiptDetail(ctx: ReadContext, actor: ActorContext, receiptId: s
   const branch = await branchByPublicId(ctx, actor.organization._id, optionalString(paymentData.branchId));
   const member = await recordOf(ctx, actor, "member", stringValue(paymentData.memberId));
   const charge = paymentData.chargeId ? await recordOfOptional(ctx, actor, "charge", stringValue(paymentData.chargeId)) : null;
-  const related = (await paymentRecords(ctx, actor))
+  const related = (await paymentsLinkedToMember(ctx, actor, optionalString(paymentData.memberId)))
     .map((record) => data(record.data))
     .filter((item) => item.originalPaymentId === paymentData.id || (paymentData.originalPaymentId && item.id === paymentData.originalPaymentId));
   const organization = organizationView(actor.organization);
@@ -6429,7 +6456,11 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
     case "transactions.list": {
       requirePermission(actor, "reports.financial.read");
-      let items = await toTransactionSummaries(ctx, actor, (await paymentRecords(ctx, actor)).map((record) => data(record.data)));
+      // A member's Payments tab lists payments recorded against that exact
+      // member id, so it reads just their payments.
+      const transactionMemberId = optionalString(input.memberId);
+      const transactionRows = transactionMemberId ? await memberPaymentRecords(ctx, actor, [transactionMemberId]) : await paymentRecords(ctx, actor);
+      let items = await toTransactionSummaries(ctx, actor, transactionRows.map((record) => data(record.data)));
       if (input.branchId) items = items.filter((item) => item.branchId === input.branchId);
       if (input.memberId) items = items.filter((item) => item.memberId === input.memberId);
       if (input.method) items = items.filter((item) => item.method === input.method);
@@ -10466,7 +10497,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const cumulativeMinor = Math.floor((terms.totalPriceMinor * nextSessions) / terms.sessionCount);
       const refundMinor = cumulativeMinor - previousMinor;
       if (refundMinor <= 0) domainError("VALIDATION_ERROR", "No refundable package amount remains.", { correlationId: actor.correlationId });
-      const originalPayments = (await paymentRecords(ctx, actor)).filter((record) => {
+      // Payments can only be recorded against a charge for the charge's member.
+      const originalPayments = (await paymentsLinkedToMember(ctx, actor, optionalString(data(charge.data).memberId))).filter((record) => {
         const payment = data(record.data);
         return payment.chargeId === order.chargePublicId && payment.type === "payment" && payment.status !== "voided";
       }).sort((left, right) => right.createdAt - left.createdAt);
@@ -11442,7 +11474,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (ptOrder && ptOrder.status !== "pending_payment") {
         domainError("VALIDATION_ERROR", "Use the PT package refund workflow so refundable credits and money remain synchronized.", { correlationId: actor.correlationId });
       }
-      const related = (await paymentRecords(ctx, actor)).map((record) => data(record.data)).filter((payment) => payment.originalPaymentId === original.id && payment.type === "refund");
+      const related = (await paymentsLinkedToMember(ctx, actor, optionalString(original.memberId))).map((record) => data(record.data)).filter((payment) => payment.originalPaymentId === original.id && payment.type === "refund");
       const alreadyRefunded = related.reduce((sum, payment) => sum + Math.abs(amountOf(payment.amount)), 0);
       const remaining = amountOf(original.amount) - alreadyRefunded;
       if (input.amount != null && currencyOf(input.amount, "") !== actor.organization.currency) {
