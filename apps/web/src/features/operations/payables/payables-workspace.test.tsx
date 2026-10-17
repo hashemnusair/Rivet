@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { getApi } from "@/lib/api/client";
+import type { Supplier } from "@/lib/domain/types";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { PayablesWorkspace } from "./payables-workspace";
+import { RecordSupplierPaymentDialog } from "./record-supplier-payment-dialog";
 import { SupplierPaymentConfirmation } from "./supplier-payment-confirmation";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
@@ -52,6 +54,18 @@ function RecordThenShow({ branchId }: { branchId: string }) {
     })();
   }, [branchId]);
   return paymentId ? <SupplierPaymentConfirmation paymentId={paymentId} /> : null;
+}
+
+/** The open dialog with a supplier list the test can replace, as a background refetch would. Lists are read at mount, after `prepare`. */
+function DialogWithSupplierList({ lists }: { lists: { first: Supplier[]; refreshed: Supplier[]; preselect?: string } }) {
+  const { session } = useApp();
+  const [suppliers, setSuppliers] = useState(() => lists.first);
+  return (
+    <>
+      <button type="button" data-testid="refresh-suppliers" onClick={() => setSuppliers(lists.refreshed)} />
+      <RecordSupplierPaymentDialog open onOpenChange={() => {}} suppliers={suppliers} branches={session!.branches} currency="JOD" initialSupplierId={lists.preselect} onRecorded={() => {}} />
+    </>
+  );
 }
 
 async function seededBranchId() {
@@ -212,6 +226,30 @@ describe("payables workspace", () => {
     await waitFor(() => expect(allocation).toHaveValue("650.000"));
     await user.click(within(dialog).getByTestId("confirm-supplier-payment"));
     await waitFor(() => expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ method: "bank_transfer", branchId, amount: { amount: 650_000, currency: "JOD" }, reference: "TRF-2026-0091" })));
+  });
+
+  it("keeps the supplier staff picked, and what they typed, when a refresh changes the supplier list", async () => {
+    const user = userEvent.setup();
+    const branchId = await seededBranchId();
+    const lists: { first: Supplier[]; refreshed: Supplier[]; preselect?: string } = { first: [], refreshed: [] };
+    await renderWithApp(<DialogWithSupplierList lists={lists} />, { role: "owner", prepare: async (api) => {
+      lists.preselect = (await api.upsertSupplier({ name: "Amman Fitness Parts", branchIds: [branchId] })).id;
+      lists.first = await api.listSuppliers();
+      await api.upsertSupplier({ name: "Zarqa Gym Repairs", branchIds: [branchId] });
+      lists.refreshed = await api.listSuppliers();
+    } });
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Amman Fitness Parts");
+    fireEvent.keyDown(supplierField, { key: "ArrowDown" });
+    await user.click(await screen.findByRole("option", { name: "Jordan Sports Supply" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "650");
+    fireEvent.click(screen.getByTestId("refresh-suppliers"));
+    fireEvent.keyDown(supplierField, { key: "ArrowDown" });
+    expect(await screen.findByRole("option", { name: "Zarqa Gym Repairs" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    expect(supplierField).toHaveTextContent("Jordan Sports Supply");
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("650");
   });
 
   it("says the supplier list could not load, not that there are none, and loads it again on Retry", async () => {

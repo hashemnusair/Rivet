@@ -62,9 +62,11 @@ Opening from a bill's Pay button still pre-fills that bill's balance. Checked:
 a new case in `payables-workspace.test.tsx` holds `listSuppliers`, picks Bank
 transfer, types an amount and a reference, then lets the list arrive. The
 method, amount and reference stay, the supplier fills, and the payment records
-with them. It failed against the old dialog (the method went back to Cash) and
-passes now. The payables Vitest files (17 tests), `tsc --noEmit` and ESLint on
-the changed files pass. Not checked in a browser.
+with them. A second case opens the dialog with a pre-selected supplier, picks
+another, types an amount, then swaps in a longer supplier list. The pick and
+the amount stay. Both failed against the old dialog and pass now. The payables
+Vitest files (18 tests), `tsc --noEmit` and ESLint on the changed files pass.
+Not checked in a browser.
 
 Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
 `payables-workspace.tsx`, `payables-workspace.test.tsx`,
