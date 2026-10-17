@@ -87,8 +87,8 @@ Do not create a second TODO file.
 ### Deferred scope and later improvements
 
 Family accounts, repayment schedules, actual push delivery, optional supplier
-notification delivery, marketplaces, autonomous purchasing and statutory
-accounting need their own product decisions. The remaining measured performance
+notification delivery, member document uploads, marketplaces, autonomous
+purchasing and statutory accounting need their own product decisions. The remaining measured performance
 work (large whole-gym payment lists, member/charge growth, catalogue/font cost,
 landing authentication wait) is documented in CURRENT_STATE; it is not evidence
 that the completed performance changes are already deployed to Convex.
@@ -682,7 +682,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
   tracked in the current priorities above.
 - [ ] Run the dedicated performance/responsiveness pass only after release-critical verification and product decisions are complete. Do not optimize in this release.
 
-## Latest direct-main repair — unavailable gym-owner login — 23 August 2026
+## Historical direct-main repair — unavailable gym-owner login — 23 August 2026
 
 - [x] Distinguish an owner whose active membership points to a suspended or cancelled organization from a true member-only identity.
 - [x] Prevent that unavailable owner identity from initializing member registration, subscriptions, or member-shell APIs.
@@ -690,7 +690,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] Deploy and verify the affected Production session: truthful unavailable-workspace copy rendered, no member mutation ran, and no page or console errors remained.
 - [x] Superseded 14 September 2026: the test gyms are to be removed, not restored (docs/12, "Fresh start"). The active-owner acceptance pass will run on the first real gym provisioned afterwards.
 
-## Latest simplification slice — core CRM pilot — released 17 August 2026
+## Historical simplification slice — core CRM pilot — released 17 August 2026
 
 - [x] Reduced the primary gym navigation and command palette to the core workflow: Dashboard, Leads, Follow-ups, Members, Reception, Payments, Personal training, Support, and Settings.
 - [x] Preserved memberships, plans, cash shifts, reports, audit, and Automations as deep/contextual routes rather than removing them or changing their authorization.
@@ -707,7 +707,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] Hardened the staging guard to require an explicit Production Convex URL and refuse to run when the configured staging URL cannot be proven distinct from Production.
 - [ ] Complete the credentialed isolated-staging bodies when role identities are intentionally configured; the current workflow reports them as credential-blocked and performs no functional staging writes when those prerequisites are absent.
 
-## Latest direct-main fix — Production member lookups — 16 August 2026
+## Historical direct-main fix — Production member lookups — 16 August 2026
 
 - [x] Reproduced the Production failure: member and membership lists loaded, but opening a member record crashed while reading `homeBranchId` from an absent realtime snapshot.
 - [x] Fixed the realtime bridge in `c9ff56d5dada034689674a8e6fd4077430cdeb1e` so the ordinary initial query remains available until Convex delivers the first live value; added defensive member/lead detail guards and a Convex-mode regression test.
@@ -715,14 +715,14 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] GitHub Actions [31910859527](https://github.com/hashemnusair/Rivet/actions/runs/31910859527) and Vercel Production deployment [5xJ4qsgmqDai92jK5XjTjWJWQPGn](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/5xJ4qsgmqDai92jK5XjTjWJWQPGn) completed successfully; `https://www.rivetjo.com` returned HTTP 200.
 - [x] Confirmed a fresh Production member-detail load has no error overlay or console errors. This was frontend-only; no Convex deploy/schema change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation occurred.
 
-## Latest direct-main change — Automations UI postponed — 15 August 2026
+## Historical direct-main change — Automations UI postponed — 15 August 2026
 
 - [x] Replaced the Automations workspace and direct rule-editor route with a clear Coming soon state while preserving the backend implementation and tests for later.
 - [x] Passed the frontend typecheck, zero-warning lint, 89 test files / 474 tests, 43-route production build, 25 local Playwright passes with 14 staging-gated skips, and `git diff --check`.
 - [x] Confirmed this change made no Convex deploy, schema/index change, Production product-data mutation, seed/import/restore/delete, or live operational-email activation.
 - [ ] Revisit the preserved automation backend and run its isolated-staging quiet-hours/retry acceptance only after the Convex foundation and deployment path are settled.
 
-## Latest direct-main release — automation rule integrity and suppression parity — 15 August 2026
+## Historical direct-main release — automation rule integrity and suppression parity — 15 August 2026
 
 - [x] Released `c75182764aac7d43a3a33de8ea5434acd1447064` directly to `main` after a final partner fetch; the frozen frontend handoff and modular product plan were preserved.
 - [x] Standardized automation trigger forms and server validation: expiry checkpoints are deduplicated, expired-membership thresholds use `daysAfter` with `0` supported, malformed actions are rejected, and Queue message requires a tenant-owned message template.
@@ -733,7 +733,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] Confirmed no Production seed/import/restore/delete, product-data mutation, or live operational-email activation.
 - [ ] Complete the credentialed isolated-staging automation journey for quiet-hours suppression and transient retry recovery, with disposable cleanup evidence. The five remaining bodies are `provisioning`, `reception-entry`, `automation`, `member-portal`, and `isolation/audit`.
 
-## Latest direct-main release — dashboard priorities and Follow-ups workspace — 15 August 2026
+## Historical direct-main release — dashboard priorities and Follow-ups workspace — 15 August 2026
 
 - [x] Released application commit `a7710c8085827b16037c49aa9e9dd3c0c948a3ba` directly on `main`; the final pre-commit fetch found no partner advancement, and the frozen frontend handoff/product plan were preserved.
 - [x] Replaced the owner dashboard Pipeline funnel with actionable Operating priorities for renewal risk, outstanding balances, and open lead follow-up, using existing dashboard data without a backend or schema change.
@@ -763,7 +763,7 @@ repository-hardening head is deployed to Convex or Vercel Production.
 - [x] Confirmed this was frontend-only: no Convex schema/index/data change, Production deploy, seed/import/restore/delete, or live operational-email activation.
 - [ ] Observe Production Convex Database I/O and function-call usage for 24–48 hours and record the before/after trend. If usage remains high, inspect the highest-reading functions before changing CRM realtime behavior.
 
-## Latest direct-main release — support chat, CRM, PT packages, and member UX — 14 August 2026
+## Historical direct-main release — support chat, CRM, PT packages, and member UX — 14 August 2026
 
 - [x] Released `3c6ce09aac5c4dee71fe88c93116d78af0729a83` directly to `main` after preserving partner commits and the frozen frontend handoff. Two-way gym ↔ platform support chat, four-column lead drag/drop, expiring/expired follow-up filters, safe PT package deletion, and the simplified member home/per-gym journey are implemented.
 - [x] Verified Convex Production `descriptive-meerkat-589` with the exact-target non-verbose dry run/deploy. No indexes were deleted; schema validation passed; the release commit added no schema delta. Read-only `health:check` returned `status: ok`, and recent read-only logs contained only expected unauthenticated guard events.
@@ -1383,12 +1383,17 @@ The stable BUG/TODO identifiers below were imported from the former `docs/14_TOD
 - [x] Implement the leased Resend worker, provider acceptance persistence, verified webhook outcomes, terminal-failure notification, and safe activation policy.
 - [ ] Configure and approve one isolated staging delivery policy, then collect provider/webhook/retry evidence before enabling any Production message type.
 
-### TODO-003 — Member documents/profile photos are not represented in the operational contract
+### TODO-003 — Member documents remain a product decision; profile photos are implemented
 
-- Status: **Needs product decision / likely P1**.
-- Evidence: member notes, tags, and emergency contacts exist, but there is no approved document/photo storage workflow in the current API contract.
-- Risk: gyms that require an ID or waiver cannot keep that record beside Member 360.
-- Fix/acceptance: only implement after deciding retention, file type/size, access scope, and Convex storage policy. Add signed upload/download authorization, audit events, and deletion/retention rules. Do not store sensitive files in arbitrary JSON.
+- Reconciled 17 October: private member photos already use the `member_photo`
+  media workflow in `convex/media.ts`; `domain.ts` projects the active private
+  photo. `media.authorization.test.ts` covers upload authorization, foreign
+  ownership, mismatched storage and expired intents. Do not rebuild photo storage
+  from this historical item.
+- Remaining product decision: general member document uploads, such as IDs or
+  waivers, require explicit retention, file type/size, access, audit and deletion
+  rules. They are not part of the current media owner-type contract and remain
+  separately scoped. Do not store sensitive files in arbitrary JSON.
 
 ### TODO-004 — Discovery empty state needs an operational explanation
 
@@ -1514,6 +1519,11 @@ Current evidence also covers exported platform invoice/subscription/support/noti
 - Acceptance: the credential-gated `finance-reconciliation` browser body now creates a disposable unpaid membership, records card-reference and cash partial payments, closes an intentional non-zero variance, requires manager approval, archives the member, and preserves immutable financial/audit facts through its cleanup ledger. It still must be executed against isolated staging; realistic-volume reconciliation, rejection, payment concurrency, and cross-browser finance propagation remain open. Volume/concurrency proof must be generated against an isolated staging dataset with documented load results rather than inferred from this Production demo day.
 
 ### TODO-008 — Verify automation scheduling, deduplication, quiet hours, and retries end to end
+
+17 October reconciliation: the 7 October channel decision retired automated
+WhatsApp/SMS and its worker. The historical provider-sender criteria below must
+not reactivate that work. Verify the retained staff-task and email behavior in
+staging; operational-email delivery acceptance is tracked in docs/19.
 
 - Status: **Paused by product decision; the backend and local coverage are preserved, while staging acceptance is deferred until the Convex foundation is settled**.
 - Scope: expiry/follow-up trigger, task creation, sandbox message attempt, daily dedupe key, quiet-hours suppression, retry metadata, and manager notification.
