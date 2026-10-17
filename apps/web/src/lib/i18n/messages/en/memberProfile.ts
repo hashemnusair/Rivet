@@ -231,6 +231,7 @@ export const memberProfile = {
     method: "Method",
     collectedBy: "Collected by",
     collectedByName: "Collected by {name}",
+    forbiddenDescription: "Your role cannot see this member's payments. The paid or unpaid status above and the payments on the Timeline are still there.",
   },
 
   checkIns: {
@@ -270,6 +271,7 @@ export const memberProfile = {
   },
 
   details: {
+    notRecorded: "Not recorded",
     gender: "Gender",
     male: "Male",
     female: "Female",

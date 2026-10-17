@@ -13,9 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
-import { ErrorState, NotFoundState } from "@/components/ui/states";
+import { ErrorState, ForbiddenState, NotFoundState } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "@/lib/api/errors";
+import type { Permission } from "@/lib/domain/permissions";
 import { pickCurrentMembership, pickRenewalTarget } from "@/lib/domain/status";
 import { MemberHeader } from "@/features/members/member-header";
 import {
@@ -47,7 +48,13 @@ export default function MemberDetailPageClient() {
   // Today and the queues link here with ?action=contact to record an outcome.
   const [contactOpen, setContactOpen] = useState(searchParams.get("action") === "contact");
   const requestedTab = searchParams.get("tab");
-  const activeTab = MEMBER_TABS.some((tab) => tab.value === requestedTab) ? requestedTab! : "overview";
+  // A tab the role cannot read is left out of the strip, like a sidebar
+  // destination the role lacks. A deep link to it still lands on that tab so
+  // the permission wall explains the link instead of silently showing Overview.
+  const visibleTabs = MEMBER_TABS.filter((tab) => !tab.permission || can(tab.permission));
+  const requested = MEMBER_TABS.find((tab) => tab.value === requestedTab);
+  const activeTab = requested?.value ?? "overview";
+  const paymentsBlocked = !can("reports.financial.read");
 
   const memberQuery = useRealtimeApiQuery({ queryKey: qk.member(memberId), query: (api) => api.getMember(memberId), subscribe: (api, onValue, onError) => api.subscribeMember(memberId, onValue, onError) });
   const membershipsQuery = useApiQuery(qk.memberships({ memberId }), (api) =>
@@ -110,7 +117,7 @@ export default function MemberDetailPageClient() {
         }}>
           <div className="min-w-0">
             <TabsList aria-label={t("memberProfile.page.sectionsLabel")}>
-              {MEMBER_TABS.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <TabsTrigger key={tab.value} value={tab.value} data-testid={tab.value === "timeline" ? "tab-timeline" : undefined}>
                   {tab.value === "pt" ? <Dumbbell className="size-3.5" /> : null}
                   {t(tab.labelKey)}
@@ -128,7 +135,11 @@ export default function MemberDetailPageClient() {
             <MembershipsTab memberId={member.id} />
           </TabsContent>
           <TabsContent value="payments">
-            <PaymentsTab memberId={member.id} />
+            {paymentsBlocked ? (
+              <ForbiddenState layout="section" description={t("memberProfile.payments.forbiddenDescription")} />
+            ) : (
+              <PaymentsTab memberId={member.id} />
+            )}
           </TabsContent>
           <TabsContent value="checkins">
             <CheckInsTab memberId={member.id} />
@@ -214,11 +225,13 @@ function AddNoteDialog({ memberId, open, onOpenChange }: { memberId: string; ope
   );
 }
 
-const MEMBER_TABS: ReadonlyArray<{ value: string; labelKey: TKey }> = [
+const MEMBER_TABS: ReadonlyArray<{ value: string; labelKey: TKey; permission?: Permission }> = [
   { value: "overview", labelKey: "memberProfile.tabs.overview" },
   { value: "timeline", labelKey: "memberProfile.tabs.timeline" },
   { value: "memberships", labelKey: "memberProfile.tabs.memberships" },
-  { value: "payments", labelKey: "memberProfile.tabs.payments" },
+  // The server refuses the transaction list without this permission; the
+  // Payments page hides the same way for the same roles.
+  { value: "payments", labelKey: "memberProfile.tabs.payments", permission: "reports.financial.read" },
   { value: "checkins", labelKey: "memberProfile.tabs.checkins" },
   { value: "pt", labelKey: "memberProfile.tabs.pt" },
 ];
