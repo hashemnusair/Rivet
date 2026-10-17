@@ -232,6 +232,7 @@ export const memberProfile: typeof En = {
     method: "طريقة الدفع",
     collectedBy: "المحصّل",
     collectedByName: "المحصّل: {name}",
+    forbiddenDescription: "لا يمكن لدوركم رؤية مدفوعات هذا المشترك. حالة الدفع في الأعلى والمدفوعات في سجل المشترك ما زالت متاحة لكم.",
   },
 
   checkIns: {
@@ -271,6 +272,7 @@ export const memberProfile: typeof En = {
   },
 
   details: {
+    notRecorded: "غير مسجّل",
     gender: "الجنس",
     male: "ذكر",
     female: "أنثى",

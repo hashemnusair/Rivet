@@ -21,7 +21,7 @@ import { CheckInDecisionChip, MembershipStatusChip, PaymentStatusChip, Transacti
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/misc";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, QueryErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils/cn";
 import { receiptHref } from "@/lib/utils/receipt-links";
@@ -128,7 +128,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
         {query.isLoading ? (
           <Skeleton className="h-64 w-full" />
         ) : query.isError ? (
-          <ErrorState onRetry={() => query.refetch()} />
+          <QueryErrorState error={query.error} onRetry={() => query.refetch()} />
         ) : (
           <>
             <div data-testid="member-timeline">
@@ -153,7 +153,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  if (query.isError) return <QueryErrorState error={query.error} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title={t("memberProfile.memberships.empty")} description={t("memberProfile.memberships.emptyDescription")} />;
@@ -334,7 +334,9 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  // A refusal (the role lost the financial-report permission) is a permission
+  // wall, not a "try again": retrying cannot change the server's answer.
+  if (query.isError) return <QueryErrorState error={query.error} forbiddenDescription={t("memberProfile.payments.forbiddenDescription")} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title={t("memberProfile.payments.empty")} description={t("memberProfile.payments.emptyDescription")} />;
@@ -428,7 +430,7 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   );
 
   if (query.isLoading) return <Skeleton className="h-48 w-full" />;
-  if (query.isError) return <ErrorState onRetry={() => query.refetch()} />;
+  if (query.isError) return <QueryErrorState error={query.error} onRetry={() => query.refetch()} />;
   const items = query.data?.items ?? [];
   if (items.length === 0) {
     return <EmptyState layout="section" title={t("memberProfile.checkIns.empty")} description={t("memberProfile.checkIns.emptyDescription")} />;
@@ -566,33 +568,35 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
 // ---------------------------------------------------------------------------
 export function MemberDetailsPanel({ member, branchName, salespersonName }: { member: MemberDetail; branchName: string; salespersonName?: string }) {
   const { t } = useLocale();
+  // A profile field nobody has filled in yet: the desk may still need to ask for it.
+  const notRecorded = <span className="text-ink-3">{t("memberProfile.details.notRecorded")}</span>;
   const marketingSource = member.marketingPreference
     ? Object.prototype.hasOwnProperty.call(en.memberProfile.details.marketingSource, member.marketingPreference.source)
       ? t(`memberProfile.details.marketingSource.${member.marketingPreference.source}` as TKey)
       : member.marketingPreference.source.replaceAll("_", " ")
     : undefined;
-  const gender = member.gender === "female" ? t("memberProfile.details.female") : member.gender === "male" ? t("memberProfile.details.male") : member.gender ?? "—";
+  const gender = member.gender === "female" ? t("memberProfile.details.female") : member.gender === "male" ? t("memberProfile.details.male") : member.gender ?? notRecorded;
   const foundUs = member.source
     ? (() => {
         const label = leadSourceLabel(t, member.source);
         return label === member.source ? member.source.replace(/_/g, " ") : label;
       })()
-    : "—";
+    : notRecorded;
   const rows: Array<[string, React.ReactNode]> = [
     [t("common.label.phone"), <span key="p" dir="ltr" className="text-[12.5px]">{member.phone}</span>],
-    [t("common.label.email"), member.email ? <bdi dir="ltr">{member.email}</bdi> : "—"],
+    [t("common.label.email"), member.email ? <bdi dir="ltr">{member.email}</bdi> : notRecorded],
     [t("memberProfile.edit.homeBranch"), <bdi key="b">{branchName}</bdi>],
     [t("memberProfile.edit.preferredLanguage"), member.preferredLanguage === "ar" ? t("common.language.arabic") : t("common.language.english")],
     [t("memberProfile.details.gender"), gender],
-    [t("memberProfile.details.dateOfBirth"), member.dateOfBirth ? <DateText key="dob" iso={member.dateOfBirth} /> : "—"],
-    [t("memberProfile.details.address"), member.addressLine1 ? <bdi key="a">{`${member.addressLine1}${member.city ? ` · ${member.city}` : ""}`}</bdi> : "—"],
+    [t("memberProfile.details.dateOfBirth"), member.dateOfBirth ? <DateText key="dob" iso={member.dateOfBirth} /> : notRecorded],
+    [t("memberProfile.details.address"), member.addressLine1 ? <bdi key="a">{`${member.addressLine1}${member.city ? ` · ${member.city}` : ""}`}</bdi> : notRecorded],
     [t("memberProfile.edit.emergencyContact"), member.emergencyContactName ? (
       <span key="e">
         <bdi>{member.emergencyContactName}</bdi>
         {member.emergencyContactRelationship ? <> · <bdi>{member.emergencyContactRelationship}</bdi></> : null}
         {member.emergencyContactPhone ? <> · <bdi dir="ltr">{member.emergencyContactPhone}</bdi></> : null}
       </span>
-    ) : "—"],
+    ) : notRecorded],
     [t("memberProfile.details.foundUs"), foundUs],
     [t("memberProfile.details.salesperson"), salespersonName !== undefined ? <bdi key="s">{salespersonName}</bdi> : t("memberProfile.details.notAssigned")],
     [t("memberProfile.edit.marketing"), <span key="marketing">{member.marketingPreference?.status === "unknown" || !member.marketingPreference ? t("memberProfile.details.marketingUnknown") : member.marketingOptIn ? t("memberProfile.details.marketingAgreed") : t("memberProfile.details.marketingDeclined")}{marketingSource ? <span className="ms-1 text-ink-3">· {marketingSource}</span> : null}</span>],
