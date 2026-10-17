@@ -45,6 +45,7 @@ export const payablesWorkspace = {
   recordSupplierPayment: "Record supplier payment",
   recordHint: "Choose the supplier and enter what you paid. Then choose which bills it pays.",
   noActiveSuppliers: "No active suppliers",
+  suppliersLoadFailed: "The supplier list could not load.",
   payingFrom: "Paying from branch",
   cashBranchHint: "The cash comes from this branch's drawer.",
   payingBranchHint: "The branch that made the payment.",

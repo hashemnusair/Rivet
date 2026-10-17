@@ -1,5 +1,117 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — Supplier-payment dialog says when the supplier list failed to load
+
+Follow-up to the entry below. If the page's supplier list *failed* to load
+(rather than being slow), the "Record supplier payment" dialog still said "No
+active suppliers" in the supplier field and "Choose a supplier to see what you
+owe." in the bills header. Both were false: the gym has suppliers, RIVET just
+could not read them.
+
+The page now also passes the supplier query's error state
+(`suppliersFailed`) and a retry (`onRetrySuppliers`, the query's `refetch`) to
+the dialog. When the list has failed:
+
+- The supplier field stays disabled with its usual "Choose a supplier"
+  placeholder. It no longer lists "No active suppliers".
+- The bills header shows no owed line.
+- The bills area shows "The supplier list could not load." with a "Try again"
+  button, the same style as the existing "The bills could not load." line.
+  Pressing it loads the list again; while it loads, the field reads
+  "Loading…", then fills as usual.
+
+The page already retries a failed read once, so this line appears only after
+the second failure. A background refresh that fails while an earlier list is on
+screen keeps showing that list, as before.
+
+New copy: `payablesWorkspace.suppliersLoadFailed`, English "The supplier list
+could not load." and Arabic "تعذّر تحميل قائمة المورّدين.". The Arabic follows
+the approved `supplier` term (مورّد) and the existing failure pattern
+("تعذّر تحميل الفواتير.", "تعذّر تحميل قائمة فريق العمل."). The button reuses
+`common.action.retry` ("إعادة المحاولة", decision `retry`).
+`python3 docs/arabic/verify-lock.py` passes.
+
+Checked: a new test in `payables-workspace.test.tsx` makes `listSuppliers`
+reject, checks the error line, the disabled field and the missing owed line,
+then presses Try again and sees the supplier and the real amount owed. It
+failed against the old dialog (the header said "Choose a supplier to see what
+you owe.") and passes now. A new case in `payables-arabic.test.tsx` checks the
+Arabic line and button. The payables Vitest files (16 tests) and the i18n
+tests pass; `tsc --noEmit` and ESLint on the changed files pass. Not checked
+in a browser: the mock preview cannot fail only `listSuppliers` past the
+page's automatic retry.
+
+Fixed in a follow-up the same day: the supplier list arriving no longer clears
+the form. Before, one open effect reset everything (branch, method, amount,
+reference, notes, bill amounts, idempotency key, error) and re-ran whenever the
+supplier list changed: after a slow load, after Try again, or after a
+background refresh while the dialog was open. While the list was loading, the
+page passed a new empty list on every render, so any page re-render also
+cleared it. The effect is now split:
+
+- The form and its idempotency key reset only when the dialog opens, or when
+  the bill (`initialPayable`) or branch (`initialBranchId`) it opened for
+  changes.
+- The default supplier fills in only while no listed supplier is chosen: the
+  `?pay=1&supplier=` supplier if it is active, otherwise the only active
+  supplier. It never replaces the staff's own pick. The default branch works
+  the same way, so a session refresh that hands over a new branch list no
+  longer clears the form either.
+
+Opening from a bill's Pay button still pre-fills that bill's balance. Checked:
+a new case in `payables-workspace.test.tsx` holds `listSuppliers`, picks Bank
+transfer, types an amount and a reference, then lets the list arrive. The
+method, amount and reference stay, the supplier fills, and the payment records
+with them. A second case opens the dialog with a pre-selected supplier, picks
+another, types an amount, then swaps in a longer supplier list. The pick and
+the amount stay. Both failed against the old dialog and pass now. The payables
+Vitest files (18 tests), `tsc --noEmit` and ESLint on the changed files pass.
+Not checked in a browser.
+
+Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
+`payables-workspace.tsx`, `payables-workspace.test.tsx`,
+`payables-arabic.test.tsx`, `lib/i18n/messages/{en,ar}/payablesWorkspace.ts`.
+
+## 17 October 2026 — Supplier-payment dialog stops showing a false zero and "No active suppliers"
+
+Follow-up to the entry below. The "Record supplier payment" dialog had two
+brief but false loading displays. Money shown to staff must never be a
+placeholder zero, so both now wait for the real data:
+
+- While the supplier's open bills load, the "Bills this pays" header said "You
+  owe Jordan Sports Supply: JOD 0.000", the total of a list that had not
+  arrived. It now says only "Oldest bills first." until the bills are in, then
+  adds the real amount. If the bills fail to load, it adds no amount either;
+  the existing retry message shows below.
+- If staff press Record payment (or open a `?pay=1` link) before the page's
+  supplier list loads, the supplier field said "No active suppliers" and the
+  header "Choose a supplier to see what you owe." The page now passes
+  `suppliersLoading` to the dialog. Until the list arrives, the supplier field
+  is disabled and reads "Loading…", the header shows no owed line, and the
+  bills area shows its loading placeholder. Then the field fills as before.
+
+No new copy: "Loading…" is the existing `common.state.loading` (Arabic
+"جارٍ التحميل…"), and the header reuses "Oldest bills first." alone, so no
+Arabic strings were added.
+
+Checked: two new tests in `payables-workspace.test.tsx` hold the bills and the
+supplier list pending. Both failed against the old dialog ("JOD 0.000", "No
+active suppliers") and pass now. The payables Vitest files (14 tests), `tsc`
+and ESLint on the changed files pass. Playwright against the mock dev server,
+3 repeats each, all passed (9 of 9): "branch work dialogs fit a short phone
+viewport", "supplier payment confirmation keeps amount, posting and reversal
+distinct" and the supplier-payables cash journey in
+`checkout-and-payables.spec.ts`. The full suites run in CI.
+
+Not changed: if the page's supplier list fails to load (not just slow), the
+field still says "No active suppliers"; that needs an error line and a retry,
+which means new copy (fixed in the entry above). Opening the dialog from a bill's "Pay" button still
+starts the header with "You changed the amounts.", because that path pre-fills
+the bill's balance.
+
+Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
+`payables-workspace.tsx`, `payables-workspace.test.tsx`.
+
 ## 17 October 2026 — Short-phone supplier-payment test waits for the bills list
 
 CI on `main` went red on `workflow-pass-3.spec.ts` "branch work dialogs fit a
@@ -29,7 +141,7 @@ and 20 of 20 Linux repeats passed, inside the 21:00–24:00 UTC window.
 Seen while investigating, not changed here: while the bills load, the dialog
 header says "You owe Jordan Sports Supply: JOD 0.000". If Record payment is
 pressed before the page's supplier list loads, the supplier field shows "No
-active suppliers" for a moment.
+active suppliers" for a moment. Both are fixed in the entry above.
 
 ## 17 October 2026 — Platform console and finance tabs prepare screens on intent
 

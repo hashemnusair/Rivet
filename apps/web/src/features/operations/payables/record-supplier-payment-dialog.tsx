@@ -42,6 +42,11 @@ export interface RecordSupplierPaymentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   suppliers: Supplier[];
+  /** The page's supplier list is still on its way: show a loading field, never "No active suppliers". */
+  suppliersLoading?: boolean;
+  /** The page's supplier list failed to load: say so with a retry, never "No active suppliers". */
+  suppliersFailed?: boolean;
+  onRetrySuppliers?: () => void;
   branches: Session["branches"];
   currency: string;
   initialBranchId?: string;
@@ -57,7 +62,7 @@ export interface RecordSupplierPaymentDialogProps {
  * payment exactly before the button enables, so nothing is ever "left over"
  * as a credit balance.
  */
-export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
+export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, suppliersLoading = false, suppliersFailed = false, onRetrySuppliers, branches, currency, initialBranchId, initialSupplierId, initialPayable, onRecorded }: RecordSupplierPaymentDialogProps) {
   const { t, locale, isolate, isolateLtr } = useLocale();
   const f = useFormat();
   const validate = useOperationsNumberProblems();
@@ -73,11 +78,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
   const [error, setError] = useState<unknown>(null);
 
+  // A fresh form and idempotency key only when the dialog opens (or opens for another bill or branch).
+  // The supplier and branch lists can arrive or refresh while it is open; that must not clear what staff typed.
   useEffect(() => {
     if (!open) return;
-    const fallbackBranch = branches.length === 1 ? branches[0]!.id : "";
-    setSupplierId(initialSupplierId && activeSuppliers.some((supplier) => supplier.id === initialSupplierId) ? initialSupplierId : activeSuppliers.length === 1 ? activeSuppliers[0]!.id : "");
-    setBranchId(initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : fallbackBranch);
+    setSupplierId("");
+    setBranchId("");
     setMethod("cash");
     setAmountText(initialPayable ? toMajorString(initialPayable.remaining) : "");
     setReference("");
@@ -86,7 +92,18 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
     setManualAllocation(Boolean(initialPayable));
     setIdempotencyKey(newIdempotencyKey());
     setError(null);
-  }, [open, activeSuppliers, branches, initialBranchId, initialSupplierId, initialPayable]);
+  }, [open, initialBranchId, initialPayable]);
+
+  // Defaults fill in only while nothing on the list is chosen, so they never replace the staff's own pick.
+  useEffect(() => {
+    if (!open || activeSuppliers.some((supplier) => supplier.id === supplierId)) return;
+    setSupplierId(initialSupplierId && activeSuppliers.some((supplier) => supplier.id === initialSupplierId) ? initialSupplierId : activeSuppliers.length === 1 ? activeSuppliers[0]!.id : "");
+  }, [open, activeSuppliers, initialSupplierId, supplierId]);
+
+  useEffect(() => {
+    if (!open || branches.some((branch) => branch.id === branchId)) return;
+    setBranchId(initialBranchId && branches.some((branch) => branch.id === initialBranchId) ? initialBranchId : branches.length === 1 ? branches[0]!.id : "");
+  }, [open, branches, initialBranchId, branchId]);
 
   const payablesQuery = useApiQuery(qk.payables({ kind: "open-for-supplier", supplierId }), (api) => api.listPayables({ supplierId, status: "open", pageSize: 100 }), { enabled: open && Boolean(supplierId) });
   const shiftQuery = useApiQuery(qk.currentShift(branchId), (api) => api.getCurrentCashShift(branchId), { enabled: open && method === "cash" && Boolean(branchId) });
@@ -107,6 +124,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
   const overAllocated = allocations.filter((allocation) => allocation.amountMinor > allocation.payable.remaining.amount);
   const supplierOutstandingMinor = openPayables.reduce((sum, payable) => sum + payable.remaining.amount, 0);
   const supplier = activeSuppliers.find((candidate) => candidate.id === supplierId);
+  // Until the page's supplier list arrives, an empty list means "not known yet", not "no suppliers".
+  const suppliersUnknown = suppliersLoading || suppliersFailed;
+  const billsPending = supplierId ? payablesQuery.isLoading : suppliersLoading;
+  // A total over bills that have not arrived would read as a real zero, so the owed amount waits for them.
+  const owedLine = supplier ? (payablesQuery.data ? t("payablesWorkspace.supplierOwed", { supplier: isolate(supplier.name), amount: isolateLtr(f.money(money(supplierOutstandingMinor, currency))) }) : null)
+    : suppliersUnknown ? null : t("payablesWorkspace.chooseSupplierOwed");
   const branch = branches.find((candidate) => candidate.id === branchId);
   const shift = shiftQuery.data ?? null;
   const cashBlocked = method === "cash" && (shiftQuery.isLoading || shiftQuery.isError || !shift);
@@ -144,9 +167,9 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
           <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); submit(); }} data-testid="record-supplier-payment-form">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("stockWorkspace.supplier")} required>
-                <Select value={supplierId || "none"} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
-                  <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
-                  <SelectContent>{activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
+                <Select value={supplierId || (suppliersUnknown ? "" : "none")} disabled={suppliersUnknown} onValueChange={(value) => { setSupplierId(value === "none" ? "" : value); setManualAllocation(false); setAllocationText({}); }}>
+                  <SelectTrigger aria-label={t("stockWorkspace.supplier")}><SelectValue placeholder={suppliersLoading ? t("common.state.loading") : t("stockWorkspace.chooseSupplier")} /></SelectTrigger>
+                  <SelectContent>{suppliersUnknown ? null : activeSuppliers.length === 0 ? <SelectItem value="none" disabled>{t("payablesWorkspace.noActiveSuppliers")}</SelectItem> : activeSuppliers.map((candidate) => <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>)}</SelectContent>
                 </Select>
               </Field>
               <Field label={t("payablesWorkspace.payingFrom")} hint={method === "cash" ? t("payablesWorkspace.cashBranchHint") : t("payablesWorkspace.payingBranchHint")} required>
@@ -197,11 +220,12 @@ export function RecordSupplierPaymentDialog({ open, onOpenChange, suppliers, bra
               <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
                 <div>
                   <p className="text-[13px] font-medium">{t("payablesWorkspace.billsThisPays")}</p>
-                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{supplier ? t("payablesWorkspace.supplierOwed", { supplier: isolate(supplier.name), amount: isolateLtr(f.money(money(supplierOutstandingMinor, currency))) }) : t("payablesWorkspace.chooseSupplierOwed")}</p>
+                  <p className="text-[12px] text-ink-3">{manualAllocation ? t("payablesWorkspace.manualAmounts") : t("payablesWorkspace.oldestBillsFirst")}{owedLine}</p>
                 </div>
                 {manualAllocation && amountMinor ? <Button type="button" size="xs" variant="secondary" onClick={() => setManualAllocation(false)}>{t("payablesWorkspace.resetOldest")}</Button> : null}
               </header>
-              {!supplierId ? null : payablesQuery.isLoading ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
+              {billsPending ? <div className="space-y-2 p-3"><Skeleton className="h-8" /><Skeleton className="h-8" /></div>
+                : !supplierId ? (suppliersFailed ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">{t("payablesWorkspace.suppliersLoadFailed")}{onRetrySuppliers ? <>{" "}<button type="button" className="font-medium underline" onClick={onRetrySuppliers}>{t("common.action.retry")}</button></> : null}</p> : null)
                 : payablesQuery.isError ? <p role="alert" className="px-3 py-3 text-[12.5px] text-danger">{t("payablesWorkspace.billsLoadFailed")}{" "}<button type="button" className="font-medium underline" onClick={() => void payablesQuery.refetch()}>{t("common.action.retry")}</button></p>
                   : openPayables.length === 0 ? <p className="px-3 py-3 text-[12.5px] text-ink-3">{t("payablesWorkspace.oweNothing", { supplier: isolate(supplier?.name ?? t("payablesWorkspace.thisSupplier")) })}</p>
                     : (

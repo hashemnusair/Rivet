@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { getApi } from "@/lib/api/client";
+import type { Supplier } from "@/lib/domain/types";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { PayablesWorkspace } from "./payables-workspace";
+import { RecordSupplierPaymentDialog } from "./record-supplier-payment-dialog";
 import { SupplierPaymentConfirmation } from "./supplier-payment-confirmation";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
@@ -54,10 +56,29 @@ function RecordThenShow({ branchId }: { branchId: string }) {
   return paymentId ? <SupplierPaymentConfirmation paymentId={paymentId} /> : null;
 }
 
+/** The open dialog with a supplier list the test can replace, as a background refetch would. Lists are read at mount, after `prepare`. */
+function DialogWithSupplierList({ lists }: { lists: { first: Supplier[]; refreshed: Supplier[]; preselect?: string } }) {
+  const { session } = useApp();
+  const [suppliers, setSuppliers] = useState(() => lists.first);
+  return (
+    <>
+      <button type="button" data-testid="refresh-suppliers" onClick={() => setSuppliers(lists.refreshed)} />
+      <RecordSupplierPaymentDialog open onOpenChange={() => {}} suppliers={suppliers} branches={session!.branches} currency="JOD" initialSupplierId={lists.preselect} onRecorded={() => {}} />
+    </>
+  );
+}
+
 async function seededBranchId() {
   const probe = new MockGymOSApi();
   const session = await probe.getSession();
   return session.branches[0]!.id;
+}
+
+/** A gate a spied api call waits on, so a test can look at the screen mid-load. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => { open = resolve; });
+  return { opened, open };
 }
 
 describe("payables workspace", () => {
@@ -129,6 +150,136 @@ describe("payables workspace", () => {
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "TRF-2026-0091");
     await waitFor(() => expect(confirm).toBeEnabled());
+  });
+
+  it("shows what the gym owes a supplier only once that supplier's bills have loaded", async () => {
+    const user = userEvent.setup();
+    const bills = gate();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listPayables = api.listPayables.bind(api);
+      vi.spyOn(api, "listPayables").mockImplementation(async (query) => {
+        if (query?.supplierId && query.status === "open") await bills.opened;
+        return listPayables(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "Supplier" })).toHaveTextContent("Jordan Sports Supply"));
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    expect(billsSection).toHaveTextContent("Oldest bills first.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    bills.open();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+    expect(billsSection).toHaveTextContent(/On bills: /);
+  });
+
+  it("says the suppliers are loading, not that there are none, when the dialog opens before the list arrives", async () => {
+    const user = userEvent.setup();
+    const suppliers = gate();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        await suppliers.opened;
+        return listSuppliers(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Loading…");
+    expect(supplierField).not.toHaveTextContent("No active suppliers");
+    expect(supplierField).toBeDisabled();
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    expect(billsSection).not.toHaveTextContent("Choose a supplier to see what you owe.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    suppliers.open();
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(supplierField).toBeEnabled();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+  });
+
+  it("keeps what staff typed when the supplier list arrives after the dialog opens", async () => {
+    const user = userEvent.setup();
+    const suppliers = gate();
+    const branchId = await seededBranchId();
+    const { api } = await renderWithApp(<><BranchChanger branchId={branchId} /><PayablesWorkspace /></>, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        await suppliers.opened;
+        return listSuppliers(query);
+      });
+    } });
+    const recordSpy = vi.spyOn(api, "recordSupplierPayment");
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Loading…");
+    await user.click(within(dialog).getByLabelText("Bank transfer"));
+    await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "650");
+    await user.type(within(dialog).getByRole("textbox", { name: "Bank transfer reference" }), "TRF-2026-0091");
+    suppliers.open();
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(within(dialog).getByLabelText("Bank transfer")).toBeChecked();
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("650");
+    expect(within(dialog).getByRole("textbox", { name: "Bank transfer reference" })).toHaveValue("TRF-2026-0091");
+    const allocation = await within(dialog).findByRole("textbox", { name: /Amount for Purchase order/i });
+    await waitFor(() => expect(allocation).toHaveValue("650.000"));
+    await user.click(within(dialog).getByTestId("confirm-supplier-payment"));
+    await waitFor(() => expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({ method: "bank_transfer", branchId, amount: { amount: 650_000, currency: "JOD" }, reference: "TRF-2026-0091" })));
+  });
+
+  it("keeps the supplier staff picked, and what they typed, when a refresh changes the supplier list", async () => {
+    const user = userEvent.setup();
+    const branchId = await seededBranchId();
+    const lists: { first: Supplier[]; refreshed: Supplier[]; preselect?: string } = { first: [], refreshed: [] };
+    await renderWithApp(<DialogWithSupplierList lists={lists} />, { role: "owner", prepare: async (api) => {
+      lists.preselect = (await api.upsertSupplier({ name: "Amman Fitness Parts", branchIds: [branchId] })).id;
+      lists.first = await api.listSuppliers();
+      await api.upsertSupplier({ name: "Zarqa Gym Repairs", branchIds: [branchId] });
+      lists.refreshed = await api.listSuppliers();
+    } });
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toHaveTextContent("Amman Fitness Parts");
+    fireEvent.keyDown(supplierField, { key: "ArrowDown" });
+    await user.click(await screen.findByRole("option", { name: "Jordan Sports Supply" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Amount paid" }), "650");
+    fireEvent.click(screen.getByTestId("refresh-suppliers"));
+    fireEvent.keyDown(supplierField, { key: "ArrowDown" });
+    expect(await screen.findByRole("option", { name: "Zarqa Gym Repairs" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    expect(supplierField).toHaveTextContent("Jordan Sports Supply");
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("650");
+  });
+
+  it("says the supplier list could not load, not that there are none, and loads it again on Retry", async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    await renderWithApp(<PayablesWorkspace />, { role: "owner", prepare: async (api) => {
+      const listSuppliers = api.listSuppliers.bind(api);
+      vi.spyOn(api, "listSuppliers").mockImplementation(async (query) => {
+        if (failing) throw new Error("offline");
+        return listSuppliers(query);
+      });
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    // The page retries once before it gives up, so the error line takes a moment.
+    const failure = await within(billsSection).findByText("The supplier list could not load.", {}, { timeout: 3_000 });
+    expect(failure).toHaveAttribute("role", "alert");
+    const supplierField = within(dialog).getByRole("combobox", { name: "Supplier" });
+    expect(supplierField).toBeDisabled();
+    expect(supplierField).not.toHaveTextContent("No active suppliers");
+    expect(supplierField).not.toHaveTextContent("Loading…");
+    expect(billsSection).not.toHaveTextContent("Choose a supplier to see what you owe.");
+    expect(billsSection).not.toHaveTextContent(/You owe/);
+    failing = false;
+    await user.click(within(failure).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(supplierField).toHaveTextContent("Jordan Sports Supply"));
+    expect(supplierField).toBeEnabled();
+    expect(within(dialog).queryByText("The supplier list could not load.")).not.toBeInTheDocument();
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
   });
 
   it("exports the filtered payables as a readable CSV", async () => {

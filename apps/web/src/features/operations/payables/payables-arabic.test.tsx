@@ -54,6 +54,19 @@ describe("Arabic supplier payments", () => {
     expect((await api.listPayables()).items[0]!.remaining.amount).toBe(1650000 - 12345);
   });
 
+  it("says in Arabic that the supplier list could not load, with a retry", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(arabic(<PayablesWorkspace />), { role: "owner", branchId: BRANCH_ABD, prepare: async api => {
+      vi.spyOn(api, "listSuppliers").mockRejectedValue(new Error("offline"));
+    } });
+    await user.click(await screen.findByTestId("open-record-supplier-payment"));
+    const dialog = await screen.findByRole("dialog", { name: "تسجيل دفعة للمورّد" });
+    const failure = await within(dialog).findByText("تعذّر تحميل قائمة المورّدين.", {}, { timeout: 3_000 });
+    expect(within(failure).getByRole("button", { name: "إعادة المحاولة" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("combobox", { name: "مورّد" })).toBeDisabled();
+    expect(dialog).not.toHaveTextContent("لا يوجد مورّدون نشطون");
+  });
+
   it("retains the reversal reason and same request across a failure and language switch", async () => {
     const user = userEvent.setup(); let payment: SupplierPaymentDetail | null = null; const completed = vi.fn();
     function Dialog() { return <ReverseSupplierPaymentDialog payment={payment} open onOpenChange={() => undefined} onReversed={completed} />; }

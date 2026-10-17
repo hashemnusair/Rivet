@@ -305,6 +305,9 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
         open={Boolean(payDialog)}
         onOpenChange={(next) => { if (!next) setPayDialog(null); }}
         suppliers={suppliers}
+        suppliersLoading={suppliersQuery.isLoading}
+        suppliersFailed={suppliersQuery.isError}
+        onRetrySuppliers={() => void suppliersQuery.refetch()}
         branches={branches}
         currency={currency}
         initialBranchId={branchId === ALL ? session?.activeBranchId : branchId}
