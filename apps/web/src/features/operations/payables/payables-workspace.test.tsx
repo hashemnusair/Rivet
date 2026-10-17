@@ -131,6 +131,26 @@ describe("payables workspace", () => {
     expect(payables.items[0]).toMatchObject({ status: "partially_paid", remaining: { amount: 1_000_000, currency: "JOD" } });
   });
 
+  it("treats the balance filled in from a bill's Pay button as a starting point, not a change", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<PayablesWorkspace />, { role: "owner" });
+    await user.click(await screen.findByRole("button", { name: /^Pay Jordan Sports Supply/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Record supplier payment" });
+    const billsSection = within(dialog).getByRole("region", { name: "Bills this pays" });
+    const allocation = await within(billsSection).findByRole("textbox", { name: /Amount for Purchase order/i });
+    await waitFor(() => expect(billsSection).toHaveTextContent(/You owe.+Jordan Sports Supply.+1,650\.000/));
+    expect(within(dialog).getByRole("textbox", { name: "Amount paid" })).toHaveValue("1650.000");
+    expect(allocation).toHaveValue("1650.000");
+    expect(billsSection).not.toHaveTextContent("You changed the amounts.");
+    await user.clear(allocation);
+    await user.type(allocation, "600");
+    expect(billsSection).toHaveTextContent("You changed the amounts.");
+    await user.click(within(billsSection).getByRole("button", { name: "Reset to oldest first" }));
+    await waitFor(() => expect(allocation).toHaveValue("1650.000"));
+    expect(billsSection).toHaveTextContent("Oldest bills first.");
+    expect(billsSection).not.toHaveTextContent("You changed the amounts.");
+  });
+
   it("requires a reference for a transfer and blocks the button until the allocation matches the amount", async () => {
     const user = userEvent.setup();
     const branchId = await seededBranchId();

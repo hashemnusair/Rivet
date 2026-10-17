@@ -1,5 +1,54 @@
 # GymOS / RIVET current implementation state
 
+## 17 October 2026 — Paying from a bill no longer says "You changed the amounts."
+
+Pressing Pay on one supplier bill opens "Record supplier payment" with that
+bill's balance filled in. Two things were wrong on that path:
+
+- The "Bills this pays" header started with "You changed the amounts." although
+  staff had changed nothing. The dialog counted its own pre-fill as a staff
+  edit.
+- The bill's own amount field came up empty, so the dialog said "Not on a bill
+  yet: JOD 1,650.000" and Record payment stayed disabled until staff typed the
+  amount again or pressed "Reset to oldest first". The effect that fills bills
+  oldest first ran in the same render as the opening reset, still saw the
+  previous opening's state, and wiped the bill's amount. Earlier tests changed
+  the amount straight away, so none of them saw it.
+
+Now:
+
+- Opening from a bill fills in both "Amount paid" and that bill's field. The
+  header shows only what the gym owes ("You owe Jordan Sports Supply: JOD
+  1,650.000"), with "Reset to oldest first" beside it as before.
+- "You changed the amounts." appears only after staff type in a bill's field.
+  Typing a new "Amount paid" switches to oldest first, as before.
+- The dialog tracks who set the bill amounts (oldest first, from the bill, or
+  staff), and works out the oldest-first amounts while rendering instead of
+  copying them in with an effect, so nothing can overwrite the bill's balance
+  as the dialog opens.
+
+No new copy, so no Arabic strings changed; `python3 docs/arabic/verify-lock.py`
+passes.
+
+Checked: a new test in `payables-workspace.test.tsx` presses Pay on the seeded
+bill and checks both amounts are 1,650.000 and the header has no "You changed
+the amounts."; then types 600 in the bill's field and sees the message; then
+presses "Reset to oldest first" and sees "Oldest bills first." again. It failed
+against the old dialog (message on open, empty bill field) and passes now. The
+payables Vitest files (19 tests), `tsc --noEmit`, ESLint on the changed files
+and `git diff --check` pass. In a mock browser: Pay on the bill opens with no
+message and both amounts filled; editing the bill shows the message; Reset
+returns to oldest first; opening from "Record payment" first and then from the
+bill still fills the bill. The old dialog in the same browser showed the
+message and the empty bill field. Playwright against the mock dev server, 2
+repeats each, all passed (6 of 6): the supplier-payables cash journey in
+`checkout-and-payables.spec.ts`, "branch work dialogs fit a short phone
+viewport" and "supplier payment confirmation keeps amount, posting and reversal
+distinct". The full suites run in CI.
+
+Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
+`payables-workspace.test.tsx`.
+
 ## 17 October 2026 — Supplier-payment dialog says when the supplier list failed to load
 
 Follow-up to the entry below. If the page's supplier list *failed* to load
@@ -107,7 +156,7 @@ Not changed: if the page's supplier list fails to load (not just slow), the
 field still says "No active suppliers"; that needs an error line and a retry,
 which means new copy (fixed in the entry above). Opening the dialog from a bill's "Pay" button still
 starts the header with "You changed the amounts.", because that path pre-fills
-the bill's balance.
+the bill's balance (fixed in the entry at the top).
 
 Files: `features/operations/payables/record-supplier-payment-dialog.tsx`,
 `payables-workspace.tsx`, `payables-workspace.test.tsx`.
