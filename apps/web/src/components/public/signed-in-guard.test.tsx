@@ -26,6 +26,12 @@ describe("SignedInGuard", () => {
     expect(state.replace).not.toHaveBeenCalled();
   });
 
+  it("still hands off from the resolver, which is not a signed-out page", () => {
+    window.history.replaceState({}, "", "/login");
+    render(<SignedInGuard />);
+    expect(state.replace).toHaveBeenCalledWith("/platform");
+  });
+
   it("still sends someone signed in away from a sign-in door that carries the request", () => {
     window.history.replaceState({}, "", "/login/admin?view=landing");
     render(<SignedInGuard />);
