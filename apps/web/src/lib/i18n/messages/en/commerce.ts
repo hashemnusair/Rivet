@@ -244,7 +244,7 @@ export const commerce = {
     reasonDefault: "Checked {method} payment, reference {reference}.",
     confirmed: "Payment confirmed",
     rejectTitle: "Send the payment back to {gym}",
-    rejectBody: "Tell the gym what to fix. They see this message on their payment page.",
+    rejectBody: "Tell the gym what to fix. We email this message to the gym owner and show it on their payment page.",
     rejectReason: "Message to the gym",
     rejected: "Payment sent back",
   },

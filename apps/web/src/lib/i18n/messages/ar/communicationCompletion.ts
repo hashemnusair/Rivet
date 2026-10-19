@@ -43,6 +43,7 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
       dueDate: "تاريخ الاستحقاق",
     },
     period: "من {start} إلى {end}",
+    rivetMessage: "رسالتنا: {message}",
     application: {
       receivedSubject: "تم استلام طلب تسجيل النادي في RIVET",
       receivedHeading: "تم استلام الطلب",
@@ -147,6 +148,11 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
         subject: "تجاوزت فاتورة RIVET موعد الدفع",
         body: "تم تحديد فاتورة المنصة على أنها تجاوزت موعد الدفع. يرجى تسجيل الدخول إلى RIVET لمراجعة الفاتورة المعتمدة والتواصل مع الدعم عند الحاجة.",
         action: "عرض الفاتورة",
+      },
+      platform_payment_returned: {
+        subject: "لم نتمكن من مطابقة دفعتك إلى RIVET",
+        body: "لم نتمكن من مطابقة بيانات الدفع التي أرسلتها لهذه الفاتورة. يرجى قراءة رسالتنا، ثم إرسال البيانات الجديدة من صفحة الدفع.",
+        action: "إرسال البيانات الجديدة",
       },
       platform_subscription_suspended: {
         subject: "تم تعليق اشتراك RIVET",

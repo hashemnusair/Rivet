@@ -15,6 +15,7 @@ import {
   type PromoTarget,
 } from "./firstPayment";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { enqueueOperationalEmail, type OperationalEmailFacts } from "./operationalEmail";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 
 /**
@@ -426,7 +427,47 @@ async function rejectPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     before: claim,
     after: updatedClaim,
   });
+  // The owner hears straight away, with our message, rather than finding it
+  // the next time someone opens the payment page.
+  const owner = await gymOwner(ctx, row.organizationId);
+  if (owner) {
+    await enqueueOperationalEmail(ctx, {
+      organizationId: row.organizationId,
+      kind: "platform_payment_returned",
+      templateVersion: "platform-payment-returned-v1",
+      facts: paymentReturnedFacts(row.publicId, invoice, reason),
+      recipientReference: publicUserId(owner),
+      recipientEmail: owner.email,
+      relatedEntityType: "platform_invoice",
+      relatedEntityPublicId: row.publicId,
+      // One email for each set of details sent back; details sent again and
+      // returned again get their own.
+      dedupeKey: `platform-payment-returned:${row.publicId}:${text(claim.submittedAt) || iso(now)}`,
+    });
+  }
   return { id: row.publicId, ...updated };
+}
+
+async function gymOwner(ctx: MutationCtx, organizationId: Id<"organizations">): Promise<Doc<"users"> | null> {
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect();
+  const owner = memberships.find((membership) => membership.active && membership.role === "owner");
+  const user = owner ? await ctx.db.get(owner.userId) : null;
+  return user && user.status !== "deactivated" ? user : null;
+}
+
+/** The invoice rows the email repeats, under our message. */
+function paymentReturnedFacts(invoiceId: string, invoice: Data, message: string): OperationalEmailFacts {
+  const when = (value: unknown) => timestamp(value) !== undefined ? value as string : undefined;
+  return {
+    type: "invoice",
+    invoiceNumber: invoiceId,
+    amountMinor: typeof invoice.amountMinor === "number" && Number.isSafeInteger(invoice.amountMinor) ? invoice.amountMinor : 0,
+    currency: text(invoice.currency) || "JOD",
+    periodStart: when(invoice.periodStart),
+    periodEnd: when(invoice.periodEnd),
+    dueAt: when(invoice.dueAt),
+    message,
+  };
 }
 
 // ---------------------------------------------------------------- The workspace notice

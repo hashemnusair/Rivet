@@ -53,7 +53,7 @@ type Delivery = Doc<"operationalEmailDeliveries">;
  */
 export const OPERATIONAL_EMAIL_COPY_VERSION = "communication-2026-10-03";
 
-const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"]);
+const MANDATORY_PLATFORM_KINDS = new Set(["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_payment_returned", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"]);
 
 function providerConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.RESEND_FROM_EMAIL?.trim());
@@ -174,6 +174,7 @@ const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: st
   platform_invoice_reminder: { audience: "gym", path: "/billing" },
   platform_invoice_paid: { audience: "gym", path: "/settings?section=subscription" },
   platform_invoice_past_due: { audience: "gym", path: "/billing", status: { key: "pastDue", tone: "danger" } },
+  platform_payment_returned: { audience: "gym", path: "/billing" },
   platform_subscription_suspended: { audience: "gym", path: "/billing", status: { key: "suspended", tone: "danger" } },
   platform_subscription_cancelled: { audience: "gym", path: "/settings?section=subscription" },
   support_acknowledgement: { audience: "gym", path: "/support" },
@@ -195,7 +196,11 @@ const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: st
 export type OperationalEmailFacts =
   | { type: "receipt"; receiptNumber: string; amountMinor: number; currency: string; method: string; paidAt: number; outstandingMinor?: number }
   /** Dates are YYYY-MM-DD calendar dates or ISO instants; instants render on the gym's calendar day. */
-  | { type: "invoice"; invoiceNumber: string; amountMinor: number; currency: string; periodStart?: string; periodEnd?: string; dueAt?: string };
+  | {
+      type: "invoice"; invoiceNumber: string; amountMinor: number; currency: string; periodStart?: string; periodEnd?: string; dueAt?: string;
+      /** RIVET's own words to the gym, such as why a payment was sent back. Shown as written, never translated. */
+      message?: string;
+    };
 
 interface BrandContext {
   gymName?: string;
@@ -246,7 +251,7 @@ export function operationalEmailContent(kind: string, language: Language, contex
     language,
     audience: meta.audience,
     headline: copy.subject,
-    paragraphs: [copy.body],
+    paragraphs: [copy.body, ...(facts?.type === "invoice" && facts.message ? [t("communicationCompletion.email.rivetMessage", { message: facts.message })] : [])],
     rows: factRows(facts, language, context.timeZone || "UTC"),
     gymName: meta.audience === "member" ? context.gymName : undefined,
     accent: context.accent,

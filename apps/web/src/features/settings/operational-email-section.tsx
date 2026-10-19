@@ -49,6 +49,7 @@ export function OperationalEmailSection() {
   platform_invoice_issued: t("settingsDetails.text192"),
   platform_invoice_paid: t("settingsDetails.text193"),
   platform_invoice_past_due: t("settingsDetails.text194"),
+  platform_payment_returned: t("settingsDetails.paymentNotMatchedEmail"),
   platform_subscription_suspended: t("settingsDetails.text195"),
   platform_subscription_cancelled: t("settingsDetails.text196"),
 };

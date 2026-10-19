@@ -46,6 +46,8 @@ export const communicationCompletion = {
       dueDate: "Due date",
     },
     period: "{start} – {end}",
+    /** RIVET's own words to the gym, as written by a RIVET administrator. */
+    rivetMessage: "Our message: {message}",
     /** Public gym applications: written to the applicant in the language they applied in. */
     application: {
       receivedSubject: "RIVET gym application received",
@@ -151,6 +153,11 @@ export const communicationCompletion = {
         subject: "Your RIVET invoice is past due",
         body: "A platform invoice was marked past due. Sign in to RIVET to review the authoritative invoice and contact support if needed.",
         action: "View invoice",
+      },
+      platform_payment_returned: {
+        subject: "We could not match your RIVET payment",
+        body: "We could not match the payment details you sent for this invoice. Read our message, then send the new details from the payment page.",
+        action: "Send the new details",
       },
       platform_subscription_suspended: {
         subject: "Your RIVET subscription was suspended",

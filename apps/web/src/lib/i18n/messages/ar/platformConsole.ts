@@ -368,6 +368,7 @@ export const platformConsole = {
       platformInvoiceReminder: "تذكير بفاتورة المنصة",
       platformInvoicePaid: "سداد فاتورة المنصة",
       platformInvoicePastDue: "تأخر سداد فاتورة المنصة",
+      platformPaymentReturned: "إرجاع دفعة المنصة",
       platformSubscriptionSuspended: "تعليق اشتراك المنصة",
       platformSubscriptionCancelled: "إلغاء اشتراك المنصة",
       ptPackagePaid: "سداد باقة التدريب الشخصي",

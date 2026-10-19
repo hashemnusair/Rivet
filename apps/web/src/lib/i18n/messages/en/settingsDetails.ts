@@ -301,6 +301,7 @@ export const settingsDetails = {
   "monthlyFee": "{amount} per month",
   "viewInvoice": "View invoice {number}",
   "ownerContact": "{name} (owner)",
+  "paymentNotMatchedEmail": "RIVET payment not matched",
   "unitDays": "days",
   "unitMinutes": "minutes",
   "unitHours": "hours",

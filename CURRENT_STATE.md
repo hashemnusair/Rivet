@@ -76,6 +76,40 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 19 October 2026 — Sent-back payments are emailed; emailed invoices show where to pay
+
+Two gaps left by the pay-first entry below.
+
+- **Payment sent back:** `platform.invoice.payment_reject` now emails the gym
+  owner (`platform_payment_returned`, mandatory like the other platform
+  invoice kinds, button to `/billing`). The email carries RIVET's message as
+  written ("Our message: …") and the invoice number, amount, period and due
+  date, in the gym's language. One email per set of details sent back
+  (dedupe on invoice + submission time). English and Arabic copy are in
+  `communicationCompletion.email.kinds`. The Arabic reuses the payment page's
+  "لم نتمكن من مطابقة دفعتك" and "إرسال البيانات الجديدة" (lock check passed
+  at revision 607). The console's send-back dialog now says the message is
+  emailed. Settings and the email log label the new kind; the mock records it.
+- **Invoice PDFs:** emailed invoice PDFs (issued on a plan change, and
+  issued/past due/paid from the console) print the CliQ alias and name, bank,
+  account name, IBAN and note from console → Billing → **Where gyms pay**,
+  under the same rule as `/billing` (a CliQ alias or an IBAN must be set).
+  Otherwise they fall back to `BRAND_LEGAL`, then to the general line.
+  `subscriptionReconciliation` attaches no PDFs, so nothing changed there. The
+  PDF opened in the browser (Settings → Subscription, console Billing) still
+  prints the general line. `InvoiceDocumentContext.paymentDetails` is ready for
+  it, but both screens would need a query for the details first.
+- **Evidence:** new Convex tests for the email (queued on send-back, the
+  message in text and HTML, no second email for the same details, a second
+  email in Arabic after the details are sent again) and for the PDF (general
+  line before details are set, every configured detail after), plus PDF unit
+  tests (CliQ only, note only, Arabic labels). Vitest: 19 related files,
+  315 tests, all passing. `tsc` web and Convex clean; eslint clean on changed
+  files.
+- **Not done:** both changes run in Convex, so Production has them only after
+  a `pnpm convex:deploy` from a checkout that includes this commit. Real
+  delivery needs `RIVET_EMAIL_MODE`. No inbox check was made.
+
 ## 19 October 2026 — Pay-first gyms, one JOD 75 onboarding fee, website add-on, promo codes, renewal warnings
 
 Elias asked for a fixed JOD 75 onboarding fee, a website offer with a live

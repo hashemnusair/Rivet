@@ -39,6 +39,7 @@ const EMAIL_KIND_KEYS: Record<string, TKey> = {
   platform_invoice_reminder: "platformConsole.emailLog.kind.platformInvoiceReminder",
   platform_invoice_paid: "platformConsole.emailLog.kind.platformInvoicePaid",
   platform_invoice_past_due: "platformConsole.emailLog.kind.platformInvoicePastDue",
+  platform_payment_returned: "platformConsole.emailLog.kind.platformPaymentReturned",
   platform_subscription_suspended: "platformConsole.emailLog.kind.platformSubscriptionSuspended",
   platform_subscription_cancelled: "platformConsole.emailLog.kind.platformSubscriptionCancelled",
   pt_package_paid: "platformConsole.emailLog.kind.ptPackagePaid",
