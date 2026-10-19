@@ -119,12 +119,13 @@ describe("durable operational email", () => {
     expect(row?.suppressionReason).toBeUndefined();
   });
 
-  it("describes the invoice reminder as issued, without claiming payment is due three days later", async () => {
+  it("reminds the gym its paid term ends soon and sends it to the payment page, without inventing a day count", async () => {
     const { t, organizationId } = await seed();
-    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_reminder", templateVersion: "platform-invoice-reminder-v1", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "invoice-reminder-copy" });
+    await t.mutation(internal.operationalEmail.enqueue, { organizationId, kind: "platform_invoice_reminder", templateVersion: "platform-invoice-reminder-v2", recipientReference: "email-owner", recipientEmail: "owner@example.test", dedupeKey: "invoice-reminder-copy" });
     const row = await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").withIndex("by_dedupe", (q) => q.eq("dedupeKey", "invoice-reminder-copy")).unique());
-    expect(row?.subject).toBe("Your RIVET invoice is ready");
-    expect(row?.text).toContain("Payment is due on the date shown.");
+    expect(row?.subject).toBe("Your RIVET subscription ends soon");
+    expect(row?.text).toContain("Pay it before the due date below");
+    expect(row?.text).toContain("/billing");
     expect(row?.text).not.toContain("due in three days");
   });
 

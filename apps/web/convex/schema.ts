@@ -4,6 +4,9 @@ import { systemMessageValidator } from "./systemMessages";
 
 const organizationStatus = v.union(
   v.literal("trial"),
+  // Provisioned and invited, but nothing paid yet: the owner can open the
+  // payment page and nothing else until RIVET confirms the first payment.
+  v.literal("pending_payment"),
   v.literal("active"),
   v.literal("past_due"),
   v.literal("suspended"),
@@ -1512,6 +1515,10 @@ export default defineSchema({
     contactNumber: v.string(),
     plan: v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise")),
     billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("annual"))),
+    // Launch offers the applicant chose. Prices are fixed on the first
+    // invoice when the gym is set up, not here.
+    websiteRequested: v.optional(v.boolean()),
+    promoCode: v.optional(v.string()),
     status: gymApplicationStatus,
     notificationStatus: gymApplicationNotificationStatus,
     notificationError: v.optional(v.string()),
@@ -1548,6 +1555,40 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_email", ["email"])
     .index("by_public_id", ["publicId"]),
+
+  // Promo codes a gym can enter on its application (platform console →
+  // Promos). A code is never edited after it is made, only paused, so every
+  // invoice that used it keeps meaning what it said. Uses are counted from
+  // the invoices that carry the code.
+  platformPromoCodes: defineTable({
+    publicId: v.string(),
+    code: v.string(),
+    note: v.string(),
+    target: v.union(v.literal("subscription"), v.literal("onboarding"), v.literal("website"), v.literal("total")),
+    percentOff: v.optional(v.number()),
+    amountOffMinor: v.optional(v.number()),
+    // Empty means every plan.
+    plans: v.array(v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"))),
+    maxRedemptions: v.optional(v.number()),
+    // Last Amman calendar day the code works, YYYY-MM-DD.
+    expiresOn: v.optional(v.string()),
+    active: v.boolean(),
+    createdByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_code", ["code"])
+    .index("by_public_id", ["publicId"]),
+
+  // RIVET's own commercial settings, one row per key: the website offer and
+  // where gyms send their payments. Platform administrators change them; every
+  // change is in the platform audit trail.
+  platformSettings: defineTable({
+    key: v.string(),
+    data: v.any(),
+    updatedByUserId: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 
   // Platform decisions sit outside a tenant, so they use their own immutable
   // audit stream rather than being attached to a gym's organization audit log.

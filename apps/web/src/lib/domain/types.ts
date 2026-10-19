@@ -1285,7 +1285,7 @@ export interface Organization {
   onboardingFeeMinor?: number;
   commercialTermsVersion?: string;
   /** Platform subscription state mirrored by the preview adapter. */
-  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionStartedAt?: ISODateTime;
   trialEndsAt?: ISODateTime;
   currentPeriodEndsAt?: ISODateTime;
@@ -1367,14 +1367,28 @@ export interface Session {
   legal?: SessionLegalState;
 }
 
+export interface BillingNotice {
+  state: "last_day" | "overdue" | "payment_sent";
+  periodEndsAt: string;
+  invoiceId?: string;
+  amountMinor?: number;
+  currency?: string;
+  /** When access stops if the invoice stays unpaid. */
+  accessEndsAt?: string;
+  /** RIVET sent the last payment details back. */
+  paymentReturned?: boolean;
+}
+
 export interface SessionSubscription {
   plan?: "Starter" | "Growth" | "Pro" | "Enterprise";
-  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
   billingInterval: "monthly" | "annual";
   /** The end of the paid term, ISO. */
   currentPeriodEndsAt?: string;
   /** The end of the onboarding trial, ISO, while one is running. */
   trialEndsAt?: string;
+  /** What the workspace warns about: the last day of a paid term, a term that ran out, or payment details being checked. */
+  billingNotice?: BillingNotice;
 }
 
 export type SubscriptionAgreementStatus = "required" | "signed" | "countersigned" | "not_applicable";

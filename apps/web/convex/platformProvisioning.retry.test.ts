@@ -63,7 +63,10 @@ describe("gym provisioning retry convergence", () => {
     expect(state.settings).toHaveLength(1);
     expect(state.roles).toHaveLength(5);
     expect(state.ownerMemberships).toHaveLength(1);
-    expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise", billingInterval: "monthly", status: "trial", subscriptionStartedAt: expect.any(Number), trialEndsAt: expect.any(Number) });
+    // Pay first: a new gym waits for its first payment, with no trial and no paid term yet.
+    expect(state.organizations[0]).toMatchObject({ subscriptionPlan: "Enterprise", billingInterval: "monthly", status: "pending_payment" });
+    expect(state.organizations[0]?.trialEndsAt).toBeUndefined();
+    expect(state.organizations[0]?.subscriptionStartedAt).toBeUndefined();
     expect(state.application).toMatchObject({ plan: "Enterprise", provisioningStatus: "completed", clerkOrganizationId: "org_clerk_retry", clerkInvitationId: "orginv_retry", provisionedOrganizationId: ids.organizationPublicId, provisionedBranchId: ids.branchPublicId });
     expect(state.notifications).toEqual([expect.objectContaining({ kind: "provisioning_failure", readAt: expect.any(Number), expiresAt: expect.any(Number) })]);
     expect(state.entitlements).toMatchObject({ subscriptionPlan: "Enterprise", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] });

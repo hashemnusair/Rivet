@@ -23,4 +23,22 @@ describe("launch catalogue migration", () => {
     const rows = await t.run(ctx => ctx.db.query("domainRecords").collect());
     expect(rows.find(row => row.publicId === "Growth")?.data.priceMinor).toBe(120_000);
   });
+
+  it("moves untouched 7 October rows to the single onboarding fee and keeps an edited one", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      const org = await ctx.db.insert("organizations", { name: "Platform", slug: "platform", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: 1, updatedAt: 1 });
+      for (const plan of [
+        { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 },
+        { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 250_000, operationalEmails: 5_000 },
+      ]) {
+        await ctx.db.insert("domainRecords", { organizationId: org, entityType: "platformPlan", publicId: plan.name, createdAt: 1, updatedAt: 1, data: plan });
+      }
+    });
+    const result = await t.mutation(internal.launchCatalogue.migrateDefaults, { reason: "Apply the single onboarding fee", apply: true });
+    expect(result.plans).toEqual([{ plan: "Starter", outcome: "default" }, { plan: "Growth", outcome: "updated" }, { plan: "Pro", outcome: "custom_preserved" }]);
+    const rows = await t.run(ctx => ctx.db.query("domainRecords").collect());
+    expect(rows.find(row => row.publicId === "Growth")?.data.onboardingFeeMinor).toBe(75_000);
+    expect(rows.find(row => row.publicId === "Pro")?.data.onboardingFeeMinor).toBe(250_000);
+  });
 });

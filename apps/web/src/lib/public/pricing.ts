@@ -38,8 +38,8 @@ export interface PublicPricingPlan {
  */
 export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
   { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600, tone: "paper", entitledModules: ["foundation", "revenue"] },
-  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 75_000, operationalEmails: 1_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
+  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 75_000, operationalEmails: 5_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
   { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 ];
 

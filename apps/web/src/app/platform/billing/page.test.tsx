@@ -22,6 +22,8 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
+  // The payment details panel reads the console's commerce view; these tests leave it loading.
+  useApiQuery: () => ({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() }),
   useApiMutation: () => {
     const mutation = { isPending: false, mutate: vi.fn() };
     state.mutations.push(mutation);
@@ -53,7 +55,7 @@ function snapshot(invoices: PlatformBillingInvoice[]): PlatformSnapshot {
     applications: [],
     auditEvents: [],
     overview: {
-      gymCounts: { trial: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 },
+      gymCounts: { trial: 0, pending_payment: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 },
       branchCount: 1,
       memberCount: 0,
       activeStaffCount: 0,
@@ -216,7 +218,7 @@ describe("BillingPage", () => {
 
     expect(screen.getByText("Subscription invoices")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Bill a gym/ })).toBeEnabled();
-    expect(screen.getByText("Issued 3 days early, payable within 14")).toBeInTheDocument();
+    expect(screen.getByText("Issued 14 days early, payable within 14")).toBeInTheDocument();
     expect(screen.getByText("Access may close 21 days after the due date")).toBeInTheDocument();
     expect(screen.getByText("In grace / past due")).toBeInTheDocument();
     expect(screen.getAllByText("Automatic renewal", { selector: "span" })).toHaveLength(3);

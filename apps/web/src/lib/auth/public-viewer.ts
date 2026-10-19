@@ -10,7 +10,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { RESOLVER_PATH } from "@/lib/routing/signed-in-routing";
 
-export type ViewerArea = "gym" | "reception" | "member" | "platform" | "resolving";
+export type ViewerArea = "gym" | "reception" | "billing" | "member" | "platform" | "resolving";
 
 /** Where a signed-in visitor's one button leads, and how the site names it. */
 export interface ViewerDestination {
@@ -30,6 +30,7 @@ export type PublicViewer =
 const DESTINATIONS: Record<ViewerArea, ViewerDestination> = {
   gym: { area: "gym", href: "/dashboard", label: "Dashboard", verb: "Open your dashboard" },
   reception: { area: "reception", href: "/reception", label: "Reception", verb: "Open reception" },
+  billing: { area: "billing", href: "/billing", label: "Payment", verb: "Open the payment page" },
   member: { area: "member", href: "/customer/my-gyms", label: "My gyms", verb: "Open your gyms" },
   platform: { area: "platform", href: "/platform", label: "Platform", verb: "Open the platform" },
   // The role is still being read: the resolver finishes the job.
@@ -45,6 +46,8 @@ export function destinationForIdentity(identity: RivetIdentity): ViewerDestinati
       return DESTINATIONS.platform;
     case "gym":
       return destination.role === "receptionist" ? DESTINATIONS.reception : DESTINATIONS.gym;
+    case "billing":
+      return DESTINATIONS.billing;
     case "member":
       return DESTINATIONS.member;
     default:

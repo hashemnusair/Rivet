@@ -5,7 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
+import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
 type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
 
@@ -150,29 +150,56 @@ async function ownerRecipient(ctx: MutationCtx, organizationId: Id<"organization
   return { reference: user.publicId ?? String(user._id), email: user.email };
 }
 
+type PlatformEmailKind = "platform_invoice_issued" | "platform_invoice_reminder" | "platform_invoice_past_due" | "platform_subscription_suspended";
+
+const TEMPLATE_VERSIONS: Record<PlatformEmailKind, string> = {
+  platform_invoice_issued: "platform-invoice-issued-auto-v1",
+  platform_invoice_reminder: "platform-invoice-reminder-v2",
+  platform_invoice_past_due: "platform-invoice-past-due-v1",
+  platform_subscription_suspended: "platform-subscription-suspended-v1",
+};
+
+/** The invoice rows an email shows: number, amount, term and due date. */
+function invoiceFacts(invoiceId: string, invoice: Record<string, unknown>) {
+  const amountMinor = invoice.amountMinor;
+  if (typeof amountMinor !== "number" || !Number.isSafeInteger(amountMinor)) return undefined;
+  const when = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : undefined;
+  return { type: "invoice" as const, invoiceNumber: invoiceId, amountMinor, currency: typeof invoice.currency === "string" ? invoice.currency : "JOD", periodStart: when(invoice.periodStart), periodEnd: when(invoice.periodEnd), dueAt: when(invoice.dueAt) };
+}
+
 async function queuePlatformEmail(ctx: MutationCtx, input: {
   organizationId: Id<"organizations">;
-  kind: "platform_invoice_reminder" | "platform_invoice_past_due" | "platform_subscription_suspended";
+  kind: PlatformEmailKind;
   invoiceId: string;
   cycleKey: string;
   recipient: { reference: string; email?: string };
+  invoice?: Record<string, unknown>;
+  /** Separates several emails of one kind for one cycle, such as each reminder. */
+  dedupeSuffix?: string;
 }): Promise<void> {
-  const templateVersion = input.kind === "platform_invoice_reminder"
-    ? "platform-invoice-reminder-v1"
-    : input.kind === "platform_invoice_past_due"
-      ? "platform-invoice-past-due-v1"
-      : "platform-subscription-suspended-v1";
-  const dedupePrefix = input.kind === "platform_invoice_reminder" ? "platform-invoice-reminder" : input.kind === "platform_invoice_past_due" ? "platform-invoice-past-due" : "platform-subscription-suspended";
+  const facts = input.invoice ? invoiceFacts(input.invoiceId, input.invoice) : undefined;
   await enqueueOperationalEmail(ctx, {
     organizationId: input.organizationId,
     kind: input.kind,
-    templateVersion,
+    templateVersion: TEMPLATE_VERSIONS[input.kind],
     recipientReference: input.recipient.reference,
     recipientEmail: input.recipient.email,
     relatedEntityType: "platform_invoice",
     relatedEntityPublicId: input.invoiceId,
-    dedupeKey: `${dedupePrefix}:${input.cycleKey}`,
+    ...(facts ? { facts } : {}),
+    dedupeKey: `${input.kind.replace(/_/g, "-")}:${input.cycleKey}${input.dedupeSuffix ? `:${input.dedupeSuffix}` : ""}`,
   });
+}
+
+/**
+ * The reminder due now for a term that ends at `boundary`: the latest of the
+ * 7, 3 and 1 day marks already passed. A job that starts late sends only the
+ * nearest one rather than all three at once.
+ */
+export function renewalReminderDay(boundary: number, now: number): number | undefined {
+  if (now >= boundary) return undefined;
+  const passed = RENEWAL_REMINDER_DAYS.filter((days) => now >= boundary - days * DAY_MS);
+  return passed.length > 0 ? Math.min(...passed) : undefined;
 }
 
 async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organizations">, now: number, planPrices: Map<string, number>): Promise<{ invoiceCreated: boolean; markedPastDue: boolean; suspended: boolean }> {
@@ -215,7 +242,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
     const id = await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "platformInvoice", publicId: invoiceId, createdAt, updatedAt: createdAt, data: invoice });
     invoiceRow = (await ctx.db.get(id)) ?? undefined;
     invoiceCreated = true;
-    if (recipient) await queuePlatformEmail(ctx, { organizationId: organization._id, kind: "platform_invoice_reminder", invoiceId, cycleKey, recipient });
+    if (recipient) await queuePlatformEmail(ctx, { organizationId: organization._id, kind: "platform_invoice_issued", invoiceId, cycleKey, recipient, invoice });
     await recordSystemAudit(ctx, {
       action: "subscription.invoice.created",
       entityType: "platform_invoice",
@@ -235,6 +262,13 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   // A platform operator may void an automated cycle as a deliberate ledger
   // exception. Preserve that decision and never recreate the same cycle.
   if (String(invoice.status) === "void") return { invoiceCreated, markedPastDue: false, suspended: false };
+  // Reminders 7, 3 and 1 days before the paid term ends, while the renewal is
+  // unpaid and the gym has not already sent its payment details.
+  const reminderDay = renewalReminderDay(boundary, now);
+  const claimSent = invoice.paymentClaim && typeof invoice.paymentClaim === "object" && (invoice.paymentClaim as Record<string, unknown>).status === "submitted";
+  if (reminderDay !== undefined && recipient && ["draft", "open"].includes(String(invoice.status)) && !claimSent) {
+    await queuePlatformEmail(ctx, { organizationId: organization._id, kind: "platform_invoice_reminder", invoiceId: invoiceRow.publicId, cycleKey, recipient, invoice, dedupeSuffix: `${reminderDay}d` });
+  }
   let markedPastDue = false;
   if (now >= dueAt && ["draft", "open"].includes(String(invoice.status))) {
     const updatedAt = Date.now();

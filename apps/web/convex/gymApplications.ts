@@ -7,6 +7,8 @@ import { notifyPlatformAdmins } from "./notificationDelivery";
 import { applicantReceivedEmail, applicantReviewEmail, applicationInternalEmail } from "./gymApplicationEmail";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
+import { checkPromo } from "./platformCommerce";
+import { normalizePromoCode } from "./firstPayment";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
 const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
@@ -25,6 +27,9 @@ const applicationArgs = {
   website: v.optional(v.string()),
   /** The language the applicant applied in; their own copies follow it. */
   language: v.optional(v.union(v.literal("en"), v.literal("ar"))),
+  /** Launch offers. (`website` above is the bot trap; this is the real add-on.) */
+  websiteRequested: v.optional(v.boolean()),
+  promoCode: v.optional(v.string()),
 };
 
 const applicationResult = v.object({
@@ -45,6 +50,8 @@ type ApplicationInput = {
   billingInterval?: "monthly" | "annual";
   idempotencyKey?: string;
   website?: string;
+  websiteRequested?: boolean;
+  promoCode?: string;
 };
 
 type ApplicationResult = {
@@ -211,6 +218,13 @@ export const create = internalMutation({
     }
 
     const now = Date.now();
+    // A code is checked when the gym applies, so a mistyped one is caught on
+    // the form. It is checked again, and priced, when the gym is set up.
+    const promoCode = normalizePromoCode(args.promoCode);
+    if (promoCode) {
+      const promo = await checkPromo(ctx, promoCode, values.plan, now);
+      if (!promo.valid) domainError("VALIDATION_ERROR", "This promo code cannot be used.", { fieldErrors: { promoCode: [promo.reason ?? "not_found"] } });
+    }
     const publicId = crypto.randomUUID();
     const applicationDocumentId = await ctx.db.insert("gymApplications", {
       publicId,
@@ -223,6 +237,8 @@ export const create = internalMutation({
       plan: values.plan,
       billingInterval: values.billingInterval,
       ...(args.language ? { language: args.language } : {}),
+      ...(args.websiteRequested ? { websiteRequested: true } : {}),
+      ...(promoCode ? { promoCode } : {}),
       status: "pending",
       notificationStatus: "pending",
       submittedAt: now,
@@ -411,7 +427,7 @@ export const submit = action({
     if (created.duplicate && created.notificationStatus === "sent") return { applicationId: created.applicationId, status: created.status, notificationStatus: created.notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: true };
 
     const recipients = recipientList(process.env.RIVET_APPLICATION_RECIPIENTS);
-    const values = inputValues(args);
+    const values = { ...inputValues(args), websiteRequested: args.websiteRequested === true, promoCode: normalizePromoCode(args.promoCode) || undefined };
     const internalCopy = applicationInternalEmail(values, process.env.RIVET_SITE_URL);
     const applicantLanguage = args.language ?? "en";
     const applicantCopy = applicantReceivedEmail(values, applicantLanguage);

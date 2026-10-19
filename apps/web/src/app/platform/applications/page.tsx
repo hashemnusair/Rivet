@@ -335,6 +335,8 @@ function ApplicationDetail({ application, note, setNote, busyDecision, busyNote,
               <Detail label={t("common.label.email")} value={application.email} ltr />
               <Detail label={t("platformConsole.applications.contactNumber")} value={application.contactNumber} ltr />
               <Detail label={t("platformConsole.applications.chosenPlan")} value={application.plan} />
+              {application.websiteRequested ? <Detail label={t("commerce.lines.website")} value={t("commerce.applications.website")} /> : null}
+              {application.promoCode ? <Detail label={t("commerce.offer.promoLabel")} value={application.promoCode} ltr /> : null}
             </dl>
           </section>
           <section>

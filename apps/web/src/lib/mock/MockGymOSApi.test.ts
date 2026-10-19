@@ -365,24 +365,22 @@ describe("platform gym applications", () => {
 
     const snapshot = await api.getPlatformSnapshot();
     const listing = snapshot.gyms.find((gym) => gym.name === approved.gymName);
+    // Pay first: the new gym is invoiced and hidden until its first payment is confirmed.
     expect(listing).toMatchObject({
-      subscriptionStatus: "trial",
+      subscriptionStatus: "pending_payment",
       rivetPlan: approved.plan,
       billingInterval: approved.billingInterval,
       isProvisioned: true,
-      isPublic: true,
+      isPublic: false,
       branchCount: 1,
       branches: [expect.objectContaining({ internalBranchId: result.branchId })],
     });
-    const publicListings = await api.listMarketplaceGyms();
-    const publicListing = publicListings.find((gym) => gym.id === listing?.id);
-    expect(publicListing).toBeDefined();
-    expect(publicListing).not.toHaveProperty("isProvisioned");
-    expect(snapshot.overview.gymCounts.trial).toBe(1);
-    expect(snapshot.overview.branchCount).toBe(3);
+    expect((await api.listMarketplaceGyms()).find((gym) => gym.id === listing?.id)).toBeUndefined();
+    const firstInvoice = snapshot.invoices.find((invoice) => invoice.gymId === listing?.id);
+    expect(firstInvoice).toMatchObject({ firstPayment: true, status: "open", onboardingFeeMinor: 75_000 });
 
     const detail = await api.getPlatformGymDetail(listing!.id);
-    expect(detail.organization).toMatchObject({ state: "available", value: { id: result.organizationId, name: approved.gymName, status: "trial" } });
+    expect(detail.organization).toMatchObject({ state: "available", value: { id: result.organizationId, name: approved.gymName, status: "pending_payment" } });
     expect(detail.branches).toMatchObject({ state: "available", value: [expect.objectContaining({ id: result.branchId, code: "MAIN" })] });
     expect(detail.owner).toMatchObject({ state: "available", value: { name: approved.ownerName, email: approved.email } });
     expect(detail.activity).toMatchObject({ state: "available", value: [expect.objectContaining({ action: "gym.provisioned" })] });
@@ -393,6 +391,13 @@ describe("platform gym applications", () => {
       provisionedBranchId: result.branchId,
       clerkInvitationStatus: "pending",
     });
+
+    await api.recordPlatformInvoicePayment({ invoiceId: firstInvoice!.id, reference: "CLIQ-1", reason: "Checked the CliQ payment." });
+    const paid = (await api.getPlatformSnapshot()).gyms.find((gym) => gym.id === listing?.id);
+    expect(paid).toMatchObject({ subscriptionStatus: "active", isPublic: true, currentPeriodEndsAt: expect.any(String) });
+    const publicListing = (await api.listMarketplaceGyms()).find((gym) => gym.id === listing?.id);
+    expect(publicListing).toBeDefined();
+    expect(publicListing).not.toHaveProperty("isProvisioned");
   });
 
   it("reports a busy provisioning attempt instead of racing a second mock retry", async () => {

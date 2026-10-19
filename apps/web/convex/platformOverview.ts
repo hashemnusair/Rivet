@@ -120,10 +120,11 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
   });
   const billingCurrencyMismatches = provisionedInvoices.length - eligibleInvoices.length;
   const planPrices = new Map(input.plans.map((plan) => [plan.name, plan.priceMinor]));
-  const gymCounts = { trial: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
+  const gymCounts = { trial: 0, pending_payment: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
 
   for (const gym of provisionedGyms) {
     if (gym.subscriptionStatus === "trial") gymCounts.trial += 1;
+    else if (gym.subscriptionStatus === "pending_payment") gymCounts.pending_payment += 1;
     else if (gym.subscriptionStatus === "active") gymCounts.active += 1;
     else if (gym.subscriptionStatus === "overdue" || gym.subscriptionStatus === "past_due") gymCounts.past_due += 1;
     else if (gym.subscriptionStatus === "suspended") gymCounts.suspended += 1;
