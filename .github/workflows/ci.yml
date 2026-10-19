@@ -170,7 +170,7 @@ jobs:
     # On one runner against the dev server the preview suite took ~48 minutes,
     # most of it compiling each route on first visit. Each shard builds the
     # mock preview once as an approved preview bundle and serves it with
-    # `next start`; two workers share the bundle. Tests are fully parallel, so
+    # `next start`; three workers share the bundle. Tests are fully parallel, so
     # shards split by test, not by file. The dev-only design gallery is served
     # by that bundle too (RIVET_DESIGN_PREVIEW), so no dev-server job remains.
     # A shard failure fails the workflow.
@@ -239,7 +239,7 @@ jobs:
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
-          PLAYWRIGHT_WORKERS: "2"
+          PLAYWRIGHT_WORKERS: "3"
         run: pnpm test:e2e --shard=${{ matrix.shard }}/5
       - name: Save failed browser screenshots and context
         if: failure()
