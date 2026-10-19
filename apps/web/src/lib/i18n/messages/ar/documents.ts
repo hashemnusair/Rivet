@@ -46,6 +46,7 @@ export const documents: typeof EnDocuments = {
   "swift": "رمز سويفت: {swift}",
   "cliq": "كليك",
   "alias": "الاسم المستعار: {alias}",
+  "cliqName": "الاسم: {name}",
   "bankInstructions": "حوالة بنكية أو كليك. يرسل RIVET بيانات الحساب مع كل فاتورة، ويؤكدها عند الطلب عبر {email}.",
   "quoteReference": "يرجى استخدام {reference} كرقم مرجع للدفعة.",
   "suspensionNotice": "بموجب اتفاقية الاشتراك، قد يُعلَّق الوصول بعد إشعار مدته 7 أيام عند تجاوز موعد دفع الفاتورة.",

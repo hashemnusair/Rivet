@@ -302,6 +302,7 @@ export const settingsDetails: typeof English = {
   "monthlyFee": "{amount} شهريًا",
   "viewInvoice": "عرض الفاتورة {number}",
   "ownerContact": "{name} (مالك النادي)",
+  "paymentNotMatchedEmail": "لم تتم مطابقة دفعة RIVET",
   "unitDays": "أيام",
   "unitMinutes": "دقائق",
   "unitHours": "ساعات",

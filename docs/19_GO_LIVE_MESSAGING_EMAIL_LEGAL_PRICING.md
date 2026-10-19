@@ -54,6 +54,7 @@ to an operational sandbox mailbox.
 | Trial request confirmation / status | Member trial request, then staff trial-status change; requester | `convex/domain.ts` | Inbox delivery pending |
 | Support acknowledgement / reply / resolution | Case creation, platform reply, platform resolution; case creator/contact | `convex/domain.ts` | Inbox delivery pending |
 | Platform invoice issued / paid / past due | Platform invoice actions and subscription changes; gym owner; invoice PDF | `convex/domain.ts` | Resend shows issued and paid examples delivered to a test-owner mailbox; that recipient inbox was not inspected |
+| Platform payment sent back | `platform.invoice.payment_reject`; gym owner; RIVET's message and the invoice facts; once per set of details sent back | `convex/platformCommerce.ts`, `platform_payment_returned` | Code and Convex tests only (19 October) |
 | Platform upcoming-invoice / overdue / suspension notice | Hourly subscription reconciliation, only when its explicit enable flag is on; gym owner | `convex/subscriptionReconciliation.ts` | Production reconciliation flag absent; automated reconciliation is off |
 | Platform subscription suspended / cancelled | Explicit platform subscription-status transition; gym owner | `convex/domain.ts` | Inbox delivery pending |
 | PT package paid | Full package payment activates credits; member | `convex/domain.ts` | Inbox delivery pending |
@@ -508,8 +509,10 @@ order.
 
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals
-with the total due at 20pt, and a how-to-pay panel whose bank and CliQ
-details are labelled placeholders. It is attached to the invoice issued,
+with the total due at 20pt, and a how-to-pay panel. Emailed invoices print
+the CliQ and bank details from console → Billing → **Where gyms pay**; with
+none set, the `BRAND_LEGAL` details, and with neither, a line saying RIVET
+sends them. The PDF opened in the browser still prints that line. It is attached to the invoice issued,
 past due and paid emails. Tax treatment is shown as undecided rather than
 guessed.
 
@@ -634,7 +637,7 @@ check), so the code catalogue applies there once Convex is deployed.
    for a first payment the paid term starts at confirmation, the gym becomes
    `active`, its listing becomes public, and the paid email goes out. **Send
    back** (`platform.invoice.payment_reject`) records a message the owner sees
-   on the payment page.
+   on the payment page and gets by email (`platform_payment_returned`).
 
 A gym stopped for an unpaid invoice (`suspended`, not archived) gets the same
 billing-only access, so it can pay and be restored. Staff of an unpaid gym
@@ -688,8 +691,9 @@ discount (`subscriptionDiscountMinor`) is excluded from later term credits.
   (names-only check, 19 October). Without it no renewal invoices, reminders,
   past-due marking or suspension run. Set it to `1` once a paying gym exists.
 - Enter RIVET's CliQ alias and bank details in console → Billing → **Where
-  gyms pay**. Until then the payment page tells gyms to contact RIVET.
-  `BRAND_LEGAL` bank details on invoice PDFs remain separate and empty.
+  gyms pay**. Until then the payment page tells gyms to contact RIVET and
+  emailed invoice PDFs say RIVET sends the details; once set, both show them.
+  `BRAND_LEGAL` bank details stay empty and are only a fallback.
 - Deploy Convex (`pnpm convex:deploy`) together with the frontend; the
   frontend alone would route new gyms to a payment page the backend does not
   serve.

@@ -252,7 +252,7 @@ export const commerce: typeof EnCommerce = {
     reasonDefault: "تم التحقق من دفعة {method}، رقم المرجع {reference}.",
     confirmed: "تم تأكيد الدفعة",
     rejectTitle: "إرجاع الدفعة إلى {gym}",
-    rejectBody: "اكتب للنادي ما يجب تصحيحه. تظهر هذه الرسالة في صفحة الدفع الخاصة به.",
+    rejectBody: "اكتب للنادي ما يجب تصحيحه. نرسل هذه الرسالة إلى مالك النادي بالبريد الإلكتروني، وتظهر في صفحة الدفع الخاصة به.",
     rejectReason: "رسالة إلى النادي",
     rejected: "تم إرجاع الدفعة",
   },

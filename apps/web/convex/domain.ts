@@ -63,7 +63,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -256,7 +256,7 @@ const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_payment_returned", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -9225,7 +9225,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             recipientReference: publicUserId(billedRecipient.user),
             recipientEmail: billedRecipient.user.email,
             dedupeKey: `subscription-change-invoice:${invoiceId}`,
-            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone })] : undefined,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone, paymentDetails: (await commercialSettings(ctx)).paymentDetails })] : undefined,
           });
         }
       }
@@ -9595,8 +9595,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
-        // The invoice travels with the notice, as the paperwork it is, in the same language.
-        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone })],
+        // The invoice travels with the notice, as the paperwork it is, in the
+        // same language, with where to pay as set in the console.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone, paymentDetails: (await commercialSettings(ctx)).paymentDetails })],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {

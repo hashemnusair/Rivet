@@ -2672,6 +2672,8 @@ export class MockGymOSApi implements GymOSApi {
       const before = { ...invoice.paymentClaim };
       invoice.paymentClaim = { ...invoice.paymentClaim, status: "rejected", rejectedAt: nowISO(), rejectionReason: input.reason.trim() };
       this.recordPlatformAudit({ action: "invoice.payment_rejected", entityType: "platform_invoice", entityPublicId: invoice.id, entityLabel: invoice.id, summary: "Sent payment details back to the gym", reason: input.reason.trim(), before, after: { ...invoice.paymentClaim } });
+      // Parity with Convex: the gym owner is emailed our message.
+      this.operationalEmailKinds.push("platform_payment_returned");
       return { ...invoice, paymentClaim: { ...invoice.paymentClaim } };
     });
   }

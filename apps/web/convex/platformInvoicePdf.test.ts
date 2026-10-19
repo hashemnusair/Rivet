@@ -93,4 +93,27 @@ describe("invoice document", () => {
     expect(blocks).toContain("Credit, 4 unused days of the previous term");
     expect(blocks).toContain("-JOD 19.867");
   });
+
+  it("prints where to pay as set in the console, and the general line when nothing is set", () => {
+    const details = { cliqAlias: "RIVETJO", cliqName: "RIVET Technologies", bankName: "Cairo Amman Bank", accountName: "RIVET Technologies LLC", iban: "JO71CBJO0000000000001234567890", note: "Write the invoice number in the transfer note." };
+    const blocks = JSON.stringify(invoicePdfBlocks({ ...invoice, paymentDetails: details }));
+    for (const line of ["Bank transfer", "Bank Cairo Amman Bank", "Account name RIVET Technologies LLC", "IBAN JO71CBJO0000000000001234567890", "Alias RIVETJO", "Name RIVET Technologies", details.note, "Quote INV-2026-000184 as the payment reference."]) {
+      expect(blocks).toContain(line);
+    }
+    expect(blocks).not.toContain("confirms them on request");
+    // A CliQ alias alone is enough, and an empty bank is left out.
+    const cliqOnly = JSON.stringify(invoicePdfBlocks({ ...invoice, paymentDetails: { ...details, iban: "", bankName: "", accountName: "" } }));
+    expect(cliqOnly).toContain("Alias RIVETJO");
+    expect(cliqOnly).not.toContain("Bank transfer");
+    // Nothing set, or only a note: the general line, with the note under it.
+    expect(JSON.stringify(invoicePdfBlocks(invoice))).toContain("confirms them on request at sales@rivetjo.com");
+    const noteOnly = JSON.stringify(invoicePdfBlocks({ ...invoice, paymentDetails: { cliqAlias: "", iban: "", note: details.note } }));
+    expect(noteOnly).toContain("confirms them on request at sales@rivetjo.com");
+    expect(noteOnly).toContain(details.note);
+    // The stored invoice projection carries the details through, and Arabic labels them.
+    expect(invoicePdfInput("INV-1", { amountMinor: 1_000 }, { name: "Gym" }, { paymentDetails: details }).paymentDetails).toEqual(details);
+    const arabic = JSON.stringify(invoicePdfBlocks({ ...invoice, locale: "ar", paymentDetails: details }));
+    expect(arabic).toContain("الاسم: RIVET Technologies");
+    expect(arabic).toContain("حوالة بنكية");
+  });
 });

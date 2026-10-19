@@ -8,7 +8,7 @@ import { isolateLtr } from "../src/lib/i18n/bidi";
  * test. Anything RIVET has not decided, tax in particular, stays a visible
  * placeholder rather than an invented number.
  */
-import { invoicePdfFilename, renderInvoicePdfBase64, type InvoicePdfInput, type InvoicePdfStatus } from "./platformInvoicePdf";
+import { invoicePdfFilename, renderInvoicePdfBase64, type InvoicePaymentDetails, type InvoicePdfInput, type InvoicePdfStatus } from "./platformInvoicePdf";
 
 export interface StoredInvoice {
   amountMinor?: unknown;
@@ -43,7 +43,12 @@ export interface InvoiceCustomer {
   plan?: string;
 }
 
-export interface InvoiceDocumentContext { locale?: "en" | "ar"; timeZone?: string }
+export interface InvoiceDocumentContext {
+  locale?: "en" | "ar";
+  timeZone?: string;
+  /** Where RIVET is paid, from the console, printed under "How to pay". */
+  paymentDetails?: InvoicePaymentDetails;
+}
 
 const MINOR_EXPONENT: Readonly<Record<string, number>> = { JOD: 3, KWD: 3, BHD: 3, OMR: 3, TND: 3 };
 
@@ -154,6 +159,7 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
           balance: amountText(0, currency),
         }
       : undefined,
+    ...(context.paymentDetails ? { paymentDetails: context.paymentDetails } : {}),
   };
 }
 

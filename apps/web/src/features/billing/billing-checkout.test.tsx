@@ -107,7 +107,8 @@ describe("the gym's payment page", () => {
     expect(await screen.findByText("We could not match your payment")).toBeInTheDocument();
     expect(screen.getByText(/No transfer with this reference arrived/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send the new details" })).toBeInTheDocument();
-    void api;
+    // Parity with Convex: the owner is emailed the message as well.
+    expect((await api.getOperationalEmailSettings()).enabledKinds).toContain("platform_payment_returned");
   });
 
   it("tells staff only the owner can pay, and says when nothing is due", async () => {

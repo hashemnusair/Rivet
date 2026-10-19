@@ -176,6 +176,86 @@ describe("pay first", () => {
     expect(checkout.invoice.paymentClaim).toMatchObject({ status: "rejected", rejectionReason: "No transfer with this reference arrived." });
     expect((await t.run((ctx) => ctx.db.get(organizationId)))?.status).toBe("pending_payment");
   });
+
+  it("emails the owner our message each time payment details are sent back", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId } = await seedPendingGym(t, { slug: "returned-mail" });
+    const owner = t.withIdentity({ subject: "clerk-owner-returned-mail" });
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const invoice = await firstInvoice(t, organizationId);
+    const submit = (reference: string) => owner.mutation(api.domain.mutate, operation("billing.payment.submit", { invoiceId: invoice.publicId, method: "cliq", reference, payerName: "Gym Owner", paidOn: "2026-10-01" }));
+    const sendBack = (reason: string) => platform.mutation(api.domain.mutate, operation("platform.invoice.payment_reject", { invoiceId: invoice.publicId, reason }));
+    const returned = async () => (await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect())).filter((row) => row.kind === "platform_payment_returned");
+
+    await submit("CLIQ-1");
+    expect(await returned()).toHaveLength(0);
+    await sendBack("No CliQ payment with reference CLIQ-1 arrived.");
+    const [first] = await returned();
+    expect(first).toMatchObject({
+      organizationId,
+      recipientEmail: "owner@returned-mail.jo",
+      recipientReference: "owner-returned-mail",
+      language: "en",
+      templateVersion: "platform-payment-returned-v1",
+      relatedEntityType: "platform_invoice",
+      relatedEntityPublicId: invoice.publicId,
+      subject: "We could not match your RIVET payment",
+    });
+    expect(first!.text).toContain("Our message: No CliQ payment with reference CLIQ-1 arrived.");
+    expect(first!.text).toContain(`Invoice number: ${invoice.publicId}`);
+    expect(first!.text).toContain("Amount: ");
+    expect(first!.text).toContain("Due date: ");
+    expect(first!.text).toContain("/billing");
+    expect(first!.html).toContain("No CliQ payment with reference CLIQ-1 arrived.");
+
+    // The same details cannot be sent back twice, so there is no second email.
+    await expectCode(sendBack("Sent back again"), "CONFLICT");
+    expect(await returned()).toHaveLength(1);
+
+    // Details sent again and returned again get their own email, in the gym's language.
+    await t.run((ctx) => ctx.db.patch(organizationId, { defaultLanguage: "ar" }));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await submit("CLIQ-2");
+    await sendBack("The amount was JOD 100.000, not the whole invoice.");
+    const emails = await returned();
+    expect(emails).toHaveLength(2);
+    expect(new Set(emails.map((row) => row.dedupeKey)).size).toBe(2);
+    const second = emails.find((row) => row._id !== first!._id)!;
+    expect(second).toMatchObject({ language: "ar", subject: "لم نتمكن من مطابقة دفعتك إلى RIVET" });
+    expect(second.text).toContain("رسالتنا: The amount was JOD 100.000, not the whole invoice.");
+  });
+
+  it("prints the console's payment details on emailed invoices, and a general line until they are set", async () => {
+    const t = convexTest(schema, modules);
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const paidInvoicePdf = async (slug: string) => {
+      const { organizationId } = await seedPendingGym(t, { slug });
+      const invoice = await firstInvoice(t, organizationId);
+      await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: invoice.publicId, reference: `CLIQ-${slug}`, reason: "Checked CliQ payment", paidAt: today }));
+      const email = (await t.run((ctx) => ctx.db.query("operationalEmailDeliveries").collect())).find((row) => row.kind === "platform_invoice_paid" && row.organizationId === organizationId);
+      return atob(email!.attachments![0]!.contentBase64);
+    };
+
+    const generic = await paidInvoicePdf("before-details");
+    expect(generic).toContain("(Bank transfer or CliQ. RIVET sends the account details");
+    expect(generic).not.toContain("IBAN ");
+
+    await platform.mutation(api.domain.mutate, operation("platform.commerce.payment_details.update", {
+      cliqAlias: "RIVETJO",
+      cliqName: "RIVET Technologies",
+      bankName: "Cairo Amman Bank",
+      accountName: "RIVET Technologies LLC",
+      iban: "JO71 CBJO 0000 0000 0000 1234 5678 90",
+      note: "Write the invoice number in the transfer note.",
+      reason: "Bank account opened",
+    }));
+    const configured = await paidInvoicePdf("after-details");
+    for (const line of ["IBAN JO71CBJO0000000000001234567890", "Bank Cairo Amman Bank", "Account name RIVET Technologies LLC", "Alias RIVETJO", "Name RIVET Technologies", "Write the invoice number in the transfer note."]) {
+      expect(configured).toContain(`(${line}) Tj`);
+    }
+    expect(configured).not.toContain("RIVET sends the account details");
+  });
 });
 
 describe("renewal warnings", () => {

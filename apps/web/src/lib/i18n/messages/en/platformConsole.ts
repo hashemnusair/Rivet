@@ -368,6 +368,7 @@ export const platformConsole = {
       platformInvoiceReminder: "Platform invoice reminder",
       platformInvoicePaid: "Platform invoice paid",
       platformInvoicePastDue: "Platform invoice past due",
+      platformPaymentReturned: "Platform payment sent back",
       platformSubscriptionSuspended: "Platform subscription suspended",
       platformSubscriptionCancelled: "Platform subscription cancelled",
       ptPackagePaid: "Personal training package paid",

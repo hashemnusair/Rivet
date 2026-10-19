@@ -20,6 +20,17 @@ export interface InvoicePdfLine {
   amount: string;
 }
 
+/** Where RIVET is paid, as set in the console. A field left empty is not printed. */
+export interface InvoicePaymentDetails {
+  cliqAlias?: string;
+  cliqName?: string;
+  bankName?: string;
+  accountName?: string;
+  iban?: string;
+  /** Extra instructions, printed as written. */
+  note?: string;
+}
+
 export interface InvoicePdfInput {
   locale?: "en" | "ar";
   number: string;
@@ -39,6 +50,8 @@ export interface InvoicePdfInput {
   total: string;
   /** Present once the payment is recorded. */
   payment?: { reference?: string; paidDate?: string; amount?: string; balance?: string };
+  /** RIVET's payment details from the console; without them the brand's own, then a general line. */
+  paymentDetails?: InvoicePaymentDetails;
 }
 
 const CHIPS: Record<InvoicePdfStatus, { label: string; tone: "success" | "warning" | "danger" | "muted" }> = {
@@ -55,6 +68,34 @@ function chipFor(input: InvoicePdfInput): { label: string; tone: "success" | "wa
   const keys = { draft: "draft", open: "open", paid: "paid", past_due: "pastDue", failed: "failed", void: "void" } as const;
   const chip = { ...CHIPS[input.status], label: t(`documents.${keys[input.status]}`) };
   return input.status === "paid" && input.payment?.paidDate ? { ...chip, label: t("documents.paidOn", { date: input.payment.paidDate }) } : chip;
+}
+
+/**
+ * The "How to pay" accounts: the console's details when a CliQ alias or an
+ * IBAN is set (as on the gym's payment page), otherwise the brand's own,
+ * otherwise a line saying RIVET sends them.
+ */
+function paymentAccountBlocks(input: InvoicePdfInput, t: ReturnType<typeof createTranslator>, reference: (value: string) => string): PdfBlock[] {
+  const details = input.paymentDetails;
+  if (details?.iban || details?.cliqAlias) {
+    return [{
+      type: "columns",
+      columns: [
+        ...(details.iban ? [{ heading: t("documents.bankTransfer"), lines: [...(details.bankName ? [{ text: t("documents.bank", { bank: details.bankName }), size: 9 }] : []), ...(details.accountName ? [{ text: t("documents.accountName", { name: details.accountName }), size: 9 }] : []), { text: t("documents.iban", { iban: reference(details.iban) }), size: 9 }] }] : []),
+        ...(details.cliqAlias ? [{ heading: t("documents.cliq"), lines: [{ text: t("documents.alias", { alias: reference(details.cliqAlias) }), size: 9 }, ...(details.cliqName ? [{ text: t("documents.cliqName", { name: details.cliqName }), size: 9 }] : [])] }] : []),
+      ],
+    }];
+  }
+  if (BRAND_LEGAL.bank) {
+    return [{
+      type: "columns",
+      columns: [
+        { heading: t("documents.bankTransfer"), lines: [{ text: t("documents.bank", { bank: BRAND_LEGAL.bank.bank }), size: 9 }, { text: t("documents.accountName", { name: BRAND_LEGAL.bank.accountName }), size: 9 }, { text: t("documents.iban", { iban: reference(BRAND_LEGAL.bank.iban) }), size: 9 }, ...(BRAND_LEGAL.bank.swift ? [{ text: t("documents.swift", { swift: reference(BRAND_LEGAL.bank.swift) }), size: 9 }] : [])] },
+        ...(BRAND_LEGAL.cliqAlias ? [{ heading: t("documents.cliq"), lines: [{ text: t("documents.alias", { alias: reference(BRAND_LEGAL.cliqAlias) }), size: 9 }] }] : []),
+      ],
+    }];
+  }
+  return [{ type: "paragraph", text: t("documents.bankInstructions", { email: reference(BRAND_CONTACT.email) }), size: 9 }];
 }
 
 /** The blocks of the invoice, in order. Exported so tests can read them. */
@@ -126,15 +167,8 @@ export function invoicePdfBlocks(input: InvoicePdfInput): PdfBlock[] {
       type: "panel",
       blocks: [
         { type: "paragraph", text: t("documents.howToPay"), font: "bold", size: 10 },
-        ...(BRAND_LEGAL.bank
-          ? [{
-              type: "columns" as const,
-              columns: [
-                { heading: t("documents.bankTransfer"), lines: [{ text: t("documents.bank", { bank: BRAND_LEGAL.bank.bank }), size: 9 }, { text: t("documents.accountName", { name: BRAND_LEGAL.bank.accountName }), size: 9 }, { text: t("documents.iban", { iban: reference(BRAND_LEGAL.bank.iban) }), size: 9 }, ...(BRAND_LEGAL.bank.swift ? [{ text: t("documents.swift", { swift: reference(BRAND_LEGAL.bank.swift) }), size: 9 }] : [])] },
-                ...(BRAND_LEGAL.cliqAlias ? [{ heading: t("documents.cliq"), lines: [{ text: t("documents.alias", { alias: reference(BRAND_LEGAL.cliqAlias) }), size: 9 }] }] : []),
-              ],
-            }]
-          : [{ type: "paragraph" as const, text: t("documents.bankInstructions", { email: reference(BRAND_CONTACT.email) }), size: 9 }]),
+        ...paymentAccountBlocks(input, t, reference),
+        ...(input.paymentDetails?.note ? [{ type: "paragraph" as const, text: input.paymentDetails.note, size: 9 }] : []),
         { type: "paragraph", text: t("documents.quoteReference", { reference: reference(input.number) }), size: 9 },
       ],
     },
