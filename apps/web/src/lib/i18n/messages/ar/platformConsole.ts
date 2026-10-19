@@ -460,6 +460,7 @@ export const platformConsole = {
     },
     detail: {
       editDetails: "تعديل التفاصيل",
+      sections: "أقسام النادي",
       progress: "التقدّم",
       clearFollowUp: "مسح التاريخ",
       nextActionPlaceholder: "مثال: اتصل بالمدير يوم الأحد",

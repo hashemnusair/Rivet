@@ -460,6 +460,7 @@ export const platformConsole = {
     },
     detail: {
       editDetails: "Edit details",
+      sections: "Gym sections",
       progress: "Progress",
       clearFollowUp: "Clear date",
       nextActionPlaceholder: "For example: call the manager on Sunday",
