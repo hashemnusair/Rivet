@@ -14,10 +14,13 @@ export interface PlanDefinition {
   operationalEmails: number;
 }
 
+/** One onboarding fee for every published plan, charged once with the first invoice. */
+export const ONBOARDING_FEE_MINOR = 75_000;
+
 export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
-  { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600 },
-  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 },
-  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000 },
+  { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: ONBOARDING_FEE_MINOR, operationalEmails: 600 },
+  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: ONBOARDING_FEE_MINOR, operationalEmails: 1_500 },
+  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: ONBOARDING_FEE_MINOR, operationalEmails: 5_000 },
   // Retained for negotiated/legacy contracts; public Enterprise remains quote-only.
   { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000 },
 ];
@@ -25,7 +28,7 @@ export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
 /** A year is twelve months billed once, at 5% off. */
 export const ANNUAL_DISCOUNT_PERCENT = 5 as const;
 export const ANNUAL_DISCOUNT = 0.95;
-export const COMMERCIAL_TERMS_VERSION = "2026-10-07";
+export const COMMERCIAL_TERMS_VERSION = "2026-10-19";
 
 /** How each plan is drawn on a pricing card. Presentation, not pricing. */
 export const PLAN_TONE: Readonly<Record<PlanDefinition["name"], "paper" | "signal" | "night">> = {

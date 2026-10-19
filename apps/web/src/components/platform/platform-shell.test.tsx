@@ -117,7 +117,7 @@ describe("PlatformShell navigation", () => {
 
     const sidebar = screen.getByRole("navigation", { name: "Platform navigation" }).closest("aside")!;
     const links = within(sidebar).getAllByRole("link");
-    expect(links).toHaveLength(11);
+    expect(links).toHaveLength(12);
     for (const link of links) expect(link).toHaveAttribute("data-prefetch", "false");
 
     const nav = within(sidebar).getByRole("navigation", { name: "Platform navigation" });

@@ -63,7 +63,7 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
  */
 export function directEntryPath(identity: RivetIdentity): string | null {
   const destination = destinationFor(identity);
-  if (destination.area === "platform" || destination.area === "member") return destination.href;
+  if (destination.area === "platform" || destination.area === "member" || destination.area === "billing") return destination.href;
   if (destination.area === "gym" && identity.memberships[0]?.branchScope !== "selected") return destination.href;
   return null;
 }
@@ -97,6 +97,7 @@ function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audi
       if (staffDestination.area === "organization-selection") return <OrganizationSelection identity={identity} />;
       return <GymEntry identity={identity} />;
     }
+    if (identity.billingAccess?.length) return <BillingEntry />;
     if (identity.gymAccessUnavailable && identity.invitationClaimEligible) return <StaffInvitationRecovery />;
     if (identity.gymAccessUnavailable) return <UnavailableGymEntry />;
     return <NoGymTeamEntry />;
@@ -115,6 +116,7 @@ function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audi
   const destination = destinationFor(identity);
   if (destination.area === "platform") return <AdminEntry identity={identity} />;
   if (destination.area === "gym") return <GymEntry identity={identity} />;
+  if (destination.area === "billing") return <BillingEntry />;
   if (destination.area === "unavailable") {
     return identity.invitationClaimEligible ? <StaffInvitationRecovery /> : <UnavailableGymEntry />;
   }
@@ -413,6 +415,16 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
   }
 
   return <AutomaticEntry label={t("auth.identity.openingConsole")} />;
+}
+
+/** An owner whose gym is waiting for payment goes straight to the payment page. */
+function BillingEntry() {
+  const router = useRouter();
+  const { t } = useLocale();
+  useEffect(() => {
+    router.replace("/billing");
+  }, [router]);
+  return <AutomaticEntry label={t("auth.identity.openingPayment")} />;
 }
 
 function AutomaticEntry({ label }: { label: string }) {

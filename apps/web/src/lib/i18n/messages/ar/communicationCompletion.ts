@@ -65,6 +65,9 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
         contactNumber: "رقم التواصل",
         plan: "الباقة المختارة",
         planValue: "{plan} (فوترة {interval})",
+        website: "موقع إلكتروني مخصص",
+        websiteRequested: "تم طلبه",
+        promoCode: "رمز الخصم",
       },
       text: { gym: "النادي", address: "العنوان", owner: "مالك النادي", email: "البريد الإلكتروني", contact: "رقم التواصل", plan: "الباقة" },
       interval: { monthly: "شهرية", annual: "سنوية" },
@@ -127,13 +130,13 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
       },
       platform_invoice_issued: {
         subject: "تم إصدار فاتورة RIVET",
-        body: "تم إصدار فاتورة منصة RIVET للنادي. يرجى تسجيل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق.",
-        action: "عرض الفاتورة",
+        body: "تم إصدار فاتورة RIVET لناديك. يرجى دفعها عبر كليك أو حوالة بنكية قبل تاريخ الاستحقاق الموضّح أدناه، ثم إرسال بيانات الدفع إلينا من صفحة الدفع.",
+        action: "دفع الفاتورة",
       },
       platform_invoice_reminder: {
-        subject: "فاتورة RIVET جاهزة",
-        body: "تم إصدار فاتورة منصة RIVET التالية. يرجى تسجيل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق. يستحق الدفع في التاريخ الموضّح.",
-        action: "عرض الفاتورة",
+        subject: "ينتهي اشتراكك في RIVET قريبًا",
+        body: "تنتهي مدة اشتراكك المدفوعة في RIVET قريبًا، وفاتورة التجديد لم تُدفع بعد. يرجى دفعها قبل تاريخ الاستحقاق الموضّح أدناه ليبقى الوصول متاحًا لفريق عملك. إذا كنت قد دفعت بالفعل، يرجى إرسال بيانات الدفع إلينا من صفحة الدفع.",
+        action: "الدفع الآن",
       },
       platform_invoice_paid: {
         subject: "تم تسجيل فاتورة RIVET كمدفوعة",
@@ -185,6 +188,7 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
 
   notifications: {
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
+    paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",
     provisioningFailed: "تعذّر تجهيز النادي",
     agreementSigned: "وقّع {gym} اتفاقية الاشتراك",

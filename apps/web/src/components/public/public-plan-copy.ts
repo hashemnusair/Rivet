@@ -46,6 +46,7 @@ export function formatPublicJod(amountMinor: number, f: Formatters, locale: Loca
 const DESTINATION_MESSAGES = {
   gym: { label: "publicCompletion.authHandoff.destinations.gym.label", action: "publicCompletion.authHandoff.destinations.gym.action" },
   reception: { label: "publicCompletion.authHandoff.destinations.reception.label", action: "publicCompletion.authHandoff.destinations.reception.action" },
+  billing: { label: "publicCompletion.authHandoff.destinations.billing.label", action: "publicCompletion.authHandoff.destinations.billing.action" },
   member: { label: "publicCompletion.authHandoff.destinations.member.label", action: "publicCompletion.authHandoff.destinations.member.action" },
   platform: { label: "publicCompletion.authHandoff.destinations.platform.label", action: "publicCompletion.authHandoff.destinations.platform.action" },
   resolving: { label: "publicCompletion.authHandoff.destinations.resolving.label", action: "publicCompletion.authHandoff.destinations.resolving.action" },

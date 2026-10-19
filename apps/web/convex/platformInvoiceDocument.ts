@@ -15,6 +15,12 @@ export interface StoredInvoice {
   /** The term at list price, before any credit. Defaults to the amount. */
   subtotalMinor?: unknown;
   onboardingFeeMinor?: unknown;
+  /** A first invoice's website add-on, and whether a free place covered it. */
+  websiteMinor?: unknown;
+  websiteFree?: unknown;
+  /** A promo code's discount on a first invoice. */
+  discountMinor?: unknown;
+  promoCode?: unknown;
   /** What the unfinished part of the replaced term was worth. */
   creditMinor?: unknown;
   currency?: unknown;
@@ -96,7 +102,10 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
   const currency = typeof invoice.currency === "string" ? invoice.currency : "JOD";
   const amountMinor = typeof invoice.amountMinor === "number" ? invoice.amountMinor : 0;
   const creditMinor = typeof invoice.creditMinor === "number" && invoice.creditMinor > 0 ? invoice.creditMinor : 0;
-  const subtotalMinor = typeof invoice.subtotalMinor === "number" && invoice.subtotalMinor > 0 ? invoice.subtotalMinor : amountMinor + creditMinor;
+  const discountMinor = typeof invoice.discountMinor === "number" && invoice.discountMinor > 0 ? invoice.discountMinor : 0;
+  const websiteMinor = typeof invoice.websiteMinor === "number" && invoice.websiteMinor > 0 ? invoice.websiteMinor : 0;
+  const websiteRequested = typeof invoice.websiteFree === "boolean";
+  const subtotalMinor = typeof invoice.subtotalMinor === "number" && invoice.subtotalMinor > 0 ? invoice.subtotalMinor : amountMinor + creditMinor + discountMinor;
   const interval = intervalOf(invoice.billingInterval);
   const onboardingFeeMinor = typeof invoice.onboardingFeeMinor === "number" && invoice.onboardingFeeMinor > 0 ? invoice.onboardingFeeMinor : 0;
   const creditDays = typeof invoice.creditDays === "number" ? invoice.creditDays : 0;
@@ -121,14 +130,18 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
     lines: [{
       description: t("documents.subscriptionLine", { plan, interval: t(interval === "annual" ? "documents.annualAdjective" : "documents.monthlyAdjective") }),
       period: `${periodStart} – ${periodEnd}`,
-      amount: amountText(subtotalMinor - onboardingFeeMinor, currency),
-    }, ...(onboardingFeeMinor > 0 ? [{ description: t("documents.onboardingFee"), period: "—", amount: amountText(onboardingFeeMinor, currency) }] : [])],
+      amount: amountText(subtotalMinor - onboardingFeeMinor - websiteMinor, currency),
+    }, ...(onboardingFeeMinor > 0 ? [{ description: t("documents.onboardingFee"), period: "—", amount: amountText(onboardingFeeMinor, currency) }] : []),
+    ...(websiteRequested ? [{ description: invoice.websiteFree === true ? t("documents.websiteFreeLine") : t("documents.websiteLine"), period: "—", amount: amountText(websiteMinor, currency) }] : [])],
     subtotal: amountText(subtotalMinor, currency),
-    ...(creditMinor > 0
+    // A first invoice has no earlier term to credit, so a promo discount uses the same row.
+    ...(creditMinor > 0 || discountMinor > 0
       ? {
           credit: {
-            label: creditDays > 0 ? creditDays === 1 ? t("documents.creditOne") : t("documents.creditDays", { count: creditDays }) : t("documents.credit"),
-            value: locale === "ar" ? amountText(-creditMinor, currency) : `-${invoiceMoney(creditMinor, currency)}`,
+            label: creditMinor > 0
+              ? creditDays > 0 ? creditDays === 1 ? t("documents.creditOne") : t("documents.creditDays", { count: creditDays }) : t("documents.credit")
+              : t("documents.promoDiscount", { code: typeof invoice.promoCode === "string" ? invoice.promoCode : "" }),
+            value: locale === "ar" ? amountText(-(creditMinor + discountMinor), currency) : `-${invoiceMoney(creditMinor + discountMinor, currency)}`,
           },
         }
       : {}),

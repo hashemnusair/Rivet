@@ -1,4 +1,6 @@
 import type { MemberImportErrorMessage } from "../imports/member-import-errors";
+import type { PromoDiscount, PromoTarget, PromoUnavailableReason } from "../../../convex/firstPayment";
+export type { PromoDiscount, PromoTarget, PromoUnavailableReason };
 import type { SystemMessage } from "../i18n/system-messages";
 import type {
   AuditCategory,
@@ -406,6 +408,127 @@ export interface PlatformBillingInvoice {
   pastDueAt?: string;
   voidedAt?: string;
   status: "draft" | "open" | "paid" | "past_due" | "void" | "failed" | "trial";
+  /** A new gym's first invoice: its term starts when the payment is confirmed. */
+  firstPayment?: boolean;
+  /** Website add-on on a first invoice: what it adds, its price before a free place, and whether a free place covered it. */
+  websiteMinor?: number;
+  websiteListMinor?: number;
+  websiteFree?: boolean;
+  promoCode?: string;
+  promoTarget?: PromoTarget;
+  promoPercentOff?: number;
+  promoAmountOffMinor?: number;
+  discountMinor?: number;
+  subscriptionDiscountMinor?: number;
+  /** A code the gym applied with that no longer worked when its invoice was made. */
+  promoNotApplied?: { code: string; reason: PromoUnavailableReason };
+  /** Payment details the gym sent from its payment page. */
+  paymentClaim?: PaymentClaim;
+}
+
+export type PlatformPaymentMethod = "cliq" | "bank_transfer";
+
+export interface PaymentClaim {
+  status: "submitted" | "rejected" | "confirmed";
+  method: PlatformPaymentMethod;
+  reference: string;
+  payerName: string;
+  /** The day the gym says it paid, YYYY-MM-DD. */
+  paidOn: string;
+  note?: string;
+  amountMinor: number;
+  submittedAt: string;
+  submittedBy?: { id: string; name: string };
+  rejectedAt?: string;
+  /** Shown to the gym, so it can correct and send again. */
+  rejectionReason?: string;
+  confirmedAt?: string;
+}
+
+/** Where gyms send payments, as RIVET's team set it in the console. Empty strings are not set yet. */
+export interface PlatformPaymentDetails {
+  cliqAlias: string;
+  cliqName: string;
+  bankName: string;
+  accountName: string;
+  iban: string;
+  note: string;
+}
+
+/** The payment page: the gym, the invoice to pay next and how to pay it. */
+export interface BillingCheckout {
+  gym: {
+    name: string;
+    status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
+    plan?: "Starter" | "Growth" | "Pro" | "Enterprise";
+    billingInterval: BillingInterval;
+    currentPeriodEndsAt?: string;
+    timezone: string;
+  };
+  invoice?: PlatformBillingInvoice;
+  paymentDetails: PlatformPaymentDetails;
+  /** Only the owner (or someone who manages settings) sends payment details. */
+  canPay: boolean;
+  /** When a paying gym's access stops if this invoice stays unpaid. */
+  accessEndsAt?: string;
+}
+
+export interface SubmitPlatformPaymentInput {
+  invoiceId: string;
+  method: PlatformPaymentMethod;
+  reference: string;
+  payerName: string;
+  paidOn: string;
+  note?: string;
+}
+
+export interface PromoCodeCheck {
+  valid: boolean;
+  reason?: PromoUnavailableReason;
+  promo?: PromoDiscount;
+}
+
+export interface PlatformPromoCode {
+  id: string;
+  code: string;
+  note: string;
+  target: PromoTarget;
+  percentOff?: number;
+  amountOffMinor?: number;
+  /** Empty means every plan. */
+  plans: Array<PlatformSaasPlan["name"]>;
+  maxRedemptions?: number;
+  expiresOn?: string;
+  active: boolean;
+  uses: number;
+  state: "active" | "paused" | "expired" | "used_up";
+  createdAt: string;
+}
+
+export interface CreatePromoCodeInput {
+  code: string;
+  note: string;
+  target: PromoTarget;
+  percentOff?: number;
+  amountOffMinor?: number;
+  plans: Array<PlatformSaasPlan["name"]>;
+  maxRedemptions?: number;
+  expiresOn?: string;
+  reason: string;
+}
+
+/** Platform console → Promos. */
+export interface PlatformCommerceView {
+  websiteOffer: {
+    enabled: boolean;
+    places: number;
+    priceMinor: number;
+    claimed: number;
+    /** Gyms holding a free place, in the order they got it. */
+    holders: Array<{ place: number; gym: string; invoiceId: string; status: string; issuedAt?: string }>;
+  };
+  paymentDetails: PlatformPaymentDetails;
+  promoCodes: PlatformPromoCode[];
 }
 
 export type BillingInterval = "monthly" | "annual";
@@ -509,7 +632,7 @@ export interface PlatformGymDetail {
   organization: PlatformData<{
     id: UUID;
     name: string;
-    status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+    status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
     currency: string;
     timezone: string;
     archivedAt?: string;
@@ -629,7 +752,7 @@ export interface OperationalNotification {
 }
 
 export interface PlatformOverview {
-  gymCounts: Record<"trial" | "active" | "past_due" | "suspended" | "cancelled", number>;
+  gymCounts: Record<"trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled", number>;
   branchCount: number;
   memberCount: number;
   activeStaffCount: number;
@@ -673,6 +796,18 @@ export interface PlatformSaasPlan {
   entitledModules?: WorkspaceModuleKey[];
 }
 
+/**
+ * The free-website offer on public pricing. `claimed` counts gyms holding a
+ * free place, capped at `places`; no gym is named. `enabled` and `priceMinor`
+ * are absent on older payloads.
+ */
+export interface WebsiteOffer {
+  places: number;
+  claimed: number;
+  enabled?: boolean;
+  priceMinor?: number;
+}
+
 export interface SubmitGymApplicationInput {
   gymName: string;
   /** Physical address where the applicant's gym operates. */
@@ -689,6 +824,9 @@ export interface SubmitGymApplicationInput {
   language?: "en" | "ar";
   /** Deliberately invisible browser honeypot. Bots filling it receive a generic success. */
   website?: string;
+  /** Launch offers chosen on the form. */
+  websiteRequested?: boolean;
+  promoCode?: string;
 }
 
 export type GymApplicationStatus = "pending" | "under_review" | "approved" | "rejected";
@@ -706,6 +844,10 @@ export interface PlatformGymApplication {
   contactNumber: string;
   plan: PlatformSaasPlan["name"];
   billingInterval?: BillingInterval;
+  /** The applicant asked for a custom website; its price is fixed on the first invoice. */
+  websiteRequested?: boolean;
+  /** A promo code that worked when the gym applied. */
+  promoCode?: string;
   status: GymApplicationStatus;
   notificationStatus: GymApplicationNotificationStatus;
   notificationError?: string;
@@ -951,6 +1093,16 @@ export interface GymOSApi {
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]>;
   subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  subscribeWebsiteOffer(onValue: (offer: WebsiteOffer) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  checkPromoCode(input: { code: string; plan: PlatformSaasPlan["name"] }): Promise<PromoCodeCheck>;
+  getPlatformCommerce(): Promise<PlatformCommerceView>;
+  updateWebsiteOffer(input: { enabled: boolean; places: number; priceMinor: number; reason: string }): Promise<PlatformCommerceView>;
+  updatePaymentDetails(input: PlatformPaymentDetails & { reason: string }): Promise<PlatformCommerceView>;
+  createPromoCode(input: CreatePromoCodeInput): Promise<PlatformCommerceView>;
+  setPromoCodeActive(input: { promoId: string; active: boolean; reason: string }): Promise<PlatformCommerceView>;
+  rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice>;
+  getBillingCheckout(): Promise<BillingCheckout>;
+  submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;

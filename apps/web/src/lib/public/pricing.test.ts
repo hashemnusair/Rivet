@@ -16,8 +16,8 @@ describe("public pricing contract", () => {
     expect(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
     expect(DEFAULT_PUBLIC_PRICING_PLANS).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600 }),
-      expect.objectContaining({ name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 }),
-      expect.objectContaining({ name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000 }),
+      expect.objectContaining({ name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 75_000, operationalEmails: 1_500 }),
+      expect.objectContaining({ name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 75_000, operationalEmails: 5_000 }),
     ]));
     expect(DEFAULT_PUBLIC_PRICING_PLANS.at(-1)).toMatchObject({ name: "Enterprise", priceMinor: 500_000, onboardingFeeMinor: 0, operationalEmails: 20_000 });
     expect(isPublicQuotePlan(DEFAULT_PUBLIC_PRICING_PLANS.at(-1)!)).toBe(true);

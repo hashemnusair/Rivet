@@ -174,6 +174,7 @@ export const auth: typeof En = {
     openingGym: "نفتح ناديكم",
     openingMemberships: "نفتح اشتراكاتكم",
     openingConsole: "نفتح لوحة إدارة المنصة",
+    openingPayment: "نفتح صفحة الدفع",
 
     deactivatedTitle: "تم إيقاف هذا الحساب",
     deactivatedBody: "أوقف ناديكم حساب RIVET هذا. اطلبوا من مالك النادي أو المدير استعادة صلاحية الدخول، أو سجّلوا الخروج واستخدموا حسابًا آخر.",

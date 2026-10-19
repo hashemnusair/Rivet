@@ -31,6 +31,7 @@ function statusText(status: MarketplaceGym["subscriptionStatus"], t: TFunction):
   switch (status) {
     case "active": return t("platformFinance.wizard.statusActive");
     case "trial": return t("platformFinance.wizard.statusTrial");
+    case "pending_payment": return t("platformFinance.wizard.statusPendingPayment");
     case "overdue": return t("platformFinance.wizard.statusPastDue");
     case "suspended": return t("platformFinance.wizard.statusSuspended");
     case "cancelled": return t("platformFinance.wizard.statusCancelled");

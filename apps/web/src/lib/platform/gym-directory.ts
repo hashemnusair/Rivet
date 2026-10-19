@@ -3,9 +3,10 @@ import type { MarketplaceGym } from "@/lib/public/experience-data";
 const GYM_STATUS_ORDER: Record<MarketplaceGym["subscriptionStatus"], number> = {
   active: 0,
   trial: 1,
-  overdue: 2,
-  suspended: 3,
-  cancelled: 4,
+  pending_payment: 2,
+  overdue: 3,
+  suspended: 4,
+  cancelled: 5,
 };
 
 /** Keep the platform directory operationally useful: healthy tenants first,

@@ -43,8 +43,16 @@ remains unchanged at implementation `0f5a92f`:
    | Plan | Monthly (JOD) | One-time onboarding (JOD) | Branches | Owner/staff accounts | Active members | Operational emails/month |
    |---|---:|---:|---:|---:|---:|---:|
    | Starter | 39 | 75 | 1 | 3 | 150 | 600 |
-   | Growth | 89 | 150 | 2 | 8 | 300 | 1,500 |
-   | Pro | 199 | 300 | 5 | 20 | 1,000 | 5,000 |
+   | Growth | 89 | 75 | 2 | 8 | 300 | 1,500 |
+   | Pro | 199 | 75 | 5 | 20 | 1,000 | 5,000 |
+
+   Since 19 October 2026 onboarding is one JOD 75 fee on every plan (it was
+   75/150/300). Gyms now **pay before they get access**: the first invoice is
+   issued when RIVET approves the gym, and the workspace opens when RIVET
+   confirms the payment; there is no free trial month. Applicants can ask for
+   a **custom website** (free for the first 5 gyms that ask, then JOD 150) and
+   enter **promo codes** that discount the first payment. What the website
+   includes is not yet defined. See docs/19 §5.
 
    Annual subscription billing is twelve monthly fees billed once at **5% off**;
    onboarding is outside that discount. Public/signup first-payment subtotals
@@ -72,7 +80,10 @@ remains unchanged at implementation `0f5a92f`:
    and limits. Terms section 05 says "Onboarding is included"; reconcile that
    wording with the implemented fee. Agreement 1.2 section 4 refers to written
    quotes or published pricing, and section 6 describes onboarding services;
-   it does **not** explicitly promise free onboarding. These facts do not record
+   it does **not** explicitly promise free onboarding. Review the website
+   add-on and free-place offer, promo-code terms, paying before the agreement
+   is signed (it is signed on first entry to the workspace), and whether
+   access may end sooner than the agreement's 14 + 7 days. These facts do not record
    founder sign-off or resolve the legal wording.
 3. **Term conflict.** Terms default to 12 months with renewal; agreement 1.2
    continues until ended with 30 days' notice. Reconcile monthly/annual billing,

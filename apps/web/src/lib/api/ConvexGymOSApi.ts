@@ -34,6 +34,13 @@ import type {
   PlatformSnapshot,
   PlatformSupportCase,
   PlatformSaasPlan,
+  WebsiteOffer,
+  PromoCodeCheck,
+  PlatformCommerceView,
+  PlatformPaymentDetails,
+  CreatePromoCodeInput,
+  BillingCheckout,
+  SubmitPlatformPaymentInput,
   EntryPass,
   ProvisionGymInput,
   GymProvisioningResult,
@@ -435,6 +442,16 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribePlatformGymDetail(gymId: string, onValue: (detail: PlatformGymDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("platform.gym.detail", { gymId }, onValue, onError); }
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
   subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.catalog", {}, onValue, onError); }
+  subscribeWebsiteOffer(onValue: (offer: WebsiteOffer) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.websiteOffer", {}, onValue, onError); }
+  checkPromoCode(input: { code: string; plan: PlatformSaasPlan["name"] }): Promise<PromoCodeCheck> { return this.query("public.promo.check", input); }
+  getPlatformCommerce(): Promise<PlatformCommerceView> { return this.query("platform.commerce.view"); }
+  updateWebsiteOffer(input: { enabled: boolean; places: number; priceMinor: number; reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.commerce.website_offer.update", input); }
+  updatePaymentDetails(input: PlatformPaymentDetails & { reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.commerce.payment_details.update", input); }
+  createPromoCode(input: CreatePromoCodeInput): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.promo.create", input); }
+  setPromoCodeActive(input: { promoId: string; active: boolean; reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.promo.set_active", input); }
+  rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice> { return this.mutatePlatform("platform.invoice.payment_reject", input); }
+  getBillingCheckout(): Promise<BillingCheckout> { return this.query("billing.checkout"); }
+  submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout> { return this.mutate("billing.payment.submit", input); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");

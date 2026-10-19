@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
+import type { PlatformSaasPlan, WebsiteOffer } from "@/lib/api/GymOSApi";
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import LandingPage from "./page";
 
@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   experienceStatus: "ready" as "loading" | "ready" | "error",
   experienceError: undefined as string | undefined,
   viewer: { status: "signed-out" } as Record<string, unknown>,
+  websiteOffer: { places: 5, claimed: 2, enabled: true, priceMinor: 150_000 } as WebsiteOffer,
 }));
 
 vi.mock("@/lib/auth/public-viewer", () => ({ usePublicViewer: () => state.viewer }));
@@ -19,6 +20,15 @@ vi.mock("@/components/public/signed-in-guard", () => ({ SignedInGuard: () => nul
 vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({ ...state, retryExperience: vi.fn() }),
   useMarketplaceGyms: () => [],
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  getApi: () => ({
+    subscribeWebsiteOffer: async (onValue: (offer: WebsiteOffer) => void) => {
+      onValue(state.websiteOffer);
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock("@/components/public/public-footer", () => ({ PublicFooter: () => <footer aria-label="Public footer" /> }));
@@ -38,6 +48,7 @@ describe("landing-page pricing", () => {
     state.experienceStatus = "ready";
     state.experienceError = undefined;
     state.viewer = { status: "signed-out" };
+    state.websiteOffer = { places: 5, claimed: 2, enabled: true, priceMinor: 150_000 };
   });
 
   it("offers both doors and the application to a signed-out visitor", async () => {
@@ -120,6 +131,41 @@ describe("landing-page pricing", () => {
     expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("75.000") === true)).toBeInTheDocument();
     expect(within(starterCard).getByText(/First payment subtotal before applicable tax, including onboarding:/)).toBeInTheDocument();
     expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("114.000") === true)).toBeInTheDocument();
+  });
+
+  it("charges the same one-time onboarding fee on every published plan", () => {
+    render(<LandingPage />);
+
+    for (const [name, firstPayment] of [["Starter", "114.000"], ["Growth", "164.000"], ["Pro", "274.000"]] as const) {
+      const card = screen.getByText(name).closest("div.rounded-lg");
+      if (!(card instanceof HTMLElement)) throw new Error(`${name} pricing card was not rendered as an element.`);
+      expect(within(card).getByText("One-time onboarding fee: JD 75.000")).toBeInTheDocument();
+      expect(within(card).getByText(`First payment subtotal before applicable tax, including onboarding: JD ${firstPayment}`)).toBeInTheDocument();
+    }
+  });
+
+  it("counts the free-website places left from the live offer", async () => {
+    render(<LandingPage />);
+
+    const offer = screen.getByTestId("website-offer");
+    expect(within(offer).getByRole("heading", { name: "Free website for the first 5 gyms" })).toBeInTheDocument();
+    expect(await within(offer).findByText("3 of 5 places left")).toBeInTheDocument();
+    expect(offer).toHaveTextContent("After that it costs JD 150.000.");
+    expect(offer.querySelectorAll("[data-taken]")).toHaveLength(2);
+  });
+
+  it("hides the offer when RIVET switches it off", () => {
+    state.websiteOffer = { places: 5, claimed: 0, enabled: false, priceMinor: 150_000 };
+    render(<LandingPage />);
+    expect(screen.queryByTestId("website-offer")).not.toBeInTheDocument();
+  });
+
+  it("says when every free-website place is taken", async () => {
+    state.websiteOffer = { places: 5, claimed: 5, enabled: true, priceMinor: 150_000 };
+    render(<LandingPage />);
+
+    expect(await screen.findByText("All 5 places are taken.")).toBeInTheDocument();
+    expect(screen.getByTestId("website-offer").querySelectorAll("[data-taken]")).toHaveLength(5);
   });
 
   it("renders the public landing in Arabic with RTL navigation and JOD prices", async () => {

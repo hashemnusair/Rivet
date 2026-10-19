@@ -76,6 +76,60 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 19 October 2026 — Pay-first gyms, one JOD 75 onboarding fee, website add-on, promo codes, renewal warnings
+
+Elias asked for a fixed JOD 75 onboarding fee, a website offer with a live
+count (first 5 gyms free, JOD 150 after), a Promos page with discount codes,
+a pay-first application flow (approve → credentials → pay by CliQ or bank
+transfer → RIVET confirms → access), and a dashboard warning on the last day
+of a paid term. docs/19 §5 is the full description and decision list.
+
+- **Backend:** new status `pending_payment`; `requireBillingActor` and
+  `identity.current.billingAccess` give an unpaid or suspended gym's owner the
+  payment page only. Provisioning creates the first invoice
+  (`convex/platformCommerce.ts`) with the website and promo priced in; pure
+  pricing is `convex/firstPayment.ts`. New tables `platformPromoCodes` and
+  `platformSettings`. New operations: `public.websiteOffer`,
+  `public.promo.check`, `platform.commerce.view`,
+  `platform.commerce.website_offer.update`,
+  `platform.commerce.payment_details.update`, `platform.promo.create`,
+  `platform.promo.set_active`, `platform.invoice.payment_reject`,
+  `billing.checkout`, `billing.payment.submit`. Confirming a first payment
+  starts the term at confirmation. Renewal invoices are raised 14 days ahead
+  with reminders at 7/3/1 days; the session carries `billingNotice`.
+  `_generated/api.d.ts` gained `firstPayment` and `platformCommerce` by hand,
+  in codegen order.
+- **Frontend:** `/billing` payment page; `BillingNoticeBanner` in the
+  workspace layout; "Pay now" in Settings → Subscription; website add-on,
+  promo code and first-payment summary on `/signup`; landing offer panel at 5
+  places with the JOD 150 price; console **Promos** page; Billing → **Payments
+  to confirm** and **Where gyms pay**; application review shows website and
+  promo; invoice PDFs print website and promo lines. Mock parity throughout
+  (preview CliQ/bank details are marked "Preview details").
+- **Arabic:** all new copy translated under the locked standard (lock check
+  passed at revision 607); CliQ is written كليك and IBAN as رقم الحساب المصرفي
+  الدولي, as existing Arabic does.
+- **Evidence:** full Vitest run 2,236 passed (Convex: 11 new pay-first,
+  promo, place, reminder and warning tests plus pricing unit tests; UI tests
+  for the payment page, warning, Promos, confirmations, signup and landing);
+  `tsc` web and Convex clean; eslint clean on changed files. The mock preview
+  was driven end to end in headless Chromium: admin issues an invoice → owner
+  opens Settings → Pay now → sends CliQ details → "We are checking your
+  payment", checked at 1280px, 390px (no overflow) and in Arabic RTL.
+- **Not done or not verified:** nothing is committed or deployed. Production
+  needs `pnpm convex:deploy` with the frontend, RIVET's real CliQ and bank
+  details entered in the console, and `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`
+  (not set today, so no renewals or reminders run). Real Clerk invitation →
+  `/billing` routing was verified only with Convex tests and the mock, not on
+  a deployed environment. Access still stops 21 days after the due date per
+  the agreement; the website's scope, promo terms and pay-before-signing are
+  open for founders and counsel. Playwright against the local dev server:
+  pricing, application, console review/suspension and member specs pass; the
+  long "entitlements across four tiers" journey failed three times at
+  different steps when the dev server dropped connections, so it is
+  unverified here and CI is the gate. Visual references that include the
+  platform sidebar may need refreshing for the new Promos item.
+
 ## 18 October 2026 — Review of the Convex batch, and three fixes it found
 
 Elias reported running the guarded `pnpm convex:deploy` for the pending batch

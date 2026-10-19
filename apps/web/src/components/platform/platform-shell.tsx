@@ -4,7 +4,7 @@ import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, TicketPercent, X } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
@@ -30,6 +30,7 @@ const NAVIGATION: Array<{ href: string; labelKey: TKey; icon: typeof LayoutDashb
   { href: "/platform/gyms", labelKey: "platformConsole.navigation.gyms", icon: Building2 },
   { href: "/platform/subscriptions", labelKey: "platformConsole.navigation.entitlements", icon: BadgeDollarSign },
   { href: "/platform/billing", labelKey: "platformConsole.navigation.billing", icon: CreditCard },
+  { href: "/platform/promos", labelKey: "platformConsole.navigation.promos", icon: TicketPercent },
   { href: "/platform/agreements", labelKey: "platformConsole.navigation.agreements", icon: FileSignature },
   { href: "/platform/email-log", labelKey: "platformConsole.navigation.emailLog", icon: Mail },
   { href: "/platform/support", labelKey: "platformConsole.navigation.support", icon: CircleHelp },

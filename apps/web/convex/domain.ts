@@ -14,6 +14,7 @@ import {
   publicOrganizationId,
   publicUserId,
   requireActor,
+  requireBillingActor,
   requireAuthenticated,
   requireMember,
   requirePermission,
@@ -29,7 +30,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, role
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
-import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange, fundedSubscriptionValue } from "./subscriptionTerm";
+import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange, termEnd, fundedSubscriptionValue } from "./subscriptionTerm";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
@@ -62,6 +63,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -579,7 +581,7 @@ function billingInterval(value: unknown): BillingInterval {
   return value === "annual" ? "annual" : "monthly";
 }
 
-function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
+function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled" {
   return status === "past_due" ? "overdue" : status;
 }
 
@@ -1821,6 +1823,11 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
   });
 }
 
+async function sessionBillingNotice(ctx: ReadContext, actor: ActorContext): Promise<Data | undefined> {
+  const organization = await ctx.db.get(actor.organization._id);
+  return organization ? await billingNotice(ctx, organization, Date.now()) : undefined;
+}
+
 async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchId?: string): Promise<Data> {
   const branches = await accessibleBranches(ctx, actor);
   const workspace = await workspaceAccessData(ctx, actor);
@@ -1860,6 +1867,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
         billingInterval: actor.organization.billingInterval ?? "monthly",
         currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
         trialEndsAt: actor.organization.trialEndsAt === undefined ? undefined : utcIso(actor.organization.trialEndsAt),
+        billingNotice: await sessionBillingNotice(ctx, actor),
       },
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
@@ -2790,6 +2798,8 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     contactNumber: application.contactNumber,
     plan: application.plan,
     billingInterval: application.billingInterval ?? "monthly",
+    ...(application.websiteRequested ? { websiteRequested: true } : {}),
+    ...(application.promoCode ? { promoCode: application.promoCode } : {}),
     status: application.status,
     notificationStatus: application.notificationStatus,
     notificationError: application.notificationError,
@@ -2999,7 +3009,7 @@ async function linkExactEmailMembersToCustomerProfile(ctx: MutationCtx, user: Us
     const member = data(memberRecord.data);
     if (member.customerProfileId && member.customerProfileId !== profile.id) continue;
     const organization = await ctx.db.get(memberRecord.organizationId);
-    if (!organization || organization.status === "suspended" || organization.status === "cancelled") continue;
+    if (!organization || organization.status === "suspended" || organization.status === "cancelled" || organization.status === "pending_payment") continue;
     const staffMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", user._id)).collect();
     if (staffMemberships.some((item) => item.active)) continue;
     const memberships = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect())
@@ -4333,7 +4343,7 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
   const customerMembership = membershipRecord && belongsToAuthenticatedCustomer(data(membershipRecord.data), userId, optionalString(profile?.id)) ? membershipRecord : null;
   if (!customerMembership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(customerMembership.organizationId);
-  if (!organization || organization.status === "suspended" || organization.status === "cancelled") domainError("NOT_FOUND", "Membership not found.");
+  if (!organization || organization.status === "suspended" || organization.status === "cancelled" || organization.status === "pending_payment") domainError("NOT_FOUND", "Membership not found.");
   const customerValue = data(customerMembership.data);
   const internalMembershipId = optionalString(customerValue.membershipId) ?? optionalString(customerValue.internalMembershipId) ?? customerMembership.publicId;
   const internalMembership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique();
@@ -5356,8 +5366,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "billing.invoices.list") {
     // A gym reads only its own platform invoices, newest first, in the
-    // same shape the platform console uses.
-    const actor = await requireActor(ctx, request);
+    // same shape the platform console uses. A gym waiting to pay, or stopped
+    // for not paying, can still read them.
+    const actor = await requireBillingActor(ctx, request);
     const rows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "platformInvoice")).collect();
     return rows
       .map((row): Data => ({ id: row.publicId, gym: actor.organization.name, ...data(row.data) }))
@@ -5371,6 +5382,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if ((PLATFORM_PROSPECT_QUERIES as readonly string[]).includes(operation)) {
     return await platformProspectsQuery(ctx, operation, input, request);
+  }
+
+  if ((COMMERCE_QUERIES as readonly string[]).includes(operation)) {
+    return await commerceQuery(ctx, operation, input, request);
   }
 
   if (operation === "health") {
@@ -5678,7 +5693,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const rawPlan = stringValue(gym.rivetPlan);
     const effectiveStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : "suspended";
     const effectivePlan = organization ? platformPlanFromFacts(gym, organization, entitlement) ?? rawPlan : rawPlan;
-    const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const allowedStatuses = ["trial", "pending_payment", "active", "overdue", "suspended", "cancelled"] as const;
     const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
     if (!allowedStatuses.includes(effectiveStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(effectivePlan as (typeof allowedPlans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
@@ -5863,7 +5878,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       activity = targetActivity.map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     }
 
-    const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
+    const status = effectiveStatus as "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
     const plan = effectivePlan as "Starter" | "Growth" | "Pro" | "Enterprise";
     const logoUrl = organization ? await platformGymLogoUrl(ctx, organization, gym) : undefined;
     return buildPlatformGymDetail({
@@ -8465,6 +8480,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return await platformProspectsMutation(ctx, operation, input, request);
   }
 
+  if ((COMMERCE_MUTATIONS as readonly string[]).includes(operation)) {
+    return await commerceMutation(ctx, operation, input, request);
+  }
+
   if (operation === "platform.marketingMigration.apply") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     requireReason(input.reason, admin.correlationId);
@@ -9483,7 +9502,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!reference) domainError("VALIDATION_ERROR", "A manual payment reference is required.", { correlationId: admin.correlationId, fieldErrors: { reference: ["Required"] } });
       const paidTimestamp = input.paidAt === undefined ? Date.now() : validTimestamp(stringValue(input.paidAt));
       if (paidTimestamp === undefined) domainError("VALIDATION_ERROR", "Payment date is invalid.", { correlationId: admin.correlationId });
-      updated = { ...current, status: "paid", paidAt: new Date(paidTimestamp).toISOString(), paymentReference: reference, updatedAt: now };
+      const claim = data(current.paymentClaim);
+      updated = {
+        ...current,
+        status: "paid",
+        paidAt: new Date(paidTimestamp).toISOString(),
+        paymentReference: reference,
+        // Details the gym sent from its payment page are now confirmed.
+        ...(claim.status === "submitted" ? { paymentClaim: { ...claim, status: "confirmed", confirmedAt: now } } : {}),
+        updatedAt: now,
+      };
       action = "invoice.manual_payment";
       summary = "Recorded an offline payment against platform invoice";
     } else {
@@ -9506,10 +9534,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const periodEndTimestamp = validTimestamp(stringValue(current.periodEnd));
       if (listing && organization && listing.organizationId === organization._id && organization.status !== "cancelled" && periodEndTimestamp !== undefined) {
         const billing = billingInterval(current.billingInterval ?? organization.billingInterval);
-        const startedAt = organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
+        // A gym's first payment opens its workspace, so its first paid term
+        // starts now rather than on the day the invoice was raised.
+        const firstTermStart = organization.status === "pending_payment" ? Date.now() : undefined;
+        const firstTermEnd = firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
+        if (firstTermStart !== undefined && firstTermEnd !== undefined) {
+          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd) };
+          await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+        }
+        const startedAt = firstTermStart ?? organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
         // Paying a late or superseded invoice must never shorten a term the
         // gym has already paid past, so the boundary only ever moves forward.
-        const nextBoundary = Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
+        const nextBoundary = firstTermEnd ?? Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
         await ctx.db.patch(organization._id, {
           status: "active",
           billingInterval: billing,

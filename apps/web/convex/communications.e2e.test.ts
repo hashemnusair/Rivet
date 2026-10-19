@@ -159,7 +159,7 @@ describe("communications, end to end", () => {
     const issued = all.find((row) => row.kind === "platform_invoice_issued")!;
     expectBranded(issued, "04-invoice-issued");
     expect(issued.subject).toBe("A RIVET invoice was issued");
-    expect(issued.html).toContain("View invoice");
+    expect(issued.html).toContain("Pay the invoice");
     expect(issued.html).not.toContain("#AD1B22");
     expect(issued.attachments?.[0]?.filename).toBe(`RIVET-invoice-${draft.id}.pdf`);
     const issuedPdf = pdfText(issued.attachments![0]!.contentBase64);

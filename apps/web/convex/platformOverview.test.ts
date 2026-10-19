@@ -32,7 +32,7 @@ describe("buildPlatformOverview", () => {
       supportCases: [{ id: "case-1", gymId: "gym-active", gym: "North Gym", subject: "Access issue", priority: "urgent", status: "open", createdAt: "2026-08-10T12:00:00.000Z" }],
     });
 
-    expect(overview.gymCounts).toEqual({ trial: 1, active: 1, past_due: 1, suspended: 0, cancelled: 0 });
+    expect(overview.gymCounts).toEqual({ trial: 1, pending_payment: 0, active: 1, past_due: 1, suspended: 0, cancelled: 0 });
     expect(overview.branchCount).toBe(1);
     expect(overview.memberCount).toBe(1);
     expect(overview.activeStaffCount).toBe(1);
@@ -128,7 +128,7 @@ describe("buildPlatformOverview", () => {
       ],
     });
 
-    expect(overview.gymCounts).toEqual({ trial: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 });
+    expect(overview.gymCounts).toEqual({ trial: 0, pending_payment: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 });
     expect(overview.activeMrr).toEqual({ amount: 249_000, currency: "JOD" });
     expect(overview.branchCount).toBe(1);
     expect(overview.memberCount).toBe(1);

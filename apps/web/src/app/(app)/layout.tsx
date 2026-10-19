@@ -18,6 +18,7 @@ import { useDampedRootOverscroll } from "@/lib/hooks/use-damped-root-overscroll"
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-gate";
+import { BillingNoticeBanner } from "@/features/billing/billing-notice";
 import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -124,6 +125,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           data-testid="app-scroll-shell"
           className="flex min-h-[calc(100dvh-3.5rem)] flex-col lg:min-h-[calc(100dvh-4rem)]"
         >
+          <BillingNoticeBanner />
           {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </div>

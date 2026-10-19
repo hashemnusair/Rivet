@@ -2,6 +2,7 @@
 import { useLocale } from "@/lib/i18n/provider";
 
 import { FileText, Receipt } from "lucide-react";
+import Link from "next/link";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -108,6 +109,12 @@ export function SubscriptionSection() {
   return (
     <SettingsSection title={t("settingsCore.text183")} description={DESCRIPTION} testId={invoices.length ? "subscription-invoices" : undefined}>
       <SubscriptionSummary />
+      {invoices.some((invoice) => ["open", "past_due", "failed"].includes(invoice.status)) ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-3">
+          <p className="text-[13.5px] font-medium">{t("commerce.settings.unpaid")}</p>
+          <Button asChild size="sm"><Link href="/billing">{t("commerce.notice.pay")}</Link></Button>
+        </div>
+      ) : null}
       {invoices.length === 0 ? (
         <EmptyState icon={Receipt} layout="section" title={t("settingsDetails.text137")} description={t("settingsDetails.text138")} />
       ) : (

@@ -193,6 +193,7 @@ export const auth = {
     openingGym: "Opening your gym",
     openingMemberships: "Opening your memberships",
     openingConsole: "Opening the platform console",
+    openingPayment: "Opening the payment page",
 
     deactivatedTitle: "This account was deactivated",
     deactivatedBody: "This RIVET account was deactivated by your gym. Ask the gym owner or manager to restore your access, or sign out and use another account.",

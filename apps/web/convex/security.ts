@@ -62,7 +62,7 @@ type MaybeOrganization = {
   publicId?: string;
   name: string;
   slug: string;
-  status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
+  status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
   subscriptionPlan?: "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
   subscriptionStartedAt?: number;
@@ -182,7 +182,7 @@ async function findBranch(ctx: ReadCtx, organizationId: Id<"organizations">, pub
     .unique()) as MaybeBranch;
 }
 
-async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">): Promise<MaybeMembership> {
+async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">, options: ActorOptions = {}): Promise<MaybeMembership> {
   const rows = await ctx.db
     .query("organizationMemberships")
     .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -191,7 +191,7 @@ async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">): Promise
   for (const row of rows) {
     if (!row.active || !membershipInvitationAccepted(row as MaybeMembership)) continue;
     const organization = await ctx.db.get(row.organizationId);
-    if (!organization || !["trial", "active", "past_due"].includes(organization.status)) continue;
+    if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)))) continue;
     routable.push({ row, organization });
   }
   if (routable.length > 1) {
@@ -240,7 +240,29 @@ export async function requireMember(ctx: ReadCtx) {
   return { identity, user } as { identity: NonNullable<typeof identity>; user: NonNullable<MaybeUser> };
 }
 
-export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promise<ActorContext> {
+/** Gym statuses whose team works in the workspace. */
+export const WORKSPACE_STATUSES: readonly string[] = ["trial", "active", "past_due"];
+
+/**
+ * A gym that has not paid yet, or whose access was stopped for an unpaid
+ * invoice, can still open its payment page. An archived gym cannot: archiving
+ * is RIVET's decision, not a billing state.
+ */
+export function billingOnlyOrganization(organization: { status: string; archivedAt?: number }): boolean {
+  return (organization.status === "pending_payment" || organization.status === "suspended") && organization.archivedAt === undefined;
+}
+
+export type ActorOptions = {
+  /** Also admit a gym that may only pay: the payment page and its invoices. */
+  billing?: boolean;
+};
+
+/** The actor for the payment page: any gym that may still pay RIVET. */
+export async function requireBillingActor(ctx: ReadCtx, args: RequestArgs = {}): Promise<ActorContext> {
+  return await requireActor(ctx, args, { billing: true });
+}
+
+export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options: ActorOptions = {}): Promise<ActorContext> {
   const { user } = await requireAuthenticated(ctx);
   const membership = args.organizationId
     ? await (async () => {
@@ -248,7 +270,7 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
         if (!organization) domainError("NOT_FOUND", "Gym not found.");
         return await findMembership(ctx, organization._id, user._id);
       })()
-    : await firstActiveMembership(ctx, user._id);
+    : await firstActiveMembership(ctx, user._id, options);
 
   if (!membership || !membership.active) {
     domainError("FORBIDDEN", "You are not an active member of this gym.");
@@ -262,7 +284,7 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}): Promis
   }
 
   const organization = (await ctx.db.get(membership.organizationId)) as MaybeOrganization;
-  if (!organization || organization.status === "suspended" || organization.status === "cancelled") {
+  if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)))) {
     domainError("FORBIDDEN", "This gym is not available.");
   }
 

@@ -72,7 +72,7 @@ describe("platform operation authorization", () => {
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-platform-auth-owner" });
 
-    for (const operation of ["platform.applications", "platform.marketingMigration.preview", "platform.snapshot", "platform.gym.detail", "platform.prospects.list", "platform.prospect.history"]) {
+    for (const operation of ["platform.applications", "platform.marketingMigration.preview", "platform.snapshot", "platform.gym.detail", "platform.prospects.list", "platform.prospect.history", "platform.commerce.view"]) {
       await expectCode(owner.query(api.domain.query, request(operation, operation === "platform.gym.detail" ? { gymId: "unknown" } : {})), "FORBIDDEN");
     }
   });
@@ -92,6 +92,11 @@ describe("platform operation authorization", () => {
       "platform.invoice.past_due": { invoiceId: "unknown", reason: "test" },
       "platform.invoice.payment": { invoiceId: "unknown", reference: "test", reason: "test" },
       "platform.invoice.void": { invoiceId: "unknown", reason: "test" },
+      "platform.invoice.payment_reject": { invoiceId: "unknown", reason: "test" },
+      "platform.commerce.website_offer.update": { enabled: true, places: 99, priceMinor: 0, reason: "test" },
+      "platform.commerce.payment_details.update": { cliqAlias: "x", reason: "test" },
+      "platform.promo.create": { code: "FREE100", target: "total", percentOff: 100, plans: [], reason: "test" },
+      "platform.promo.set_active": { promoId: "unknown", active: true, reason: "test" },
       "platform.support.resolve": { caseId: "unknown", resolutionSummary: "test" },
       "platform.support.reply": { caseId: "unknown", body: "test" },
       "platform.support.reopen": { caseId: "unknown" },

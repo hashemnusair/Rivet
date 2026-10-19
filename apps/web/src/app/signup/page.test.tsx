@@ -1,14 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
-import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
+import type { PlatformSaasPlan, WebsiteOffer } from "@/lib/api/GymOSApi";
 import GymApplicationPage from "./page";
 
 const state = vi.hoisted(() => ({
   saasPlans: [] as PlatformSaasPlan[],
   submitGymApplication: vi.fn(),
+  websiteOffer: { places: 5, claimed: 3, enabled: true, priceMinor: 150_000 } as WebsiteOffer,
 }));
 
 vi.mock("@/lib/providers/experience-provider", () => ({
@@ -22,7 +23,16 @@ vi.mock("@/lib/providers/experience-provider", () => ({
 
 vi.mock("@/components/public/public-document-page", () => ({ PublicDocumentPage: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/lib/api/client", () => ({
-  getApi: () => ({ submitGymApplication: state.submitGymApplication }),
+  getApi: () => ({
+    submitGymApplication: state.submitGymApplication,
+    subscribeWebsiteOffer: async (onValue: (offer: WebsiteOffer) => void) => {
+      onValue(state.websiteOffer);
+      return () => {};
+    },
+    checkPromoCode: async ({ code }: { code: string }) => code === "LAUNCH50"
+      ? { valid: true, promo: { code: "LAUNCH50", target: "subscription", percentOff: 50 } }
+      : { valid: false, reason: "not_found" },
+  }),
 }));
 
 function LocaleSwitch() {
@@ -50,8 +60,40 @@ describe("gym application pricing selection", () => {
     await user.click(screen.getByRole("radio", { name: /Starter/ }));
     expect(screen.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByText(/JD 444\.600/)).toBeInTheDocument();
+    expect(within(screen.getByRole("radio", { name: /Starter/ })).getByText(/JD 444\.600/)).toBeInTheDocument();
     expect(screen.getByText(/First payment subtotal before applicable tax, including onboarding: JD 519\.600/)).toBeInTheDocument();
+  });
+
+  it("adds a free website while places are left and prices the first payment with a promo code", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/signup?plan=Starter&interval=monthly");
+    state.submitGymApplication.mockResolvedValue({ applicationId: "application-offers", status: "pending", notificationStatus: "sent", submittedAt: "2026-10-19T08:00:00.000Z", duplicate: false });
+    render(<GymApplicationPage />);
+    const summary = await screen.findByRole("region", { name: "Your first payment" });
+    expect(within(summary).getByText("JD 114.000")).toBeInTheDocument();
+
+    const website = screen.getByRole("checkbox", { name: /Do you want a custom website for your gym/ });
+    expect(screen.getByText(/Free for the first 5 gyms · 2 free places left/)).toBeInTheDocument();
+    await user.click(website);
+    expect(within(summary).getByText("Custom website")).toBeInTheDocument();
+    expect(within(summary).getByText("Free (launch offer)")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Promo code (optional)"), "nope");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("We do not know this code.")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Promo code (optional)"));
+    await user.type(screen.getByLabelText("Promo code (optional)"), "launch50");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("LAUNCH50: 50% off the first month or year")).toBeInTheDocument();
+    expect(within(summary).getByText("JD 94.500")).toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText("Omar Khalil"), "Offer Owner");
+    await user.type(screen.getByPlaceholderText("owner@example.com"), "offer-owner@example.test");
+    await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Offer Gym");
+    await user.type(screen.getByPlaceholderText("Enter your phone number"), "+962790000555");
+    await user.type(screen.getByPlaceholderText("Street, area, city"), "Abdoun, Amman");
+    await user.click(screen.getByRole("button", { name: /Send gym application/ }));
+    await waitFor(() => expect(state.submitGymApplication).toHaveBeenCalledWith(expect.objectContaining({ plan: "Starter", websiteRequested: true, promoCode: "LAUNCH50" })));
   });
 
   it("submits the selected annual cadence with the application", async () => {

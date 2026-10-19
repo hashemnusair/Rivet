@@ -57,6 +57,7 @@ export const publicCompletion: typeof EnPublicCompletion = {
     destinations: {
       gym: { label: "لوحة التحكم", action: "فتح لوحة التحكم" },
       reception: { label: "الاستقبال", action: "فتح الاستقبال" },
+      billing: { label: "الدفع", action: "فتح صفحة الدفع" },
       member: { label: "أنديتي", action: "فتح أنديتك" },
       platform: { label: "المنصة", action: "فتح المنصة" },
       resolving: { label: "لوحة التحكم", action: "فتح لوحة التحكم" },
@@ -107,6 +108,12 @@ export const publicCompletion: typeof EnPublicCompletion = {
       },
       oneTimeOnboarding: "رسوم التهيئة لمرة واحدة: {amount}",
       firstPayment: "المبلغ الفرعي للدفعة الأولى قبل أي ضريبة مستحقة، شاملًا التهيئة: {amount}",
+      websiteOffer: {
+        title: "موقع إلكتروني مجاني لأول {formatted} من الأندية",
+        body: "اطلب موقعًا إلكترونيًا مخصصًا عند تقديم طلب ناديك. نقدّمه مجانًا لأول {formatted} من الأندية التي نقبل طلباتها. بعد ذلك يكون سعره {price}.",
+        placesLeft: plural({ zero: "المقاعد المتاحة: {formatted} من {total}", one: "المقاعد المتاحة: {formatted} من {total}", two: "المقاعد المتاحة: {formatted} من {total}", few: "المقاعد المتاحة: {formatted} من {total}", many: "المقاعد المتاحة: {formatted} من {total}", other: "المقاعد المتاحة: {formatted} من {total}" }),
+        allTaken: "حُجزت جميع المقاعد وعددها {formatted}.",
+      },
       memberApp: "تطبيق المشترك",
       staffPermissions: "صلاحيات فريق العمل وسجل التدقيق",
       fromPrice: "ابتداءً من {amount}",

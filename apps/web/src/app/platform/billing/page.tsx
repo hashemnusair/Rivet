@@ -14,6 +14,7 @@ import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/p
 import { InvoiceStatusBadge } from "@/components/platform/platform-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PaymentConfirmations, PaymentDetailsPanel } from "./payment-confirmations";
 import { BillGymWizard } from "./bill-gym-wizard";
 import { GymSubscriptions } from "./gym-subscriptions";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -173,6 +174,8 @@ export default function BillingPage() {
         </div>
       ) : null}
 
+      <PaymentConfirmations invoices={invoices} onUpdated={replaceInvoice} />
+
       <section className="mt-5 grid gap-3 sm:grid-cols-3" aria-label={t("platformFinance.billing.totals")}>
         <PlatformPanel className="p-4"><Stat label={t("marketing.device.kpi.outstanding")} value={platformSnapshot ? f.money(invoiceTotals.outstanding) : "—"} context={t("platformFinance.billing.openAndPastDue")} tone={invoiceTotals.outstanding.amount ? "warning" : undefined} /></PlatformPanel>
         <PlatformPanel className="p-4"><Stat label={t("dashboard.owner.collected")} value={platformSnapshot ? f.money(invoiceTotals.collected) : "—"} context={t("platformFinance.billing.paidRecords")} /></PlatformPanel>
@@ -233,6 +236,7 @@ export default function BillingPage() {
 
       <CreateInvoiceDialog open={createOpen} onOpenChange={setCreateOpen} gyms={platformSnapshot?.gyms ?? []} onCreated={replaceInvoice} />
       <InvoiceActionDialog action={action} onOpenChange={(open) => { if (!open) setAction(undefined); }} onPastDue={(input) => markPastDue.mutate(input)} onPayment={(input) => recordPayment.mutate(input)} onVoid={(input) => voidInvoice.mutate(input)} saving={markPastDue.isPending || recordPayment.isPending || voidInvoice.isPending} />
+      <PaymentDetailsPanel />
     </PlatformPage>
   );
 }

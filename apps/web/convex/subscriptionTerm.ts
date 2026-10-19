@@ -53,8 +53,14 @@ export const OVERDUE_BEFORE_NOTICE_DAYS = 14;
 export const SUSPENSION_NOTICE_DAYS = 7;
 /** Days after the due date at which access may be suspended. */
 export const SUSPENSION_AFTER_DUE_DAYS = OVERDUE_BEFORE_NOTICE_DAYS + SUSPENSION_NOTICE_DAYS;
-/** An invoice is raised this many days before the term it covers begins. */
-export const INVOICE_LEAD_DAYS = 3;
+/**
+ * A renewal invoice is raised this many days before the term it covers
+ * begins. Fourteen days, the agreement's payment term, puts the due date on
+ * the last day of the paid term, so a gym that pays on time never runs late.
+ */
+export const INVOICE_LEAD_DAYS = 14;
+/** Days before a term ends on which an unpaid renewal invoice is reminded by email. */
+export const RENEWAL_REMINDER_DAYS = [7, 3, 1] as const;
 
 /** The outgoing term a change interrupts, when the gym has paid for one. */
 export interface OutgoingTerm {
@@ -79,13 +85,17 @@ export interface TermChangeInput {
 }
 
 /** Only collected money or a carried paid credit can fund the next term. */
-export function fundedSubscriptionValue(invoice: { status?: unknown; subtotalMinor?: unknown; amountMinor?: unknown; onboardingFeeMinor?: unknown; creditMinor?: unknown }): number | undefined {
+export function fundedSubscriptionValue(invoice: { status?: unknown; subtotalMinor?: unknown; amountMinor?: unknown; onboardingFeeMinor?: unknown; creditMinor?: unknown; websiteMinor?: unknown; subscriptionDiscountMinor?: unknown }): number | undefined {
   if (invoice.status === "void") return undefined;
-  const setup = typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : 0;
+  // A first invoice can also carry a website and a promo discount; neither is
+  // subscription value a later term change should credit back.
+  const nonSubscription = (typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : 0)
+    + (typeof invoice.websiteMinor === "number" ? invoice.websiteMinor : 0)
+    + (typeof invoice.subscriptionDiscountMinor === "number" ? invoice.subscriptionDiscountMinor : 0);
   const gross = invoice.status === "paid"
     ? (typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : invoice.amountMinor)
     : invoice.creditMinor;
-  const value = typeof gross === "number" ? gross - (invoice.status === "paid" ? setup : 0) : 0;
+  const value = typeof gross === "number" ? gross - (invoice.status === "paid" ? nonSubscription : 0) : 0;
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 

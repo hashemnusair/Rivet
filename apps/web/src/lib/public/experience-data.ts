@@ -43,7 +43,7 @@ export interface MarketplaceGym {
   gallery?: import("@/lib/domain/types").MediaAsset[];
   accent: string;
   featured: boolean;
-  subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
+  subscriptionStatus: "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
   rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
   joinedAt: string;
