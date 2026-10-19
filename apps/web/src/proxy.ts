@@ -48,7 +48,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
   const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
   if (decision.kind !== "next") return applyHostDecision(request, decision);
 
-  const target = signedInRedirectTarget({ pathname: request.nextUrl.pathname });
+  const target = signedInRedirectTarget({ pathname: request.nextUrl.pathname, search: request.nextUrl.search });
   if (target) {
     const { userId } = await auth();
     if (userId) {

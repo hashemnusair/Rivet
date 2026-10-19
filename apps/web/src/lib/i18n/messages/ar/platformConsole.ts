@@ -14,6 +14,7 @@ export const platformConsole = {
     emailLog: "سجل البريد الإلكتروني",
     support: "الدعم",
     network: "الشبكة",
+    landingPage: "الصفحة الرئيسية",
     workspace: "النادي الرياضي",
     open: "فتح قائمة التنقل",
     label: "التنقل في منصة RIVET",

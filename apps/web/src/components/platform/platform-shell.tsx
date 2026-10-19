@@ -3,8 +3,10 @@ import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
+import { LANDING_VIEW_QUERY } from "@/lib/routing/signed-in-routing";
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, TicketPercent, X } from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Globe, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, TicketPercent, X } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
@@ -165,6 +167,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
   const t = useT();
+  // The landing on www, opened on purpose so a signed-in admin is not sent back here.
+  const publicSite = usePublicSiteHref();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
@@ -199,12 +203,12 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
       </nav>
       <div className="border-t border-night-line p-3">
         <IntentPrefetchLink
-          href="/dashboard"
+          href={`${publicSite}?${LANDING_VIEW_QUERY}`}
           onClick={onNavigate}
           data-touch-target
           className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
         >
-          <Building2 className="size-4" aria-hidden /> {t("platformConsole.navigation.workspace")}
+          <Globe className="size-4" aria-hidden /> {t("platformConsole.navigation.landingPage")}
         </IntentPrefetchLink>
       </div>
     </>
