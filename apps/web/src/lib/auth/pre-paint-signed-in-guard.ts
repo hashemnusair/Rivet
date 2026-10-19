@@ -8,7 +8,8 @@
  * on the landing it hides the document, asks the Frontend API, and either
  * replaces the location with the resolver or reveals the page. A visible
  * marker cookie short-circuits the request. Any failure or delay reveals the
- * page, so a signed-out visitor is never left blank.
+ * page, so a signed-out visitor is never left blank. A visit that asks for the
+ * landing on purpose (`?view=landing`) is left alone.
  */
 
 /** The Clerk Frontend API origin encoded in a publishable key, or null. */
@@ -31,6 +32,7 @@ export function prePaintSignedInGuardScript(input: { frontendApi: string; appHos
   return (
     "(function(){var d=document.documentElement;try{" +
     `if(location.pathname!=="/"||${appHosts}.indexOf(location.hostname)!==-1)return;` +
+    'if(new URLSearchParams(location.search).get("view")==="landing")return;' +
     'var done=false;function show(){if(!done){done=true;d.style.visibility="";}}' +
     'function go(){done=true;location.replace("/login"+location.search);}' +
     'addEventListener("pageshow",function(e){if(e.persisted){done=false;show();}});' +

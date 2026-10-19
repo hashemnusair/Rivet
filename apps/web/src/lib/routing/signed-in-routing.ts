@@ -15,6 +15,18 @@ export const SIGNED_OUT_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/login/member/create",
 ]);
 
-export function signedInRedirectTarget(input: { pathname: string }): string | null {
+/**
+ * Someone signed in can still open the landing on purpose, as the platform
+ * console's "Landing page" link does, by asking for it with `?view=landing`.
+ * A plain visit to `/` still opens their own area.
+ */
+export const LANDING_VIEW_QUERY = "view=landing";
+
+export function landingViewRequested(search: string): boolean {
+  return new URLSearchParams(search).get("view") === "landing";
+}
+
+export function signedInRedirectTarget(input: { pathname: string; search?: string }): string | null {
+  if (input.pathname === "/" && landingViewRequested(input.search ?? "")) return null;
   return SIGNED_OUT_ONLY_PATHS.has(input.pathname) ? RESOLVER_PATH : null;
 }

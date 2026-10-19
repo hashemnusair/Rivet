@@ -130,8 +130,9 @@ describe("PlatformShell navigation", () => {
     fireEvent.focus(support);
     expect(support).toHaveAttribute("data-prefetch", "true");
 
-    const workspace = within(sidebar).getByRole("link", { name: "Gym workspace" });
-    fireEvent.touchStart(workspace);
-    expect(workspace).toHaveAttribute("data-prefetch", "true");
+    const landing = within(sidebar).getByRole("link", { name: "Landing page" });
+    expect(landing).toHaveAttribute("href", "/?view=landing");
+    fireEvent.touchStart(landing);
+    expect(landing).toHaveAttribute("data-prefetch", "true");
   });
 });

@@ -16,6 +16,9 @@ describe("pre-paint signed-in guard", () => {
     expect(script).toContain('fetch("https://clerk.rivetjo.com/v1/client",{credentials:"include"})');
     expect(script).toContain('location.pathname!=="/"||["dashboard.rivetjo.com","app.rivetjo.com","platform.rivetjo.com"].indexOf(location.hostname)!==-1');
     expect(script).toContain('location.replace("/login"+location.search)');
+    // A landing asked for on purpose is shown before anything is hidden.
+    expect(script.indexOf('get("view")==="landing")return;')).toBeGreaterThan(-1);
+    expect(script.indexOf('get("view")==="landing")return;')).toBeLessThan(script.indexOf('d.style.visibility="hidden"'));
     expect(script).toContain('x.status==="active"');
     expect(script).toContain("setTimeout(show,2000)");
     expect(script).toMatch(/__client_uat\(\?:_\[A-Za-z0-9_-\]\{1,8\}\)\?=/);

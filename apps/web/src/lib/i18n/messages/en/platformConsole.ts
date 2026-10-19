@@ -14,6 +14,7 @@ export const platformConsole = {
     emailLog: "Email log",
     support: "Support",
     network: "Network",
+    landingPage: "Landing page",
     workspace: "Gym workspace",
     open: "Open navigation",
     label: "Platform navigation",
