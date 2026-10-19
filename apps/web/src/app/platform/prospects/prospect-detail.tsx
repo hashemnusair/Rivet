@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/misc";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TechnicalLabel } from "@/components/ui/typography";
 import { qk } from "@/lib/api/keys";
 import { useApiQuery } from "@/lib/hooks/use-api";
@@ -33,7 +34,7 @@ import {
   type ProspectStage,
 } from "@/lib/platform/prospects";
 import { cn } from "@/lib/utils/cn";
-import { BATCH_KEYS, DRAFT_STATUS_COPY, EVIDENCE_COPY, FIELD_KEYS, NEXT_STEP_KEYS, SHORT_VALUE_FIELDS, STAGE_COPY } from "./prospect-copy";
+import { BATCH_KEYS, DRAFT_STATUS_COPY, EVIDENCE_COPY, FIELD_KEYS, NEXT_STEP_KEYS, PROSPECT_TABS, SHORT_VALUE_FIELDS, STAGE_COPY, TAB_KEYS, type ProspectTab } from "./prospect-copy";
 import { ProspectFormDialog } from "./prospect-form-dialog";
 import { useProspectUpdate } from "./use-prospects";
 
@@ -44,62 +45,71 @@ const ARABIC_TEXT: CSSProperties = { fontFamily: "var(--font-plex-arabic), var(-
 
 type Save = (changes: ProspectChanges, options?: { quiet?: boolean; onDone?: () => void }) => void;
 
-export function ProspectDetail({ prospect, owners, today, onBack }: { prospect: PlatformProspect; owners: PlatformProspectOwner[]; today: string; onBack: () => void }) {
+/**
+ * One gym, split into a few tabs so each part fits on screen without
+ * scrolling. Every tab stays mounted (only hidden), so an unsaved note or a
+ * half-edited message survives a look at another tab.
+ */
+export function ProspectDetail({ prospect, owners, today, tab, onTabChange, onBack }: { prospect: PlatformProspect; owners: PlatformProspectOwner[]; today: string; tab: ProspectTab; onTabChange: (tab: ProspectTab) => void; onBack: () => void }) {
   const t = useT();
   const update = useProspectUpdate();
   const [editing, setEditing] = useState(false);
+  const next = nextProspectStage(prospect.stage);
   const save: Save = (changes, options) => update.mutate({ prospectId: prospect.id, changes }, {
     onSuccess: () => {
       if (!options?.quiet) toast.success(t("platformConsole.prospects.saved"));
       options?.onDone?.();
     },
   });
+  const panelClass = "mt-0 min-h-0 flex-1 px-4 py-5 @container sm:px-5 lg:overflow-y-auto";
 
   return (
-    <article className="flex min-w-0 flex-col" aria-labelledby={`prospect-${prospect.id}-name`} data-testid="prospect-detail">
-      <header className="border-b border-line px-4 py-4 sm:px-5">
+    <article className="flex min-w-0 flex-col lg:h-full" aria-labelledby={`prospect-${prospect.id}-name`} data-testid="prospect-detail">
+      <header className="px-4 pt-4 sm:px-5 sm:pt-5">
         <Button variant="ghost" size="sm" className="-ms-2 mb-2 lg:hidden" onClick={onBack}><ArrowLeft className="rtl:rotate-180" />{t("platformConsole.prospects.backToList")}</Button>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <TechnicalLabel as="span">{prospect.code}</TechnicalLabel>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <h2 id={`prospect-${prospect.id}-name`} dir="auto" className="text-[20px] font-semibold leading-snug tracking-tight">{prospect.gymName}</h2>
               <Badge variant="outline">{t(BATCH_KEYS[prospect.batch])}</Badge>
             </div>
-            <h2 id={`prospect-${prospect.id}-name`} dir="auto" className="mt-1.5 text-[20px] font-semibold leading-snug tracking-tight">{prospect.gymName}</h2>
-            {prospect.area ? <p dir="auto" className="mt-0.5 text-[13px] text-ink-2">{prospect.area}</p> : null}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-ink-2">
+              <TechnicalLabel as="span">{prospect.code}</TechnicalLabel>
+              {prospect.area ? <><span className="text-ink-4" aria-hidden>·</span><span dir="auto">{prospect.area}</span></> : null}
+            </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><Pencil />{t("platformConsole.prospects.detail.editDetails")}</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}><Pencil />{t("platformConsole.prospects.detail.editDetails")}</Button>
+            {next ? <Button size="sm" onClick={() => save({ stage: next })} disabled={update.isPending} data-testid="prospect-next-step"><Check />{t(NEXT_STEP_KEYS[next]!)}</Button> : null}
+          </div>
         </div>
       </header>
 
-      <div className="grid gap-6 px-4 py-5 sm:px-5 min-[1400px]:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="min-w-0 space-y-7">
+      <Tabs value={tab} onValueChange={(value) => onTabChange(value as ProspectTab)} className="mt-3 flex min-h-0 flex-1 flex-col">
+        <TabsList aria-label={t("platformConsole.prospects.detail.sections")} className="shrink-0 border-line px-2 sm:px-1">
+          {PROSPECT_TABS.map((value) => <TabsTrigger key={value} value={value}>{t(TAB_KEYS[value])}</TabsTrigger>)}
+        </TabsList>
+        <TabsContent value="progress" forceMount hidden={tab !== "progress"} className={panelClass}>
           <ProgressSection prospect={prospect} owners={owners} today={today} save={save} pending={update.isPending} />
-          <MessagesSection prospect={prospect} save={save} pending={update.isPending} />
-        </div>
-        <aside className="min-w-0 space-y-7 border-t border-line pt-6 min-[1400px]:border-s min-[1400px]:border-t-0 min-[1400px]:ps-6 min-[1400px]:pt-0">
+        </TabsContent>
+        <TabsContent value="contact" forceMount hidden={tab !== "contact"} className={panelClass}>
           <ContactSection prospect={prospect} />
+        </TabsContent>
+        <TabsContent value="messages" forceMount hidden={tab !== "messages"} className={panelClass}>
+          <MessagesSection prospect={prospect} save={save} pending={update.isPending} />
+        </TabsContent>
+        <TabsContent value="history" forceMount hidden={tab !== "history"} className={panelClass}>
           <HistorySection prospectId={prospect.id} />
-        </aside>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       <ProspectFormDialog open={editing} onOpenChange={setEditing} prospect={prospect} />
     </article>
   );
 }
 
-function SectionTitle({ id, children, action }: { id: string; children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h3 id={id} className="text-[15px] font-semibold text-ink">{children}</h3>
-      {action}
-    </div>
-  );
-}
-
 function ProgressSection({ prospect, owners, today, save, pending }: { prospect: PlatformProspect; owners: PlatformProspectOwner[]; today: string; save: Save; pending: boolean }) {
   const t = useT();
-  const next = nextProspectStage(prospect.stage);
   const [nextAction, setNextAction] = useState(prospect.nextAction);
   const [notes, setNotes] = useState(prospect.notes);
   useEffect(() => { setNextAction(prospect.nextAction); }, [prospect.nextAction]);
@@ -114,14 +124,8 @@ function ProgressSection({ prospect, owners, today, save, pending }: { prospect:
   const id = `prospect-${prospect.id}`;
 
   return (
-    <section aria-labelledby={`${id}-progress`}>
-      <SectionTitle
-        id={`${id}-progress`}
-        action={next ? <Button size="sm" onClick={() => save({ stage: next })} disabled={pending} data-testid="prospect-next-step"><Check />{t(NEXT_STEP_KEYS[next]!)}</Button> : null}
-      >
-        {t("platformConsole.prospects.detail.progress")}
-      </SectionTitle>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
+    <div className="max-w-3xl">
+      <div className="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
         <Field label={t("platformConsole.prospects.field.stage")} htmlFor={`${id}-stage`}>
           <Select value={prospect.stage} onValueChange={(value) => save({ stage: value as ProspectStage })} disabled={pending}>
             <SelectTrigger id={`${id}-stage`}><SelectValue /></SelectTrigger>
@@ -139,20 +143,20 @@ function ProgressSection({ prospect, owners, today, save, pending }: { prospect:
         </Field>
         <FollowUpField id={`${id}-follow-up`} value={prospect.followUpOn} today={today} disabled={pending} onSave={(followUpOn) => save({ followUpOn })} />
       </div>
-      <div className="mt-3 grid gap-3">
+      <div className="mt-5 grid gap-4">
         <Field label={t("platformConsole.prospects.field.nextAction")}>
           <Input id={`${id}-next-action`} dir="auto" value={nextAction} maxLength={200} onChange={(event) => setNextAction(event.target.value)} placeholder={t("platformConsole.prospects.detail.nextActionPlaceholder")} />
         </Field>
         <Field label={t("platformConsole.prospects.field.notes")}>
-          <Textarea id={`${id}-notes`} dir="auto" value={notes} maxLength={2000} className="min-h-20" onChange={(event) => setNotes(event.target.value)} placeholder={t("platformConsole.prospects.detail.notesPlaceholder")} />
+          <Textarea id={`${id}-notes`} dir="auto" value={notes} maxLength={2000} className="min-h-32" onChange={(event) => setNotes(event.target.value)} placeholder={t("platformConsole.prospects.detail.notesPlaceholder")} />
         </Field>
       </div>
-      <div className="mt-2 flex justify-end">
+      <div className="mt-3 flex justify-end">
         <Button variant="secondary" size="sm" disabled={!textDirty || pending} onClick={() => save(textChanges)}>
           {textDirty ? t("platformConsole.prospects.detail.saveNotes") : t("platformConsole.prospects.detail.notesSaved")}
         </Button>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -195,54 +199,51 @@ function MessagesSection({ prospect, save, pending }: { prospect: PlatformProspe
   const markSent = () => save({ draftStatus: "sent", ...(prospect.stage === "not_contacted" ? { stage: "contacted" as const } : {}) }, { onDone: () => setAskSent(false) });
 
   return (
-    <section aria-labelledby={`${id}-messages`}>
-      <SectionTitle
-        id={`${id}-messages`}
-        action={(
-          <div className="flex items-center gap-2">
-            <label htmlFor={`${id}-draft-status`} className="text-[12.5px] text-ink-3">{t("platformConsole.prospects.field.draftStatus")}</label>
-            <Select value={prospect.draftStatus} onValueChange={(value) => save({ draftStatus: value as ProspectDraftStatus })} disabled={pending}>
-              <SelectTrigger id={`${id}-draft-status`} sizeVariant="sm" className="w-auto min-w-[148px]"><SelectValue /></SelectTrigger>
-              <SelectContent>{PROSPECT_DRAFT_STATUSES.map((status) => <SelectItem key={status} value={status}>{t(DRAFT_STATUS_COPY[status].labelKey)}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-        )}
-      >
-        {t("platformConsole.prospects.detail.messages")}
-      </SectionTitle>
-      <p className="mt-1 text-[12.5px] text-ink-3">{t("platformConsole.prospects.detail.messagesHint")}</p>
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-[12.5px] text-ink-3">{t("platformConsole.prospects.detail.messagesHint")}</p>
+        <div className="flex items-center gap-2">
+          <label htmlFor={`${id}-draft-status`} className="text-[12.5px] text-ink-3">{t("platformConsole.prospects.field.draftStatus")}</label>
+          <Select value={prospect.draftStatus} onValueChange={(value) => save({ draftStatus: value as ProspectDraftStatus })} disabled={pending}>
+            <SelectTrigger id={`${id}-draft-status`} sizeVariant="sm" className="w-auto min-w-[148px]"><SelectValue /></SelectTrigger>
+            <SelectContent>{PROSPECT_DRAFT_STATUSES.map((status) => <SelectItem key={status} value={status}>{t(DRAFT_STATUS_COPY[status].labelKey)}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      </div>
 
-      <div className="mt-4 space-y-5">
-        <MessageBlock
-          label={t("platformConsole.prospects.field.openingMessage")}
-          text={prospect.openingMessage}
-          lang="ar"
-          pending={pending}
-          onSave={(openingMessage, done) => save({ openingMessage }, { onDone: done })}
-          testId="prospect-opening-message"
-          actions={prospect.openingMessage ? (
-            <>
-              <CopyButton text={prospect.openingMessage} />
-              {prospect.whatsapp ? (
-                <Button asChild variant="secondary" size="sm">
-                  <a href={whatsappHref(prospect.whatsapp, prospect.openingMessage)} target="_blank" rel="noopener noreferrer" onClick={() => setAskSent(true)} data-testid="prospect-whatsapp-link">
-                    <MessageCircle />{t("platformConsole.prospects.detail.sendWhatsApp")}<ExternalLink className="text-ink-3" aria-hidden />
-                  </a>
-                </Button>
-              ) : null}
-              {!approved ? <span className="flex items-center gap-1 text-[12.5px] text-warning-deep"><CircleAlert className="size-3.5 shrink-0" aria-hidden />{t("platformConsole.prospects.detail.notApproved")}</span> : null}
-            </>
+      <div className="mt-4 grid gap-5 @2xl:grid-cols-2">
+        <div className="min-w-0 space-y-3">
+          <MessageBlock
+            label={t("platformConsole.prospects.field.openingMessage")}
+            text={prospect.openingMessage}
+            lang="ar"
+            pending={pending}
+            onSave={(openingMessage, done) => save({ openingMessage }, { onDone: done })}
+            testId="prospect-opening-message"
+            actions={prospect.openingMessage ? (
+              <>
+                <CopyButton text={prospect.openingMessage} />
+                {prospect.whatsapp ? (
+                  <Button asChild variant="secondary" size="sm">
+                    <a href={whatsappHref(prospect.whatsapp, prospect.openingMessage)} target="_blank" rel="noopener noreferrer" onClick={() => setAskSent(true)} data-testid="prospect-whatsapp-link">
+                      <MessageCircle />{t("platformConsole.prospects.detail.sendWhatsApp")}<ExternalLink className="text-ink-3" aria-hidden />
+                    </a>
+                  </Button>
+                ) : null}
+                {!approved ? <span className="flex items-center gap-1 text-[12.5px] text-warning-deep"><CircleAlert className="size-3.5 shrink-0" aria-hidden />{t("platformConsole.prospects.detail.notApproved")}</span> : null}
+              </>
+            ) : null}
+          />
+          {askSent && prospect.draftStatus !== "sent" ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-sunken/60 px-3.5 py-2.5 text-[13px]" role="status">
+              <span className="font-medium">{t("platformConsole.prospects.detail.sentPrompt")}</span>
+              <span className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setAskSent(false)}>{t("platformConsole.prospects.detail.notYet")}</Button>
+                <Button size="sm" onClick={markSent} loading={pending}>{t("platformConsole.prospects.detail.markSent")}</Button>
+              </span>
+            </div>
           ) : null}
-        />
-        {askSent && prospect.draftStatus !== "sent" ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-sunken/60 px-3.5 py-2.5 text-[13px]" role="status">
-            <span className="font-medium">{t("platformConsole.prospects.detail.sentPrompt")}</span>
-            <span className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setAskSent(false)}>{t("platformConsole.prospects.detail.notYet")}</Button>
-              <Button size="sm" onClick={markSent} loading={pending}>{t("platformConsole.prospects.detail.markSent")}</Button>
-            </span>
-          </div>
-        ) : null}
+        </div>
         <MessageBlock
           label={t("platformConsole.prospects.field.proposalMessage")}
           text={prospect.proposalMessage}
@@ -251,6 +252,8 @@ function MessagesSection({ prospect, save, pending }: { prospect: PlatformProspe
           onSave={(proposalMessage, done) => save({ proposalMessage }, { onDone: done })}
           actions={prospect.proposalMessage ? <CopyButton text={prospect.proposalMessage} /> : null}
         />
+      </div>
+      <div className="mt-5">
         <MessageBlock
           label={t("platformConsole.prospects.field.draftNotes")}
           text={prospect.draftNotes}
@@ -258,7 +261,7 @@ function MessagesSection({ prospect, save, pending }: { prospect: PlatformProspe
           onSave={(draftNotes, done) => save({ draftNotes }, { onDone: done })}
         />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -270,7 +273,7 @@ function MessageBlock({ label, text, lang, pending, onSave, actions, testId }: {
   return (
     <div data-testid={testId}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <h4 className="text-[13px] font-semibold text-ink-2">{label}</h4>
+        <h3 className="text-[13px] font-semibold text-ink-2">{label}</h3>
         {!editing ? <Button variant="ghost" size="xs" onClick={() => { setDraft(text); setEditing(true); }} aria-label={`${t("common.action.edit")}: ${label}`}><Pencil />{t("common.action.edit")}</Button> : null}
       </div>
       {editing ? (
@@ -279,7 +282,7 @@ function MessageBlock({ label, text, lang, pending, onSave, actions, testId }: {
             dir={arabic ? "rtl" : "auto"}
             lang={lang}
             style={arabic ? ARABIC_TEXT : undefined}
-            className={cn("min-h-40", arabic && "text-[15px] leading-8")}
+            className={cn("min-h-40", arabic && "text-[15px] leading-7")}
             value={draft}
             maxLength={2000}
             onChange={(event) => setDraft(event.target.value)}
@@ -296,7 +299,7 @@ function MessageBlock({ label, text, lang, pending, onSave, actions, testId }: {
           dir={arabic ? "rtl" : "auto"}
           lang={lang}
           style={arabic ? ARABIC_TEXT : undefined}
-          className={cn("whitespace-pre-wrap rounded-md border border-line px-4 py-3", arabic ? "bg-sunken/40 text-[15px] leading-8 text-ink" : "text-[13px] leading-relaxed text-ink-2")}
+          className={cn("whitespace-pre-wrap rounded-md border border-line px-4 py-3", arabic ? "bg-sunken/40 text-[15px] leading-7 text-ink" : "text-[13px] leading-relaxed text-ink-2")}
         >
           {text}
         </p>
@@ -334,7 +337,6 @@ function ContactSection({ prospect }: { prospect: PlatformProspect }) {
   const t = useT();
   const { isolate } = useLocale();
   const f = useFormat(PLATFORM_TIMEZONE);
-  const id = `prospect-${prospect.id}`;
   const channels: Array<{ key: "phone" | "whatsapp" | "instagram" | "facebook" | "email"; icon: LucideIcon; value: string; href?: string; display?: string; copy?: boolean }> = [
     { key: "phone", icon: Phone, value: prospect.phone, href: prospect.phone ? phoneHref(prospect.phone) : undefined, copy: true },
     { key: "whatsapp", icon: MessageCircle, value: prospect.whatsapp, href: prospect.whatsapp ? whatsappHref(prospect.whatsapp) : undefined, copy: true },
@@ -348,50 +350,54 @@ function ContactSection({ prospect }: { prospect: PlatformProspect }) {
   const external = (href: string) => href.startsWith("http");
 
   return (
-    <section aria-labelledby={`${id}-contact`}>
-      <SectionTitle id={`${id}-contact`}>{t("platformConsole.prospects.detail.contact")}</SectionTitle>
-      {prospect.route ? <p dir="auto" className="mt-1 text-[13px] text-ink-2">{t("platformConsole.prospects.detail.bestWay", { route: isolate(prospect.route) })}</p> : null}
-      {known.length ? (
-        <ul className="mt-3 space-y-1.5">
-          {known.map((channel) => (
-            <li key={channel.key} className="flex min-h-8 items-center gap-2.5 text-[13px]">
-              <channel.icon className="size-4 shrink-0 text-ink-3" aria-hidden />
-              <span className="w-[72px] shrink-0 text-[12.5px] text-ink-3">{t(FIELD_KEYS[channel.key])}</span>
-              <a
-                href={channel.href}
-                dir="ltr"
-                className="min-w-0 truncate font-medium text-ink underline decoration-line-3 underline-offset-4 hover:decoration-ink"
-                {...(channel.href && external(channel.href) ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              >
-                {channel.display ?? channel.value}
-              </a>
-              {channel.copy ? <span className="ms-auto"><CopyButton text={channel.value} label={t(FIELD_KEYS[channel.key])} iconOnly /></span> : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {unknown.length ? <p className="mt-2 text-[12.5px] text-ink-3">{t("platformConsole.prospects.detail.notKnown", { channels: unknown.join(", ") })}</p> : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge variant={evidence.tone} dot>{t(evidence.labelKey)}</Badge>
-        {prospect.checkedOn ? <span className="text-[12px] text-ink-3">{t("platformConsole.prospects.detail.checkedOn", { date: f.date(prospect.checkedOn) })}</span> : null}
-      </div>
-      {prospect.contactNotes ? <p dir="auto" className="mt-2 text-[12.5px] leading-relaxed text-ink-2">{prospect.contactNotes}</p> : null}
-      {prospect.sources.length ? (
-        <div className="mt-3">
-          <h4 className="text-[12.5px] font-semibold text-ink-2">{t("platformConsole.prospects.detail.sources")}</h4>
-          <ul className="mt-1 space-y-1">
-            {prospect.sources.map((source) => (
-              <li key={source}>
-                <a href={source} target="_blank" rel="noopener noreferrer" dir="ltr" className="inline-flex max-w-full items-center gap-1 text-[12.5px] text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink hover:decoration-ink">
-                  <span className="truncate">{linkHost(source)}</span><ExternalLink className="size-3 shrink-0" aria-hidden />
+    <div className="grid gap-6 @2xl:grid-cols-2 @2xl:gap-0">
+      <div className="min-w-0 @2xl:pe-6">
+        {prospect.route ? <p dir="auto" className="text-[13px] text-ink-2">{t("platformConsole.prospects.detail.bestWay", { route: isolate(prospect.route) })}</p> : null}
+        {known.length ? (
+          <ul className={cn("divide-y divide-line rounded-md border border-line", prospect.route && "mt-3")}>
+            {known.map((channel) => (
+              <li key={channel.key} className="flex min-h-11 items-center gap-3 px-3 text-[13px]">
+                <channel.icon className="size-4 shrink-0 text-ink-3" aria-hidden />
+                <span className="w-[72px] shrink-0 text-[12.5px] text-ink-3">{t(FIELD_KEYS[channel.key])}</span>
+                <a
+                  href={channel.href}
+                  dir="ltr"
+                  className="min-w-0 truncate font-medium text-ink underline decoration-line-3 underline-offset-4 hover:decoration-ink"
+                  {...(channel.href && external(channel.href) ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                >
+                  {channel.display ?? channel.value}
                 </a>
+                {channel.copy ? <span className="ms-auto"><CopyButton text={channel.value} label={t(FIELD_KEYS[channel.key])} iconOnly /></span> : null}
               </li>
             ))}
           </ul>
+        ) : null}
+        {unknown.length ? <p className="mt-2.5 text-[12.5px] text-ink-3">{t("platformConsole.prospects.detail.notKnown", { channels: unknown.join(", ") })}</p> : null}
+      </div>
+
+      <div className="min-w-0 border-t border-line pt-6 @2xl:border-s @2xl:border-t-0 @2xl:ps-6 @2xl:pt-0">
+        <h3 className="text-[13px] font-semibold text-ink-2">{t("platformConsole.prospects.field.evidence")}</h3>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Badge variant={evidence.tone} dot>{t(evidence.labelKey)}</Badge>
+          {prospect.checkedOn ? <span className="text-[12px] text-ink-3">{t("platformConsole.prospects.detail.checkedOn", { date: f.date(prospect.checkedOn) })}</span> : null}
         </div>
-      ) : null}
-    </section>
+        {prospect.contactNotes ? <p dir="auto" className="mt-2.5 text-[13px] leading-relaxed text-ink-2">{prospect.contactNotes}</p> : null}
+        {prospect.sources.length ? (
+          <>
+            <h3 className="mt-6 text-[13px] font-semibold text-ink-2">{t("platformConsole.prospects.detail.sources")}</h3>
+            <ul className="mt-1.5 space-y-1.5">
+              {prospect.sources.map((source) => (
+                <li key={source}>
+                  <a href={source} target="_blank" rel="noopener noreferrer" dir="ltr" className="inline-flex max-w-full items-center gap-1 text-[13px] text-ink-2 underline decoration-line-3 underline-offset-4 hover:text-ink hover:decoration-ink">
+                    <span className="truncate">{linkHost(source)}</span><ExternalLink className="size-3 shrink-0" aria-hidden />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -418,26 +424,18 @@ function HistorySection({ prospectId }: { prospectId: string }) {
   const { isolate } = useLocale();
   const f = useFormat(PLATFORM_TIMEZONE);
   const history = useApiQuery(qk.platformProspectHistory(prospectId), (api) => api.listPlatformProspectHistory(prospectId));
-  const id = `prospect-${prospectId}-history`;
   const headline = (entry: PlatformProspectHistoryEntry) => entry.action === "imported" ? [t("platformConsole.prospects.detail.historyImported")] : entry.action === "created" ? [t("platformConsole.prospects.detail.historyCreated")] : entry.changes.map((change) => changeLine(change, t, f.date, isolate));
+  if (history.isLoading) return <div className="space-y-2" role="status" aria-label={t("platformConsole.prospects.detail.historyLoading")}><Skeleton className="h-4 w-4/5 max-w-md" /><Skeleton className="h-4 w-3/5 max-w-sm" /></div>;
+  if (history.isError || !history.data) return <p className="text-[12.5px] text-ink-3" role="status">{t("platformConsole.prospects.detail.historyFailed")} <button type="button" className="font-medium text-ink underline underline-offset-4" onClick={() => void history.refetch()}>{t("platformConsole.shared.retry")}</button></p>;
   return (
-    <section aria-labelledby={id}>
-      <SectionTitle id={id}>{t("platformConsole.prospects.detail.history")}</SectionTitle>
-      {history.isLoading ? (
-        <div className="mt-3 space-y-2" role="status" aria-label={t("platformConsole.prospects.detail.historyLoading")}><Skeleton className="h-4 w-4/5" /><Skeleton className="h-4 w-3/5" /></div>
-      ) : history.isError || !history.data ? (
-        <p className="mt-2 text-[12.5px] text-ink-3" role="status">{t("platformConsole.prospects.detail.historyFailed")} <button type="button" className="font-medium text-ink underline underline-offset-4" onClick={() => void history.refetch()}>{t("platformConsole.shared.retry")}</button></p>
-      ) : (
-        <ol className="mt-3 space-y-3 border-s border-line ps-4" data-testid="prospect-history">
-          {history.data.map((entry) => (
-            <li key={entry.id} className="relative">
-              <span className="absolute -start-[21px] top-1.5 size-2 rounded-full border border-line-3 bg-surface" aria-hidden />
-              {headline(entry).map((line, index) => <p key={index} dir="auto" className="text-[12.5px] text-ink">{line}</p>)}
-              <p className="mt-0.5 text-[12px] text-ink-3">{t("platformConsole.prospects.detail.historyBy", { name: isolate(entry.actorName), time: f.dateTime(entry.occurredAt) })}</p>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
+    <ol className="max-w-2xl space-y-4 border-s border-line ps-4" data-testid="prospect-history">
+      {history.data.map((entry) => (
+        <li key={entry.id} className="relative">
+          <span className="absolute -start-[21px] top-1.5 size-2 rounded-full border border-line-3 bg-surface" aria-hidden />
+          {headline(entry).map((line, index) => <p key={index} dir="auto" className="text-[13px] text-ink">{line}</p>)}
+          <p className="mt-0.5 text-[12px] text-ink-3">{t("platformConsole.prospects.detail.historyBy", { name: isolate(entry.actorName), time: f.dateTime(entry.occurredAt) })}</p>
+        </li>
+      ))}
+    </ol>
   );
 }

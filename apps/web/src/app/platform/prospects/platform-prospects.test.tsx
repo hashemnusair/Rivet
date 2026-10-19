@@ -16,6 +16,7 @@ afterEach(() => { params = new URLSearchParams(); routerMock.replace.mockReset()
 
 describe("platform prospects", () => {
   it("shows the Amman list grouped like the sheet, with the first gym open and ready to contact", async () => {
+    const user = userEvent.setup();
     await renderWithApp(<PlatformProspects />, { role: "owner" });
     expect(await screen.findAllByTestId("prospect-row")).toHaveLength(12);
     const list = screen.getByRole("navigation", { name: "Gyms" });
@@ -24,12 +25,41 @@ describe("platform prospects", () => {
     const detail = screen.getByTestId("prospect-detail");
     expect(within(detail).getByRole("heading", { level: 2 })).toHaveTextContent("Onyx Gym");
     expect(within(detail).getByText("AMM-001")).toBeInTheDocument();
+
+    await user.click(within(detail).getByRole("tab", { name: "Contact" }));
+    expect(within(detail).getByRole("link", { name: "@onyxgym.jo" })).toHaveAttribute("href", "https://www.instagram.com/onyxgym.jo/");
+    expect(within(detail).getByText("Not known: Facebook, Email")).toBeInTheDocument();
+
+    await user.click(within(detail).getByRole("tab", { name: "Messages" }));
     const whatsapp = within(detail).getByTestId("prospect-whatsapp-link");
     expect(whatsapp.getAttribute("href")).toMatch(/^https:\/\/wa\.me\/962790979998\?text=/);
     expect(decodeURIComponent(whatsapp.getAttribute("href")!.split("text=")[1]!)).toContain("يعطيكم العافية فريق Onyx");
     expect(within(detail).getByText("This message is not approved yet.")).toBeInTheDocument();
-    expect(within(detail).getByRole("link", { name: "@onyxgym.jo" })).toHaveAttribute("href", "https://www.instagram.com/onyxgym.jo/");
-    expect(within(detail).getByText("Not known: Facebook, Email")).toBeInTheDocument();
+  });
+
+  it("splits the open gym into a few tabs that keep their place and unsaved notes", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<PlatformProspects />, { role: "owner" });
+    const detail = await screen.findByTestId("prospect-detail");
+    const tabs = within(detail).getByRole("tablist", { name: "Gym sections" });
+    expect(within(tabs).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Progress", "Contact", "Messages", "History"]);
+    expect(within(detail).getByRole("tab", { name: "Progress" })).toHaveAttribute("aria-selected", "true");
+    expect(within(detail).queryByRole("link", { name: "@onyxgym.jo" })).not.toBeInTheDocument();
+
+    await user.type(within(detail).getByLabelText("Notes"), " Owner trains there on Sundays.");
+    await user.click(within(detail).getByRole("tab", { name: "History" }));
+    expect(routerMock.replace).toHaveBeenLastCalledWith("/platform/prospects?tab=history", { scroll: false });
+    expect(within(detail).getByLabelText("Notes")).not.toBeVisible();
+    await user.click(within(detail).getByRole("tab", { name: "Progress" }));
+    expect(within(detail).getByLabelText("Notes")).toHaveValue("No outreach sent. Size and member count unverified. Owner trains there on Sundays.");
+  }, 20_000);
+
+  it("opens on the tab named in the address", async () => {
+    params = new URLSearchParams({ tab: "messages" });
+    await renderWithApp(<PlatformProspects />, { role: "owner" });
+    const detail = await screen.findByTestId("prospect-detail");
+    expect(within(detail).getByRole("tab", { name: "Messages" })).toHaveAttribute("aria-selected", "true");
+    expect(within(detail).getByRole("combobox", { name: "Message status" })).toHaveTextContent("Needs review");
   });
 
   it("moves a gym forward in one click and records it in its history", async () => {
@@ -43,6 +73,7 @@ describe("platform prospects", () => {
     await waitFor(() => expect(within(detail).getByTestId("prospect-next-step")).toHaveTextContent("They replied"));
     expect(screen.getByRole("button", { name: /In talks\s*1/ })).toBeInTheDocument();
     expect(within(screen.getAllByTestId("prospect-row")[0]!).getByText("Contacted")).toBeInTheDocument();
+    await user.click(within(detail).getByRole("tab", { name: "History" }));
     const history = await within(detail).findByTestId("prospect-history");
     await waitFor(() => expect(history).toHaveTextContent("Stage changed to Contacted"));
     expect(history).toHaveTextContent("Added from the Amman pilot sheet");
@@ -52,11 +83,13 @@ describe("platform prospects", () => {
     const user = userEvent.setup();
     await renderWithApp(<PlatformProspects />, { role: "owner" });
     const detail = await screen.findByTestId("prospect-detail");
+    await user.click(within(detail).getByRole("tab", { name: "Messages" }));
     const link = within(detail).getByTestId("prospect-whatsapp-link");
     link.addEventListener("click", (event) => event.preventDefault());
     await user.click(link);
     await user.click(await within(detail).findByRole("button", { name: "Yes, mark as sent" }));
     await waitFor(() => expect(within(detail).getByRole("combobox", { name: "Message status" })).toHaveTextContent("Sent"));
+    await user.click(within(detail).getByRole("tab", { name: "Progress" }));
     expect(within(detail).getByRole("combobox", { name: "Stage" })).toHaveTextContent("Contacted");
   }, 20_000);
 

@@ -43,6 +43,17 @@ export const EVIDENCE_COPY: Record<ProspectEvidence, { labelKey: TKey; tone: Bad
   recheck: { labelKey: "platformConsole.prospects.evidence.recheck", tone: "warning" },
 };
 
+/** The open gym is split into these few tabs, so each one fits on screen. */
+export const PROSPECT_TABS = ["progress", "contact", "messages", "history"] as const;
+export type ProspectTab = (typeof PROSPECT_TABS)[number];
+
+export const TAB_KEYS: Record<ProspectTab, TKey> = {
+  progress: "platformConsole.prospects.detail.progress",
+  contact: "platformConsole.prospects.detail.contact",
+  messages: "platformConsole.prospects.detail.messages",
+  history: "platformConsole.prospects.detail.history",
+};
+
 export type ProspectFilter = "all" | ProspectStageGroup | "due";
 
 export const FILTERS: Array<{ value: ProspectFilter; labelKey: TKey }> = [
