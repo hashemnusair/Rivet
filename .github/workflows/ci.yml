@@ -22,9 +22,9 @@ env:
   NODE_VERSION: 22
 
 jobs:
-  # The gate runs as ten jobs, so two overlapping runs (a pull request and the
-  # main push after it merges) fit GitHub's 20-job limit without queueing. The
-  # browser shards set the floor at a little over two minutes.
+  # The gate runs as eleven jobs (it was thirteen), so two overlapping runs
+  # nearly fit GitHub's 20-job limit and the overflow clears as the short jobs
+  # finish. The browser shards set the floor at about two and a half minutes.
   typecheck-lint:
     name: Typecheck, lint, Convex codegen, repository safety
     runs-on: ubuntu-latest
@@ -164,20 +164,21 @@ jobs:
         run: test -z "$(git status --porcelain=v1)"
 
   browser:
-    name: Credential-free Playwright (${{ matrix.shard }}/5)
+    name: Credential-free Playwright (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # On one runner against the dev server the preview suite took ~48 minutes,
     # most of it compiling each route on first visit. Each shard builds the
     # mock preview once as an approved preview bundle and serves it with
-    # `next start`; three workers share the bundle. Tests are fully parallel, so
-    # shards split by test, not by file. The dev-only design gallery is served
+    # `next start`; two workers share the bundle (a third starves the
+    # animation-timing checks in page-motion.spec.ts on the 4-core runner).
+    # Tests are fully parallel, so shards split by test, not by file. The dev-only design gallery is served
     # by that bundle too (RIVET_DESIGN_PREVIEW), so no dev-server job remains.
     # A shard failure fails the workflow.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
       NEXT_PUBLIC_DATA_MODE: mock
@@ -239,8 +240,8 @@ jobs:
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
-          PLAYWRIGHT_WORKERS: "3"
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/5
+          PLAYWRIGHT_WORKERS: "2"
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/6
       - name: Save failed browser screenshots and context
         if: failure()
         uses: actions/upload-artifact@v4
