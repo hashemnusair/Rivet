@@ -11,6 +11,7 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { roleLabel } from "@/lib/i18n/labels";
 import { useApp } from "@/lib/providers/app-providers";
 import type { UserProfile } from "@/lib/domain/types";
+import { ChangePasswordForm, PASSWORD_ANCHOR, usePasswordAnchor } from "@/components/auth/change-password-form";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
@@ -100,6 +101,20 @@ export function MyProfileSection() {
         onDiscard={() => { if (baseline) setForm(baseline); }}
         saveLabel={t("settingsDetails.text118")}
       />
+      <PasswordPanel />
     </SettingsSection>
+  );
+}
+
+/** Separate from the profile form above: the password saves on its own. */
+function PasswordPanel() {
+  const t = useT();
+  const anchor = usePasswordAnchor<HTMLDivElement>();
+  return (
+    <div id={PASSWORD_ANCHOR} ref={anchor} className="scroll-mt-20 lg:scroll-mt-24">
+      <SettingsPanel title={t("auth.changePassword.title")} description={t("auth.changePassword.description")} testId="my-password-panel">
+        <ChangePasswordForm idPrefix="staff-password" />
+      </SettingsPanel>
+    </div>
   );
 }

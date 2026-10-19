@@ -111,6 +111,19 @@ describe("PlatformShell sign out", () => {
   });
 });
 
+describe("PlatformShell account", () => {
+  it("opens the administrator's own account page from their name", () => {
+    render(<PlatformShell><div>Platform content</div></PlatformShell>);
+
+    const account = screen.getByRole("link", { name: "Your account" });
+    expect(account).toHaveAttribute("href", "/platform/account");
+    expect(account).toHaveTextContent("RIVET Admin");
+    expect(account).not.toHaveAttribute("aria-current");
+    // Signing out stays one click away beside it.
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+});
+
 describe("PlatformShell navigation", () => {
   it("prepares a console screen only when the administrator reaches for its link", () => {
     render(<PlatformShell><div>Platform content</div></PlatformShell>);

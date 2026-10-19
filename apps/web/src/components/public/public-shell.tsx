@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/provider";
 
 
 import { useClerk } from "@clerk/nextjs";
-import { ChevronDown, GraduationCap, Home, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
+import { ChevronDown, GraduationCap, Home, KeyRound, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -48,7 +48,8 @@ function isProtectedMemberRoute(pathname: string) {
 /**
  * One account menu for the desktop header and the phone dock. Everything the
  * navigation already offers stays out of it, so the menu is only what a member
- * cannot reach elsewhere: profile, the guide, communication choices, sign out.
+ * cannot reach elsewhere: profile, password, the guide, communication choices,
+ * sign out.
  */
 function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
   const t = useT();
@@ -62,6 +63,9 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
       <DropdownMenuSeparator />
       <DropdownMenuItem asChild className={itemClass}>
         <Link href="/customer/profile"><UserRound />{" "}{t("marketing.memberShell.profile")}</Link>
+      </DropdownMenuItem>
+      <DropdownMenuItem asChild className={itemClass}>
+        <Link href="/customer/profile#password"><KeyRound />{" "}{t("auth.changePassword.menu")}</Link>
       </DropdownMenuItem>
       <DropdownMenuItem asChild className={itemClass}>
         <Link href="/customer/getting-started"><GraduationCap />{" "}{t("shell.account.gettingStarted")}</Link>

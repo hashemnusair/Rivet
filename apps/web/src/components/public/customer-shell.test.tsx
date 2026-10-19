@@ -69,7 +69,7 @@ describe("CustomerShell", () => {
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
   });
 
-  it("links communication settings to the profile section and never duplicates the dock in the menu", async () => {
+  it("links communication settings and the password to their profile sections and never duplicates the dock in the menu", async () => {
     const user = userEvent.setup();
     render(<CustomerShell><p>content</p></CustomerShell>);
     const [headerTrigger] = screen.getAllByRole("button", { name: "Open account menu" });
@@ -78,6 +78,7 @@ describe("CustomerShell", () => {
     const items = Array.from(menu.querySelectorAll("a")).map((link) => [link.textContent?.trim(), link.getAttribute("href")]);
     expect(items).toEqual([
       ["Profile", "/customer/profile"],
+      ["Change password", "/customer/profile#password"],
       ["Getting started", "/customer/getting-started"],
       ["Offers and news", "/customer/profile#communication"],
     ]);

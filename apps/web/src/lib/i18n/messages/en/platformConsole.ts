@@ -21,7 +21,6 @@ export const platformConsole = {
   shell: {
     administrator: "Platform administrator",
     staff: "RIVET staff",
-    avatar: "{name} avatar",
     signingOut: "Returning to secure sign in…",
     consoleLoadFailed: "The platform console could not load",
     consoleLoadErrorDetail: "The platform workspace could not be loaded. Try again.",
@@ -547,5 +546,14 @@ export const platformConsole = {
   shared: {
     retry: "Retry",
     retrying: "Retrying…",
+  },
+  /** /platform/account: the signed-in administrator's own sign-in details. */
+  account: {
+    title: "Your account",
+    description: "Your sign-in details for the RIVET console.",
+    open: "Your account",
+    detailsTitle: "Signed in as",
+    name: "Name",
+    email: "Email",
   },
 };

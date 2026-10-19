@@ -21,7 +21,6 @@ export const platformConsole = {
   shell: {
     administrator: "مسؤول المنصة",
     staff: "فريق RIVET",
-    avatar: "الصورة الرمزية لـ{name}",
     signingOut: "جارٍ العودة إلى تسجيل الدخول الآمن…",
     consoleLoadFailed: "تعذّر تحميل وحدة إدارة المنصة",
     consoleLoadErrorDetail: "تعذّر تحميل بيانات المنصة. أعد المحاولة.",
@@ -547,5 +546,13 @@ export const platformConsole = {
   shared: {
     retry: "إعادة المحاولة",
     retrying: "جارٍ إعادة المحاولة…",
+  },
+  account: {
+    title: "حسابك",
+    description: "بيانات تسجيل الدخول إلى منصة RIVET.",
+    open: "حسابك",
+    detailsTitle: "تم تسجيل الدخول باسم",
+    name: "الاسم",
+    email: "البريد الإلكتروني",
   },
 };

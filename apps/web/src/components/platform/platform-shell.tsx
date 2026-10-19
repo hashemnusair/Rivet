@@ -140,16 +140,24 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           <div className="ms-auto flex items-center gap-2 sm:gap-3">
             <LanguageButton className="shrink-0" />
             <NotificationCenter />
-            <div className="hidden text-end sm:block">
-              <p className="text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</p>
-              <ContextLabel>{t("platformConsole.shell.staff")}</ContextLabel>
-            </div>
-            <span
-              className="flex size-8 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-paper"
-              aria-label={t("platformConsole.shell.avatar", { name: isolate(administratorName) })}
+            {/* The administrator's own account page, where the password is changed. */}
+            <IntentPrefetchLink
+              href="/platform/account"
+              aria-label={t("platformConsole.account.open")}
+              aria-current={pathname === "/platform/account" ? "page" : undefined}
+              className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 sm:gap-3"
             >
-              {administratorInitials}
-            </span>
+              <span className="hidden text-end sm:block">
+                <span className="block text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</span>
+                <ContextLabel as="span" className="block">{t("platformConsole.shell.staff")}</ContextLabel>
+              </span>
+              <span
+                className="flex size-8 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-paper"
+                aria-hidden
+              >
+                {administratorInitials}
+              </span>
+            </IntentPrefetchLink>
             <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label={t("common.action.signOut")}>
               <LogOut />
             </Button>
