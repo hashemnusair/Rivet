@@ -122,7 +122,8 @@ const CONSOLE_RECORD_ROUTES: Route[] = [
   { path: "/platform/gyms", slug: "platform-gyms", ready: h1("Gym organizations"), shoot: true },
   { path: "/platform/gyms/forge-fitness", slug: "platform-gym", ready: h1("Forge Fitness Club"), shoot: true },
   { path: "/platform/gyms/pulse-lab", slug: "platform-gym-unprovisioned", ready: (page) => page.getByText("Cleanup-only record") },
-  { path: "/platform/applications", slug: "platform-applications", ready: (page) => page.getByRole("heading", { level: 2, name: "Northline Strength" }), shoot: true },
+  // Below 1024px the list comes first and an application opens on a tap.
+  { path: "/platform/applications", slug: "platform-applications", ready: (page) => page.getByRole("button", { name: /Northline Strength/ }), shoot: true },
 ];
 
 const CONSOLE_LEDGER_ROUTES: Route[] = [
