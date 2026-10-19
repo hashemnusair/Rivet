@@ -85,7 +85,8 @@ Do not create a second TODO file.
 - [x] Automated WhatsApp/SMS was removed from launch scope on 7 October.
   Staff-initiated editable `wa.me` handoff remains. Meta templates, automated
   STOP callbacks, Twilio setup and per-message pricing are no longer launch tasks.
-- [x] The normal CI suite runs against a built preview in eight browser shards.
+- [x] The normal CI suite runs against a built preview in six browser shards
+  (eight before 19 October 2026; tests now split by test, not by file).
   Full CI on baseline `08913196` passed; later PR/release results belong in the
   current checkpoint. This is not credentialed live-provider acceptance.
 

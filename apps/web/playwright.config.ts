@@ -15,6 +15,10 @@ const distDir = process.env.PLAYWRIGHT_DIST_DIR ?? ".next-playwright";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 60_000,
+  // Every journey opens its own browser context on seeded mock data, so tests
+  // in one file need not share a worker. CI shards then split by test rather
+  // than by file, which keeps one long spec from setting a shard's floor.
+  fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   // One worker on the dev server (route compiles contend); a built bundle
   // serves concurrent journeys fine, so CI shards may raise this.

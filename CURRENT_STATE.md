@@ -76,6 +76,40 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 19 October 2026 — Faster GitHub CI
+
+GitHub CI now runs 11 jobs instead of 13 and finishes in about 3m10s from the
+first job starting to the last one ending. Before, it took 4m15s–4m35s. Runner
+time per run fell from about 40 to 24 minutes. Test coverage is unchanged.
+
+- **Browser tests:** 6 shards instead of 8, still 2 workers each. Playwright now
+  runs tests in parallel within a file (`fullyParallel`), so shards split by
+  test rather than by file. Each shard restores a webpack build cache and skips
+  Next's repeat type check (`RIVET_SKIP_BUILD_TYPECHECK=1`, read only by
+  `next.config.mjs`). Chromium installs while the bundle builds. The bundle
+  build fell from about 100s to about 38s. A third worker made the timing check
+  in `page-motion.spec.ts` (sign-in doors at 1440px) fail every attempt, so
+  shards stay at 2 workers. That test was already flaky at 2 workers.
+- **Static checks:** the web typecheck, the Convex typecheck and lint run side
+  by side. TypeScript's incremental file and ESLint's content cache are restored
+  between runs, so warm runs take 18s instead of about 124s. Convex codegen
+  moved into this job and runs first. The production-build job still runs
+  Next's full type check, including the generated route types.
+- **Unit tests:** 3 shards instead of 2.
+- **Queueing:** a new push to a pull request cancels that pull request's older
+  run. Pushes to `main` are never cancelled. Every job has a timeout. Job names
+  changed (`…(N/6)`, `…(N/3)`, and the static job now says "Convex codegen").
+  `main` has no required status checks, so nothing needed updating.
+
+Verified with manual runs on the branch: cold caches with 5×2 shards
+([39285341291](https://github.com/hashemnusair/Rivet/actions/runs/39285341291), green, 3m37s),
+3 workers per shard
+([39288378748](https://github.com/hashemnusair/Rivet/actions/runs/39288378748), the motion test failed),
+and the final 6×2 layout with warm caches
+([39291522431](https://github.com/hashemnusair/Rivet/actions/runs/39291522431), all 11 jobs green, 3m10s).
+Locally, the full browser suite passed fully parallel with 4 workers: 222 passed
+and 14 credential-gated tests were skipped.
+
 ## 19 October 2026 — Staff, members and administrators change their own password
 
 Elias asked for a change-password feature for RIVET administrators, gym
