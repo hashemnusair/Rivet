@@ -14,6 +14,10 @@ const nextConfig = {
   images: { unoptimized: true },
   reactStrictMode: true,
   poweredByHeader: false,
+  // CI's browser shards each build the mock bundle; the typecheck and
+  // production-build jobs already run the full type check, so the shards skip
+  // the repeat. Vercel and local builds never set this and still check types.
+  typescript: { ignoreBuildErrors: process.env.RIVET_SKIP_BUILD_TYPECHECK === "1" },
   // Bake the hosting deployment class into the client bundle. The runtime
   // data-mode guard may allow seeded mock data only for an explicitly marked
   // Vercel Preview; Production always resolves to Convex, even if NODE_ENV is
