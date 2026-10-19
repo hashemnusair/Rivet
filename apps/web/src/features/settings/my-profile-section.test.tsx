@@ -26,4 +26,15 @@ describe("My profile", () => {
     expect((await api.getMyProfile()).name).toBe("Reception lead");
     expect((await api.getSession()).user.name).toBe("Reception lead");
   });
+
+  it("gives staff without settings access a password panel of its own, apart from the profile form", async () => {
+    await renderWithApp(<MyProfileSection />, { role: "trainer" });
+
+    const panel = await screen.findByTestId("my-password-panel");
+    expect(panel.closest("#password")).not.toBeNull();
+    expect(panel).toHaveTextContent("Change the password you use to sign in.");
+    // The test build has no Clerk account, so it says so instead of asking for one.
+    expect(panel).toHaveTextContent("You cannot change a password in this demo.");
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+  });
 });

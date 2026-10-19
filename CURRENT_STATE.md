@@ -76,6 +76,55 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 19 October 2026 — Staff, members and administrators change their own password
+
+Elias asked for a change-password feature for RIVET administrators, gym
+members and gym staff.
+
+- **Where:** staff use Settings → My profile → **Password**, open to every
+  role, and **Change password** in the account menu, which opens that panel.
+  Members use Profile → **Password** and the same account-menu item
+  (`/customer/profile#password`). Administrators use a new **Your account**
+  page (`/platform/account`), opened by clicking their name in the console
+  header. The sign-out button there is unchanged.
+- **How:** one shared form (`components/auth/change-password-form.tsx`)
+  asks for the current password, the new one twice, and has **Sign out on my
+  other devices** (on by default). It calls Clerk's `user.updatePassword`
+  through `useReverification`. If the sign-in is old, Clerk asks for the
+  password, a code or a second factor again, then retries. An account with no
+  password sets its first one without the current-password field.
+  `lib/auth/password-change.ts` checks the length (8 to 128 characters), the
+  match, and that the new password differs from the current one. It also
+  shows each Clerk refusal on the field it belongs to: a wrong current
+  password, a breached, weak or short new password, or a cancelled identity
+  check. The form sits on a page, not in a dialog. A dialog's focus trap would
+  stop people from typing into Clerk's confirm-it-is-you window.
+- **Assumptions:** Clerk holds the password, so RIVET adds no Convex function,
+  stored field or audit event. AGENTS.md does not list a person changing their
+  own password as an audited action. Clerk's own "password changed" email, if
+  it is turned on in the Clerk dashboard, goes through the existing
+  `clerk-email` webhook with Clerk's body. Demo and keyless builds
+  (`DEMO_AUTH_BYPASS` or no Convex URL, as CI is) show a notice and never ask
+  for a password, as the demo sign-up page does.
+- **Copy:** English in `auth.changePassword` and `platformConsole.account`,
+  following docs/22. Arabic follows the v1 standard: verbal-noun buttons,
+  `تسجيل الخروج`, impersonal `يرجى`, and the approved save-failed pattern.
+  `verify-lock.py` passed (revision 607, 247 agreements). The unused
+  `platformConsole.shell.avatar` key was removed.
+- **Evidence:** new unit tests for validation and Clerk error mapping, and for
+  the form: field checks, focus, wrong current password, cancelled check, first
+  password, Clerk wiring and the demo notice. Also updated tests for the member
+  menu, the staff panel and the console account link. The full Vitest run
+  passed (2,255 tests in 353 files, 2 opt-in benchmarks skipped). `tsc` is
+  clean and eslint is clean on the changed files. In a mock browser at
+  1024px, the staff (reception), member and administrator entry points reach
+  their panel, and the `#password` links scroll to it. The real form was rendered with a fake submit at 1024px, at
+  375px (44px fields, no sideways scroll) and in Arabic RTL.
+- **Not verified:** the real Clerk path has not run in a browser (it needs a
+  signed-in Clerk account), including Clerk's confirm-it-is-you window. Not
+  merged. The change is frontend only, so Vercel deploys it on merge; there is
+  nothing to run with `pnpm convex:deploy`.
+
 ## 19 October 2026 — Gyms upgrade their own plan; a simpler billing page
 
 Elias asked for self-serve plan changes and a much simpler admin billing page.

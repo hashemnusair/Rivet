@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Beaker, Building2, Check, ChevronDown, GraduationCap, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
+import { Beaker, Building2, Check, ChevronDown, GraduationCap, KeyRound, LogOut, Menu, RotateCcw, Search, UserRound, UsersRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -297,6 +297,9 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push("/settings")}>
               <Building2 /> {t("shell.account.settings")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push("/settings?section=my-profile#password")}>
+              <KeyRound /> {t("auth.changePassword.menu")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> {t("shell.account.gettingStarted")}</DropdownMenuItem>
             <LanguageMenuItem />
