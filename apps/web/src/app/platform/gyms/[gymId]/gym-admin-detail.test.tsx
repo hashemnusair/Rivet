@@ -135,8 +135,8 @@ describe("Gym admin detail (informational record)", () => {
     // The facts stay, and both entry points deep-link into billing.
     expect(screen.getByText("Subscription facts")).toBeInTheDocument();
     expect(screen.getByText(/Paid through/)).toHaveTextContent(/Paid through.*1 Feb 2026/);
-    expect(screen.getByRole("link", { name: /Manage subscription/ })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
-    expect(screen.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=gym-1");
+    expect(screen.getByRole("link", { name: /Manage subscription/ })).toHaveAttribute("href", "/platform/billing?gym=gym-1");
+    expect(screen.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?gym=gym-1");
   });
 
   it("splits the record into Gym info, Members, Team, and Settings tabs", () => {

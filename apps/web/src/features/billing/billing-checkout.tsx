@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { InvoiceLines } from "@/features/billing/invoice-lines";
+import { PaymentProgress, type PaymentOutcome } from "@/features/billing/payment-progress";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -134,11 +135,13 @@ function BillingHeader({ gymName, fullAccess }: { gymName?: string; fullAccess: 
 }
 
 function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAccess: boolean }) {
-  const { t, isolateLtr } = useLocale();
+  const { t, isolate, isolateLtr } = useLocale();
   const f = useFormat();
   const { gym, invoice } = checkout;
-  const kind = gym.status === "pending_payment" ? "pending" : gym.status === "suspended" ? "suspended" : "renewal";
+  const upgradeTo = invoice?.planChange?.to;
+  const kind = upgradeTo ? "upgrade" : gym.status === "pending_payment" ? "pending" : gym.status === "suspended" ? "suspended" : "renewal";
   const cadence = t(gym.billingInterval === "annual" ? "commerce.lines.year" : "commerce.lines.month");
+  const outcome: PaymentOutcome = upgradeTo ? { kind: "upgrade", plan: upgradeTo } : kind === "pending" ? { kind: "workspace" } : { kind: "paid" };
 
   if (!invoice) {
     return (
@@ -153,13 +156,13 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
   const claim = invoice.paymentClaim;
   return (
     <div>
-      <h1 className="max-w-2xl text-[clamp(1.7rem,3.4vw,2.4rem)] font-semibold leading-tight tracking-[-0.02em]">{t(`commerce.checkout.title.${kind}`)}</h1>
+      <h1 className="max-w-2xl text-[clamp(1.7rem,3.4vw,2.4rem)] font-semibold leading-tight tracking-[-0.02em]">{t(`commerce.checkout.title.${kind}`, { plan: isolate(upgradeTo ?? "") })}</h1>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-2">{t(`commerce.checkout.intro.${kind}`)}</p>
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="grid gap-8">
           {claim?.status === "submitted" ? (
-            <ClaimSent checkout={checkout} />
+            <ClaimSent checkout={checkout} outcome={outcome} fullAccess={fullAccess} />
           ) : !checkout.canPay ? (
             <StatePanel title={t("commerce.checkout.ownerOnly.title")} description={t("commerce.checkout.ownerOnly.body")} />
           ) : (
@@ -179,8 +182,9 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
         <aside aria-labelledby="invoice-title" className="rounded-lg border border-line bg-surface p-5 lg:sticky lg:top-6">
           <h2 id="invoice-title" className="text-[15px] font-semibold">{t("commerce.checkout.invoiceTitle", { id: isolateLtr(paymentNoteReference(invoice.id)) })}</h2>
           <p className="mt-1 text-[12.5px] text-ink-3">{t("commerce.checkout.due", { date: f.date(invoice.dueAt) })}</p>
-          <InvoiceLines invoice={invoice} plan={gym.plan} className="mt-4" />
+          <InvoiceLines invoice={invoice} plan={upgradeTo ?? gym.plan} className="mt-4" />
           {invoice.firstPayment ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.firstTerm", { cadence })}</p> : null}
+          {upgradeTo ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.upgradeTerm", { plan: isolate(upgradeTo) })}</p> : null}
           {checkout.accessEndsAt ? <p className="mt-4 text-[12.5px] leading-relaxed text-warning-deep">{t("commerce.checkout.accessEnds", { date: f.date(checkout.accessEndsAt) })}</p> : null}
         </aside>
       </div>
@@ -346,14 +350,15 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
   );
 }
 
-function ClaimSent({ checkout }: { checkout: BillingCheckout }) {
+function ClaimSent({ checkout, outcome, fullAccess }: { checkout: BillingCheckout; outcome: PaymentOutcome; fullAccess: boolean }) {
   const { t, isolateLtr } = useLocale();
   const f = useFormat();
   const [editing, setEditing] = useState(false);
   const claim = checkout.invoice!.paymentClaim!;
+  const supportCaseId = checkout.invoice?.supportCaseId;
   if (editing && checkout.canPay) return <ClaimForm checkout={checkout} onDone={() => setEditing(false)} />;
   return (
-    <section role="status" className="rounded-lg border border-line bg-surface p-5">
+    <section role="status" className="rounded-lg border border-line bg-surface p-5 sm:p-6">
       <h2 className="text-[17px] font-semibold tracking-tight">{t("commerce.checkout.submitted.title")}</h2>
       <p className="mt-2 text-[14px] leading-relaxed text-ink-2">
         {t("commerce.checkout.submitted.body", {
@@ -363,9 +368,11 @@ function ClaimSent({ checkout }: { checkout: BillingCheckout }) {
           reference: isolateLtr(claim.reference),
         })}
       </p>
-      {checkout.canPay ? (
-        <Button className="mt-4" variant="secondary" size="sm" onClick={() => setEditing(true)}>{t("commerce.checkout.submitted.edit")}</Button>
-      ) : null}
+      <PaymentProgress className="mt-5" state="sent" outcome={outcome} />
+      <div className="mt-5 flex flex-wrap gap-2">
+        {supportCaseId && fullAccess ? <Button asChild variant="secondary" size="sm"><Link href={`/support?case=${encodeURIComponent(supportCaseId)}`}>{t("commerce.plans.seeRequest")}</Link></Button> : null}
+        {checkout.canPay ? <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>{t("commerce.checkout.submitted.edit")}</Button> : null}
+      </div>
     </section>
   );
 }

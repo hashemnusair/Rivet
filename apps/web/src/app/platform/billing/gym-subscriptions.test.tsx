@@ -57,32 +57,29 @@ describe("Gym subscriptions section", () => {
     state.api.updatePlatformGym.mockReset().mockResolvedValue(undefined);
   });
 
-  it("lists provisioned tenants with live facts and routes plan changes to the wizard", async () => {
-    const user = userEvent.setup();
-    const onBill = vi.fn();
-    render(<GymSubscriptions gyms={gyms} onBill={onBill} />);
+  const openMenu = async (user: ReturnType<typeof userEvent.setup>, gym: string) => {
+    await user.click(screen.getByRole("button", { name: `More actions for ${gym}` }));
+  };
+
+  it("lists provisioned gyms with their plan, status and paid-through date, and no plan changes", () => {
+    render(<GymSubscriptions gyms={gyms} />);
 
     expect(screen.queryByText("Legacy Row")).not.toBeInTheDocument();
     const activeRow = screen.getByRole("row", { name: /Forge Fitness/ });
     expect(activeRow).toHaveTextContent("Pro · Monthly");
     expect(activeRow).toHaveTextContent("15 Sept 2026");
-
-    await user.click(within(activeRow).getByRole("button", { name: /Change plan/ }));
-    expect(onBill).toHaveBeenCalledWith("gym-active");
-
-    const suspendedRow = screen.getByRole("row", { name: /Iron Temple/ });
-    expect(within(suspendedRow).queryByRole("button", { name: "Suspend" })).not.toBeInTheDocument();
-    await user.click(within(suspendedRow).getByRole("button", { name: /Reactivate & bill/ }));
-    expect(onBill).toHaveBeenCalledWith("gym-suspended");
+    // Gyms change their own plan now.
+    expect(screen.queryByRole("button", { name: /Change plan/ })).not.toBeInTheDocument();
   });
 
   it("suspends through a reasoned dialog that promises no invoice", async () => {
     const user = userEvent.setup();
-    render(<GymSubscriptions gyms={gyms} onBill={vi.fn()} />);
+    render(<GymSubscriptions gyms={gyms} />);
 
-    await user.click(within(screen.getByRole("row", { name: /Forge Fitness/ })).getByRole("button", { name: "Suspend" }));
+    await openMenu(user, "Forge Fitness");
+    await user.click(await screen.findByRole("menuitem", { name: "Suspend" }));
     const dialog = screen.getByRole("dialog", { name: /Suspend Forge Fitness\?/ });
-    expect(dialog).toHaveTextContent("No invoice is issued; the paid-through date stays on record");
+    expect(dialog).toHaveTextContent("No invoice is issued.");
 
     const confirm = within(dialog).getByRole("button", { name: "Suspend gym" });
     expect(confirm).toBeDisabled();
@@ -94,13 +91,29 @@ describe("Gym subscriptions section", () => {
 
   it("cancels through its own reasoned dialog", async () => {
     const user = userEvent.setup();
-    render(<GymSubscriptions gyms={gyms} onBill={vi.fn()} />);
+    render(<GymSubscriptions gyms={gyms} />);
 
-    await user.click(within(screen.getByRole("row", { name: /Iron Temple/ })).getByRole("button", { name: "Cancel subscription" }));
+    await openMenu(user, "Iron Temple");
+    expect(screen.queryByRole("menuitem", { name: "Suspend" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitem", { name: "Cancel subscription" }));
     const dialog = screen.getByRole("dialog", { name: /Cancel Iron Temple's subscription\?/ });
     await user.type(within(dialog).getByLabelText("Reason for this change"), "Owner closed the business.");
     await user.click(within(dialog).getByRole("button", { name: "Cancel subscription" }));
 
     expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-suspended", status: "cancelled", reason: "Owner closed the business." });
+  });
+
+  it("reactivates a suspended gym and says a new term is billed", async () => {
+    const user = userEvent.setup();
+    render(<GymSubscriptions gyms={gyms} />);
+
+    await openMenu(user, "Iron Temple");
+    await user.click(await screen.findByRole("menuitem", { name: "Reactivate & bill" }));
+    const dialog = screen.getByRole("dialog", { name: /Reactivate Iron Temple\?/ });
+    expect(dialog).toHaveTextContent("gets an invoice for a new term");
+    await user.type(within(dialog).getByLabelText("Reason for this change"), "Paid by bank transfer.");
+    await user.click(within(dialog).getByRole("button", { name: "Reactivate & bill" }));
+
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-suspended", status: "active", reason: "Paid by bank transfer." });
   });
 });

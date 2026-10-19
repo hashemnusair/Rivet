@@ -98,7 +98,7 @@ describe("BillingPage", () => {
     const user = userEvent.setup();
     state.snapshot = snapshot([invoice({ gym: "=Authored Gym", status: "past_due", billingInterval: "monthly", periodStart: "2026-10-01T21:00:00Z", periodEnd: "2026-11-01T21:00:00Z", paymentReference: "REF-1" })]);
     render(<LocaleProvider initialLocale="ar"><BillingPage /></LocaleProvider>);
-    await user.click(screen.getByRole("button", { name: "تصدير السجل المالي" }));
+    await user.click(screen.getByRole("button", { name: "تحميل الفواتير" }));
     const saved = state.download.mock.calls[0]?.[0] as { content: string; fileName: string };
     expect(saved.fileName).toBe("rivet-platform-invoices.csv");
     expect(saved.content).toContain("رقم الفاتورة,النادي,نوع الفاتورة");
@@ -109,76 +109,69 @@ describe("BillingPage", () => {
     expect(saved.content).toContain("REF-1");
   });
 
-  it("opens the billing wizard on the tenant a gym page deep-links with ?bill=", async () => {
-    window.history.replaceState({}, "", "/platform/billing?bill=gym-1");
-    const enriched = snapshot([]);
-    enriched.gyms = [{ ...enriched.gyms[0]!, isProvisioned: true, billingInterval: "monthly", currentPeriodEndsAt: "2026-09-15T10:00:00.000Z" }];
-    enriched.plans = [{ name: "Growth", priceMinor: 149_000, branches: 3, staff: 25, members: 2_500, tone: "signal" }] as PlatformSnapshot["plans"];
-    state.snapshot = enriched;
+  it("shows unpaid invoices first, sums what is owed and paid this month, and filters on request", async () => {
+    const user = userEvent.setup();
+    const paidAt = new Date().toISOString();
+    state.snapshot = snapshot([
+      invoice({ id: "INV-OPEN", status: "open", dueAt: "2026-11-01T08:00:00.000Z" }),
+      invoice({ id: "INV-PAID", status: "paid", amountMinor: 89_000, paidAt }),
+      invoice({ id: "INV-VOID", status: "void" }),
+    ]);
     render(<BillingPage />);
+    const totals = screen.getByRole("region", { name: "Billing totals" });
+    expect(totals).toHaveTextContent("JOD 149.000");
+    expect(totals).toHaveTextContent("JOD 89.000");
+    const invoices = screen.getByRole("table");
+    expect(within(invoices).getByRole("row", { name: /INV-OPEN/ })).toHaveTextContent("Due 1 Nov 2026");
+    expect(within(invoices).queryByRole("row", { name: /INV-PAID/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Paid" }));
+    expect(screen.getByRole("row", { name: /INV-PAID/ })).toBeInTheDocument();
+    expect(screen.queryByRole("row", { name: /INV-OPEN/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getAllByRole("row", { name: /INV-/ })).toHaveLength(3);
+  });
 
-    const dialog = await screen.findByRole("dialog", { name: "Bill a gym" });
-    expect(within(dialog).getByText(/is currently/)).toHaveTextContent("Northline Strength is currently active on Growth · monthly.");
-    // The subscriptions section is the on-page home for the same actions
-    // (aria-hidden while the modal wizard is open, hence hidden queries).
-    expect(screen.getByRole("heading", { name: "Gym subscriptions", hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole("row", { name: /Northline Strength/, hidden: true })).toHaveTextContent("Growth · Monthly");
+  it("says what each invoice is for", () => {
+    state.snapshot = snapshot([
+      invoice({ id: "INV-FIRST", firstPayment: true }),
+      invoice({ id: "INV-UP", planChange: { from: "Starter", to: "Growth" } }),
+      invoice({ id: "INV-RENEW", cycleKey: "subscription:gym-1:monthly:1" }),
+      invoice({ id: "INV-OTHER" }),
+    ]);
+    render(<BillingPage />);
+    expect(screen.getByRole("row", { name: /INV-FIRST/ })).toHaveTextContent("First payment");
+    expect(screen.getByRole("row", { name: /INV-UP/ })).toHaveTextContent("Upgrade to Growth");
+    expect(screen.getByRole("row", { name: /INV-RENEW/ })).toHaveTextContent("Renewal");
+    expect(screen.getByRole("row", { name: /INV-OTHER/ })).toHaveTextContent("Other");
+  });
+
+  it("shows one gym's invoices when a gym page links here, with a way back to all", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/platform/billing?gym=gym-1");
+    state.snapshot = snapshot([invoice({ id: "INV-A" }), invoice({ id: "INV-B", gymId: "gym-2", gym: "Mosaic Women's Fitness" })]);
+    render(<BillingPage />);
+    expect(screen.getByText("Invoices for Northline Strength")).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /INV-A/ })).toBeInTheDocument();
+    expect(screen.queryByRole("row", { name: /INV-B/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "All gyms" }));
+    expect(screen.getByRole("row", { name: /INV-B/ })).toBeInTheDocument();
+    // There is no plan wizard any more: gyms change their own plan.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("waits for the requested invoice row before focusing it", async () => {
     window.history.replaceState({}, "", "/platform/billing?invoice=INV-2");
     const view = render(<BillingPage />);
 
-    expect(screen.getByText("Loading the persisted invoice ledger…")).toBeInTheDocument();
+    expect(screen.getByText("Loading invoices")).toBeInTheDocument();
     expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
 
-    state.snapshot = snapshot([invoice({ id: "INV-2", gym: "Mosaic Women's Fitness" })]);
+    state.snapshot = snapshot([invoice({ id: "INV-2", gym: "Mosaic Women's Fitness", status: "paid" })]);
     view.rerender(<BillingPage />);
 
     const row = await screen.findByRole("row", { name: /INV-2/ });
     await waitFor(() => expect(row).toHaveClass("bg-sunken\/60"));
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
-  });
-
-  it("preserves Arabic amount and period drafts through a locale change and submits exact minor units", async () => {
-    const user = userEvent.setup();
-    state.snapshot = snapshot([]);
-    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillingPage /></LocaleProvider>);
-    await user.click(screen.getByRole("button", { name: "Create exception invoice" }));
-    await user.selectOptions(screen.getByLabelText("Gym"), "gym-1");
-    fireEvent.change(screen.getByLabelText("Amount (JOD)"), { target: { value: "١٤٩٫٠٠١" } });
-    fireEvent.change(screen.getByLabelText("Period start"), { target: { value: "2026-10-01" } });
-    fireEvent.change(screen.getByLabelText("Period end"), { target: { value: "2026-10-31" } });
-    fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-10-15" } });
-
-    fireEvent.click(screen.getByTestId("locale-switch"));
-
-    expect(screen.getByLabelText("المبلغ (د.أ)")).toHaveValue("١٤٩٫٠٠١");
-    expect(screen.getByLabelText("بداية الفترة")).toHaveValue("2026-10-01");
-    expect(screen.getByLabelText("نهاية الفترة")).toHaveValue("2026-10-31");
-    expect(screen.getByLabelText("تاريخ الاستحقاق")).toHaveValue("2026-10-15");
-    await user.click(screen.getByRole("button", { name: "إنشاء مسودة" }));
-
-    const created = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
-    expect(created?.mutate).toHaveBeenCalledWith({ gymId: "gym-1", amountMinor: 149_001, currency: "JOD", dueAt: "2026-10-15", periodStart: "2026-10-01", periodEnd: "2026-10-31" });
-  });
-
-  it("keeps the payment action identity and typed reference across a locale change", async () => {
-    const user = userEvent.setup();
-    state.snapshot = snapshot([invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000", status: "past_due" })]);
-    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillingPage /></LocaleProvider>);
-    const row = screen.getByRole("row", { name: /AUTO-GRACE/ });
-    await user.click(within(row).getByRole("button", { name: "Reactivate" }));
-    await user.type(screen.getByLabelText("Payment reference"), "حوالة-٧١");
-    await user.type(screen.getByLabelText("Reason"), "تأكيد الحوالة البنكية.");
-
-    fireEvent.click(screen.getByTestId("locale-switch"));
-
-    expect(screen.getByLabelText("مرجع الدفعة")).toHaveValue("حوالة-٧١");
-    expect(screen.getByLabelText("السبب")).toHaveValue("تأكيد الحوالة البنكية.");
-    await user.click(screen.getByRole("button", { name: "إعادة تفعيل النادي" }));
-    const payment = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
-    expect(payment?.mutate).toHaveBeenCalledWith({ invoiceId: "AUTO-GRACE", reference: "حوالة-٧١", reason: "تأكيد الحوالة البنكية." });
   });
 
   it("follows a same-route invoice query change", async () => {
@@ -192,58 +185,32 @@ describe("BillingPage", () => {
     await waitFor(() => expect(screen.getByRole("row", { name: /INV-2/ })).toHaveClass("bg-sunken\/60"));
   });
 
-  it.each([
-    ["0", "Amount must be greater than zero"],
-    ["0.0004", "no more than 3 decimal places"],
-    ["1e3", "valid positive decimal amount"],
-    ["9007199254740.992", "too large"],
-  ])("rejects unsafe invoice amount %s", async (value, message) => {
+  it("marks an invoice paid with a reference and a note, kept across a locale change", async () => {
     const user = userEvent.setup();
-    state.snapshot = snapshot([]);
-    render(<BillingPage />);
-    await user.click(screen.getByRole("button", { name: "Create exception invoice" }));
-    const amount = screen.getByRole("textbox", { name: "Amount (JOD)" });
-    await user.type(amount, value);
-    expect(screen.getByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByRole("button", { name: "Create draft" })).toBeDisabled();
+    state.snapshot = snapshot([invoice({ id: "INV-LATE", status: "past_due" })]);
+    render(<LocaleProvider initialLocale="en"><LocaleSwitch /><BillingPage /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "More actions for invoice INV-LATE" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark paid" }));
+    await user.type(screen.getByLabelText(/Payment reference/), "حوالة-٧١");
+    await user.type(screen.getByLabelText(/Note for the record/), "تأكيد الحوالة البنكية.");
+
+    fireEvent.click(screen.getByTestId("locale-switch"));
+
+    expect(screen.getByLabelText(/رقم مرجع الدفعة/)).toHaveValue("حوالة-٧١");
+    expect(screen.getByLabelText(/ملاحظة للسجل/)).toHaveValue("تأكيد الحوالة البنكية.");
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "تسجيل كمدفوعة" }));
+    const payment = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
+    expect(payment?.mutate).toHaveBeenCalledWith({ invoiceId: "INV-LATE", reference: "حوالة-٧١", reason: "تأكيد الحوالة البنكية." });
   });
 
-  it("foregrounds automatic renewal states and shows the agreement's own deadlines", async () => {
-    state.snapshot = snapshot([
-      invoice({ id: "AUTO-OPEN", cycleKey: "subscription:gym-1:monthly:1788264000000", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "open" }),
-      invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000:grace", billingInterval: "monthly", issuedAt: "2026-08-29T12:00:00.000Z", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "past_due" }),
-      invoice({ id: "AUTO-PAID", cycleKey: "subscription:gym-1:monthly:1785672000000", billingInterval: "monthly", issuedAt: "2026-08-01T12:00:00.000Z", dueAt: "2026-08-04T12:00:00.000Z", periodEnd: "2026-09-04T12:00:00.000Z", status: "paid", paymentReference: "BANK-PAID" }),
-    ]);
-    render(<BillingPage />);
-
-    expect(screen.getByText("Subscription invoices")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Bill a gym/ })).toBeEnabled();
-    expect(screen.getByText("Issued 14 days early, payable within 14")).toBeInTheDocument();
-    expect(screen.getByText("Access may close 21 days after the due date")).toBeInTheDocument();
-    expect(screen.getByText("In grace / past due")).toBeInTheDocument();
-    expect(screen.getAllByText("Automatic renewal", { selector: "span" })).toHaveLength(3);
-    expect(screen.getByRole("row", { name: /AUTO-OPEN/ })).toHaveTextContent("Upcoming");
-    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("In grace");
-    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("Grace ends");
-    expect(screen.getByRole("row", { name: /AUTO-GRACE/ })).toHaveTextContent("Due + 21 days");
-    expect(screen.getByRole("row", { name: /AUTO-PAID/ })).toHaveTextContent("Paid");
-    expect(screen.queryByText("Manual invoices")).not.toBeInTheDocument();
-  });
-
-  it("offers bank/reference payment reactivation during the automated grace period", async () => {
+  it("does not offer Mark paid while payment details a gym sent are waiting", async () => {
     const user = userEvent.setup();
-    state.snapshot = snapshot([invoice({ id: "AUTO-GRACE", cycleKey: "subscription:gym-1:monthly:1788264000000", billingInterval: "monthly", dueAt: "2026-09-01T12:00:00.000Z", periodEnd: "2026-10-01T12:00:00.000Z", status: "past_due" })]);
+    state.snapshot = snapshot([invoice({ id: "INV-SENT", paymentClaim: { status: "submitted", method: "cliq", reference: "CLIQ-1", payerName: "Owner", paidOn: "2026-10-19", amountMinor: 149_000, submittedAt: "2026-10-19T08:00:00.000Z" } })]);
     render(<BillingPage />);
-
-    const row = screen.getByRole("row", { name: /AUTO-GRACE/ });
-    await user.click(within(row).getByRole("button", { name: "Reactivate" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Record bank payment & reactivate");
-    expect(screen.getByRole("dialog")).toHaveTextContent("RIVET does not charge a provider");
-    await user.type(screen.getByRole("textbox", { name: "Payment reference" }), "BANK-GRACE-1");
-    await user.type(screen.getByRole("textbox", { name: "Reason" }), "Bank transfer verified.");
-    await user.click(screen.getByRole("button", { name: "Reactivate gym" }));
-
-    const paymentMutation = state.mutations.find((mutation) => mutation.mutate.mock.calls.length > 0);
-    expect(paymentMutation?.mutate).toHaveBeenCalledWith({ invoiceId: "AUTO-GRACE", reference: "BANK-GRACE-1", reason: "Bank transfer verified." });
+    const row = screen.getByRole("row", { name: /INV-SENT/ });
+    expect(row).toHaveTextContent("To confirm");
+    await user.click(within(row).getByRole("button", { name: "More actions for invoice INV-SENT" }));
+    expect(await screen.findByRole("menuitem", { name: "Void invoice" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Mark paid" })).not.toBeInTheDocument();
   });
 });

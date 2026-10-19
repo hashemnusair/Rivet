@@ -26,7 +26,7 @@ import { paymentNoteReference } from "../../../../convex/firstPayment";
  * a new gym's workspace); sending back tells the gym what to fix.
  */
 export function PaymentConfirmations({ invoices, onUpdated }: { invoices: PlatformBillingInvoice[]; onUpdated: (invoice: PlatformBillingInvoice) => void }) {
-  const { t, isolateLtr } = useLocale();
+  const { t, isolate, isolateLtr } = useLocale();
   const f = useFormat();
   const waiting = invoices.filter((invoice) => invoice.paymentClaim?.status === "submitted").sort((left, right) => (left.paymentClaim?.submittedAt ?? "").localeCompare(right.paymentClaim?.submittedAt ?? ""));
   const [action, setAction] = useState<{ invoice: PlatformBillingInvoice; kind: "confirm" | "reject" }>();
@@ -46,6 +46,7 @@ export function PaymentConfirmations({ invoices, onUpdated }: { invoices: Platfo
                     <span className="font-semibold" dir="auto">{invoice.gym}</span>
                     <span className="font-mono text-[11.5px] text-ink-3" dir="ltr" title={invoice.id}>{paymentNoteReference(invoice.id)}</span>
                     {invoice.firstPayment ? <Badge variant="signal">{t("commerce.confirm.firstPayment")}</Badge> : null}
+                    {invoice.planChange?.to ? <Badge variant="signal">{t("platformFinance.billingPage.kind.upgradeFrom", { from: isolate(invoice.planChange.from ?? "—"), plan: isolate(invoice.planChange.to) })}</Badge> : null}
                   </div>
                   <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-[12.5px] sm:grid-cols-5">
                     <div><dt className="text-ink-3">{t("commerce.confirm.amount")}</dt><dd className="tabular font-medium">{isolateLtr(f.money({ amount: claim.amountMinor, currency: invoice.currency ?? "JOD" }))}</dd></div>

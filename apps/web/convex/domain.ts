@@ -63,7 +63,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
 import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, settlePaymentRequest } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -1364,6 +1364,60 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
       trialSchedules: Array.isArray(operational.trialSchedules) ? operational.trialSchedules : [],
     },
   };
+}
+
+/**
+ * Point a gym's features at its plan. Newly purchased features start switched
+ * on so an upgrade is usable at once. On a downgrade the stored preferences
+ * stay as they were, so a later upgrade restores the gym's own choices;
+ * read-time entitlement filtering still locks what the plan does not include.
+ */
+async function syncPlanEntitlement(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  entitlementBefore: Doc<"organizationEntitlements"> | null,
+  modulePlan: WorkspaceModulePlan,
+  catalog: Data[],
+  change: { planChanged: boolean; previousModulePlan?: WorkspaceModulePlan },
+): Promise<Doc<"organizationEntitlements"> | null> {
+  const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
+  const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
+  const entitlementUpdatedAt = Date.now();
+  let updatedEntitlement = entitlementBefore;
+  const entitlementNeedsSync = !entitlementBefore
+    || change.planChanged
+    || entitlementBefore.subscriptionPlan !== modulePlan
+    || entitlementBefore.catalogVersion !== WORKSPACE_MODULE_CATALOG_VERSION
+    || entitlementBefore.source !== "subscription_plan"
+    || JSON.stringify(entitlementBefore.entitledModules) !== JSON.stringify(entitledModules);
+  if (entitlementBefore && entitlementNeedsSync) {
+    await ctx.db.patch(entitlementBefore._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+    updatedEntitlement = await ctx.db.get(entitlementBefore._id);
+  } else if (!entitlementBefore) {
+    const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+    updatedEntitlement = await ctx.db.get(entitlementId);
+  }
+  if (change.planChanged && change.previousModulePlan !== modulePlan) {
+    const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+    if (preferences) {
+      const previousModulePlan = change.previousModulePlan;
+      const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
+      const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+      if (newlyEntitled.length > 0) {
+        const candidate = [...preferences.enabledModules, ...newlyEntitled];
+        let enabledModules: WorkspaceModuleKey[];
+        try {
+          enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+        } catch {
+          enabledModules = defaultWorkspacePreferences(entitledModules);
+        }
+        if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+          await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+        }
+      }
+    }
+  }
+  return updatedEntitlement;
 }
 
 function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
@@ -9104,45 +9158,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       });
       updatedOrganization = await ctx.db.get(organization._id);
       if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
-      const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
-      const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
-      const entitlementUpdatedAt = Date.now();
-      const entitlementNeedsSync = !entitlementBefore
-        || requestedPlan !== undefined
-        || entitlementBefore.subscriptionPlan !== modulePlan
-        || entitlementBefore.catalogVersion !== WORKSPACE_MODULE_CATALOG_VERSION
-        || entitlementBefore.source !== "subscription_plan"
-        || JSON.stringify(entitlementBefore.entitledModules) !== JSON.stringify(entitledModules);
-      if (entitlementBefore && entitlementNeedsSync) {
-        await ctx.db.patch(entitlementBefore._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
-        updatedEntitlement = await ctx.db.get(entitlementBefore._id);
-      } else if (!entitlementBefore) {
-        const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
-        updatedEntitlement = await ctx.db.get(entitlementId);
-      }
-      // Newly purchased modules start enabled so a plan upgrade is immediately
-      // usable. Keep the stored preference row intact on downgrades so an
-      // upgrade can restore the tenant's prior choices; read-time entitlement
-      // filtering still locks those modules while the tenant is below the tier.
-      if (requestedPlan !== undefined && previousModulePlan !== modulePlan) {
-        const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
-        if (preferences) {
-          const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
-          const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
-          if (newlyEntitled.length > 0) {
-            const candidate = [...preferences.enabledModules, ...newlyEntitled];
-            let enabledModules: WorkspaceModuleKey[];
-            try {
-              enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
-            } catch {
-              enabledModules = defaultWorkspacePreferences(entitledModules);
-            }
-            if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
-              await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
-            }
-          }
-        }
-      }
+      updatedEntitlement = await syncPlanEntitlement(ctx, organization._id, entitlementBefore, modulePlan, catalog, { planChanged: requestedPlan !== undefined, previousModulePlan });
       if (startsNewPaidTerm && nextCurrentPeriodEndsAt !== undefined) {
         // The new paid term is billed the moment it is granted. Earlier unpaid
         // subscription invoices cover a term this change supersedes, so they
@@ -9534,20 +9550,26 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const periodEndTimestamp = validTimestamp(stringValue(current.periodEnd));
       if (listing && organization && listing.organizationId === organization._id && organization.status !== "cancelled" && periodEndTimestamp !== undefined) {
         const billing = billingInterval(current.billingInterval ?? organization.billingInterval);
+        // An upgrade the gym asked for from its subscription page takes effect
+        // when RIVET confirms its payment, and its new term starts then.
+        const upgradeTo = workspacePlan(data(current.planChange).to);
         // A gym's first payment opens its workspace, so its first paid term
         // starts now rather than on the day the invoice was raised.
-        const firstTermStart = organization.status === "pending_payment" ? Date.now() : undefined;
+        const firstTermStart = organization.status === "pending_payment" || upgradeTo ? Date.now() : undefined;
         const firstTermEnd = firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
         if (firstTermStart !== undefined && firstTermEnd !== undefined) {
           updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd) };
           await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
         }
-        const startedAt = firstTermStart ?? organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
+        // An upgrade starts a new term but not a new subscription.
+        const startedAt = (organization.status === "pending_payment" ? firstTermStart : undefined) ?? organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
         // Paying a late or superseded invoice must never shorten a term the
         // gym has already paid past, so the boundary only ever moves forward.
         const nextBoundary = firstTermEnd ?? Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
+        const previousPlan = workspacePlan(organization.subscriptionPlan);
         await ctx.db.patch(organization._id, {
           status: "active",
+          ...(upgradeTo ? { subscriptionPlan: upgradeTo } : {}),
           billingInterval: billing,
           subscriptionStartedAt: startedAt,
           trialEndsAt: undefined,
@@ -9559,6 +9581,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.patch(listing._id, {
           data: {
             ...listingData,
+            ...(upgradeTo ? { rivetPlan: upgradeTo } : {}),
             subscriptionStatus: "active",
             billingInterval: billing,
             isPublic: true,
@@ -9571,7 +9594,31 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           },
           updatedAt: Date.now(),
         });
+        if (upgradeTo) {
+          const entitlementBefore = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+          await syncPlanEntitlement(ctx, organization._id, entitlementBefore, upgradeTo, await platformPlans(ctx), { planChanged: true, previousModulePlan: previousPlan });
+          // The new term replaces the one a waiting renewal invoice was for.
+          const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+          for (const row of invoiceRows) {
+            const invoice = data(row.data);
+            if (row.publicId === invoiceId || !optionalString(invoice.cycleKey) || !["draft", "open", "past_due", "failed"].includes(stringValue(invoice.status))) continue;
+            await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: Date.now() });
+            await insertPlatformAudit(ctx, admin, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Voided a subscription invoice replaced by a plan upgrade", reason, before: { status: invoice.status }, after: { status: "void" } });
+          }
+          await insertPlatformAudit(ctx, admin, {
+            action: "gym.plan.upgrade",
+            entityType: "platform_gym",
+            entityPublicId: listing.publicId,
+            entityLabel: organization.name,
+            summary: `Upgraded ${organization.name} to ${upgradeTo} after confirming ${invoiceId}`,
+            reason,
+            before: { plan: previousPlan, currentPeriodEndsAt: organization.currentPeriodEndsAt },
+            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary },
+          });
+        }
       }
+      // The support request that tracks this payment follows it.
+      await settlePaymentRequest(ctx, updated, now);
     }
     await insertPlatformAudit(ctx, admin, {
       action,

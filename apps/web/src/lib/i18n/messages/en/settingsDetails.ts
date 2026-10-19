@@ -136,7 +136,7 @@ export const settingsDetails = {
   "text133": "Paid until",
   "text134": "Your RIVET plan",
   "text135": "Plan summary",
-  "text136": "To change your plan or how often you pay, ask RIVET on the Support page. The new plan starts the day you change it. Days you have not used are taken off the new invoice.",
+  "text136": "Need a smaller plan or a different billing cycle? Message RIVET on the Support page.",
   "text137": "No invoices yet",
   "text138": "Invoices from RIVET will show here. Each one has a PDF.",
   "text139": "Invoices",
