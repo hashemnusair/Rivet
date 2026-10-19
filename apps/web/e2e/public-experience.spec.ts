@@ -275,6 +275,7 @@ test.describe("RIVET platform administration", () => {
     await expect(page.getByText("Northline Strength").first()).toBeVisible();
 
     await page.getByRole("button", { name: /Northline Strength/i }).click();
+    await page.getByRole("tab", { name: "Decision" }).click();
     await page.getByLabel("Review notes").fill("Verified the owner and branch address.");
     await page.getByRole("button", { name: /Approve application/i }).click();
     await expect(page.getByText(/Application approved\./)).toBeVisible();

@@ -33,9 +33,11 @@ test.describe("staged provisioning", () => {
       const application = platform.getByRole("button").filter({ hasText: gymName }).first();
       await expect(application).toBeVisible();
       await application.click();
+      await platform.getByRole("tab", { name: "Decision" }).click();
       await platform.getByRole("button", { name: "Approve application", exact: true }).click();
-      await expect(platform.getByText("Application approved", { exact: false })).toBeVisible();
+      await expect(platform.getByText("Application approved", { exact: false }).first()).toBeVisible();
 
+      await platform.getByRole("tab", { name: "Workspace" }).click();
       await platform.getByRole("button", { name: "Provision gym workspace", exact: true }).click();
       await expect(platform.getByText("Workspace provisioned", { exact: false })).toBeVisible();
 
