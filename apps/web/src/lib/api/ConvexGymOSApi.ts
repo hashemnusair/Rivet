@@ -40,6 +40,7 @@ import type {
   PlatformPaymentDetails,
   CreatePromoCodeInput,
   BillingCheckout,
+  BillingPlans,
   SubmitPlatformPaymentInput,
   EntryPass,
   ProvisionGymInput,
@@ -452,6 +453,9 @@ export class ConvexGymOSApi implements GymOSApi {
   rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice> { return this.mutatePlatform("platform.invoice.payment_reject", input); }
   getBillingCheckout(): Promise<BillingCheckout> { return this.query("billing.checkout"); }
   submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout> { return this.mutate("billing.payment.submit", input); }
+  getBillingPlans(): Promise<BillingPlans> { return this.query("billing.plans"); }
+  requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout> { return this.mutate("billing.plan_change.request", input); }
+  cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans> { return this.mutate("billing.plan_change.cancel", input); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");

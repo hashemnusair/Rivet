@@ -47,6 +47,7 @@ export const qk = {
   legalAgreement: ["legal", "agreement"] as const,
   myPlatformInvoices: ["billing", "invoices"] as const,
   billingCheckout: ["billing", "checkout"] as const,
+  billingPlans: ["billing", "plans"] as const,
   platformCommerce: ["platform", "commerce"] as const,
   platformAgreements: ["platform", "agreements"] as const,
   platformEmailDeliveries: ["platform", "email", "deliveries"] as const,

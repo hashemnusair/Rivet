@@ -258,6 +258,98 @@ describe("pay first", () => {
   });
 });
 
+describe("plan upgrades by the gym", () => {
+  const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  type PlansView = { plan: string; options: Array<{ plan: string; subtotalMinor: number; creditMinor: number; amountMinor: number }>; blockedReason?: string; pending?: { id: string; planChange: { from: string; to: string }; amountMinor: number } };
+  type Checkout = { invoice?: { id: string; amountMinor: number; planChange?: { from: string; to: string }; creditMinor?: number; supportCaseId?: string; paymentClaim?: { status: string } } };
+
+  /** A Starter gym that paid its first month today. */
+  async function activeGym(t: TestConvex<typeof schema>, slug: string) {
+    const seeded = await seedPendingGym(t, { slug });
+    const owner = t.withIdentity({ subject: `clerk-owner-${slug}` });
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const first = await firstInvoice(t, seeded.organizationId);
+    await owner.mutation(api.domain.mutate, operation("billing.payment.submit", { invoiceId: first.publicId, method: "cliq", reference: "CLIQ-FIRST", payerName: "Gym Owner", paidOn: today() }));
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: first.publicId, reference: "CLIQ-FIRST", reason: "Checked CliQ payment", paidAt: today() }));
+    return { ...seeded, owner, platform };
+  }
+
+  it("prices bigger plans from the unused paid days, and only the owner asks", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId, owner } = await activeGym(t, "upgrade-price");
+    // A first payment is followed on its payment page, not in Support.
+    expect(await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "supportCase")).collect())).toEqual([]);
+    const plans = await owner.query(api.domain.query, operation("billing.plans")) as PlansView;
+    expect(plans.plan).toBe("Starter");
+    // The whole JOD 39 month just paid comes off; Enterprise is quoted by RIVET.
+    expect(plans.options).toEqual([
+      expect.objectContaining({ plan: "Growth", subtotalMinor: 89_000, creditMinor: 39_000, amountMinor: 50_000 }),
+      expect.objectContaining({ plan: "Pro", subtotalMinor: 199_000, creditMinor: 39_000, amountMinor: 160_000 }),
+    ]);
+    const desk = t.withIdentity({ subject: "clerk-desk-upgrade-price" });
+    await expectCode(desk.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Growth" })), "FORBIDDEN");
+    await expectCode(owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Starter" })), "VALIDATION_ERROR");
+    await expectCode(owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Enterprise" })), "VALIDATION_ERROR");
+
+    const checkout = await owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Growth" })) as Checkout;
+    expect(checkout.invoice).toMatchObject({ amountMinor: 50_000, creditMinor: 39_000, planChange: { from: "Starter", to: "Growth" } });
+    // Nothing changes until RIVET confirms the payment.
+    expect((await t.run((ctx) => ctx.db.get(organizationId)))?.subscriptionPlan).toBe("Starter");
+    // Choosing another plan replaces the request; cancelling it leaves nothing to pay.
+    const pro = await owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Pro" })) as Checkout;
+    expect(pro.invoice).toMatchObject({ amountMinor: 160_000, planChange: { to: "Pro" } });
+    const invoices = (await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "platformInvoice")).collect())).map((row) => row.data);
+    expect(invoices.filter((invoice) => invoice.planChange).map((invoice) => [invoice.planChange.to, invoice.status]).sort()).toEqual([["Growth", "void"], ["Pro", "open"]]);
+    const afterCancel = await owner.mutation(api.domain.mutate, operation("billing.plan_change.cancel", { invoiceId: pro.invoice!.id })) as PlansView;
+    expect(afterCancel.pending).toBeUndefined();
+    expect((await owner.query(api.domain.query, operation("billing.checkout")) as Checkout).invoice).toBeUndefined();
+  });
+
+  it("changes the plan when RIVET confirms the payment, and the support request follows it", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId, owner, platform } = await activeGym(t, "upgrade-flow");
+    const startedAt = (await t.run((ctx) => ctx.db.get(organizationId)))!.subscriptionStartedAt;
+    const request = await owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Growth" })) as Checkout;
+    const invoiceId = request.invoice!.id;
+    // A renewal raised for the current term is replaced by the upgrade.
+    await t.run((ctx) => ctx.db.insert("domainRecords", { organizationId, entityType: "platformInvoice", publicId: "INV-renewal", createdAt: 1, updatedAt: 1, data: { id: "INV-renewal", status: "open", amountMinor: 39_000, currency: "JOD", cycleKey: "renewal:test", dueAt: new Date(Date.now() + 14 * DAY_MS).toISOString(), periodEnd: new Date(Date.now() + 60 * DAY_MS).toISOString() } }));
+    // The upgrade is what the payment page asks for.
+    expect((await owner.query(api.domain.query, operation("billing.checkout")) as Checkout).invoice?.id).toBe(invoiceId);
+
+    const send = (reference: string) => owner.mutation(api.domain.mutate, operation("billing.payment.submit", { invoiceId, method: "bank_transfer", reference, payerName: "Gym Owner", paidOn: today() }));
+    const sent = await send("TRX-UP-1") as Checkout;
+    const caseId = sent.invoice!.supportCaseId!;
+    type Case = { id: string; subject: string; status: string; requestType: string; billing: { state: string; invoiceId: string; planFrom?: string; planTo?: string; returnReason?: string } };
+    const cases = async () => await owner.query(api.domain.query, operation("support.list")) as Case[];
+    expect(await cases()).toEqual([expect.objectContaining({ id: caseId, subject: "Upgrade to Growth", status: "open", requestType: "billing", billing: expect.objectContaining({ state: "sent", invoiceId, planFrom: "Starter", planTo: "Growth" }) })]);
+    await expectCode(owner.mutation(api.domain.mutate, operation("billing.plan_change.request", { plan: "Pro" })), "CONFLICT");
+
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment_reject", { invoiceId, reason: "No transfer with this reference arrived." }));
+    expect((await cases())[0]).toMatchObject({ status: "waiting", billing: { state: "returned", returnReason: "No transfer with this reference arrived." } });
+    await send("TRX-UP-2");
+    expect(await cases()).toEqual([expect.objectContaining({ id: caseId, status: "open", billing: expect.objectContaining({ state: "sent" }) })]);
+
+    const before = Date.now();
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId, reference: "TRX-UP-2", reason: "Checked bank transfer", paidAt: today() }));
+    const organization = await t.run((ctx) => ctx.db.get(organizationId));
+    expect(organization).toMatchObject({ status: "active", subscriptionPlan: "Growth", subscriptionStartedAt: startedAt });
+    expect(organization!.currentPeriodEndsAt).toBeGreaterThanOrEqual(before + 28 * DAY_MS);
+    const entitlement = await t.run((ctx) => ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique());
+    expect(entitlement?.subscriptionPlan).toBe("Growth");
+    const rows = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "platformInvoice")).collect());
+    const byId = new Map(rows.map((row) => [row.publicId, row.data]));
+    expect(byId.get("INV-renewal")).toMatchObject({ status: "void" });
+    expect(byId.get(invoiceId)).toMatchObject({ status: "paid", periodEnd: new Date(organization!.currentPeriodEndsAt!).toISOString() });
+    expect((await cases())[0]).toMatchObject({ status: "resolved", resolutionSummary: "Payment confirmed. Your plan is now Growth.", billing: { state: "confirmed" } });
+    const listing = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "marketplaceGym")).unique())!.data);
+    expect(listing.rivetPlan).toBe("Growth");
+    const audit = await t.run((ctx) => ctx.db.query("platformAuditEvents").collect());
+    expect(audit.map((event) => event.action)).toEqual(expect.arrayContaining(["plan_change.requested", "gym.plan.upgrade"]));
+    // The next upgrade starts from the new plan.
+    expect((await owner.query(api.domain.query, operation("billing.plans")) as PlansView).options.map((option) => option.plan)).toEqual(["Pro"]);
+  });
+});
+
 describe("renewal warnings", () => {
   async function activeGym(t: TestConvex<typeof schema>, periodEndsAt: number) {
     return await t.run(async (ctx) => {

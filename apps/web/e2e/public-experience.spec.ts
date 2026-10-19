@@ -308,13 +308,14 @@ test.describe("RIVET platform administration", () => {
     await expect(page.getByRole("heading", { name: "Forge Fitness Club", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Suspend", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Save controls/i })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toHaveAttribute("href", "/platform/billing?bill=forge-fitness");
+    await expect(page.getByRole("link", { name: "Manage subscription", exact: true })).toHaveAttribute("href", "/platform/billing?gym=forge-fitness");
 
     // On billing, suspension demands a reason and dismissing the dialog
     // writes nothing.
     await page.goto("/platform/billing");
     const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
-    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    await forgeRow.getByRole("button", { name: "More actions for Forge Fitness Club" }).click();
+    await page.getByRole("menuitem", { name: "Suspend", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
     await expect(dialog.getByRole("button", { name: "Suspend gym", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Keep as is", exact: true }).click();
@@ -330,13 +331,16 @@ test.describe("RIVET platform administration", () => {
     await page.goto("/platform/billing");
 
     const forgeRow = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: /Forge Fitness Club/ });
-    await forgeRow.getByRole("button", { name: "Suspend", exact: true }).click();
+    await forgeRow.getByRole("button", { name: "More actions for Forge Fitness Club" }).click();
+    await page.getByRole("menuitem", { name: "Suspend", exact: true }).click();
     const suspendDialog = page.getByRole("dialog", { name: /Suspend Forge Fitness Club\?/ });
     await suspendDialog.getByLabel("Reason for this change").fill("Temporarily suspended for marketplace visibility regression coverage.");
     await suspendDialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
 
     await expect(page.getByText("Subscription status saved and audited.", { exact: true }).last()).toBeVisible();
-    await expect(forgeRow.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
+    await forgeRow.getByRole("button", { name: "More actions for Forge Fitness Club" }).click();
+    await expect(page.getByRole("menuitem", { name: /Reactivate & bill/ })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     // The gym's informational record reflects the audited mutation live in
     // the same session: the timeline gains the audit entry and the facts card

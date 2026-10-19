@@ -152,7 +152,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <div className="flex flex-wrap gap-2">
             {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>{t("platformFinance.detail.publicPage")} <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title={t("platformFinance.detail.hiddenFromDiscovery")}>{t("platformFinance.detail.publicPage")} <ExternalLink /></Button>}
             {organizationAvailable
-              ? <Button asChild><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />{t("platformFinance.detail.manageSubscription")}</Link></Button>
+              ? <Button asChild><Link href={`/platform/billing?gym=${detail.id}`}><Receipt />{t("platformFinance.detail.manageSubscription")}</Link></Button>
               : <Button disabled title={t("platformFinance.detail.provisioningRequired")}><Receipt />{t("platformFinance.detail.manageSubscription")}</Button>}
           </div>
         </div>
@@ -230,7 +230,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           </div>
 
           <PlatformPanel className="min-w-0 overflow-hidden" aria-labelledby="subscription-facts-title">
-            <PlatformPanelHeader id="subscription-facts-title" title={t("platformFinance.detail.subscriptionFacts")} actions={<Link href={`/platform/billing?bill=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">{t("platformFinance.detail.manageInBilling")}</Link>} />
+            <PlatformPanelHeader id="subscription-facts-title" title={t("platformFinance.detail.subscriptionFacts")} actions={<Link href={`/platform/billing?gym=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">{t("platformFinance.detail.manageInBilling")}</Link>} />
             <dl className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
               <Fact label={t("renewFlow.adjust.planChange.rowPlan")}><FieldValue field={detail.subscription.plan} /></Fact>
               <Fact label={t("common.label.status")}><FieldValue field={detail.subscription.status} render={subscriptionStatusLabel} /></Fact>

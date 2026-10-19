@@ -637,12 +637,50 @@ check), so the code catalogue applies there once Convex is deployed.
    for a first payment the paid term starts at confirmation, the gym becomes
    `active`, its listing becomes public, and the paid email goes out. **Send
    back** (`platform.invoice.payment_reject`) records a message the owner sees
-   on the payment page and gets by email (`platform_payment_returned`).
+   on the payment page and gets by email (`platform_payment_returned`). For a
+   plan upgrade, confirming also changes the plan (see below).
 
 A gym stopped for an unpaid invoice (`suspended`, not archived) gets the same
 billing-only access, so it can pay and be restored. Staff of an unpaid gym
 are told the gym is unavailable; only the owner (or a role with
 `settings.manage`) can send payment details.
+
+### Plan upgrades by the gym — 19 October 2026
+
+Elias decided that gyms change their own plan. Settings → Subscription →
+**Change plan** offers the plans above the gym's own (Starter → Growth → Pro;
+Enterprise stays quoted by RIVET; a smaller plan or a different billing cycle
+is a message to RIVET). `billing.plans` prices each one with the same term
+change RIVET used for its own plan changes (`termChange` in
+`convex/subscriptionTerm.ts`): one term of the new plan less the unused days
+of the paid term, valued at what the gym paid. **Continue to payment**
+(`billing.plan_change.request`) raises an invoice with `planChange: { from,
+to }` and takes the owner to `/billing`, which shows "Upgrade to {plan}". The
+plan does not change yet. Choosing another plan replaces the request; it can
+be cancelled until payment details are sent (`billing.plan_change.cancel`).
+
+When the owner sends payment details, a gym that can open its workspace gets a
+**support request** (`requestType: "billing"`, one per invoice) with a
+three-step tracker: payment sent → RIVET confirms → plan upgraded. Sending the
+details back moves it to "waiting" with RIVET's message; confirming resolves
+it. A gym still waiting for its first payment only has the payment page, so it
+gets no support request.
+
+Confirming an upgrade (`platform.invoice.payment`) changes the organization's
+plan and features (`syncPlanEntitlement`, shared with the console's own
+subscription change), starts a new term on the confirmation day, keeps the
+original subscription start date, and voids any unpaid renewal it replaces.
+Renewals then bill the new plan every month (or year). Only an `active` gym
+can upgrade; a gym behind on a renewal pays that first.
+
+The console's Billing page was cut down to: totals (to confirm, unpaid, paid
+this month), **Payments to confirm**, one invoice list (Unpaid / Paid / All,
+with PDF, **Mark paid** and **Void** in a menu), **Gyms** (plan, status, paid
+until; suspend, cancel or reactivate in a menu) and **Where gyms pay**. The
+bill-a-gym wizard, manual exception invoices, the renewal-policy dialog, the
+lifecycle cards and manual "mark past due" were removed; the operations
+behind them still exist. Gym pages link to Billing with `?gym=<id>`, which
+shows that gym's invoices.
 
 ### Website add-on and free places
 

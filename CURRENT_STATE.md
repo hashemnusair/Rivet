@@ -76,6 +76,46 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 19 October 2026 — Gyms upgrade their own plan; a simpler billing page
+
+Elias asked for self-serve plan changes and a much simpler admin billing page.
+docs/19 §5 "Plan upgrades by the gym" is the full description.
+
+- **Gym side:** Settings → Subscription shows the plan, its price and renewal
+  date, and **Change plan** (owner or `settings.manage`). The dialog lists the
+  bigger plans with what is paid today (new plan less the unused paid days).
+  Continuing raises an upgrade invoice and opens `/billing` ("Upgrade to
+  Growth"). After the details are sent, the page and a new Support request show
+  payment sent → RIVET confirms → plan upgraded. Support's "Request plan
+  upgrade" form was replaced by a **Change plan** link.
+- **Backend:** `billing.plans`, `billing.plan_change.request`,
+  `billing.plan_change.cancel` in `convex/platformCommerce.ts`; payment
+  details sent by an active gym open or move a `requestType: "billing"` support
+  case; `platform.invoice.payment` applies a `planChange` (plan, features via
+  the extracted `syncPlanEntitlement`, new term from confirmation, superseded
+  renewal voided, `gym.plan.upgrade` audit) and resolves the case. Renewal
+  automation never touches upgrade invoices, so an unpaid upgrade cannot get a
+  gym suspended.
+- **Console:** Billing is now totals, Payments to confirm (with an upgrade
+  badge), one filtered invoice list, Gyms and Where gyms pay. The wizard and
+  manual invoices are gone; suspend, cancel and reactivate moved into each
+  gym's menu. Gym pages link with `?gym=`.
+- **Preview:** sessionStorage `rivet.demo.plan` starts the mock gym on another
+  plan, so an upgrade can be tried from Starter.
+- **Evidence:** Convex tests for pricing, owner-only requests, replacing and
+  cancelling, the support request following send/return/confirm, and the plan,
+  features, term, renewal void and audit on confirmation; UI tests for the
+  subscription card and dialog, Support, the console page and gym list;
+  Playwright entitlement and upgrade journeys plus the edited pass-5/7 and
+  public-experience tests pass against a local mock server. Screens checked in
+  the browser at 1280px, 375px and Arabic RTL.
+- **Not done:** not merged or deployed (Convex changes need `pnpm
+  convex:deploy`). The cross-role "gym pays, RIVET confirms" journey cannot run
+  in one mock browser session; it is covered by Convex tests. The browser PDF
+  still prints the general payment line. Screenshot references for the
+  console billing page, the subscription section and Support need refreshing
+  (Linux ones from CI artifacts).
+
 ## 19 October 2026 — Sent-back payments are emailed; emailed invoices show where to pay
 
 Two gaps left by the pay-first entry below.

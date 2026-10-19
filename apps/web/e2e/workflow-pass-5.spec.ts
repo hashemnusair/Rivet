@@ -261,11 +261,9 @@ test("support keeps the case, its state and the reply together", async ({ page }
   await expect(thread.getByText(/^(Created |Creation time not recorded)/)).toBeVisible();
   await expect(thread.getByText("No replies yet").or(thread.locator("time").first())).toBeVisible();
   await expect(thread.getByLabel("Reply to support")).toBeVisible();
-  await page.getByRole("button", { name: "Request plan upgrade" }).click();
-  await expect(page.getByRole("dialog", { name: "Request a plan upgrade" })).toBeVisible();
-  await expect(page.getByLabel("New plan")).toBeVisible();
-  await expect(page.getByLabel("How often you pay")).toBeVisible();
-  await page.keyboard.press("Escape");
+  // Plan changes are self-serve in Settings, not a support request.
+  await expect(page.getByRole("link", { name: "Change plan" })).toHaveAttribute("href", "/settings?section=subscription&change=plan");
+  await expect(page.getByRole("button", { name: "Request plan upgrade" })).toHaveCount(0);
 });
 
 test("an owner reviews a cash variance from the shifts oversight view", async ({ page }) => {

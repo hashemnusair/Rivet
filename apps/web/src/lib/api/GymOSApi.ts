@@ -424,6 +424,10 @@ export interface PlatformBillingInvoice {
   promoNotApplied?: { code: string; reason: PromoUnavailableReason };
   /** Payment details the gym sent from its payment page. */
   paymentClaim?: PaymentClaim;
+  /** An upgrade the gym asked for itself; the plan changes when RIVET confirms the payment. */
+  planChange?: { from?: PlatformSaasPlan["name"]; to: PlatformSaasPlan["name"] };
+  /** The support request that follows this payment, for a gym that can open its workspace. */
+  supportCaseId?: string;
 }
 
 export type PlatformPaymentMethod = "cliq" | "bank_transfer";
@@ -471,6 +475,32 @@ export interface BillingCheckout {
   canPay: boolean;
   /** When a paying gym's access stops if this invoice stays unpaid. */
   accessEndsAt?: string;
+}
+
+/** One bigger plan a gym can move to, priced for today. */
+export interface PlanChangeOption {
+  plan: PlatformSaasPlan["name"];
+  monthlyPriceMinor: number;
+  /** One term of the new plan at list price. */
+  subtotalMinor: number;
+  /** What the unused days of the paid term are worth, taken off. */
+  creditMinor: number;
+  creditDays: number;
+  onboardingFeeMinor: number;
+  /** What the gym pays to upgrade. */
+  amountMinor: number;
+}
+
+export interface BillingPlans {
+  plan?: PlatformSaasPlan["name"];
+  billingInterval: BillingInterval;
+  status: BillingCheckout["gym"]["status"];
+  currentPeriodEndsAt?: string;
+  options: PlanChangeOption[];
+  /** Why the plan cannot be changed now, when it cannot. */
+  blockedReason?: "owner_only" | "not_active";
+  /** An upgrade waiting for its payment or for RIVET to confirm it. */
+  pending?: PlatformBillingInvoice;
 }
 
 export interface SubmitPlatformPaymentInput {
@@ -697,10 +727,29 @@ export interface PlatformSupportCase {
   resolvedAt?: string;
   resolutionSummary?: string;
   /** Structured metadata for workflows such as a plan-change request. */
-  requestType?: "general" | "plan_upgrade";
+  requestType?: "general" | "plan_upgrade" | "billing";
+  /** A payment the gym sent, followed from sent to confirmed. */
+  billing?: SupportPaymentRequest;
   requestedPlan?: PlatformSaasPlan["name"];
   billingInterval?: "monthly" | "annual";
   messages?: PlatformSupportMessage[];
+}
+
+export interface SupportPaymentRequest {
+  invoiceId: string;
+  kind: "upgrade" | "payment";
+  planFrom?: PlatformSaasPlan["name"];
+  planTo?: PlatformSaasPlan["name"];
+  currency: string;
+  amountMinor: number;
+  method?: PlatformPaymentMethod;
+  reference?: string;
+  state: "sent" | "returned" | "confirmed" | "cancelled";
+  sentAt?: string;
+  returnedAt?: string;
+  /** RIVET's message when it sent the payment back. */
+  returnReason?: string;
+  confirmedAt?: string;
 }
 
 export interface PlatformSupportMessage {
@@ -1103,6 +1152,10 @@ export interface GymOSApi {
   rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice>;
   getBillingCheckout(): Promise<BillingCheckout>;
   submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout>;
+  getBillingPlans(): Promise<BillingPlans>;
+  /** Asks to move up to a bigger plan; returns the payment page for the new invoice. */
+  requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout>;
+  cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;
