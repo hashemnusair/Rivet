@@ -135,12 +135,14 @@ no Convex function, audit payload or stored record changed.
   specs pass. A headless capture of every surface at 1280, 1024 and 390px in
   English and Arabic found no overlapping text, no text outside its panel and
   no page-level sideways scroll (30 captures).
-- **Not done:** the screenshot references that show these surfaces are now
-  stale (`pass-5-audit`, `pass-5-dashboard*`, `owner-dashboard-desktop`,
-  `pass-2-lead-detail`, `pass-7-platform`, `workflow-member-detail-phone`,
-  including their `-linux` copies). Refresh them with the built-bundle recipe
-  before pushing to main. Real Convex data has not been viewed in a browser.
-  Frontend only: Vercel deploys it on merge, nothing to `pnpm convex:deploy`.
+- **Screenshot references:** the old ones still passed, but only inside the
+  4% tolerance. Refreshed on the built mock bundle: `pass-5-audit` (1440, 390
+  and the CI-made `390-linux`), `pass-2-lead-detail` (1440, 390),
+  `pass-7-platform-1440` and `workflow-member-detail-phone`. The owner
+  dashboard and phone platform captures stop above the feed, so they were
+  left alone. The 97 screenshot tests pass locally.
+- **Not verified:** real Convex data in a browser. Frontend only: Vercel
+  deploys it from main; nothing to `pnpm convex:deploy`.
 
 ## 19 October 2026 — Faster GitHub CI
 
