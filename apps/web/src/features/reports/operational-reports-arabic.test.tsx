@@ -32,7 +32,7 @@ const cases: Array<{ view: OperationalReportKind; title: TKey; setup: () => void
   { view: "renewals", title: "reportsWorkspace.renewalsTitle", setup: () => { vi.spyOn(MockGymOSApi.prototype, "getRenewalForecastReport").mockResolvedValue(renewals); }, arabic: ["خلال 7 أيام,أحمد / ٠٠٧,Original plan,3 أيلول 2026,12.345,JOD"], english: ["Next 7 days,أحمد / ٠٠٧,Original plan,3 Sept 2026,12.345,JOD"] },
   { view: "collections", title: "reportsWorkspace.collections", setup: () => { vi.spyOn(MockGymOSApi.prototype, "getCollectionsReport").mockResolvedValue(collections); }, arabic: ["المبالغ المحصّلة,2,12.345,JOD", "المبالغ المستردّة,1,0.123,JOD"], english: ["Collected,2,12.345,JOD", "Refunded,1,0.123,JOD"] },
   { view: "crm", title: "reportsWorkspace.crmTitle", setup: () => { vi.spyOn(MockGymOSApi.prototype, "getCrmFunnelReport").mockResolvedValue(crm); }, arabic: ["المدة حتى أول تواصل", "اشتركوا بعد التجربة,50%"], english: ["Time to first contact", "Joined after trial,50%"] },
-  { view: "controls", title: "reportsWorkspace.controlsTitle", setup: () => { vi.spyOn(MockGymOSApi.prototype, "getControlTrendsReport").mockResolvedValue(controls); }, arabic: ["31 آب 2026 3:30:45 م,استرداد مبلغ,Original audit / ٠٠٧,سارة,'=سبب أصلي", "12.345,JOD"], english: ["2026-08-31 15:30:45,Refund,Original audit / ٠٠٧,سارة,'=سبب أصلي"] },
+  { view: "controls", title: "reportsWorkspace.controlsTitle", setup: () => { vi.spyOn(MockGymOSApi.prototype, "getControlTrendsReport").mockResolvedValue(controls); }, arabic: ["31 آب 2026 3:30:45 م,استرداد المبلغ,Original audit / ٠٠٧,سارة,'=سبب أصلي", "12.345,JOD"], english: ["2026-08-31 15:30:45,Refund,Original audit / ٠٠٧,سارة,'=سبب أصلي"] },
 ];
 
 describe("operational reports in both languages", () => {

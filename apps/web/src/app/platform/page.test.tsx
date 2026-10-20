@@ -74,4 +74,25 @@ describe("PlatformOverviewPage", () => {
     const gymLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("href")?.startsWith("/platform/gyms/") === true);
     expect(gymLinks.map((link) => link.getAttribute("href"))).toEqual(["/platform/gyms/tenant-live"]);
   });
+
+  it("lists operator activity with plain labels, short references and who and when", () => {
+    state.snapshot = {
+      ...snapshot(),
+      auditEvents: [
+        { id: "a1", action: "gym.provisioning.workspace_created", summary: "Created Pro workspace for Test Gym", actorName: "Hashem Nusair", occurredAt: "2026-09-27T16:35:00.000Z" },
+        { id: "a2", action: "gym_application.under_review", summary: "Moved to review gym application for Test Gym", actorName: "Hashem Nusair", occurredAt: "2026-09-27T16:34:00.000Z" },
+        { id: "a3", action: "gym.subscription.update", summary: "Updated gym subscription controls and issued INV-c234d937-c2c4-48f3-a0d9-6f1afd8f1121 for the new term", actorName: "Hashem Nusair", occurredAt: "2026-09-27T17:18:00.000Z" },
+      ],
+    };
+    render(<PlatformOverviewPage />);
+
+    const list = screen.getByRole("list", { name: "Recent activity" });
+    const text = (list.textContent ?? "").replace(/[\u2066-\u2069]/g, "");
+    expect(screen.getByText("What the RIVET team changed, newest first.")).toBeInTheDocument();
+    expect(text).toContain("Gym workspace created");
+    expect(text).toContain("Application moved to review");
+    expect(text).toContain("issued INV-C234D937 for the new term");
+    expect(text).not.toMatch(/gym\.provisioning|gym_application|GYM\.|c2c4-48f3/);
+    expect(text).toContain("Hashem Nusair · ");
+  });
 });

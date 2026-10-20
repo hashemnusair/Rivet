@@ -1,6 +1,7 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
 import type { TKey } from "@/lib/i18n/provider";
+import { activityActionLabel, humaniseActivityCode } from "@/lib/i18n/activity-log";
 import { useFormat } from "@/lib/i18n/format";
 
 import { ChevronDown, Search } from "lucide-react";
@@ -12,7 +13,7 @@ import { useApiQuery } from "@/lib/hooks/use-api";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import type { AuditCategory, AuditEvent } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
-import { DateTimeText } from "@/components/shared/data-display";
+import { ActivityEntry, ActivityLog, ActivityText } from "@/components/shared/activity-log";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -36,44 +37,6 @@ const CATEGORY_LABELS: Record<AuditCategory, TKey> = {
   users: "staffTools.audit.category.users",
   settings: "staffTools.audit.category.settings",
   legal: "staffTools.audit.category.legal",
-};
-
-/** Plain names for the most common actions; anything else is spelled out from its code. */
-const ACTION_LABELS: Record<string, TKey> = {
-  "payment.collect": "staffTools.audit.action.paymentCollect",
-  "payment.refund": "staffTools.audit.action.paymentRefund",
-  "payment.void": "staffTools.audit.action.paymentVoid",
-  "membership.sale": "staffTools.audit.action.membershipSale",
-  "membership.cancel": "staffTools.audit.action.membershipCancel",
-  "membership.freeze": "staffTools.audit.action.membershipFreeze",
-  "membership.unfreeze": "staffTools.audit.action.membershipUnfreeze",
-  "membership.discount": "staffTools.audit.action.membershipDiscount",
-  "membership.price_override": "staffTools.audit.action.membershipPriceOverride",
-  "membership.date_override": "staffTools.audit.action.membershipDateOverride",
-  "membership.plan_change": "staffTools.audit.action.membershipPlanChange",
-  "membership.branch_transfer": "staffTools.audit.action.membershipBranchTransfer",
-  "checkin.override": "staffTools.audit.action.checkinOverride",
-  "shift.open": "staffTools.audit.action.shiftOpen",
-  "shift.close": "staffTools.audit.action.shiftClose",
-  "shift.close_variance": "staffTools.audit.action.shiftCloseVariance",
-  "role.permissions_change": "staffTools.audit.action.rolePermissionsChange",
-  "user.invite": "staffTools.audit.action.userInvite",
-  "user.deactivate": "staffTools.audit.action.userDeactivate",
-  "member.archive": "staffTools.audit.action.memberArchive",
-  "member.delete": "staffTools.audit.action.memberDelete",
-  "member.merge": "staffTools.audit.action.memberMerge",
-  "member.update": "staffTools.audit.action.memberUpdate",
-  "lead.lost": "staffTools.audit.action.leadLost",
-  "lead.membership_sale_completed": "staffTools.audit.action.leadMembershipSaleCompleted",
-  "accounting.manual_post": "staffTools.audit.action.accountingManualPost",
-  "accounting.entry.reverse": "staffTools.audit.action.accountingEntryReverse",
-  "accounting.period.close": "staffTools.audit.action.accountingPeriodClose",
-  "accounting.period.reopen": "staffTools.audit.action.accountingPeriodReopen",
-  "accounting.source.post": "staffTools.audit.action.accountingSourcePost",
-  "accounting.source.exclude": "staffTools.audit.action.accountingSourceExclude",
-  "classes.occurrence.cancel": "staffTools.audit.action.classOccurrenceCancel",
-  "pt.booking.cancel": "staffTools.audit.action.ptBookingCancel",
-  "pt.package.refund": "staffTools.audit.action.ptPackageRefund",
 };
 
 const ROLE_LABELS: Record<string, TKey> = {
@@ -112,16 +75,10 @@ const FIELD_LABELS: Record<string, TKey> = {
   enabled: "staffTools.audit.field.enabled",
 };
 
-function actionLabel(action: string, t: ReturnType<typeof useT>): string {
-  const key = ACTION_LABELS[action];
-  // Unknown historical action codes are original audit data, so keep them verbatim.
-  return key ? t(key) : action;
-}
-
 function fieldLabel(field: string, t: ReturnType<typeof useT>): string {
   const key = FIELD_LABELS[field];
-  // Unknown payload keys are not translated or rewritten.
-  return key ? t(key) : field;
+  // Unknown payload keys are spelled out as words rather than shown as code.
+  return key ? t(key) : humaniseActivityCode(field);
 }
 
 const CATEGORY_FILTERS: ReadonlyArray<"all" | AuditCategory> = ["all", ...(Object.keys(CATEGORY_LABELS) as AuditCategory[])];
@@ -222,7 +179,7 @@ function AuditPageInner() {
         ) : items.length === 0 ? (
           <EmptyState title={t("staffTools.audit.emptyTitle")} description={t("staffTools.audit.emptyDescription")} className="border-0" />
         ) : (
-          <ol className="divide-y divide-line">
+          <ActivityLog aria-label={t("nav.item.activityLog")}>
             {items.map((event) => (
               <AuditRow
                 key={event.id}
@@ -231,7 +188,7 @@ function AuditPageInner() {
                 onToggle={() => setExpanded((x) => (x === event.id ? null : event.id))}
               />
             ))}
-          </ol>
+          </ActivityLog>
         )}
       </div>
       {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
@@ -240,44 +197,47 @@ function AuditPageInner() {
 }
 
 function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: boolean; onToggle: () => void }) {
-  const t = useT();
+  const { t, locale } = useLocale();
   const hasDetail = Boolean(event.before || event.after || event.reason);
   const reasonKey = auditReasonMessageKey(event);
   const approvalStatus = auditApprovalStatusForDisplay(event);
+  const badges = approvalStatus === "pending" ? <Badge variant="warning">{t("staffTools.audit.waitingApproval")}</Badge>
+    : approvalStatus === "approved" ? <Badge variant="success">{t("staffTools.audit.approved")}</Badge>
+    : approvalStatus === "rejected" ? <Badge variant="signal">{t("staffTools.audit.rejected")}</Badge>
+    : null;
+  const entry = (
+    <ActivityEntry
+      title={activityActionLabel(t, event.action, locale)}
+      subject={event.entityLabel}
+      badges={badges}
+      description={event.summary}
+      actor={event.actorName}
+      role={ROLE_LABELS[event.actorRole] ? t(ROLE_LABELS[event.actorRole]!) : undefined}
+      occurredAt={event.occurredAt}
+    />
+  );
   return (
     <li>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-start gap-3 px-4 py-3 text-start transition-colors hover:bg-sunken/40 cursor-pointer"
-      >
-        <span className="mt-0.5 shrink-0 text-[12px] text-ink-3 tabular whitespace-nowrap">
-          <DateTimeText iso={event.occurredAt} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="text-[13px] font-medium">{event.summary}</span>
-            <Badge variant="outline">{actionLabel(event.action, t)}</Badge>
-            {approvalStatus === "pending" ? <Badge variant="warning">{t("staffTools.audit.waitingApproval")}</Badge> : null}
-            {approvalStatus === "approved" ? <Badge variant="success">{t("staffTools.audit.approved")}</Badge> : null}
-            {approvalStatus === "rejected" ? <Badge variant="signal">{t("staffTools.audit.rejected")}</Badge> : null}
-          </span>
-          <span className="mt-0.5 block text-[12px] text-ink-3">
-            {event.actorName} · {ROLE_LABELS[event.actorRole] ? t(ROLE_LABELS[event.actorRole]!) : event.actorRole} · {event.entityLabel}
-          </span>
-        </span>
-        {hasDetail ? (
-          <ChevronDown className={cn("mt-1 size-4 shrink-0 text-ink-3 transition-transform", expanded && "rotate-180")} aria-hidden />
-        ) : null}
-      </button>
+      {hasDetail ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-start transition-colors hover:bg-sunken/40 sm:px-5"
+        >
+          {entry}
+          <ChevronDown className={cn("mt-0.5 size-4 shrink-0 text-ink-3 transition-transform", expanded && "rotate-180")} aria-hidden />
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 px-4 py-3 sm:px-5">{entry}</div>
+      )}
       {expanded && hasDetail ? (
-        <div className="border-t border-line/70 bg-sunken/30 px-4 py-3 animate-fade-in">
+        <div className="border-t border-line/70 bg-sunken/30 px-4 py-3 animate-fade-in sm:px-5">
           <div className="grid gap-3 md:grid-cols-2">
             {event.reason ? (
               <div className="rounded-md border border-line bg-surface p-3 md:col-span-2">
                 <p className="context-label mb-1">{t("common.label.reason")}</p>
-                <p className="text-[12.5px]" dir="auto">{reasonKey ? t(reasonKey) : event.reason}</p>
+                <p className="text-[12.5px] [overflow-wrap:anywhere]" dir="auto">{reasonKey ? t(reasonKey) : event.reason}</p>
               </div>
             ) : null}
             {event.before ? (
@@ -287,7 +247,8 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
               <DiffPanel label={t("renewFlow.adjust.beforeAfter.after")} values={event.after} highlight t={t} />
             ) : null}
           </div>
-          <p className="mt-3 text-[12px] text-ink-3">{t("staffTools.audit.reference")} <span className="font-mono text-[11px]" dir="ltr">{event.correlationId}</span></p>
+          {/* The request id staff can quote to support; kept whole so it can be looked up. */}
+          <p className="mt-3 text-[12px] text-ink-3 [overflow-wrap:anywhere]">{t("staffTools.audit.reference")} <bdi dir="ltr" className="text-ink-2">{event.correlationId}</bdi></p>
         </div>
       ) : null}
     </li>
@@ -302,8 +263,8 @@ function DiffPanel({ label, values, highlight, t }: { label: string; values: Rec
       <dl className="space-y-1">
         {Object.entries(values).map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-2 text-[12px]">
-            <dt className="text-ink-3">{fieldLabel(k, t)}</dt>
-            <dd className="tabular">{auditValueLabel(k, v, typeof values.currency === "string" ? values.currency : undefined, format)}</dd>
+            <dt className="shrink-0 text-ink-3">{fieldLabel(k, t)}</dt>
+            <dd className="min-w-0 text-end tabular [overflow-wrap:anywhere]"><ActivityText text={auditValueLabel(k, v, typeof values.currency === "string" ? values.currency : undefined, format)} /></dd>
           </div>
         ))}
       </dl>

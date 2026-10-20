@@ -1,5 +1,6 @@
 "use client";
-import { useT } from "@/lib/i18n/provider";
+import { useLocale, useT } from "@/lib/i18n/provider";
+import { activityActionLabel } from "@/lib/i18n/activity-log";
 
 import {
   AlertTriangle,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
 import { DataPagination, PageHeader, Stat } from "@/components/shared/chrome";
 import { StatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
@@ -183,7 +185,7 @@ export function DesignSystemGallery() {
             <DataPagination page={{ ...SAMPLE_PAGE, page }} onPage={setPage} className="border-t border-line px-4 py-3" />
           </div>
             </TabsContent>
-            <TabsContent value="activity"><StatePanel layout="section" title="No activity selected" description="Choose a member to inspect their chronological record." /></TabsContent>
+            <TabsContent value="activity" className="mt-4"><ExampleActivityLog /></TabsContent>
           </Tabs>
         </GallerySection>
 
@@ -249,6 +251,30 @@ function GallerySection({ title, description, children }: { title: string; descr
 
 function TokenSpec({ title, detail, specimen }: { title: string; detail: string; specimen: React.ReactNode }) {
   return <article className="panel p-4"><ContextLabel>{title}</ContextLabel><div className="mt-4 min-h-12">{specimen}</div><TechnicalLabel className="mt-3 text-[10.5px]">{detail}</TechnicalLabel></article>;
+}
+
+/** Operator history as it reached the platform console on 27 Sep 2026: long codes, a raw invoice id. */
+const EXAMPLE_ACTIVITY = [
+  { action: "prospects.imported", summary: "Added 12 gyms from the Amman pilot list", at: "2026-10-15T14:41:00.000Z" },
+  { action: "invoice.manual_payment", summary: "Recorded an offline payment against platform invoice", at: "2026-09-27T17:18:00.000Z" },
+  { action: "gym.subscription.update", summary: "Updated gym subscription controls and issued INV-c234d937-c2c4-48f3-a0d9-6f1afd8f1121 for the new term", at: "2026-09-27T17:18:00.000Z" },
+  { action: "agreement.countersigned", summary: "Countersigned subscription agreement RVT-20260927-CU4U6 for Test Gym", at: "2026-09-27T16:46:00.000Z" },
+  { action: "gym.provisioned", summary: "Provisioned Test Gym and invited the owner", at: "2026-09-27T16:35:00.000Z" },
+  { action: "gym.provisioning.workspace_created", summary: "Created Pro workspace for Test Gym", at: "2026-09-27T16:35:00.000Z" },
+  { action: "gym_application.approved", summary: "Approved gym application for Test Gym", at: "2026-09-27T16:35:00.000Z" },
+  { action: "gym_application.under_review", summary: "Moved to review gym application for Test Gym", at: "2026-09-27T16:34:00.000Z" },
+] as const;
+
+function ExampleActivityLog() {
+  const { t, locale } = useLocale();
+  return (
+    <div className="panel overflow-hidden" data-testid="example-activity-log">
+      <header className="border-b border-line px-4 py-3 sm:px-5"><h3 className="text-[15px] font-semibold">{t("platformConsole.home.recentActivity")}</h3><p className="mt-0.5 text-[12.5px] text-ink-3">{t("platformConsole.home.immutableAudit")}</p></header>
+      <ActivityLog aria-label={t("platformConsole.home.recentActivity")}>
+        {EXAMPLE_ACTIVITY.map((event) => <ActivityRow key={`${event.action}-${event.at}`} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor="Omar Al-Khatib" occurredAt={event.at} />)}
+      </ActivityLog>
+    </div>
+  );
 }
 
 function ExampleMemberRow({ name, number, branch, balance, status }: { name: string; number: string; branch: string; balance: string; status: "Active" | "Expiring" }) {

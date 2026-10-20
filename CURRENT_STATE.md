@@ -76,6 +76,72 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 20 October 2026 — Activity logs read as plain rows on every screen
+
+Elias called the platform console's "Recent operator activity" panel bad. Raw
+upper-case mono codes ran into the sentence beside them
+(`GYM.PROVISIONING.WORKSPACE_CREATED`, `GYM_APPLICATION.UNDER_REVIEW`), a full
+invoice UUID was shown, and the subtitle was system-speak. Presentation only:
+no Convex function, audit payload or stored record changed.
+
+- **One row design:** `components/shared/activity-log.tsx` (`ActivityLog`,
+  `ActivityRow`, `ActivityEntry`, `ActivityMeta`, `ActivityText`). A row is a
+  plain label (plus what it was about, for gym records), the stored sentence,
+  then a quiet "who · role · when" line. Text wraps (`overflow-wrap: anywhere`)
+  instead of sitting in fixed columns, so nothing can print over its
+  neighbour. No mono or upper-case labels. A sentence that only repeats the
+  label is hidden.
+- **Where:** platform overview (now "Recent activity — What the RIVET team
+  changed, newest first."), platform gym detail ("Platform history"), the gym
+  Activity log (`/audit`, still expandable with reason, before/after and the
+  request reference), `TimelineFeed` (member timeline, lead activity, owner
+  dashboard feed: it keeps its spine and icons, drops the second time stamp on
+  the right, and "View receipt" moved into the who/when line, no longer mono),
+  prospect history, and Reports → refunds and discounts "recent staff actions"
+  (a table before). The gallery's Activity tab (`/dev/design-system`) shows the
+  eight rows from Elias's screenshot.
+- **Labels:** new `activityLog` namespace (en + ar), 228 labels keyed by the
+  camel-cased code; `lib/i18n/activity-log.ts` looks them up. `x.approved` /
+  `x.rejected` / `x.denied` on a known action reads "Approved: Refund". An
+  unknown code is spelled out in English ("Gym provisioning dns verified") and
+  shows "تم تسجيل تغيير" in Arabic. A test scans every `convex/*.ts` action
+  literal plus the template-built codes and fails if one has no label. The
+  page-local tables (`staffTools.audit.action.*`,
+  `reportsWorkspace.refund…letIn`) and the unused `auditActorTime`,
+  `timestampUnavailable` and `historyBy` keys were removed. The refunds report
+  CSV "type" now uses the approved `استرداد المبلغ`.
+- **Ids:** `INV-<uuid>` inside a stored sentence shows as `INV-C234D937`, the
+  same as `paymentNoteReference`, the billing page and the gym's payment note.
+  A bare UUID shows its first eight characters. The full id stays in the hover
+  title. Reference numbers never break across lines. A record label that is
+  only an id is hidden, and unknown before/after field names are spelled out.
+- **Arabic:** labels follow STANDARD.md and the approved terms (استرداد المبلغ،
+  إلغاء تسجيل الدفعة، فتح الصندوق، رفع قائمة المشتركين، دمج سجل المشتركين، السماح
+  بالدخول استثنائيًا، عكس دفعة المورّد). `docs/arabic/decision-coverage.json`
+  points three moved keys at their new names and maps 28 labels that equal an
+  approved decision, so `messages.test.ts` guards them. `verify-lock.py`
+  passed (revision 607, 247 agreements). Stored sentences written by Convex
+  stay English in Arabic; translating them needs structured summaries in
+  Convex, the historical limit IMPLEMENTATION_PLAN §E already records.
+- **"Hashem Nusair admin":** that is the account's stored full name. Each event
+  stores `actorName` when it is written, so renaming the account only changes
+  new entries.
+- **Evidence:** new `activity-log.test.ts` (catalogue coverage, Arabic,
+  fallbacks, id shortening) and `activity-log.test.tsx` (row, subject, wrap,
+  unknown code, Arabic), a platform overview case with Elias's rows, and the
+  updated Arabic report test. The full Vitest run passed (2,279 tests in 356
+  files, 2 opt-in benchmarks skipped). `tsc` and eslint are clean. Mock
+  browser: the manager-override, audit-filter and platform suspend/gym-record
+  specs pass. A headless capture of every surface at 1280, 1024 and 390px in
+  English and Arabic found no overlapping text, no text outside its panel and
+  no page-level sideways scroll (30 captures).
+- **Not done:** the screenshot references that show these surfaces are now
+  stale (`pass-5-audit`, `pass-5-dashboard*`, `owner-dashboard-desktop`,
+  `pass-2-lead-detail`, `pass-7-platform`, `workflow-member-detail-phone`,
+  including their `-linux` copies). Refresh them with the built-bundle recipe
+  before pushing to main. Real Convex data has not been viewed in a browser.
+  Frontend only: Vercel deploys it on merge, nothing to `pnpm convex:deploy`.
+
 ## 19 October 2026 — Faster GitHub CI
 
 GitHub CI now runs 11 jobs instead of 13 and finishes in about 3m10s from the

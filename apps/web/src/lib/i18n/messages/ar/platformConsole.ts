@@ -125,8 +125,8 @@ export const platformConsole = {
     conversion: "معدل التحويل",
     notAvailable: "غير متاح",
     reviewGymApplications: "مراجعة طلبات تسجيل الأندية",
-    recentActivity: "أحدث أنشطة إدارة المنصة",
-    immutableAudit: "سجل تغييرات المنصة غير القابل للتعديل؛ يوضح كل إدخال من قام به ومتى.",
+    recentActivity: "آخر التغييرات",
+    immutableAudit: "ما غيّره فريق RIVET، من الأحدث إلى الأقدم.",
     noOperatorActivity: "لم تُسجّل أي إجراءات لمسؤولي المنصة.",
     attention: "يتطلب انتباهك",
     nothingNeedsAttention: "لا توجد أمور تتطلب متابعتك الآن.",
@@ -140,8 +140,6 @@ export const platformConsole = {
     suspended: plural({ zero: "لا حسابات معلّقة", one: "حساب واحد معلّق", two: "حسابان معلّقان", few: "{count} حسابات معلّقة", many: "{count} حسابًا معلّقًا", other: "{count} حساب معلّق" }),
     cancelled: plural({ zero: "لا اشتراكات ملغاة", one: "اشتراك واحد ملغي", two: "اشتراكان ملغيان", few: "{count} اشتراكات ملغاة", many: "{count} اشتراكًا ملغيًا", other: "{count} اشتراك ملغي" }),
     everyTenantCurrent: "جميع حسابات الأندية مسدّدة حتى الآن",
-    auditActorTime: "{actor} · {time}",
-    timestampUnavailable: "الوقت غير متاح",
   },
   applications: {
     title: "طلبات تسجيل الأندية",
@@ -489,7 +487,6 @@ export const platformConsole = {
       historyChanged: "تغيير {field} إلى {value}",
       historyCleared: "مسح {field}",
       historyEdited: "تعديل {field}",
-      historyBy: "{name}، {time}",
     },
     field: {
       gymName: "اسم النادي",

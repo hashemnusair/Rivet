@@ -955,7 +955,8 @@
     {
       "id": "downloads",
       "keys": [
-        "nav.item.downloads"
+        "nav.item.downloads",
+        "activityLog.action.dataExport"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1566,7 +1567,8 @@
     {
       "id": "renew",
       "keys": [
-        "renewFlow.sale.titleRenew"
+        "renewFlow.sale.titleRenew",
+        "activityLog.action.membershipRenew"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1583,7 +1585,8 @@
       "keys": [
         "memberProfile.header.menu.freeze",
         "renewFlow.adjust.freeze.title",
-        "permissions.memberships_freeze.label"
+        "permissions.memberships_freeze.label",
+        "activityLog.action.membershipFreeze"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1603,12 +1606,12 @@
       "id": "unfreeze",
       "keys": [
         "platformFinance.billing.table.reactivate",
-        "staffTools.audit.action.membershipUnfreeze"
+        "activityLog.action.membershipUnfreeze"
       ],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Exact Arabic catalog mapping: platformFinance.billing.table.reactivate, staffTools.audit.action.membershipUnfreeze."
+      "remaining": "Exact Arabic catalog mapping: platformFinance.billing.table.reactivate, activityLog.action.membershipUnfreeze."
     },
     {
       "id": "extend",
@@ -1634,7 +1637,8 @@
       "id": "change-plan",
       "keys": [
         "memberProfile.header.menu.changePlan",
-        "renewFlow.adjust.planChange.submit"
+        "renewFlow.adjust.planChange.submit",
+        "activityLog.action.membershipPlanChange"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -1707,12 +1711,12 @@
     {
       "id": "transfer-member",
       "keys": [
-        "staffTools.audit.action.membershipBranchTransfer"
+        "activityLog.action.membershipBranchTransfer"
       ],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Exact Arabic catalog mapping: staffTools.audit.action.membershipBranchTransfer."
+      "remaining": "Exact Arabic catalog mapping: activityLog.action.membershipBranchTransfer."
     },
     {
       "id": "active",
@@ -2235,7 +2239,8 @@
       "id": "merge",
       "keys": [
         "memberMigration.combineTitle",
-        "memberMigration.combineRecords"
+        "memberMigration.combineRecords",
+        "activityLog.action.memberMerge"
       ],
       "rules": [],
       "candidateOccurrences": [],
@@ -2251,7 +2256,9 @@
     {
       "id": "import",
       "keys": [
-        "members.list.actions.import"
+        "members.list.actions.import",
+        "activityLog.action.memberImportCommit",
+        "activityLog.action.memberImported"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2444,7 +2451,8 @@
       "id": "allow-entry",
       "keys": [
         "domain.checkInDecision.overridden",
-        "settingsCore.text130"
+        "settingsCore.text130",
+        "activityLog.action.checkinOverride"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -2600,7 +2608,8 @@
         "memberProfile.createTask.types.payment_collection",
         "palette.actions.collectPayment.title",
         "renewFlow.payment.title",
-        "renewFlow.payment.collectPlain"
+        "renewFlow.payment.collectPlain",
+        "activityLog.action.paymentCollect"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3066,7 +3075,8 @@
       "keys": [
         "domain.transactionType.refund",
         "renewFlow.receipt.refundButton",
-        "renewFlow.receipt.kindRefund"
+        "renewFlow.receipt.kindRefund",
+        "activityLog.action.paymentRefund"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3113,7 +3123,8 @@
     {
       "id": "void-payment",
       "keys": [
-        "permissions.payments_void.label"
+        "permissions.payments_void.label",
+        "activityLog.action.paymentVoid"
       ],
       "rules": [],
       "candidateOccurrences": [],
@@ -3166,12 +3177,12 @@
     {
       "id": "price-override",
       "keys": [
-        "staffTools.audit.action.membershipPriceOverride"
+        "activityLog.action.membershipPriceOverride"
       ],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Exact Arabic catalog mapping: staffTools.audit.action.membershipPriceOverride."
+      "remaining": "Exact Arabic catalog mapping: activityLog.action.membershipPriceOverride."
     },
     {
       "id": "payment-saved",
@@ -3206,7 +3217,8 @@
         "payablesWorkspace.openShift",
         "permissions.reconciliation_open_shift.label",
         "salesWorkspace.openCashShift",
-        "salesWorkspace.openShift"
+        "salesWorkspace.openShift",
+        "activityLog.action.shiftOpen"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
@@ -3230,7 +3242,8 @@
       "keys": [
         "permissions.reconciliation_close_shift.label",
         "salesWorkspace.closeShift",
-        "salesWorkspace.closeShiftMore"
+        "salesWorkspace.closeShiftMore",
+        "activityLog.action.shiftClose"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -3999,7 +4012,8 @@
     {
       "id": "cancel-booking",
       "keys": [
-        "memberExperience.cancelBooking"
+        "memberExperience.cancelBooking",
+        "activityLog.action.classesBookingCancel"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -4044,7 +4058,8 @@
       "id": "mark-complete",
       "keys": [
         "ptWorkspace.completeAction",
-        "dashboard.trainer.complete"
+        "dashboard.trainer.complete",
+        "activityLog.action.ptBookingCompleted"
       ],
       "rules": [],
       "candidateOccurrences": [],
@@ -4136,7 +4151,8 @@
     {
       "id": "checkout",
       "keys": [
-        "nav.item.checkout"
+        "nav.item.checkout",
+        "activityLog.action.operationsRetailSaleCreate"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -4297,7 +4313,8 @@
     {
       "id": "receive-stock",
       "keys": [
-        "stockWorkspace.receiveStock"
+        "stockWorkspace.receiveStock",
+        "activityLog.action.operationsPurchaseOrderReceive"
       ],
       "rules": [
         "apps/web/src/features/operations/stock-arabic.test.tsx"
@@ -4358,7 +4375,8 @@
     {
       "id": "stock-adjustment",
       "keys": [
-        "ledgerWorkspace.stockChange"
+        "ledgerWorkspace.stockChange",
+        "activityLog.action.operationsStockMovementCreate"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
@@ -4371,7 +4389,8 @@
     {
       "id": "stock-transfer",
       "keys": [
-        "stockWorkspace.moveStock"
+        "stockWorkspace.moveStock",
+        "activityLog.action.operationsInventoryTransfer"
       ],
       "rules": [
         "apps/web/src/features/operations/stock-arabic.test.tsx"
@@ -4443,7 +4462,8 @@
     {
       "id": "supplier-payment",
       "keys": [
-        "payablesWorkspace.recordSupplierPayment"
+        "payablesWorkspace.recordSupplierPayment",
+        "activityLog.action.operationsSupplierPaymentRecord"
       ],
       "rules": [
         "apps/web/src/features/operations/payables/payables-arabic.test.tsx"
@@ -4460,7 +4480,8 @@
     {
       "id": "reverse-supplier",
       "keys": [
-        "payablesWorkspace.reverseSupplierPayment"
+        "payablesWorkspace.reverseSupplierPayment",
+        "activityLog.action.operationsSupplierPaymentReverse"
       ],
       "rules": [
         "apps/web/src/features/operations/payables/payables-arabic.test.tsx"
@@ -5257,7 +5278,8 @@
     {
       "id": "post-entry",
       "keys": [
-        "ledgerWorkspace.postToBooks"
+        "ledgerWorkspace.postToBooks",
+        "activityLog.action.accountingSourcePost"
       ],
       "rules": [
         "apps/web/src/features/finance/ledger-arabic.test.tsx",
@@ -6387,7 +6409,8 @@
     {
       "id": "approve",
       "keys": [
-        "platformConsole.applications.approve"
+        "platformConsole.applications.approve",
+        "activityLog.action.gymApplicationApproved"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -6403,7 +6426,8 @@
       "id": "reject",
       "keys": [
         "memberEnrollment.declineRequest",
-        "platformConsole.applications.reject"
+        "platformConsole.applications.reject",
+        "activityLog.action.gymApplicationRejected"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -6461,7 +6485,8 @@
     {
       "id": "past-due",
       "keys": [
-        "settingsDetails.text121"
+        "settingsDetails.text121",
+        "activityLog.action.subscriptionInvoicePastDue"
       ],
       "rules": [],
       "candidateOccurrences": [
@@ -6577,7 +6602,9 @@
       "id": "support-reply",
       "keys": [
         "platformConsole.support.sendReply",
-        "staffTools.support.sendReply"
+        "staffTools.support.sendReply",
+        "activityLog.action.supportCaseReply",
+        "activityLog.action.supportReply"
       ],
       "rules": [],
       "candidateOccurrences": [],
@@ -6587,7 +6614,8 @@
     {
       "id": "reopen",
       "keys": [
-        "platformConsole.support.reopen"
+        "platformConsole.support.reopen",
+        "activityLog.action.supportReopen"
       ],
       "rules": [],
       "candidateOccurrences": [],

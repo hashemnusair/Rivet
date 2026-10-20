@@ -3,6 +3,7 @@
 import { ArrowLeft, AtSign, CalendarClock, Check, CircleAlert, Copy, ExternalLink, Facebook, Instagram, MessageCircle, Pencil, Phone, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
+import { ActivityEntry } from "@/components/shared/activity-log";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -432,8 +433,10 @@ function HistorySection({ prospectId }: { prospectId: string }) {
       {history.data.map((entry) => (
         <li key={entry.id} className="relative">
           <span className="absolute -start-[21px] top-1.5 size-2 rounded-full border border-line-3 bg-surface" aria-hidden />
-          {headline(entry).map((line, index) => <p key={index} dir="auto" className="text-[13px] text-ink">{line}</p>)}
-          <p className="mt-0.5 text-[12px] text-ink-3">{t("platformConsole.prospects.detail.historyBy", { name: isolate(entry.actorName), time: f.dateTime(entry.occurredAt) })}</p>
+          {(() => {
+            const [title = "", ...rest] = headline(entry);
+            return <ActivityEntry title={title} description={rest} actor={entry.actorName} occurredAt={entry.occurredAt} timeZone={PLATFORM_TIMEZONE} />;
+          })()}
         </li>
       ))}
     </ol>

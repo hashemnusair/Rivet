@@ -1,3 +1,4 @@
+import { activityLog } from "./activityLog";
 import { exportDocuments } from "./exportDocuments";
 import { navigationCatalogue } from "./navigationCatalogue";
 import { crmCompletion } from "./crmCompletion";
@@ -58,6 +59,7 @@ import { shell } from "./shell";
  * rewording English never renames a key.
  */
 export const en = {
+  activityLog,
   exportDocuments,
   navigationCatalogue,
   crmCompletion,

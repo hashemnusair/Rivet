@@ -125,8 +125,8 @@ export const platformConsole = {
     conversion: "Conversion",
     notAvailable: "Not available",
     reviewGymApplications: "Review gym applications",
-    recentActivity: "Recent operator activity",
-    immutableAudit: "Immutable platform audit; every entry names who did it and when.",
+    recentActivity: "Recent activity",
+    immutableAudit: "What the RIVET team changed, newest first.",
     noOperatorActivity: "No platform operator actions have been recorded.",
     attention: "Needs attention",
     nothingNeedsAttention: "Nothing needs your attention right now.",
@@ -140,8 +140,6 @@ export const platformConsole = {
     suspended: plural({ one: "{count} suspended", other: "{count} suspended" }),
     cancelled: plural({ one: "{count} cancelled", other: "{count} cancelled" }),
     everyTenantCurrent: "Every tenant is current",
-    auditActorTime: "{actor} · {time}",
-    timestampUnavailable: "Time unavailable",
   },
   applications: {
     title: "Gym applications",
@@ -489,7 +487,6 @@ export const platformConsole = {
       historyChanged: "{field} changed to {value}",
       historyCleared: "{field} cleared",
       historyEdited: "{field} changed",
-      historyBy: "{name}, {time}",
     },
     field: {
       gymName: "Gym name",

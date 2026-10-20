@@ -26,7 +26,7 @@ import { receiptHref } from "@/lib/utils/receipt-links";
 import { useLocale } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
 import { presentTimelineEvent } from "@/lib/i18n/system-messages";
-import { DateTimeText, RelativeText } from "./data-display";
+import { ActivityEntry } from "./activity-log";
 
 const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> = {
   member_created: { icon: PlusCircle, tone: "text-ink-2" },
@@ -77,8 +77,9 @@ const EVENT_ICON: Record<TimelineEventType, { icon: LucideIcon; tone: string }> 
 };
 
 /**
- * The single chronological record. One visual language everywhere:
- * hairline spine, small square markers, actor + timestamp on the meta row.
+ * The single chronological record. Hairline spine and small square markers,
+ * with the shared activity row beside each marker (title, what happened, who
+ * and when), so the member timeline reads like every other log.
  */
 export function TimelineFeed({
   events,
@@ -116,26 +117,18 @@ export function TimelineFeed({
             >
               <Icon className="size-[9px]" strokeWidth={2.4} />
             </span>
-            <div className={cn("min-w-0 flex-1", dense && "text-[12.5px]")}>
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-                <p className="text-[13px] font-medium leading-snug text-ink">
-                  <span dir="auto">{display.title}</span>
-                  {receiptId ? (
-                    <Link href={receiptHref(receiptId)} className="ms-1.5 font-mono text-[11px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">
-                      {t("memberProfile.timeline.viewReceipt")}
-                    </Link>
-                  ) : null}
-                </p>
-                <span className="shrink-0 text-[12px] text-ink-3">
-                  <RelativeText iso={event.occurredAt} />
-                </span>
-              </div>
-              {display.body ? <p className="mt-0.5 text-[12.5px] leading-snug text-ink-2" dir="auto">{display.body}</p> : null}
-              <p className="mt-0.5 text-[12px] text-ink-3">
-                {showActor && event.actorName ? <span><bdi>{event.actorName}</bdi> · </span> : null}
-                <DateTimeText iso={event.occurredAt} />
-              </p>
-            </div>
+            <ActivityEntry
+              title={display.title}
+              description={display.body}
+              action={receiptId ? (
+                <Link href={receiptHref(receiptId)} className="text-[12px] text-ink-2 underline decoration-line-3 underline-offset-2 hover:text-ink">
+                  {t("memberProfile.timeline.viewReceipt")}
+                </Link>
+              ) : undefined}
+              actor={showActor ? event.actorName : undefined}
+              occurredAt={event.occurredAt}
+              dense={dense}
+            />
           </li>
         );
       })}

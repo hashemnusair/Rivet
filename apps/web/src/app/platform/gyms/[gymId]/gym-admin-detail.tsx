@@ -23,7 +23,9 @@ import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
+import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
+import { activityActionLabel } from "@/lib/i18n/activity-log";
+import { ContextLabel } from "@/components/ui/typography";
 import { membershipStatusLabel, roleLabel } from "@/lib/i18n/labels";
 import { searchKey } from "@/lib/utils/text";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
@@ -45,7 +47,7 @@ function isGymTab(value: string | null): value is GymTab {
  */
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const t = useT();
-  const { isolate } = useLocale();
+  const { isolate, locale } = useLocale();
   const f = useFormat();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -300,14 +302,11 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <PlatformPanel aria-labelledby="timeline-title">
             <PlatformPanelHeader id="timeline-title" title={t("platformFinance.detail.timeline")} description={t("platformFinance.detail.timelineDescription")} />
             {detail.activity.state === "available" && detail.activity.value.length > 0 ? (
-              <div className="divide-y divide-line">
+              <ActivityLog aria-labelledby="timeline-title">
                 {detail.activity.value.map((event) => (
-                  <div key={event.id} className="grid gap-1 px-4 py-3 sm:grid-cols-[150px_1fr] sm:gap-4 sm:px-5">
-                    <span className="text-[12.5px] text-ink-3">{f.dateTime(event.occurredAt)}</span>
-                    <div className="min-w-0"><p className="text-[13.5px] font-medium">{event.summary}</p><p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink-3"><TechnicalLabel as="span">{event.action}</TechnicalLabel><span>{event.actorName}</span></p></div>
-                  </div>
+                  <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
                 ))}
-              </div>
+              </ActivityLog>
             ) : <UnavailableBlock field={detail.activity} empty={t("platformFinance.detail.noTimeline")} />}
           </PlatformPanel>
 
