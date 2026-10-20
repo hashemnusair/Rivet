@@ -14,7 +14,9 @@ import { SubscriptionStatusBadge, subscriptionStatusLabel } from "@/components/p
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformGymMember, PlatformGymStaff } from "@/lib/api/GymOSApi";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymActivity, PlatformGymDetail, PlatformGymMember, PlatformGymStaff } from "@/lib/api/GymOSApi";
+import { ACTIVITY_PAGE_SIZES, useClientPage } from "@/lib/hooks/use-client-page";
+import { DataPagination } from "@/components/shared/chrome";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -47,7 +49,7 @@ function isGymTab(value: string | null): value is GymTab {
  */
 export default function GymAdminDetail({ gymId }: { gymId: string }) {
   const t = useT();
-  const { isolate, locale } = useLocale();
+  const { isolate } = useLocale();
   const f = useFormat();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -302,11 +304,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <PlatformPanel aria-labelledby="timeline-title">
             <PlatformPanelHeader id="timeline-title" title={t("platformFinance.detail.timeline")} description={t("platformFinance.detail.timelineDescription")} />
             {detail.activity.state === "available" && detail.activity.value.length > 0 ? (
-              <ActivityLog aria-labelledby="timeline-title">
-                {detail.activity.value.map((event) => (
-                  <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
-                ))}
-              </ActivityLog>
+              <GymActivity events={detail.activity.value} />
             ) : <UnavailableBlock field={detail.activity} empty={t("platformFinance.detail.noTimeline")} />}
           </PlatformPanel>
 
@@ -355,6 +353,22 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </DialogContent>
       </Dialog>
     </PlatformPage>
+  );
+}
+
+/** What the RIVET team changed for this gym, a page at a time. */
+function GymActivity({ events }: { events: PlatformGymActivity[] }) {
+  const { t, locale } = useLocale();
+  const { page, setPage, setPageSize } = useClientPage(events);
+  return (
+    <>
+      <ActivityLog aria-labelledby="timeline-title">
+        {page.items.map((event) => (
+          <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
+        ))}
+      </ActivityLog>
+      <DataPagination page={page} onPage={setPage} pageSizes={ACTIVITY_PAGE_SIZES} onPageSize={setPageSize} className="border-t border-line px-4 py-3 sm:px-5" />
+    </>
   );
 }
 

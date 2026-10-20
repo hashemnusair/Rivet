@@ -76,6 +76,32 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 20 October 2026 — Activity logs show 5, 10 or 20 entries a page
+
+Elias asked for the activity logs to come in pages, with a choice of 5, 10 or
+20 entries on each page.
+
+- **Shared bar:** `DataPagination` takes optional `pageSizes` and
+  `onPageSize` and then shows a "Per page" choice (a native select, so phones
+  get their own picker) beside the page buttons. Other lists that use the bar
+  are unchanged. The bar now wraps on narrow screens, and its previous/next
+  arrows point the right way in Arabic. Arabic label: `لكل صفحة`.
+- **Where:** the gym Activity log (`/audit`) asks the server for one page. The
+  size lives in the URL (`?size=5` or `?size=20`; 10 has no parameter), so it
+  survives a reload and can be shared. Choosing a size goes back to page 1.
+  The platform overview's "Recent activity" and a gym's "Platform history" page
+  through the events they already load (the overview gets the latest 100)
+  with `useClientPage` in `lib/hooks/use-client-page.ts`. The overview used to
+  show only the latest 8.
+- **Default:** 10 a page everywhere. The Activity log used to show 20.
+- **Evidence:** new tests for the per-page choice, `pageOf`/`useClientPage`,
+  and paging on the platform overview (23 events: 10, then 3 on page 3, then 5
+  and 20). A headless mock-browser check of `/audit`: 10 by default; 5 and 20
+  change the rows and the URL; the next page keeps the size; a reload keeps it;
+  the Arabic page reads `?size=5&page=2` correctly. No sideways scroll at
+  1280, 1024 or 390px in either language. Both platform panels were checked
+  the same way.
+
 ## 20 October 2026 — Activity logs read as plain rows on every screen
 
 Elias called the platform console's "Recent operator activity" panel bad. Raw

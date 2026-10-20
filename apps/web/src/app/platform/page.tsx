@@ -4,7 +4,7 @@ import { useFormat } from "@/lib/i18n/format";
 
 import { ArrowRight, CircleAlert } from "lucide-react";
 import Link from "next/link";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { DataPagination, PageHeader, Stat } from "@/components/shared/chrome";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
 import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
 import { SubscriptionStatusBadge } from "@/components/platform/platform-status";
@@ -12,12 +12,12 @@ import { Button } from "@/components/ui/button";
 import { ContextLabel } from "@/components/ui/typography";
 import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
 import { activityActionLabel } from "@/lib/i18n/activity-log";
-import type { PlatformOverview } from "@/lib/api/GymOSApi";
+import type { PlatformOverview, PlatformSnapshot } from "@/lib/api/GymOSApi";
+import { ACTIVITY_PAGE_SIZES, useClientPage } from "@/lib/hooks/use-client-page";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 export default function PlatformOverviewPage() {
   const t = useT();
-  const { locale } = useLocale();
   const f = useFormat();
   const { platformSnapshot } = useExperience();
   // The platform snapshot is the authoritative tenant directory. The public
@@ -110,15 +110,25 @@ export default function PlatformOverviewPage() {
 
       <PlatformPanel className="mt-5" aria-labelledby="operator-activity-title">
         <PlatformPanelHeader id="operator-activity-title" title={t("platformConsole.home.recentActivity")} description={t("platformConsole.home.immutableAudit")} />
-        {platformSnapshot?.auditEvents.length ? (
-          <ActivityLog aria-labelledby="operator-activity-title">
-            {platformSnapshot.auditEvents.slice(0, 8).map((event) => (
-              <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
-            ))}
-          </ActivityLog>
-        ) : <p className="px-5 py-8 text-center text-[12.5px] text-ink-3">{t("platformConsole.home.noOperatorActivity")}</p>}
+        {platformSnapshot?.auditEvents.length ? <PlatformActivity events={platformSnapshot.auditEvents} /> : <p className="px-5 py-8 text-center text-[12.5px] text-ink-3">{t("platformConsole.home.noOperatorActivity")}</p>}
       </PlatformPanel>
     </PlatformPage>
+  );
+}
+
+/** The recent operator history, a page at a time. */
+function PlatformActivity({ events }: { events: PlatformSnapshot["auditEvents"] }) {
+  const { t, locale } = useLocale();
+  const { page, setPage, setPageSize } = useClientPage(events);
+  return (
+    <>
+      <ActivityLog aria-labelledby="operator-activity-title">
+        {page.items.map((event) => (
+          <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
+        ))}
+      </ActivityLog>
+      <DataPagination page={page} onPage={setPage} pageSizes={ACTIVITY_PAGE_SIZES} onPageSize={setPageSize} className="border-t border-line px-4 py-3 sm:px-5" />
+    </>
   );
 }
 

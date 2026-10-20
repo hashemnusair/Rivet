@@ -2,6 +2,7 @@
 import { useLocale, useT } from "@/lib/i18n/provider";
 import type { TKey } from "@/lib/i18n/provider";
 import { activityActionLabel, humaniseActivityCode } from "@/lib/i18n/activity-log";
+import { ACTIVITY_PAGE_SIZES, DEFAULT_ACTIVITY_PAGE_SIZE } from "@/lib/hooks/use-client-page";
 import { useFormat } from "@/lib/i18n/format";
 
 import { ChevronDown, Search } from "lucide-react";
@@ -83,6 +84,7 @@ function fieldLabel(field: string, t: ReturnType<typeof useT>): string {
 
 const CATEGORY_FILTERS: ReadonlyArray<"all" | AuditCategory> = ["all", ...(Object.keys(CATEGORY_LABELS) as AuditCategory[])];
 const APPROVAL_FILTERS = ["all", "pending", "approved", "rejected"] as const;
+const PAGE_SIZE_CHOICES = ACTIVITY_PAGE_SIZES.map(String) as readonly string[];
 
 function AuditPageInner() {
   const t = useT();
@@ -96,6 +98,7 @@ function AuditPageInner() {
   const approval = choiceFromParams(searchParams, "approval", APPROVAL_FILTERS, "all");
   const actorId = searchParams.get("actor") ?? "all";
   const page = pageFromParams(searchParams);
+  const pageSize = Number(choiceFromParams(searchParams, "size", PAGE_SIZE_CHOICES, String(DEFAULT_ACTIVITY_PAGE_SIZE)));
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 100 }));
@@ -107,9 +110,9 @@ function AuditPageInner() {
       approvalStatus: approval === "all" ? undefined : (approval as NonNullable<AuditQuery["approvalStatus"]>),
       actorId: actorId === "all" ? undefined : actorId,
       page,
-      pageSize: 20,
+      pageSize,
     }),
-    [debouncedSearch, category, approval, actorId, page],
+    [debouncedSearch, category, approval, actorId, page, pageSize],
   );
 
   const { data, isLoading, isError, error, refetch } = useApiQuery(qk.audit(query), (api) => api.listAuditEvents(query));
@@ -191,7 +194,15 @@ function AuditPageInner() {
           </ActivityLog>
         )}
       </div>
-      {data ? <DataPagination page={data} onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })} /> : null}
+      {data ? (
+        <DataPagination
+          page={data}
+          onPage={(next) => replaceParams({ page: next === 1 ? undefined : String(next) })}
+          pageSizes={ACTIVITY_PAGE_SIZES}
+          // A new page size starts again on page 1.
+          onPageSize={(size) => replaceParams({ size: size === DEFAULT_ACTIVITY_PAGE_SIZE ? undefined : String(size) })}
+        />
+      ) : null}
     </div>
   );
 }

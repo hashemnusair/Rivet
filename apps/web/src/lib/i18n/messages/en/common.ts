@@ -88,6 +88,7 @@ export const common = {
     page: "Page {page} of {total}",
     previous: "Previous page",
     next: "Next page",
+    perPage: "Per page",
   },
   a11y: {
     closeDialog: "Close dialog",
