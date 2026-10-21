@@ -1,3 +1,4 @@
+import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines } from "../../../convex/subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "@/lib/exports/copy";
 import { describeStatementText, statementWarningMessages } from "../domain/statement-messages";
 import { describeAccountingReason } from "../domain/accounting-messages";
@@ -74,6 +75,7 @@ import {
   validateWorkspaceModuleSelection,
   WORKSPACE_MODULE_CATALOG_VERSION,
 } from "@/lib/domain/workspace-modules";
+import { COMMERCIAL_TERMS_VERSION, isCurrentPlan, LEGACY_PLAN_CATALOGUE, PLAN_TONE } from "../../../convex/planCatalogue";
 import { DEFAULT_PUBLIC_PRICING_PLANS } from "@/lib/public/pricing";
 import { ptAvailableCredits, ptCancellationResult, ptPackageLadderIsValid, selectPtEntitlement } from "@/lib/domain/personal-training";
 import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "@/lib/domain/class-booking";
@@ -496,7 +498,7 @@ const MOCK_SUPPORT_CASES: PlatformSupportCase[] = [
  * is still evaluating.
  */
 function mockSaasPlans(): PlatformSaasPlan[] {
-  return DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
+  return [...DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan, commercialTermsVersion: COMMERCIAL_TERMS_VERSION })), ...LEGACY_PLAN_CATALOGUE.map((plan) => ({ ...plan, tone: PLAN_TONE[plan.name] }))];
 }
 
 const INITIAL_GYM_APPLICATIONS: PlatformGymApplication[] = [
@@ -2398,8 +2400,9 @@ export class MockGymOSApi implements GymOSApi {
     let invoicesCreated = 0;
     if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
       const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
+      const addOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
       const onboardingFeeMinor = this.platformInvoices.some(item => item.gymId === gym.id && item.status !== "void" && (item.onboardingFeeMinor ?? 0) > 0) ? 0 : organization.onboardingFeeMinor ?? 0;
-      const amountMinor = termPriceMinor(plan, billingInterval) + onboardingFeeMinor;
+      const amountMinor = termPriceMinor(plan + addOnMonthlyPrice(addOns), billingInterval) + onboardingFeeMinor;
       invoice = {
         id: `INV-${crypto.randomUUID()}`,
         gymId: gym.id,
@@ -2414,6 +2417,8 @@ export class MockGymOSApi implements GymOSApi {
         periodStart: new Date(boundary).toISOString(),
         periodEnd: new Date(periodEnd).toISOString(),
         cycleKey,
+        addOns,
+        lines: subscriptionInvoiceLines(plan, addOns, billingInterval),
         billingInterval,
         status: "open",
       };
@@ -2470,7 +2475,7 @@ export class MockGymOSApi implements GymOSApi {
 
   async subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> {
     try {
-      onValue(await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public"));
+      onValue(await this.respond(() => this.platformPlans.filter((plan) => isCurrentPlan(plan.name)).map((plan) => ({ ...plan })), "public"));
       this.publicPlanSubscribers.set(onValue, onError);
     } catch (error) {
       onError?.(error);
@@ -2630,7 +2635,7 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> {
-    return this.respond(() => this.platformPlans);
+    return this.respond(() => this.platformPlans.filter((plan) => isCurrentPlan(plan.name)));
   }
 
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
@@ -2638,6 +2643,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.website?.trim()) {
         return { applicationId: mockUuid(), status: "pending" as const, notificationStatus: "pending" as const, submittedAt: nowISO(), duplicate: false };
       }
+      if (!isCurrentPlan(input.plan)) throw ApiError.of(ERR.VALIDATION, "Choose Basic or Pro.");
       if (input.gymAddress.trim().length < 5) throw ApiError.of(ERR.VALIDATION, "Enter the gym's physical address.");
       const normalizedEmail = input.email.trim().toLowerCase();
       const applicationKey = publicApplicationKey(normalizedEmail, input.gymName);
@@ -2947,10 +2953,10 @@ export class MockGymOSApi implements GymOSApi {
       const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
       const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
       if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "The membership end date must be a valid calendar date.");
-      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
+      const hasControlChange = input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
       if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
       if (!organization) {
-        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
+        if (input.isPublic !== false || input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
           throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
         }
         gym.isPublic = false;
@@ -2980,7 +2986,12 @@ export class MockGymOSApi implements GymOSApi {
       const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt ? Date.parse(organization.currentPeriodEndsAt) : undefined;
       const currentStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
       const currentPlan = organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
-      const materialMembershipChange = (input.status !== undefined && nextStatus !== currentStatus)
+      const previousAddOns = validateAddOns(organization.subscriptionAddOns, currentPlan);
+      const nextAddOns = validateAddOns(input.addOns ?? (nextPlan === currentPlan ? organization.subscriptionAddOns : undefined), nextPlan);
+      const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
+      if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) throw ApiError.of(ERR.CONFLICT, "Subscription add-ons changed. Reload and review before saving.");
+      if (addOnsChanged && (nextStatus !== "active" || requestedPeriodEndsAtInput !== undefined)) throw ApiError.of(ERR.VALIDATION, "Add-on changes require an active billed term with its automatic end date.");
+      const materialMembershipChange = addOnsChanged || (input.status !== undefined && nextStatus !== currentStatus)
         || (input.plan !== undefined && input.plan !== currentPlan)
         || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
       const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
@@ -2989,14 +3000,14 @@ export class MockGymOSApi implements GymOSApi {
       // subscription starts a new server-derived paid term today, rolls the
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
-      const outgoingMonthlyPrice = this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0;
+      const outgoingMonthlyPrice = (this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0) + addOnMonthlyPrice(previousAddOns);
       const fundedTerm = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === storedCurrentPeriodEndsAt);
       const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
       const change = startsNewPaidTerm
         ? termChange({
             now: nowTimestamp,
             interval: billingInterval,
-            monthlyPriceMinor: this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0,
+            monthlyPriceMinor: (this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0) + addOnMonthlyPrice(nextAddOns),
             // Only a paid, running term is worth anything back; an overdue
             // term was never paid for, so its invoice is voided instead.
             ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingValue !== undefined
@@ -3021,6 +3032,8 @@ export class MockGymOSApi implements GymOSApi {
       const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic };
       gym.subscriptionStatus = nextStatus;
       gym.rivetPlan = nextPlan;
+      gym.addOns = nextAddOns;
+      gym.addOnsRevision = (organization.addOnsRevision ?? 0) + (addOnsChanged ? 1 : 0);
       gym.isPublic = PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? input.isPublic ?? previousIsPublic : false;
       gym.trialEndsAt = nextTrialEndsAt === undefined ? undefined : new Date(nextTrialEndsAt).toISOString();
       gym.subscriptionStartedAt = nextSubscriptionStartedAt === undefined ? undefined : new Date(nextSubscriptionStartedAt).toISOString();
@@ -3034,6 +3047,8 @@ export class MockGymOSApi implements GymOSApi {
         const previousModulePlan = organization.subscriptionPlan;
         organization.status = organizationStatusForPlatform(nextStatus);
         organization.subscriptionPlan = nextPlan as T.Organization["subscriptionPlan"];
+        organization.subscriptionAddOns = nextAddOns;
+        organization.addOnsRevision = gym.addOnsRevision;
         organization.billingInterval = billingInterval;
         organization.subscriptionStartedAt = gym.subscriptionStartedAt;
         organization.trialEndsAt = gym.trialEndsAt;
@@ -3043,7 +3058,7 @@ export class MockGymOSApi implements GymOSApi {
         organization.updatedAt = nowISO();
         const modulePlan = nextPlan as T.WorkspaceModulePlan;
         const catalogPlan = this.platformPlans.find((candidate) => candidate.name === modulePlan);
-        const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
+        const entitledModules = [...new Set([...entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules), ...addOnModules(modulePlan, nextAddOns)])];
         if (!tenant) {
           this.db.organizationEntitlements = {
             ...this.db.organizationEntitlements,
@@ -3059,7 +3074,7 @@ export class MockGymOSApi implements GymOSApi {
         // in the stored preference row on downgrades so a later upgrade can
         // restore prior operator choices while read-time filtering locks them
         // for the lower tier.
-        if (!tenant && input.plan !== undefined && previousModulePlan !== modulePlan) {
+        if (!tenant && (addOnsChanged || (input.plan !== undefined && previousModulePlan !== modulePlan))) {
           const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, this.platformPlans.find((candidate) => candidate.name === previousModulePlan)?.entitledModules) : [];
           const nextEntitled = entitledModules;
           const newlyEntitled = nextEntitled.filter((module) => !previousEntitled.includes(module));
@@ -3086,7 +3101,8 @@ export class MockGymOSApi implements GymOSApi {
             invoice.voidedAt = nowIso;
           }
         }
-        const priceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
+        const basePriceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
+        const priceMinor = basePriceMinor + addOnMonthlyPrice(nextAddOns);
         // An admin-chosen end date replaces the derived term, so the credit
         // that belongs to the derived term is not applied to it.
         const termInvoice = periodBoundaryChanged || !change
@@ -3109,6 +3125,8 @@ export class MockGymOSApi implements GymOSApi {
           periodEnd: new Date(nextCurrentPeriodEndsAt).toISOString(),
           cycleKey: `change:${organization.id}:${nowTimestamp}`,
           billingInterval,
+          addOns: nextAddOns,
+          lines: subscriptionInvoiceLines(basePriceMinor, nextAddOns, billingInterval),
           ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor } : {}),
           ...(termInvoice.creditMinor > 0 || onboardingFeeMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor + onboardingFeeMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
           // Parity with Convex: a credit that covers the term settles it.
@@ -3214,10 +3232,12 @@ export class MockGymOSApi implements GymOSApi {
           throw ApiError.of(ERR.VALIDATION, error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error) });
         }
       }
+      if (plan.name === "Pro" && entitledModules.length !== allWorkspaceModuleKeys().length) throw ApiError.of(ERR.VALIDATION, "Pro includes every workspace capability.");
+      if (plan.name === "Pro" && [input.branches, input.staff, input.members].some(value => value !== undefined && value !== -1)) throw ApiError.of(ERR.VALIDATION, "Pro capacity is unlimited.");
       if (input.priceMinor !== undefined) plan.priceMinor = Math.max(0, Math.round(input.priceMinor));
-      if (input.branches !== undefined) plan.branches = Math.max(1, Math.round(input.branches));
-      if (input.staff !== undefined) plan.staff = Math.max(1, Math.round(input.staff));
-      if (input.members !== undefined) plan.members = Math.max(1, Math.round(input.members));
+      if (input.branches !== undefined) plan.branches = plan.name === "Pro" ? -1 : Math.max(1, Math.round(input.branches));
+      if (input.staff !== undefined) plan.staff = plan.name === "Pro" ? -1 : Math.max(1, Math.round(input.staff));
+      if (input.members !== undefined) plan.members = plan.name === "Pro" ? -1 : Math.max(1, Math.round(input.members));
       for (const key of ["onboardingFeeMinor", "operationalEmails"] as const) {
         const value = input[key];
         if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw ApiError.of(ERR.VALIDATION, "Plan fees and email limits must be nonnegative integers.");
@@ -3225,6 +3245,7 @@ export class MockGymOSApi implements GymOSApi {
       if (input.onboardingFeeMinor !== undefined) plan.onboardingFeeMinor = input.onboardingFeeMinor;
       if (input.operationalEmails !== undefined) plan.operationalEmails = input.operationalEmails;
       plan.entitledModules = entitledModules;
+      plan.commercialTermsVersion = COMMERCIAL_TERMS_VERSION;
       if (this.db.organization.subscriptionPlan === plan.name) {
         const previousOrganizationEntitled = this.db.organizationEntitlements.entitledModules;
         this.db.organizationEntitlements = {
@@ -3407,7 +3428,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!input.email.trim() || !input.subject.trim() || !input.body.trim()) throw ApiError.of(ERR.VALIDATION, "Email, subject, and message are required.");
       if (!["normal", "urgent"].includes(input.priority)) throw ApiError.of(ERR.VALIDATION, "Support priority is invalid.");
       if (input.requestType && !["general", "plan_upgrade"].includes(input.requestType)) throw ApiError.of(ERR.VALIDATION, "Support request type is invalid.");
-      if (input.requestType === "plan_upgrade" && !["Starter", "Growth", "Pro", "Enterprise"].includes(input.requestedPlan ?? "")) throw ApiError.of(ERR.VALIDATION, "A requested plan is required for upgrade requests.");
+      if (input.requestType === "plan_upgrade" && !isCurrentPlan(input.requestedPlan)) throw ApiError.of(ERR.VALIDATION, "A requested plan is required for upgrade requests.");
       if (input.billingInterval && !["monthly", "annual"].includes(input.billingInterval)) throw ApiError.of(ERR.VALIDATION, "Billing cadence is invalid.");
       const actor = this.actor();
       const createdAt = nowISO();
@@ -3676,7 +3697,7 @@ export class MockGymOSApi implements GymOSApi {
   private async emitPublicPlanSubscribers(): Promise<void> {
     if (this.publicPlanSubscribers.size === 0) return;
     try {
-      const plans = await this.respond(() => this.platformPlans.map((plan) => ({ ...plan })), "public");
+      const plans = await this.respond(() => this.platformPlans.filter((plan) => isCurrentPlan(plan.name)).map((plan) => ({ ...plan })), "public");
       for (const onValue of this.publicPlanSubscribers.keys()) onValue(plans);
     } catch (error) {
       for (const onError of this.publicPlanSubscribers.values()) onError?.(error);
@@ -4423,6 +4444,8 @@ export class MockGymOSApi implements GymOSApi {
         brand: this.db.brand,
         subscription: {
           plan: org.subscriptionPlan,
+          addOns: org.subscriptionAddOns,
+          effectivePlan: org.subscriptionPlan ? applyAddOns({ ...findPlan(org.subscriptionPlan)!, priceMinor: this.platformPlans.find(item => item.name === org.subscriptionPlan)?.priceMinor ?? findPlan(org.subscriptionPlan)!.priceMinor }, org.subscriptionAddOns) : undefined,
           status: org.status,
           billingInterval: org.billingInterval ?? "monthly",
           currentPeriodEndsAt: org.currentPeriodEndsAt,
@@ -10070,7 +10093,7 @@ export class MockGymOSApi implements GymOSApi {
       organizationId: this.db.organization.id,
       catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION,
       subscriptionPlan: plan,
-      entitledModules: plan ? entitledModulesForPlanSelection(plan, stored.subscriptionPlan === plan ? stored.entitledModules : this.platformPlans.find((candidate) => candidate.name === plan)?.entitledModules) : stored.entitledModules,
+      entitledModules: plan ? [...new Set([...entitledModulesForPlanSelection(plan, this.platformPlans.find((candidate) => candidate.name === plan)?.entitledModules), ...addOnModules(plan, this.db.organization.subscriptionAddOns)])] : stored.entitledModules,
       source: plan ? "subscription_plan" : "legacy_default",
     };
   }

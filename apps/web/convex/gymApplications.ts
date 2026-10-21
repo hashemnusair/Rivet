@@ -8,7 +8,6 @@ import { applicantReceivedEmail, applicantReviewEmail, applicationInternalEmail 
 import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 
-const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
 const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
 const reviewDecision = v.union(v.literal("under_review"), v.literal("approved"), v.literal("rejected"));
@@ -19,7 +18,7 @@ const applicationArgs = {
   ownerName: v.string(),
   email: v.string(),
   contactNumber: v.string(),
-  plan,
+  plan: v.union(v.literal("Basic"), v.literal("Pro")),
   billingInterval: v.optional(billingInterval),
   idempotencyKey: v.optional(v.string()),
   website: v.optional(v.string()),
@@ -41,7 +40,7 @@ type ApplicationInput = {
   ownerName: string;
   email: string;
   contactNumber: string;
-  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
   idempotencyKey?: string;
   website?: string;
@@ -61,7 +60,7 @@ type ReviewResult = {
   gymAddress?: string;
   ownerName: string;
   email: string;
-  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval: "monthly" | "annual";
   status: "under_review" | "approved" | "rejected";
   reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
@@ -449,7 +448,7 @@ export const review = action({
       gymAddress?: string;
       ownerName: string;
       email: string;
-      plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+      plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
       billingInterval: "monthly" | "annual";
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";

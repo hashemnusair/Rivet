@@ -1,3 +1,4 @@
+import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines, type SubscriptionAddOns } from "./subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
 import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
 import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
@@ -59,8 +60,8 @@ import { agreementSessionState, agreementSummaryForOrganization, legalAgreementM
 import { PLATFORM_PROSPECT_MUTATIONS, PLATFORM_PROSPECT_QUERIES, platformProspectsMutation, platformProspectsQuery } from "./platformProspects";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
-import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
-import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
+import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
@@ -244,12 +245,13 @@ const DEFAULT_OPERATIONAL_POLICIES = {
 // launch plans available until an operator has created editable catalog rows.
 // These values are also the defaults used by the application form.
 const PLAN_PRESENTATION: Record<string, { tone: string; entitledModules: string[] }> = {
+  Basic: { tone: "paper", entitledModules: ["foundation", "revenue"] },
   Starter: { tone: "paper", entitledModules: ["foundation", "revenue"] },
   Growth: { tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  Pro: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  Pro: { tone: "signal", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
   Enterprise: { tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 };
-const DEFAULT_PLATFORM_PLANS: Data[] = PLAN_CATALOGUE.map((plan) => ({ ...plan, ...PLAN_PRESENTATION[plan.name] }));
+const DEFAULT_PLATFORM_PLANS: Data[] = [...PLAN_CATALOGUE, ...LEGACY_PLAN_CATALOGUE].map((plan) => ({ ...plan, ...PLAN_PRESENTATION[plan.name] }));
 const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
@@ -482,7 +484,7 @@ async function platformPlans(ctx: ReadContext): Promise<Data[]> {
   const persisted = new Map(rows.map((row): [string, Data] => {
     const persistedValue = data(row.data);
     const defaultValue = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === stringValue(persistedValue.name, row.publicId));
-    return [stringValue(persistedValue.name, row.publicId), { id: row.publicId, ...(defaultValue ?? {}), ...persistedValue }];
+    return [stringValue(persistedValue.name, row.publicId), { id: row.publicId, ...(defaultValue ?? {}), ...(isCurrentPlan(persistedValue.name) && persistedValue.commercialTermsVersion !== COMMERCIAL_TERMS_VERSION ? {} : persistedValue) }];
   }));
   const defaults = DEFAULT_PLATFORM_PLANS.map((plan) => persisted.get(stringValue(plan.name)) ?? { id: plan.name, ...plan });
   const defaultNames = new Set(DEFAULT_PLATFORM_PLANS.map((plan) => stringValue(plan.name)));
@@ -608,6 +610,9 @@ function platformSubscriptionSnapshot(
     currentPeriodEndsAt: optionalString(gym.currentPeriodEndsAt) ?? null,
     cancelledAt: optionalString(gym.cancelledAt) ?? null,
     subscriptionStatusReason: optionalString(gym.subscriptionStatusReason) ?? null,
+    addOns: organization?.subscriptionAddOns ?? null,
+    addOnsRevision: organization?.addOnsRevision ?? 0,
+    addOnsEffectiveAt: organization?.addOnsEffectiveAt ?? null,
     billingInterval: organization?.billingInterval ?? optionalString(gym.billingInterval) ?? null,
     lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
     isArchived: Boolean(gym.isArchived || organization?.archivedAt),
@@ -1365,7 +1370,7 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
 }
 
 function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
-  return value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
+  return value === "Basic" || value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
 }
 
 async function workspaceEntitlementRecord(ctx: ReadContext, actor: ActorContext) {
@@ -1392,7 +1397,7 @@ async function workspaceEntitlementsData(ctx: ReadContext, actor: ActorContext):
   // live workspace query. The mutation still persists the matching snapshot
   // for auditability and fast platform projections.
   const plan = organizationPlan ?? storedPlan;
-  const catalogSelection = await platformPlanEntitledModules(ctx, plan);
+  const catalogSelection = await platformPlanEntitledModules(ctx, plan, actor.organization.subscriptionAddOns);
   const resolved = resolveWorkspaceEntitlements(
     plan,
     organizationPlan
@@ -1856,6 +1861,8 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
       // second round trip.
       subscription: {
         plan: actor.organization.subscriptionPlan,
+        addOns: actor.organization.subscriptionAddOns,
+        effectivePlan: await effectiveOrganizationPlan(ctx, actor.organization),
         status: actor.organization.status,
         billingInterval: actor.organization.billingInterval ?? "monthly",
         currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
@@ -2717,6 +2724,8 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
       subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
       billingInterval: optionalString(value.billingInterval),
       logoUrl: optionalString(value.logoUrl),
+      addOns: value.addOns,
+      addOnsRevision: numberValue(value.addOnsRevision),
     } : {}),
     branches: arrayValue(value.branches).map((item) => {
       const branch = data(item);
@@ -2756,6 +2765,8 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
   return {
     ...value,
     isProvisioned: true,
+    addOns: organization.subscriptionAddOns,
+    addOnsRevision: organization.addOnsRevision ?? 0,
     subscriptionStatus: status,
     ...(plan ? { rivetPlan: plan } : {}),
     isPublic: !isArchived && (status === "active" || (status === "trial" && trialCurrent)) && booleanValue(value.isPublic),
@@ -5484,7 +5495,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }));
   }
   if (operation === "public.catalog") {
-    return await platformPlans(ctx);
+    return (await platformPlans(ctx)).filter((plan) => isCurrentPlan(plan.name)).map((plan) => ({ ...plan, commercialTermsVersion: COMMERCIAL_TERMS_VERSION }));
   }
   if (operation === "customer.experience") return await customerExperience(ctx);
   if (operation === "customer.finance.summary") return await customerFinancialSummary(ctx);
@@ -5628,6 +5639,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         cycleKey: optionalString(invoice.cycleKey),
         billingInterval: invoice.billingInterval === "annual" || invoice.billingInterval === "monthly" ? invoice.billingInterval : undefined,
         subtotalMinor: typeof invoice.subtotalMinor === "number" ? invoice.subtotalMinor : undefined,
+        lines: invoice.lines,
+        addOns: invoice.addOns,
         onboardingFeeMinor: typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : undefined,
         creditMinor: typeof invoice.creditMinor === "number" ? invoice.creditMinor : undefined,
         creditDays: typeof invoice.creditDays === "number" ? invoice.creditDays : undefined,
@@ -5679,7 +5692,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const effectiveStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : "suspended";
     const effectivePlan = organization ? platformPlanFromFacts(gym, organization, entitlement) ?? rawPlan : rawPlan;
     const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
-    const allowedPlans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    const allowedPlans = ["Basic", "Starter", "Growth", "Pro", "Enterprise"] as const;
     if (!allowedStatuses.includes(effectiveStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(effectivePlan as (typeof allowedPlans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
     }
@@ -5826,14 +5839,14 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       });
       const configuredPlan = planRows.find((plan) => stringValue(data(plan).name) === effectivePlan);
       const configuredStaffLimit = configuredPlan ? data(configuredPlan).staff : undefined;
-      if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = configuredStaffLimit;
+      if (typeof configuredStaffLimit === "number" && Number.isFinite(configuredStaffLimit)) staffLimit = (await effectiveOrganizationPlan(ctx, organization)).staff;
 
       // The recurring amount is the same catalog price and annual formula the
       // subscription clock invoices with, so this panel can never disagree
       // with the ledger it summarizes.
       const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
       if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
-        recurringAmountMinor = termPriceMinor(configuredPrice, billingInterval(organization.billingInterval));
+        recurringAmountMinor = termPriceMinor(configuredPrice + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan)), billingInterval(organization.billingInterval));
       }
       invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
@@ -5864,7 +5877,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     }
 
     const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
-    const plan = effectivePlan as "Starter" | "Growth" | "Pro" | "Enterprise";
+    const plan = effectivePlan as "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
     const logoUrl = organization ? await platformGymLogoUrl(ctx, organization, gym) : undefined;
     return buildPlatformGymDetail({
       gym: {
@@ -8904,7 +8917,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
     const statuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
-    const plans = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+    const plans = ["Basic", "Starter", "Growth", "Pro", "Enterprise"] as const;
     if (requestedStatus && !statuses.includes(requestedStatus as (typeof statuses)[number])) domainError("VALIDATION_ERROR", "Subscription status is invalid.", { correlationId: request.correlationId });
     if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (requestedBillingInterval !== undefined && requestedBillingInterval !== "monthly" && requestedBillingInterval !== "annual") domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: request.correlationId });
@@ -8921,7 +8934,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) {
       domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
     }
-    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
+    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && input.addOns === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
@@ -8936,7 +8949,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const entitlementBefore = organization
       ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
       : null;
-    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
+    const hasTenantMutation = input.addOns !== undefined || Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
     if (!organization) {
       // Directory-only and mismatched rows stay in the platform snapshot for
       // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
@@ -8979,7 +8992,25 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (!rawPlan || !plans.includes(rawPlan as (typeof plans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
     }
+    if (requestedPlan && !isCurrentPlan(requestedPlan) && requestedPlan !== organization?.subscriptionPlan) domainError("VALIDATION_ERROR", "Choose Basic or Pro for a new subscription plan.", { correlationId: admin.correlationId });
     const nextPlan = rawPlan as (typeof plans)[number];
+    let nextAddOns: SubscriptionAddOns;
+    try {
+      nextAddOns = validateAddOns(input.addOns ?? (nextPlan === organization.subscriptionPlan ? organization.subscriptionAddOns : undefined), nextPlan);
+    } catch (error) {
+      domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Invalid add-ons.", { correlationId: admin.correlationId });
+    }
+    const previousAddOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
+    const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
+    if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) {
+      domainError("CONFLICT", "Subscription add-ons changed. Reload the gym and review the new invoice before saving.", { correlationId: admin.correlationId });
+    }
+    if (addOnsChanged && (nextStatus !== "active" || requestedPeriodEndsAtInput !== undefined)) {
+      domainError("VALIDATION_ERROR", "Add-on changes require an active billed term with its automatic end date.", { correlationId: admin.correlationId });
+    }
+    if (addOnsChanged || (requestedPlan && requestedPlan !== organization.subscriptionPlan)) {
+      await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, nextPlan), nextAddOns), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
+    }
     // Once a row is linked, organization lifecycle timestamps are authoritative.
     // Never promote stale directory dates into the tenant on an unrelated save.
     const storedTrialEndsAt = organization?.trialEndsAt;
@@ -8988,7 +9019,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const nowMs = Date.now();
     const existingInterval = billingInterval(organization?.billingInterval ?? current.billingInterval);
     const interval = requestedBillingInterval === undefined ? existingInterval : requestedBillingInterval;
-    const materialMembershipChange = (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
+    const materialMembershipChange = addOnsChanged || (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
       || (requestedPlan !== undefined && requestedPlan !== organization?.subscriptionPlan)
       || (requestedBillingInterval !== undefined && interval !== existingInterval);
     const storedPeriodEndsAt = storedCurrentPeriodEndsAt === undefined ? undefined : validSubscriptionTimestamp(new Date(storedCurrentPeriodEndsAt).toISOString());
@@ -9004,7 +9035,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
     const catalog = await platformPlans(ctx);
     const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
-    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan);
+    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan) + addOnMonthlyPrice(previousAddOns);
     const priorInvoices = startsNewPaidTerm && organization
       ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
       : [];
@@ -9014,7 +9045,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ? termChange({
           now: nowMs,
           interval,
-          monthlyPriceMinor: monthlyCatalogPrice(nextPlan),
+          monthlyPriceMinor: monthlyCatalogPrice(nextPlan) + addOnMonthlyPrice(nextAddOns),
           // Only a paid, running term is worth anything back. An overdue term
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
@@ -9075,6 +9106,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(organization._id, {
         status: organizationStatus,
         subscriptionPlan: modulePlan,
+        subscriptionAddOns: nextAddOns,
+        ...(addOnsChanged ? { addOnsRevision: (organization.addOnsRevision ?? 0) + 1, addOnsEffectiveAt: nowMs } : {}),
         billingInterval: interval,
         ...(nextTrialEndsAt !== undefined ? { trialEndsAt: nextTrialEndsAt } : { trialEndsAt: undefined }),
         ...(nextSubscriptionStartedAt !== undefined ? { subscriptionStartedAt: nextSubscriptionStartedAt } : {}),
@@ -9086,7 +9119,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       updatedOrganization = await ctx.db.get(organization._id);
       if (!updatedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
       const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
-      const entitledModules = entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules);
+      const entitledModules = [...new Set([...entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules), ...addOnModules(modulePlan, nextAddOns)])];
       const entitlementUpdatedAt = Date.now();
       const entitlementNeedsSync = !entitlementBefore
         || requestedPlan !== undefined
@@ -9105,7 +9138,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       // usable. Keep the stored preference row intact on downgrades so an
       // upgrade can restore the tenant's prior choices; read-time entitlement
       // filtering still locks those modules while the tenant is below the tier.
-      if (requestedPlan !== undefined && previousModulePlan !== modulePlan) {
+      if (addOnsChanged || (requestedPlan !== undefined && previousModulePlan !== modulePlan)) {
         const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
         if (preferences) {
           const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
@@ -9147,7 +9180,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             after: { status: "void" },
           });
         }
-        const catalogPrice = monthlyCatalogPrice(modulePlan);
+        const catalogPrice = monthlyCatalogPrice(modulePlan) + addOnMonthlyPrice(nextAddOns);
         if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
           domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
         }
@@ -9180,6 +9213,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             periodEnd: periodEndIso,
             cycleKey: `change:${targetOrganizationId}:${nowMs}`,
             billingInterval: interval,
+            addOns: nextAddOns,
+            lines: subscriptionInvoiceLines(monthlyCatalogPrice(modulePlan), nextAddOns, interval),
             ...(onboardingFeeMinor > 0 ? { onboardingFeeMinor } : {}),
             ...(termInvoice.creditMinor > 0 || onboardingFeeMinor > 0 ? { subtotalMinor: termInvoice.subtotalMinor + onboardingFeeMinor, creditMinor: termInvoice.creditMinor, creditDays: termInvoice.creditDays } : {}),
             // A credit large enough to cover the whole term leaves nothing to
@@ -9278,12 +9313,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const name = stringValue(input.name);
     requireReason(input.reason, admin.correlationId);
     const reason = input.reason.trim();
-    if (!["Starter", "Growth", "Pro", "Enterprise"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
+    if (!["Basic", "Starter", "Growth", "Pro", "Enterprise"].includes(name)) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
     const record = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect()).find((row) => stringValue(data(row.data).name) === name);
     const defaultPlan = DEFAULT_PLATFORM_PLANS.find((plan) => stringValue(plan.name) === name);
     if (!record && !defaultPlan) domainError("NOT_FOUND", "Plan not found.", { correlationId: admin.correlationId });
     const current: Data = record
-      ? { id: record.publicId, ...(defaultPlan ?? {}), ...data(record.data) }
+      ? { id: record.publicId, ...(defaultPlan ?? {}), ...(isCurrentPlan(name) && data(record.data).commercialTermsVersion !== COMMERCIAL_TERMS_VERSION ? {} : data(record.data)) }
       : { id: name, ...(defaultPlan ?? {}) };
     const numeric = (key: string, fallback: number) => input[key] === undefined ? fallback : numberValue(input[key], -1);
     const priceMinor = numeric("priceMinor", numberValue(current.priceMinor));
@@ -9292,7 +9327,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const members = numeric("members", numberValue(current.members));
     const onboardingFeeMinor = numeric("onboardingFeeMinor", numberValue(current.onboardingFeeMinor));
     const operationalEmails = numeric("operationalEmails", numberValue(current.operationalEmails));
-    if (![priceMinor, branches, staff, members, onboardingFeeMinor, operationalEmails].every((value) => Number.isSafeInteger(value) && value >= 0) || branches < 1 || staff < 1 || members < 1) {
+    if (![priceMinor, onboardingFeeMinor, operationalEmails].every((value) => Number.isSafeInteger(value) && value >= 0) || ![branches, staff, members].every((value) => Number.isSafeInteger(value) && (name === "Pro" ? value === -1 : value >= 1))) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
     const modulePlan = workspacePlan(name);
@@ -9312,7 +9347,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Workspace capabilities are invalid.", { message: workspaceModuleErrorMessage(error), correlationId: admin.correlationId });
       }
     }
-    const updated = { ...current, name, priceMinor, branches, staff, members, onboardingFeeMinor, operationalEmails, entitledModules };
+    if (name === "Pro" && entitledModules.length !== allWorkspaceModuleKeys().length) domainError("VALIDATION_ERROR", "Pro includes every workspace capability.", { correlationId: admin.correlationId });
+    const updated = { ...current, name, priceMinor, branches, staff, members, onboardingFeeMinor, operationalEmails, entitledModules, commercialTermsVersion: COMMERCIAL_TERMS_VERSION };
     const updatedAt = Date.now();
     const planRecord = record ?? await (async () => {
       const organization = await ctx.db.query("organizations").first();
@@ -9868,7 +9904,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!body) domainError("VALIDATION_ERROR", "A support message is required.", { correlationId: actor.correlationId, fieldErrors: { body: ["Required"] } });
       if (!["normal", "urgent"].includes(priority)) domainError("VALIDATION_ERROR", "Support priority is invalid.", { correlationId: actor.correlationId });
       if (!["general", "plan_upgrade"].includes(requestType)) domainError("VALIDATION_ERROR", "Support request type is invalid.", { correlationId: actor.correlationId });
-      if (requestType === "plan_upgrade" && !["Starter", "Growth", "Pro", "Enterprise"].includes(requestedPlan ?? "")) domainError("VALIDATION_ERROR", "A requested plan is required for upgrade requests.", { correlationId: actor.correlationId });
+      if (requestType === "plan_upgrade" && !isCurrentPlan(requestedPlan)) domainError("VALIDATION_ERROR", "A requested plan is required for upgrade requests.", { correlationId: actor.correlationId });
       if (billingInterval && !["monthly", "annual"].includes(billingInterval)) domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: actor.correlationId });
       const requestedBranchId = optionalString(input.branchId);
       const branch = requestedBranchId ? await branchByPublicId(ctx, actor.organization._id, requestedBranchId) : undefined;

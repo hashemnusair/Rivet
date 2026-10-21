@@ -15,7 +15,7 @@ describe("launch catalogue migration", () => {
     });
     const args = { reason: "Apply approved launch packages" };
     const preview = await t.mutation(internal.launchCatalogue.migrateDefaults, args);
-    expect(preview.plans).toEqual([{ plan: "Starter", outcome: "would_update" }, { plan: "Growth", outcome: "custom_preserved" }, { plan: "Pro", outcome: "default" }]);
+    expect(preview.plans).toEqual([{ plan: "Starter", outcome: "would_update" }, { plan: "Growth", outcome: "custom_preserved" }, { plan: "Basic", outcome: "default" }, { plan: "Pro", outcome: "default" }]);
     expect(await t.run(ctx => ctx.db.query("platformAuditEvents").collect())).toHaveLength(0);
     expect((await t.mutation(internal.launchCatalogue.migrateDefaults, { ...args, apply: true })).plans[0]?.outcome).toBe("updated");
     expect((await t.mutation(internal.launchCatalogue.migrateDefaults, { ...args, apply: true })).plans[0]?.outcome).toBe("current");

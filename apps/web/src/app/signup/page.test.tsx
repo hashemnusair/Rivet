@@ -34,24 +34,24 @@ describe("gym application pricing selection", () => {
   beforeEach(() => {
     state.saasPlans = [];
     state.submitGymApplication.mockReset();
-    window.history.replaceState({}, "", "/signup?plan=Enterprise&interval=annual");
+    window.history.replaceState({}, "", "/signup?plan=Pro&interval=annual");
   });
 
   it("restores the landing-page selection and still allows changing plans", async () => {
     const user = userEvent.setup();
     render(<GymApplicationPage />);
 
-    expect(await screen.findByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
+    expect(await screen.findByRole("radio", { name: /Pro/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText(/Custom quote for annual billing/)).toBeInTheDocument();
-    expect(screen.getByText(/The onboarding fee will be included in the custom quote\. The first payment will be included in the custom quote\./)).toBeInTheDocument();
+    expect(screen.getByText(/JD 2268\.600/)).toBeInTheDocument();
+    expect(screen.getByText(/First payment subtotal before applicable tax, including onboarding: JD 2418\.600/)).toBeInTheDocument();
     expect(screen.queryByText(/JD 4800\.000 billed annually/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: /Starter/ }));
-    expect(screen.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByText(/JD 444\.600/)).toBeInTheDocument();
-    expect(screen.getByText(/First payment subtotal before applicable tax, including onboarding: JD 519\.600/)).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /Basic/ }));
+    expect(screen.getByRole("radio", { name: /Basic/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /Pro/ })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText(/JD 558\.600/)).toBeInTheDocument();
+    expect(screen.getByText(/First payment subtotal before applicable tax, including onboarding: JD 633\.600/)).toBeInTheDocument();
   });
 
   it("submits the selected annual cadence with the application", async () => {
@@ -65,7 +65,7 @@ describe("gym application pricing selection", () => {
     });
     render(<GymApplicationPage />);
 
-    await screen.findByRole("radio", { name: /Enterprise/ });
+    await screen.findByRole("radio", { name: /Pro/ });
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
     await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
     await user.type(screen.getByPlaceholderText("Northstar Fitness"), "Annual Gym");
@@ -79,7 +79,7 @@ describe("gym application pricing selection", () => {
       gymAddress: "12 King Abdullah II Street, Amman",
       email: "annual-owner@example.test",
       contactNumber: "+962790000999",
-      plan: "Enterprise",
+      plan: "Pro",
       billingInterval: "annual",
     }));
     expect(state.submitGymApplication.mock.calls[0]?.[0].idempotencyKey).toEqual(expect.any(String));
@@ -89,7 +89,7 @@ describe("gym application pricing selection", () => {
     const user = userEvent.setup();
     render(<GymApplicationPage />);
 
-    await screen.findByRole("radio", { name: /Enterprise/ });
+    await screen.findByRole("radio", { name: /Pro/ });
     await user.type(screen.getByPlaceholderText("Omar Khalil"), "Annual Owner");
     await user.type(screen.getByPlaceholderText("owner@example.com"), "annual-owner@example.test");
     await user.type(screen.getByPlaceholderText("Enter your phone number"), "+962790000999");
@@ -107,15 +107,15 @@ describe("gym application pricing selection", () => {
     expect(await screen.findByRole("heading", { name: "تقديم طلب للنادي الرياضي." })).toBeInTheDocument();
     const owner = screen.getByPlaceholderText("Omar Khalil");
     await user.type(owner, "ليان أحمد");
-    expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /Pro/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("tab", { name: /سنويًا/ })).toHaveAttribute("aria-selected", "true");
 
     await user.click(screen.getByRole("button", { name: "Use English" }));
     expect(await screen.findByRole("heading", { name: "Send a gym application." })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Omar Khalil")).toHaveValue("ليان أحمد");
-    expect(screen.getByRole("radio", { name: /Enterprise/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /Pro/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    expect(window.location.search).toBe("?plan=Enterprise&interval=annual");
+    expect(window.location.search).toBe("?plan=Pro&interval=annual");
   });
 
   it("validates in Arabic and submits Arabic phone digits with the captured locale", async () => {
@@ -146,7 +146,7 @@ describe("gym application pricing selection", () => {
       contactNumber: "0791234567",
       gymName: "نادي النجمة",
       gymAddress: "شارع الملكة رانيا، عمّان",
-      plan: "Enterprise",
+      plan: "Pro",
       billingInterval: "annual",
       language: "ar",
     }));

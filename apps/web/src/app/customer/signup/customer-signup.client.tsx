@@ -45,7 +45,7 @@ export type CustomerSignupValues = z.infer<typeof signupSchema>;
 type CustomerSignupDraft = Omit<CustomerSignupValues, "gender"> & { gender: "" | CustomerSignupValues["gender"] };
 
 const SAFE_CONTEXT_VALUE = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,119}$/;
-const PUBLIC_PLANS = new Set(["Starter", "Growth", "Pro", "Enterprise"]);
+const PUBLIC_PLANS = new Set(["Basic", "Pro"]);
 const BILLING_INTERVALS = new Set(["monthly", "annual"]);
 const DEFAULT_RETURN_TO = "/customer/discover";
 

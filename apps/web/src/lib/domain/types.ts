@@ -1,3 +1,4 @@
+import type { SubscriptionAddOns } from "../../../convex/subscriptionAddOns";
 import type { EquipmentRationaleMessage } from "./equipment-rationale";
 import type { LeadProgressFacts } from "@/lib/crm/lead-progression";
 import type { Money } from "./money";
@@ -399,7 +400,7 @@ export interface MessageTemplateCatalogueEntry {
 // ---------------------------------------------------------------------------
 // Subscription agreement (e-signature at onboarding)
 // ---------------------------------------------------------------------------
-export type AgreementPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type AgreementPlan = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 export type AgreementIdType = "national" | "passport";
 export type AgreementSignatureMethod = "drawn" | "typed";
 
@@ -1227,7 +1228,7 @@ export type WorkspaceModuleKey =
   | "finance"
   | "reporting";
 
-export type WorkspaceModulePlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type WorkspaceModulePlan = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 
 export interface WorkspaceModuleCatalogEntry {
   key: WorkspaceModuleKey;
@@ -1277,6 +1278,8 @@ export interface UpdateWorkspaceModulePreferencesInput {
 }
 
 export interface Organization {
+  subscriptionAddOns?: SubscriptionAddOns;
+  addOnsRevision?: number;
   id: UUID;
   name: string;
   slug: string;
@@ -1368,7 +1371,9 @@ export interface Session {
 }
 
 export interface SessionSubscription {
-  plan?: "Starter" | "Growth" | "Pro" | "Enterprise";
+  addOns?: SubscriptionAddOns;
+  effectivePlan?: import("../../../convex/planCatalogue").PlanDefinition;
+  plan?: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
   billingInterval: "monthly" | "annual";
   /** The end of the paid term, ISO. */

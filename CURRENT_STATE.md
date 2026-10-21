@@ -1,5 +1,53 @@
 # GymOS / RIVET current implementation state
 
+## Local checkpoint — two subscription plans, 21 October 2026
+
+**Implemented locally; not deployed.** Public pricing/signup now offer Basic
+(JD 49/month + JD 75 onboarding) and Pro (JD 199/month + JD 150 onboarding).
+Basic includes 1 branch, 300 active members, 5 owner/staff accounts and 900
+operational emails/month. Pro has genuinely unlimited branches, members and
+accounts, all workspace modules and an explicitly disclosed 10,000-email monthly
+allowance. Annual billing retains its 5% discount. Pricing copy and forms match in
+English and Arabic; the free-website offer is for the first **3 gyms**.
+
+Server capacity, plan assignment, signup validation, provisioning fees, recurring
+invoices, public catalogue reads and feature projections share the new terms.
+Downgrades that exceed the target plan are refused before billing/audit writes.
+Pro caps and included features are protected in the editor and server. Historical
+Starter/Growth/Enterprise records remain readable; retired plans are not offered
+to new applicants. New commercial version `2026-10-21` prevents old saved Pro
+catalogue values from undoing the new contract. Signed documents and existing
+invoice/onboarding facts remain unchanged. `FRONTEND_HANDOFF.md` stays frozen.
+
+**Decisions and remaining scope:** read [the commercial contract](docs/14_SUBSCRIPTION_PRICING.md)
+first. It records why 300 members was selected, the Pro email assumption, and a
+concrete **proposed** Basic add-on menu (JD 39 second branch; JD 5–10 features and
+capacity packs; maximum 2 branches / 600 members / 11 accounts, JD 158 fully
+configured). Per-tenant add-on activation and billing are not implemented or
+advertised for purchase. The global plan editor must not be used for individual
+add-on sales. Deployment, old custom-Pro review, live-role/provider acceptance,
+and manual tracking/fulfillment of the three-gym website offer remain operational
+follow-up work.
+
+**Verification:** full Vitest suite passed **2,196 tests** across 347 files (two
+opt-in benchmarks skipped). After the final capacity-read optimization and admin
+limit-label cleanup, 34 capacity/subscription tests and 42 affected UI/i18n/signup
+tests passed again. The 14 repository safety tests, both TypeScript checks,
+lint/secret-output audit, production build and Arabic decision lock passed.
+Eleven distinct browser journeys passed: four English/Arabic pricing/signup cases,
+three pricing-link/live-entitlement flows, and four public/console responsive
+journeys. The two affected macOS plan-editor baselines were refreshed and
+inspected; Linux-specific snapshots were not regenerated locally. Browser evidence
+for both languages at 390px and 1440px is in
+`docs/ui-evidence/pricing-2026-10-21/`. These are synthetic/local checks, not
+live-provider acceptance. A transient TypeScript read failed while the browser
+server regenerated its generated types; rerunning after that server stopped passed.
+Run `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`
+and `pnpm --filter web exec playwright test e2e/two-plan-pricing.spec.ts`.
+Preview locally with `pnpm dev`; release backend first through `pnpm convex:deploy`
+only, following docs/12. No deployment was performed in this pass.
+
+
 ## Current checkpoint — PR review and backlog reconciliation, 17 October 2026
 
 Start here for implementation status. The dated entries below preserve the

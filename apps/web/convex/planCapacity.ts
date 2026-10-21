@@ -1,6 +1,7 @@
+import { applyAddOns } from "./subscriptionAddOns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { PLAN_CATALOGUE, type PlanDefinition } from "./planCatalogue";
+import { PLAN_CATALOGUE, findPlan, isCurrentPlan, COMMERCIAL_TERMS_VERSION, UNLIMITED, type PlanDefinition } from "./planCatalogue";
 import { domainError } from "./security";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -21,7 +22,7 @@ function hasStaffSeat(membership: Pick<Doc<"organizationMemberships">, "active" 
  * the same effective price and limit values.
  */
 export async function effectivePlan(ctx: ReadContext, requestedName: string | undefined): Promise<PlanDefinition> {
-  const base = PLAN_CATALOGUE.find((plan) => plan.name === requestedName) ?? PLAN_CATALOGUE[0];
+  const base = findPlan(requestedName) ?? PLAN_CATALOGUE[0];
   if (!base) throw new Error("The platform plan catalogue is empty.");
 
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
@@ -29,9 +30,11 @@ export async function effectivePlan(ctx: ReadContext, requestedName: string | un
     const value = object(row.data);
     return String(value.name ?? row.publicId ?? "").toLowerCase() === base.name.toLowerCase();
   });
-  const value = object(persisted?.data);
+  const stored = object(persisted?.data);
+  const value = isCurrentPlan(base.name) && stored.commercialTermsVersion !== COMMERCIAL_TERMS_VERSION ? {} : stored;
   const result = { ...base };
   for (const key of ["priceMinor", "branches", "staff", "members", "onboardingFeeMinor", "operationalEmails"] as const) {
+    if (base.name === "Pro" && ["branches", "staff", "members"].includes(key)) continue;
     const override = value[key];
     const minimum = key === "branches" || key === "staff" || key === "members" ? 1 : 0;
     if (typeof override === "number" && Number.isSafeInteger(override) && override >= minimum) {
@@ -46,7 +49,7 @@ export async function effectiveOrganizationPlan(ctx: ReadContext, organization: 
   const entitlement = await ctx.db.query("organizationEntitlements")
     .withIndex("by_organization", (q) => q.eq("organizationId", organization._id))
     .unique();
-  return await effectivePlan(ctx, organization.subscriptionPlan ?? entitlement?.subscriptionPlan ?? "Starter");
+  return applyAddOns(await effectivePlan(ctx, organization.subscriptionPlan ?? entitlement?.subscriptionPlan ?? "Starter"), organization.subscriptionAddOns);
 }
 
 function capacityExceeded(
@@ -65,7 +68,7 @@ function capacityExceeded(
 }
 
 function assertTransitionWithinLimit(resource: CapacityResource, plan: PlanDefinition, limit: number, current: number, projected: number, correlationId?: string): void {
-  if (projected > limit && projected > current) capacityExceeded(resource, plan, limit, current, projected, correlationId);
+  if (limit !== UNLIMITED && projected > limit && projected > current) capacityExceeded(resource, plan, limit, current, projected, correlationId);
 }
 
 export async function enforceBranchCapacity(
@@ -76,6 +79,7 @@ export async function enforceBranchCapacity(
   willBeActive: boolean,
   correlationId?: string,
 ): Promise<void> {
+  if (plan.branches === UNLIMITED) return;
   const branches = await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect();
   const current = branches.filter((branch) => branch.active && branch.status !== "inactive").length;
   const projected = current - (wasActive === true ? 1 : 0) + (willBeActive ? 1 : 0);
@@ -90,6 +94,7 @@ export async function enforceStaffCapacity(
   willBeActive: boolean,
   correlationId?: string,
 ): Promise<void> {
+  if (plan.staff === UNLIMITED) return;
   const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).collect();
   const current = memberships.filter((membership) => hasStaffSeat(membership)).length;
   const projected = current - (wasActive ? 1 : 0) + (willBeActive ? 1 : 0);
@@ -177,6 +182,7 @@ export async function enforceMembershipCapacity(
   candidate: Record<string, unknown>,
   options: { existingPublicId?: string; today: string; correlationId?: string },
 ): Promise<void> {
+  if (plan.members === UNLIMITED) return;
   const existing = await ctx.db.query("domainRecords")
     .withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "membership"))
     .collect();
@@ -208,7 +214,7 @@ function assertMemberEventTransitionWithinLimit(
   for (const date of [...dates].sort()) {
     currentCount += currentEvents.get(date) ?? 0;
     projectedCount += projectedEvents.get(date) ?? 0;
-    if (projectedCount > plan.members && projectedCount > currentCount) {
+    if (plan.members !== UNLIMITED && projectedCount > plan.members && projectedCount > currentCount) {
       capacityExceeded("members", plan, plan.members, currentCount, projectedCount, correlationId);
     }
   }
@@ -221,6 +227,7 @@ export async function enforceMemberRestoreCapacity(
   memberPublicId: string,
   options: { today: string; correlationId?: string },
 ): Promise<void> {
+  if (plan.members === UNLIMITED) return;
   const [memberships, members] = await Promise.all([
     ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "membership")).collect(),
     ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "member")).collect(),
@@ -238,4 +245,26 @@ export async function enforceMemberRestoreCapacity(
 
 export function staffMembershipCounts(membership: Pick<Doc<"organizationMemberships">, "active" | "invitationStatus"> | null | undefined): boolean {
   return hasStaffSeat(membership);
+}
+
+/** A smaller subscription cannot be bought while the organization exceeds it. */
+export async function assertOrganizationFitsPlan(ctx: MutationCtx, organizationId: Id<"organizations">, plan: PlanDefinition, today: string, correlationId?: string): Promise<void> {
+  if (plan.branches === UNLIMITED && plan.staff === UNLIMITED && plan.members === UNLIMITED) return;
+  const [branches, staff, memberships, members] = await Promise.all([
+    ctx.db.query("branches").withIndex("by_organization", q => q.eq("organizationId", organizationId)).collect(),
+    ctx.db.query("organizationMemberships").withIndex("by_organization", q => q.eq("organizationId", organizationId)).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organizationId).eq("entityType", "membership")).collect(),
+    ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organizationId).eq("entityType", "member")).collect(),
+  ]);
+  const archived = new Set(members.filter(row => object(row.data).status === "archived" || Boolean(object(row.data).archivedAt)).map(row => row.publicId));
+  const usage = {
+    branches: branches.filter(branch => branch.active && branch.status !== "inactive").length,
+    staff: staff.filter(hasStaffSeat).length,
+    members: peakConcurrentMemberTerms(memberships, today, archived),
+  };
+  for (const resource of ["branches", "staff", "members"] as const) {
+    if (plan[resource] !== UNLIMITED && usage[resource] > plan[resource]) {
+      capacityExceeded(resource, plan, plan[resource], usage[resource], usage[resource], correlationId);
+    }
+  }
 }

@@ -1,10 +1,31 @@
 import { plural } from "../../dictionary";
 
 export const platformFinance = {
+  addOns: {
+    "title": "Basic add-ons",
+    "description": "For this gym only. Add-ons start today and are billed with the subscription. Reductions require usage to fit the new allowance.",
+    "limits": "Maximum: 2 branches, 600 active members and 11 owner/staff accounts across the organization. More requires Pro.",
+    "branch": "Second branch",
+    "members": "100 members + 300 monthly emails",
+    "staff": "2 owner/staff accounts",
+    "operations": "Daily operations",
+    "finance": "Financial OS",
+    "reporting": "Management reporting",
+    "base": "Base subscription",
+    "included": "Purchased add-ons",
+    "quantity": "{name} quantity",
+    "monthly": "{amount}/month each",
+    "allowance": "{branches} branches · {members} members · {staff} accounts · {emails} emails/month",
+    "dependencies": "Financial OS requires daily operations; management reporting requires Financial OS.",
+    "none": "No paid add-ons",
+    "line": "{name} × {quantity}",
+    "recurring": "Total recurring price",
+    "review": "Changes start immediately. The invoice includes these add-ons and credit for unused paid time."
+},
   plans: {
     title: "Pricing & entitlements",
     description: "One audited catalog powers the public landing page, gym applications, and workspace feature access. Every price or limit change needs a reason and is written to the platform audit trail. Change a gym's own subscription in Billing.",
-    tiersHeading: "Four tiers, one live contract",
+    tiersHeading: "Two plans, one live contract",
     monthlyJod: "Monthly JOD · annual billing saves 5%",
     provisional: "These are the current live prices and limits. Platform administrators can update the catalog, which updates the prices and limits shown in the product.",
     loading: "Loading the live pricing catalog…",
@@ -266,6 +287,7 @@ export const platformFinance = {
     openDetails: "Open {gym} admin details",
   },
   detail: {
+    unlimitedCapacity: "Unlimited",
     loading: "Loading gym detail",
     notFound: "Gym not found",
     forbidden: "Your platform role cannot view this gym.",

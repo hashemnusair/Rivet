@@ -5,7 +5,7 @@
  * Commercial launch configuration. Existing signed documents remain immutable.
  */
 export interface PlanDefinition {
-  name: "Starter" | "Growth" | "Pro" | "Enterprise";
+  name: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   priceMinor: number;
   branches: number;
   staff: number;
@@ -14,24 +14,36 @@ export interface PlanDefinition {
   operationalEmails: number;
 }
 
+/** Explicit, JSON-safe sentinel. Capacity checks skip this limit; never display -1. */
+export const UNLIMITED = -1;
+export const CURRENT_PLAN_NAMES = ["Basic", "Pro"] as const;
+export function isCurrentPlan(name: unknown): name is typeof CURRENT_PLAN_NAMES[number] {
+  return name === "Basic" || name === "Pro";
+}
+
 export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
+  { name: "Basic", priceMinor: 49_000, branches: 1, staff: 5, members: 300, onboardingFeeMinor: 75_000, operationalEmails: 900 },
+  { name: "Pro", priceMinor: 199_000, branches: UNLIMITED, staff: UNLIMITED, members: UNLIMITED, onboardingFeeMinor: 150_000, operationalEmails: 10_000 },
+];
+
+/** Read compatibility only: existing subscriptions and immutable agreements retain their names. */
+export const LEGACY_PLAN_CATALOGUE: readonly PlanDefinition[] = [
   { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600 },
   { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 },
-  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000 },
-  // Retained for negotiated/legacy contracts; public Enterprise remains quote-only.
   { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000 },
 ];
 
 /** A year is twelve months billed once, at 5% off. */
 export const ANNUAL_DISCOUNT_PERCENT = 5 as const;
 export const ANNUAL_DISCOUNT = 0.95;
-export const COMMERCIAL_TERMS_VERSION = "2026-10-07";
+export const COMMERCIAL_TERMS_VERSION = "2026-10-21";
 
 /** How each plan is drawn on a pricing card. Presentation, not pricing. */
 export const PLAN_TONE: Readonly<Record<PlanDefinition["name"], "paper" | "signal" | "night">> = {
+  Basic: "paper",
   Starter: "paper",
   Growth: "signal",
-  Pro: "night",
+  Pro: "signal",
   Enterprise: "night",
 };
 
@@ -46,7 +58,7 @@ export function planCatalogueWithTone(): Array<PlanDefinition & { tone: "paper" 
 export type PlanInterval = "monthly" | "annual";
 
 export function findPlan(name: string | undefined): PlanDefinition | undefined {
-  return PLAN_CATALOGUE.find((plan) => plan.name.toLowerCase() === (name ?? "").trim().toLowerCase());
+  return [...PLAN_CATALOGUE, ...LEGACY_PLAN_CATALOGUE].find((plan) => plan.name.toLowerCase() === (name ?? "").trim().toLowerCase());
 }
 
 const dinars = (minor: number) => `JOD ${(minor / 1000).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;

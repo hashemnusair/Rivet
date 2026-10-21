@@ -22,7 +22,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { localizeApiError } from "@/lib/api/errors";
 
-const PLAN_ORDER: PlatformSaasPlan["name"][] = ["Starter", "Growth", "Pro", "Enterprise"];
+const PLAN_ORDER: PlatformSaasPlan["name"][] = ["Basic", "Pro"];
 const STATUS_PRESENTATION: Record<PlatformSupportCase["status"], { key: "staffTools.support.status.open" | "staffTools.support.status.waiting" | "staffTools.support.status.resolved"; variant: "neutral" | "warning" | "success" }> = {
   open: { key: "staffTools.support.status.open", variant: "neutral" },
   waiting: { key: "staffTools.support.status.waiting", variant: "warning" },
@@ -131,7 +131,7 @@ function CreateSupportDialog({ open, mode, currentPlan, plans, onOpenChange, ema
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [priority, setPriority] = useState<CreateSupportCaseInput["priority"]>("normal");
-  const [requestedPlan, setRequestedPlan] = useState<PlatformSaasPlan["name"]>("Growth");
+  const [requestedPlan, setRequestedPlan] = useState<PlatformSaasPlan["name"]>("Pro");
   const [billingInterval, setBillingInterval] = useState<NonNullable<CreateSupportCaseInput["billingInterval"]>>("monthly");
   const [saving, setSaving] = useState(false);
   const currentPlanIndex = currentPlan ? PLAN_ORDER.indexOf(currentPlan) : -1;
@@ -147,7 +147,7 @@ function CreateSupportDialog({ open, mode, currentPlan, plans, onOpenChange, ema
     setSaving(true);
     try {
       const created = await getApi().createSupportCase({ email: contactEmail.trim(), branchId: branchId || undefined, subject: subject.trim(), body: body.trim(), priority, requestType: mode, requestedPlan: mode === "plan_upgrade" ? requestedPlan : undefined, billingInterval: mode === "plan_upgrade" ? billingInterval : undefined });
-      setSubject(""); setBody(""); setBranchId(""); setPriority("normal"); setRequestedPlan("Growth"); setBillingInterval("monthly");
+      setSubject(""); setBody(""); setBranchId(""); setPriority("normal"); setRequestedPlan("Pro"); setBillingInterval("monthly");
       onCreated(created);
       toast.success(t("staffTools.support.requestSent"));
     } catch (error) { toast.error(error instanceof Error ? localizeApiError(error, locale).message : t("staffTools.support.requestFailed")); } finally { setSaving(false); }

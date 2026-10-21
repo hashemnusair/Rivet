@@ -3,10 +3,17 @@ import type { platformFinance as EnPlatformFinance } from "../en/platformFinance
 
 /** Approved platform finance wording: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const platformFinance: typeof EnPlatformFinance = {
+  addOns: {
+    title: "إضافات Basic", description: "لهذا النادي فقط. تبدأ الإضافات اليوم وتُفوتر مع الاشتراك. يتطلب تقليلها أن يكون الاستخدام ضمن الحدود الجديدة.",
+    limits: "الحد الأقصى للمؤسسة: فرعان و600 عضو نشط و11 حسابًا للمالك والموظفين. تتطلب السعة الأكبر خطة Pro.",
+    branch: "فرع ثانٍ", members: "100 عضو و300 رسالة بريد إلكتروني شهريًا", staff: "حسابان للمالك والموظفين", operations: "العمليات اليومية", finance: "النظام المالي", reporting: "التقارير الإدارية", base: "الاشتراك الأساسي",
+    included: "الإضافات المشتراة", quantity: "عدد إضافات {name}", monthly: "{amount} شهريًا لكل إضافة", allowance: "{branches} فروع · {members} أعضاء · {staff} حسابات · {emails} رسالة بريد إلكتروني شهريًا",
+    dependencies: "يتطلب النظام المالي العمليات اليومية، وتتطلب التقارير الإدارية النظام المالي.", none: "لا توجد إضافات مدفوعة", line: "{name} × {quantity}", recurring: "إجمالي الرسوم الدورية", review: "تسري التغييرات فورًا. تشمل الفاتورة هذه الإضافات وخصمًا مقابل المدة المدفوعة غير المستخدمة.",
+  },
   plans: {
     title: "الأسعار ومزايا الباقات",
     description: "يعتمد الموقع العام وطلبات الأندية ومزايا مساحات العمل على قائمة موحّدة خاضعة للتدقيق. يتطلب كل تغيير في السعر أو الحد كتابة سبب، ويُسجّل في سجل تدقيق المنصة. غيّر اشتراك النادي نفسه من صفحة الفواتير والدفعات.",
-    tiersHeading: "أربع باقات بقائمة موحّدة",
+    tiersHeading: "باقتان بقائمة موحّدة",
     monthlyJod: "السعر الشهري بالدينار الأردني · يوفّر الدفع السنوي 5٪",
     provisional: "هذه هي الأسعار والحدود الحالية. يمكن لمسؤولي المنصة تحديث القائمة، فتتحدث الأسعار والحدود المعروضة في المنتج.",
     loading: "جارٍ تحميل قائمة الأسعار الحالية…",
@@ -264,6 +271,7 @@ export const platformFinance: typeof EnPlatformFinance = {
     openDetails: "فتح تفاصيل إدارة {gym}",
   },
   detail: {
+    unlimitedCapacity: "غير محدود",
     loading: "جارٍ تحميل تفاصيل النادي",
     notFound: "لم نعثر على النادي",
     forbidden: "لا تسمح صلاحية دورك في المنصة بعرض هذا النادي.",

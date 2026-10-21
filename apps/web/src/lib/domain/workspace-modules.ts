@@ -21,7 +21,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: [],
     required: true,
     configurable: false,
-    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
+    availableOn: ["Basic", "Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/dashboard", "/members", "/reception", "/payments", "/reports", "/settings"],
   },
   {
@@ -32,7 +32,7 @@ export const WORKSPACE_MODULE_CATALOG: readonly WorkspaceModuleCatalogEntry[] = 
     dependencies: ["foundation"],
     required: false,
     configurable: true,
-    availableOn: ["Starter", "Growth", "Pro", "Enterprise"],
+    availableOn: ["Basic", "Starter", "Growth", "Pro", "Enterprise"],
     routePrefixes: ["/crm", "/memberships"],
   },
   {
@@ -101,6 +101,7 @@ export function entitledModulesForPlan(plan?: WorkspaceModulePlan): WorkspaceMod
  * checked against the canonical key/dependency graph.
  */
 export function entitledModulesForPlanSelection(plan: WorkspaceModulePlan, selection?: readonly unknown[]): WorkspaceModuleKey[] {
+  if (plan === "Pro") return entitledModulesForPlan(plan);
   const defaults = entitledModulesForPlan(plan);
   if (selection === undefined) return defaults;
   try {

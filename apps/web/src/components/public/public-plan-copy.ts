@@ -28,9 +28,9 @@ export function localizedPublicPlanFeatures(plan: PublicPricingPlan, f: Formatte
     ];
   }
   return [
-    t("publicCompletion.landing.pricing.branchLimit", { count: plan.branches, formatted: f.number(plan.branches) }),
-    t("publicCompletion.landing.pricing.memberLimit", { count: plan.members, formatted: f.number(plan.members) }),
-    t("publicCompletion.landing.pricing.staffLimit", { count: plan.staff, formatted: f.number(plan.staff) }),
+    plan.branches === -1 ? t("publicCompletion.landing.pricing.unlimitedBranches") : t("publicCompletion.landing.pricing.branchLimit", { count: plan.branches, formatted: f.number(plan.branches) }),
+    plan.members === -1 ? t("publicCompletion.landing.pricing.unlimitedMembers") : t("publicCompletion.landing.pricing.memberLimit", { count: plan.members, formatted: f.number(plan.members) }),
+    plan.staff === -1 ? t("publicCompletion.landing.pricing.unlimitedStaff") : t("publicCompletion.landing.pricing.staffLimit", { count: plan.staff, formatted: f.number(plan.staff) }),
     t("publicCompletion.landing.pricing.operationalEmailsLimit", { count: plan.operationalEmails ?? 0, formatted: f.number(plan.operationalEmails ?? 0) }),
     ...moduleFeatures,
     t("publicCompletion.landing.pricing.memberApp"),

@@ -207,32 +207,32 @@ test.describe("RIVET gym applications", () => {
     await expect(page.getByText(/Could not connect. Showing your last saved information/i)).toHaveCount(0);
   });
 
-  test("shows four tiers, annual savings, and carries pricing selection into the application", async ({ page }) => {
+  test("shows two plans, annual savings, and carries pricing selection into the application", async ({ page }) => {
     await page.goto("/#pricing");
     const pricing = page.locator("#pricing");
     await pricing.scrollIntoViewIfNeeded();
 
-    await expect(pricing.getByText("Enterprise", { exact: true })).toBeVisible();
-    await expect(pricing.getByText("Custom quote", { exact: true }).first()).toBeVisible();
+    await expect(pricing.getByText("Enterprise", { exact: true })).toHaveCount(0);
+    await expect(pricing.getByText("Unlimited branches", { exact: true })).toBeVisible();
     await expect(pricing.getByText("JD 500.000", { exact: true })).toHaveCount(0);
     await expect(pricing.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
 
     await pricing.getByRole("tab", { name: /Annual/ }).click();
     await expect(pricing.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
     await expect(pricing.getByText("Save 5%", { exact: true }).first()).toBeVisible();
-    await expect(pricing.getByText("JD 37.050", { exact: true })).toBeVisible();
-    await expect(pricing.getByText(/444\.600/).first()).toBeVisible();
+    await expect(pricing.getByText("JD 46.550", { exact: true })).toBeVisible();
+    await expect(pricing.getByText(/558\.600/).first()).toBeVisible();
     await expect(pricing.getByText(/One-time onboarding fee:.*75\.000/).first()).toBeVisible();
-    await expect(pricing.getByText(/First payment subtotal before applicable tax, including onboarding:.*519\.600/).first()).toBeVisible();
+    await expect(pricing.getByText(/First payment subtotal before applicable tax, including onboarding:.*633\.600/).first()).toBeVisible();
 
-    // The carrying contract lives in the link itself: the Starter card must
+    // The carrying contract lives in the link itself: the Basic card must
     // encode the selected plan and billing interval before any navigation.
     const starterApplication = pricing.getByRole("link", { name: "Send gym application" }).first();
-    await expect(starterApplication).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
+    await expect(starterApplication).toHaveAttribute("href", "/signup?plan=Basic&interval=annual");
     await starterApplication.click();
-    await expect(page).toHaveURL(/\/signup\?plan=Starter&interval=annual$/);
+    await expect(page).toHaveURL(/\/signup\?plan=Basic&interval=annual$/);
     await expect(page.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("radio", { name: /Starter/ })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("radio", { name: /Basic/ })).toHaveAttribute("aria-checked", "true");
   });
 
   test("stores a gym application and shows the receipt", async ({ page }) => {

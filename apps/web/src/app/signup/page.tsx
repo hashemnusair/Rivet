@@ -59,7 +59,7 @@ export default function GymApplicationPage() {
   const [gymAddress, setGymAddress] = useState("");
   const [email, setEmail] = useState("");
   const [contactNumber, setContactNumber] = useState("");
-  const [plan, setPlan] = useState<PublicPricingPlanName>("Growth");
+  const [plan, setPlan] = useState<PublicPricingPlanName>("Basic");
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState<string>();

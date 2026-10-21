@@ -33,6 +33,7 @@ export async function invoicePdf(invoice: PlatformBillingInvoice, customer: Invo
   const [[{ renderInvoicePdf, invoicePdfFilename }, { invoicePdfInput }]] = await Promise.all([invoiceRenderer(), loadCatalogue(context.locale ?? "en")]);
   const bytes = renderInvoicePdf(invoicePdfInput(invoice.id, {
     amountMinor: invoice.amountMinor,
+    lines: invoice.lines,
     currency: invoice.currency,
     dueAt: invoice.dueAt,
     periodStart: invoice.periodStart,

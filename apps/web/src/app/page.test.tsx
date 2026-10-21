@@ -100,26 +100,27 @@ describe("landing-page pricing", () => {
     expect(toggle).toHaveAccessibleName("Play the film");
   });
 
-  it("shows the fixed launch tiers plus quote-only Enterprise and defaults to monthly billing", () => {
+  it("shows only Basic and Pro and defaults to monthly billing", () => {
     render(<LandingPage />);
 
     const pricing = document.querySelector("#pricing")!;
     expect(pricing).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Monthly" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "false");
-    expect(screen.getByText("Enterprise")).toBeInTheDocument();
-    expect(screen.getByText("JD 39.000")).toBeInTheDocument();
-    expect(screen.getByText("JD 89.000")).toBeInTheDocument();
+    expect(screen.queryByText("Enterprise")).not.toBeInTheDocument();
+    expect(screen.getByText("JD 49.000")).toBeInTheDocument();
     expect(screen.getByText("JD 199.000")).toBeInTheDocument();
-    expect(screen.getAllByText("Custom quote")).toHaveLength(2);
+    expect(screen.queryByText("Custom quote")).not.toBeInTheDocument();
+    expect(screen.getByText("Free website for the first 3 gyms.")).toBeInTheDocument();
+    expect(screen.getByText("Unlimited branches")).toBeInTheDocument();
     expect(screen.queryByText("JD 500.000")).not.toBeInTheDocument();
-    const starterCard = screen.getByText("Starter").closest("div.rounded-lg");
+    const starterCard = screen.getByText("Basic").closest("div.rounded-lg");
     expect(starterCard).not.toBeNull();
-    if (!(starterCard instanceof HTMLElement)) throw new Error("Starter pricing card was not rendered as an element.");
+    if (!(starterCard instanceof HTMLElement)) throw new Error("Basic pricing card was not rendered as an element.");
     expect(within(starterCard).getByText(/One-time onboarding fee:/)).toBeInTheDocument();
     expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("75.000") === true)).toBeInTheDocument();
     expect(within(starterCard).getByText(/First payment subtotal before applicable tax, including onboarding:/)).toBeInTheDocument();
-    expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("114.000") === true)).toBeInTheDocument();
+    expect(within(starterCard).getByText((_content, element) => element?.tagName === "P" && element.textContent?.includes("124.000") === true)).toBeInTheDocument();
   });
 
   it("renders the public landing in Arabic with RTL navigation and JOD prices", async () => {
@@ -127,7 +128,7 @@ describe("landing-page pricing", () => {
     render(<LocaleProvider initialLocale="ar"><PublicDirectionBoundary><LandingPage /></PublicDirectionBoundary></LocaleProvider>);
 
     expect(await screen.findByRole("heading", { level: 1, name: "RIVET أول نظام تشغيل للأندية الرياضية في الأردن" })).toBeInTheDocument();
-    const starterPrice = screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("39.000 د.أ") === true);
+    const starterPrice = screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("49.000 د.أ") === true);
     expect(starterPrice).toBeInTheDocument();
     expect(screen.getByTestId("public-direction")).toHaveAttribute("dir", "rtl");
 
@@ -146,29 +147,20 @@ describe("landing-page pricing", () => {
     await user.click(screen.getByRole("tab", { name: /Annual/ }));
 
     expect(screen.getByRole("tab", { name: /Annual/ })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getAllByText("Save 5%")).toHaveLength(3);
-    expect(screen.getByText("JD 37.050")).toBeInTheDocument();
-    expect(screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("444.600") === true)).toBeInTheDocument();
-    expect(screen.getAllByText(/billed annually/)).toHaveLength(3);
-    expect(screen.getByText("First payment subtotal before applicable tax, including onboarding: JD 519.600")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Send gym application" })[0]).toHaveAttribute("href", "/signup?plan=Starter&interval=annual");
+    expect(screen.getAllByText("Save 5%")).toHaveLength(2);
+    expect(screen.getByText("JD 46.550")).toBeInTheDocument();
+    expect(screen.getByText((_content, element) => element?.tagName === "BDI" && element.textContent?.includes("558.600") === true)).toBeInTheDocument();
+    expect(screen.getAllByText(/billed annually/)).toHaveLength(2);
+    expect(screen.getByText("First payment subtotal before applicable tax, including onboarding: JD 633.600")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Send gym application" })[0]).toHaveAttribute("href", "/signup?plan=Basic&interval=annual");
   });
 
-  it("uses live admin module selections and the launch package defaults", () => {
-    state.saasPlans = [{ name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, tone: "signal", entitledModules: ["foundation", "revenue"] }];
+  it("does not revive retired plans or old Pro limits from a stale catalog", () => {
+    state.saasPlans = [{ name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, tone: "signal" }, { name: "Pro", priceMinor: 249_000, branches: 5, staff: 20, members: 1000, tone: "night" }];
     render(<LandingPage />);
-
-    const growthCard = screen.getByText("Growth").closest("div.rounded-lg");
-    expect(growthCard).not.toBeNull();
-    if (!(growthCard instanceof HTMLElement)) throw new Error("Growth pricing card was not rendered as an element.");
-    expect(within(growthCard).getByText("Gym foundation")).toBeInTheDocument();
-    expect(within(growthCard).getByText("Revenue protection")).toBeInTheDocument();
-    expect(within(growthCard).queryByText("Daily operations")).not.toBeInTheDocument();
-
-    const starterCard = screen.getByText("Starter").closest("div.rounded-lg");
-    expect(starterCard).not.toBeNull();
-    if (!(starterCard instanceof HTMLElement)) throw new Error("Starter pricing card was not rendered as an element.");
-    expect(within(starterCard).getByText("Gym foundation")).toBeInTheDocument();
-    expect(within(starterCard).getByText("Revenue protection")).toBeInTheDocument();
+    expect(screen.queryByText("Growth")).not.toBeInTheDocument();
+    expect(screen.getByText("JD 199.000")).toBeInTheDocument();
+    expect(screen.getByText("Unlimited members")).toBeInTheDocument();
+    expect(screen.getByText("Management reporting")).toBeInTheDocument();
   });
 });

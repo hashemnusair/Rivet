@@ -2,6 +2,7 @@
 
 import { useLocale, useT } from "@/lib/i18n/provider";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
+import { isCurrentPlan } from "../../../../convex/planCatalogue";
 import { Check, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/shared/chrome";
@@ -46,7 +47,7 @@ export default function SubscriptionsPage() {
   const t = useT();
   const { isolateLtr } = useLocale();
   const { platformSnapshot, saasPlans, experienceError, experienceStatus, retryExperience } = useExperience();
-  const sourcePlans = useMemo(() => saasPlans?.length ? saasPlans : platformSnapshot?.plans ?? [], [platformSnapshot?.plans, saasPlans]);
+  const sourcePlans = useMemo(() => (saasPlans?.length ? saasPlans : platformSnapshot?.plans ?? []).filter((plan) => isCurrentPlan(plan.name)), [platformSnapshot?.plans, saasPlans]);
   const [plans, setPlans] = useState<PlatformSaasPlan[]>(sourcePlans);
   const [editingPlan, setEditingPlan] = useState<PlatformSaasPlan | null>(null);
 
@@ -87,7 +88,7 @@ export default function SubscriptionsPage() {
           <p className="text-[12.5px] text-ink-3">{t("platformFinance.plans.monthlyJod")}</p>
         </div>
         <p className="mt-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] leading-relaxed text-warning-deep" role="note" data-testid="pricing-provisional-notice">{t("platformFinance.plans.provisional")}</p>
-        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">{t("platformFinance.plans.loading")}</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">{t("platformFinance.plans.empty")}</p> : <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
+        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">{t("platformFinance.plans.loading")}</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">{t("platformFinance.plans.empty")}</p> : <div className="mt-4 grid gap-4 md:grid-cols-2">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
       </section>
 
       {editingPlan ? <PlanDialog plan={editingPlan} open saving={updatePlan.isPending} error={updatePlan.error} onOpenChange={(open) => { if (!open && !updatePlan.isPending) setEditingPlan(null); }} onSave={(input) => updatePlan.mutate(input)} /> : null}
@@ -102,9 +103,9 @@ function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void
   const f = useFormat(timeZone);
   const annual = calculatePlanPrice(plan, "annual");
   const features = [
-    t("platformFinance.plans.branches", { count: plan.branches, formatted: f.number(plan.branches) }),
-    t("platformFinance.plans.members", { count: plan.members, formatted: f.number(plan.members) }),
-    t("platformFinance.plans.staffSeats", { count: plan.staff, formatted: f.number(plan.staff) }),
+    plan.branches === -1 ? t("publicCompletion.landing.pricing.unlimitedBranches") : t("platformFinance.plans.branches", { count: plan.branches, formatted: f.number(plan.branches) }),
+    plan.members === -1 ? t("publicCompletion.landing.pricing.unlimitedMembers") : t("platformFinance.plans.members", { count: plan.members, formatted: f.number(plan.members) }),
+    plan.staff === -1 ? t("publicCompletion.landing.pricing.unlimitedStaff") : t("platformFinance.plans.staffSeats", { count: plan.staff, formatted: f.number(plan.staff) }),
     ...selectedWorkspaceModules(plan).map((module) => t(`platformFinance.plans.features.${module}`)),
   ];
   return (
@@ -168,9 +169,9 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
     const next: Record<string, string | undefined> = {};
     const parsedPrice = readMoneyInput(price, "JOD");
     const priceMinor = parsedPrice.ok ? parsedPrice.money.amount : 0;
-    const branchCount = readPositiveInteger(branches);
-    const staffCount = readPositiveInteger(staff);
-    const memberCount = readPositiveInteger(members);
+    const branchCount = plan.name === "Pro" ? -1 : readPositiveInteger(branches);
+    const staffCount = plan.name === "Pro" ? -1 : readPositiveInteger(staff);
+    const memberCount = plan.name === "Pro" ? -1 : readPositiveInteger(members);
     if (!reason.trim()) next.reason = t("platformFinance.plans.auditReasonRequired");
     else if (reason.trim().length < 3) next.reason = t("platformFinance.plans.auditReasonMin");
     if (!parsedPrice.ok) next.price = parsedPrice.problem === "empty" ? t("platformFinance.validation.amountEmpty") : parsedPrice.problem === "too_precise" ? t("platformFinance.validation.amountTooPrecise", { count: 3 }) : parsedPrice.problem === "too_large" ? t("platformFinance.validation.amountTooLarge") : parsedPrice.problem === "negative" ? t("platformFinance.validation.amountNegative") : t("platformFinance.plans.nonNegativePrice");
@@ -190,16 +191,16 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
         <DialogHeader><DialogTitle>{t("common.action.edit")} {t("platformFinance.plans.dialogTitle", { plan: isolateLtr(plan.name) })}</DialogTitle><DialogDescription>{t("platformFinance.plans.dialogDescription")}</DialogDescription></DialogHeader>
         <DialogBody className="grid gap-4 sm:grid-cols-2">
           <Field label={t("platformFinance.plans.monthlyPrice")} required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field>
-          <Field label={t("platformFinance.plans.branchLimit")} required error={errors.branches}><Input value={branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
-          <Field label={t("platformFinance.plans.staffLimit")} required error={errors.staff}><Input value={staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
-          <Field label={t("platformFinance.plans.memberLimit")} required error={errors.members}><Input value={members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
+          <Field label={t("platformFinance.plans.branchLimit")} required error={errors.branches}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedBranches") : branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
+          <Field label={t("platformFinance.plans.staffLimit")} required error={errors.staff}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedStaff") : staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
+          <Field label={t("platformFinance.plans.memberLimit")} required error={errors.members}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedMembers") : members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
           <fieldset className="rounded-md border border-line p-3 sm:col-span-2" aria-label={t("platformFinance.plans.capabilities")}>
             <legend className="px-1 text-[13px] font-medium">{t("platformFinance.plans.capabilities")}</legend>
             <p className="mb-3 text-[12.5px] leading-relaxed text-ink-3">{t("platformFinance.plans.capabilitiesDescription")}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {WORKSPACE_MODULE_CATALOG.map((entry) => {
                 const selected = entitledModules.includes(entry.key);
-                const disabled = entry.required;
+                const disabled = entry.required || plan.name === "Pro";
                 return (
                   <label key={entry.key} className={cn("flex items-start gap-2.5 rounded-md border px-3 py-2.5", disabled ? "border-line bg-sunken/50" : "border-line-2 hover:border-ink")}>
                     <input type="checkbox" checked={selected} disabled={disabled} onChange={() => toggleModule(entry)} className="mt-0.5 size-4 accent-[var(--tenant-brand-primary)]" aria-label={t(`platformFinance.plans.features.${entry.key}`)} />

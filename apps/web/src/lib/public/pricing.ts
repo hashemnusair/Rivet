@@ -1,17 +1,18 @@
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
 import { entitledModulesForPlanSelection, WORKSPACE_MODULE_CATALOG } from "@/lib/domain/workspace-modules";
 import type { WorkspaceModuleKey } from "@/lib/domain/types";
-import { ANNUAL_DISCOUNT_PERCENT, termPriceMinor } from "../../../convex/planCatalogue";
+import { ANNUAL_DISCOUNT_PERCENT, termPriceMinor, COMMERCIAL_TERMS_VERSION } from "../../../convex/planCatalogue";
 
 export { ANNUAL_DISCOUNT_PERCENT };
 
 /** The two billing cadences shown on public pricing and gym applications. */
 export type BillingInterval = "monthly" | "annual";
 
-export type PublicPricingPlanName = "Starter" | "Growth" | "Pro" | "Enterprise";
+export type PublicPricingPlanName = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 
 export interface PublicPricingPlan {
   name: PublicPricingPlanName;
+  commercialTermsVersion?: string;
   priceMinor: number;
   branches: number;
   staff: number;
@@ -27,8 +28,7 @@ export interface PublicPricingPlan {
 /**
  * Public launch pricing. Prices and one-time onboarding fees are integer JOD
  * minor units (three decimal places), so totals never depend on formatting in
- * a component. Enterprise values remain for legacy quote compatibility and
- * are not displayed as a public fixed price.
+ * a component. Only Basic and Pro are offered to new applicants.
  */
 /**
  * Public launch pricing, written out rather than derived. This module is
@@ -37,10 +37,8 @@ export interface PublicPricingPlan {
  * which stays the one place a price is changed.
  */
 export const DEFAULT_PUBLIC_PRICING_PLANS: readonly PublicPricingPlan[] = [
-  { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600, tone: "paper", entitledModules: ["foundation", "revenue"] },
-  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500, tone: "signal", entitledModules: ["foundation", "revenue", "operations"] },
-  { name: "Pro", priceMinor: 199_000, branches: 5, staff: 20, members: 1_000, onboardingFeeMinor: 300_000, operationalEmails: 5_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
-  { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000, tone: "night", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
+  { name: "Basic", priceMinor: 49_000, branches: 1, staff: 5, members: 300, onboardingFeeMinor: 75_000, operationalEmails: 900, tone: "paper", entitledModules: ["foundation", "revenue"] },
+  { name: "Pro", priceMinor: 199_000, branches: -1, staff: -1, members: -1, onboardingFeeMinor: 150_000, operationalEmails: 10_000, tone: "signal", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] },
 ];
 
 const PLAN_NAMES = new Set<PublicPricingPlanName>(DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => plan.name));
@@ -88,8 +86,8 @@ export function formatJodMinor(amountMinor: number): string {
 
 /**
  * Resolve the public launch contract against live values. Missing fields on
- * old API payloads inherit the launch values while deployments migrate. The
- * Enterprise row stays visible for compatibility, but its price is a quote.
+ * old API payloads inherit the launch values while deployments migrate.
+ * Only Basic and Pro are offered; retired plans are never returned.
  */
 export function resolvePublicPricingPlans(
   livePlans: readonly (Partial<PublicPricingPlan> & { name: string })[],
@@ -97,15 +95,15 @@ export function resolvePublicPricingPlans(
   const byName = new Map(livePlans.map((plan) => [plan.name, plan]));
   return DEFAULT_PUBLIC_PRICING_PLANS.map((fallback) => {
     const live = byName.get(fallback.name);
-    if (!live) return { ...fallback };
+    if (!live || (fallback.name === "Pro" && live.commercialTermsVersion !== COMMERCIAL_TERMS_VERSION)) return { ...fallback };
     return {
       ...fallback,
       ...live,
       name: fallback.name,
       priceMinor: Number.isFinite(live.priceMinor) ? Math.max(0, Math.round(live.priceMinor!)) : fallback.priceMinor,
-      branches: Number.isFinite(live.branches) ? Math.max(0, Math.round(live.branches!)) : fallback.branches,
-      staff: Number.isFinite(live.staff) ? Math.max(0, Math.round(live.staff!)) : fallback.staff,
-      members: Number.isFinite(live.members) ? Math.max(0, Math.round(live.members!)) : fallback.members,
+      branches: fallback.name === "Pro" ? -1 : Number.isFinite(live.branches) ? Math.max(0, Math.round(live.branches!)) : fallback.branches,
+      staff: fallback.name === "Pro" ? -1 : Number.isFinite(live.staff) ? Math.max(0, Math.round(live.staff!)) : fallback.staff,
+      members: fallback.name === "Pro" ? -1 : Number.isFinite(live.members) ? Math.max(0, Math.round(live.members!)) : fallback.members,
       onboardingFeeMinor: Number.isFinite(live.onboardingFeeMinor) ? Math.max(0, Math.round(live.onboardingFeeMinor!)) : fallback.onboardingFeeMinor,
       operationalEmails: Number.isFinite(live.operationalEmails) ? Math.max(0, Math.round(live.operationalEmails!)) : fallback.operationalEmails,
       tone: live.tone === "paper" || live.tone === "signal" || live.tone === "night" ? live.tone : fallback.tone,
@@ -147,9 +145,9 @@ export function publicPlanFeatures(plan: PublicPricingPlan): string[] {
     ];
   }
   return [
-    `${plan.branches === 1 ? "1 branch" : `Up to ${plan.branches.toLocaleString()} branches`}`,
-    `Up to ${plan.members.toLocaleString()} active members across all branches`,
-    `Up to ${plan.staff.toLocaleString()} owner and staff accounts`,
+    plan.branches === -1 ? "Unlimited branches" : `${plan.branches === 1 ? "1 branch" : `Up to ${plan.branches.toLocaleString()} branches`}`,
+    plan.members === -1 ? "Unlimited members" : `Up to ${plan.members.toLocaleString()} active members across all branches`,
+    plan.staff === -1 ? "Unlimited owner and staff accounts" : `Up to ${plan.staff.toLocaleString()} owner and staff accounts`,
     `Up to ${(plan.operationalEmails ?? 0).toLocaleString()} operational emails per month`,
     ...moduleFeatures,
     ...common,

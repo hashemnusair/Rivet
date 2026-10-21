@@ -15,8 +15,8 @@ describe("operational notification triggers", () => {
       await ctx.db.insert("users", { publicId: "platform-disabled", authSubject: "clerk-platform-disabled", email: "disabled@example.com", fullName: "Disabled Admin", platformAdmin: true, status: "deactivated", createdAt: now, updatedAt: now });
     });
 
-    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
-    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Growth" });
+    const created = await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Basic" });
+    await t.mutation(internal.gymApplications.create, { gymName: "Notification Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Basic" });
     const notifications = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
     expect(notifications).toEqual([expect.objectContaining({ kind: "application_awaiting_review", dedupeKey: `gym-application:${created.applicationId}`, href: expect.stringContaining("/platform/applications") })]);
   });
@@ -26,7 +26,7 @@ describe("operational notification triggers", () => {
     await t.run(async (ctx) => {
       const now = Date.now();
       await ctx.db.insert("users", { publicId: "platform", authSubject: "clerk-platform", email: "platform@example.com", fullName: "Platform Admin", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
-      await ctx.db.insert("gymApplications", { publicId: "application-1", applicationKey: "owner@example.com::failure-gym", gymName: "Failure Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Starter", status: "approved", notificationStatus: "sent", submittedAt: now, updatedAt: now });
+      await ctx.db.insert("gymApplications", { publicId: "application-1", applicationKey: "owner@example.com::failure-gym", gymName: "Failure Gym", ownerName: "Owner", email: "owner@example.com", contactNumber: "+962790000000", plan: "Basic", status: "approved", notificationStatus: "sent", submittedAt: now, updatedAt: now });
     });
     const platform = t.withIdentity({ subject: "clerk-platform" });
     const claim = await platform.mutation(internal.platformProvisioning.begin, { applicationId: "application-1", correlationId: "cor-provisioning-fault" }) as { correlationId: string; leaseId: string };

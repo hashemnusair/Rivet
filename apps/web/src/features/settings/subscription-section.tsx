@@ -1,6 +1,7 @@
 "use client";
 import { useLocale } from "@/lib/i18n/provider";
 
+import { AddOnSummary } from "@/features/subscriptions/add-on-controls";
 import { FileText, Receipt } from "lucide-react";
 import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
 import { qk } from "@/lib/api/keys";
@@ -41,7 +42,7 @@ function SubscriptionSummary() {
   // Gym users read only the safe public plan projection. Fall back to the
   // shared launch catalogue until that projection has loaded or for legacy
   // plan names; never request the platform-admin plan editor here.
-  const plan = saasPlans.find((candidate) => candidate.name === subscription.plan) ?? findPlan(subscription.plan);
+  const plan = subscription.effectivePlan ?? saasPlans.find((candidate) => candidate.name === subscription.plan) ?? findPlan(subscription.plan);
   const cadence = subscription.billingInterval ?? "monthly";
   const term = subscription.status === "trial" ? subscription.trialEndsAt : subscription.currentPeriodEndsAt;
   const fee = subscription.plan === "Enterprise"
@@ -65,6 +66,7 @@ function SubscriptionSummary() {
           </div>
         ))}
       </dl>
+      {subscription.plan === "Basic" ? <div className="mt-4"><h3 className="mb-2 text-[13px] font-medium">{t("platformFinance.addOns.included")}</h3><AddOnSummary value={subscription.addOns} /></div> : null}
       <p className="mt-3 text-[12px] leading-5 text-ink-3">{t("settingsDetails.text136")}</p>
     </SettingsPanel>
   );

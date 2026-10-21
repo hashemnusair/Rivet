@@ -45,7 +45,7 @@ describe("pricing and entitlement catalog", () => {
   });
 
   it("uses the shared workspace entitlement contract for all four tiers", () => {
-    expect(workspaceFeatureLabels("Starter")).toEqual(["Gym foundation", "Revenue protection"]);
+    expect(workspaceFeatureLabels("Basic")).toEqual(["Gym foundation", "Revenue protection"]);
     expect(workspaceFeatureLabels("Growth")).toContain("Daily operations");
     expect(workspaceFeatureLabels("Growth")).not.toContain("Financial operating system");
     expect(workspaceFeatureLabels("Pro")).toContain("Management reporting");
@@ -55,18 +55,18 @@ describe("pricing and entitlement catalog", () => {
   it("renders one canonical catalog without duplicate gym subscription controls", () => {
     renderPage();
     expect(screen.getByRole("heading", { name: "Pricing & entitlements" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Four tiers, one live contract" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Two plans, one live contract" })).toBeInTheDocument();
     expect(screen.getAllByText(/branches?/i).length).toBeGreaterThan(0);
     expect(screen.queryByText("Manage a gym subscription")).not.toBeInTheDocument();
     expect(screen.queryByText("Current subscriptions")).not.toBeInTheDocument();
-    expect(screen.getByText("Up to 25 branches")).toBeInTheDocument();
-    expect(screen.getByText("Up to 50,000 members")).toBeInTheDocument();
+    expect(screen.getByText("Unlimited branches")).toBeInTheDocument();
+    expect(screen.getByText("Unlimited members")).toBeInTheDocument();
   });
 
   it("requires an audit reason and updates the shared catalog", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
+    await user.click(screen.getByRole("button", { name: "Edit Basic plan" }));
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     expect(screen.getByRole("alert")).toHaveTextContent("A reason is required");
 
@@ -76,13 +76,13 @@ describe("pricing and entitlement catalog", () => {
     await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Approved annual catalog review.");
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_000 })]));
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", priceMinor: 80_000 })]));
   });
 
   it("keeps an Arabic amount and Persian limit drafts exact while the operator changes language", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
+    await user.click(screen.getByRole("button", { name: "Edit Basic plan" }));
     const price = screen.getByRole("textbox", { name: "Monthly price (JOD)" });
     const branches = screen.getByRole("textbox", { name: "Branches" });
     const staff = screen.getByRole("textbox", { name: "Staff seats" });
@@ -103,41 +103,41 @@ describe("pricing and entitlement catalog", () => {
 
     await user.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", priceMinor: 80_001, branches: 2, staff: 8, members: 500 })]));
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", priceMinor: 80_001, branches: 2, staff: 8, members: 500 })]));
   });
 
   it("edits canonical workspace capabilities and persists the selected module keys", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Edit Growth plan" }));
+    await user.click(screen.getByRole("button", { name: "Edit Basic plan" }));
     const operations = screen.getByRole("checkbox", { name: "Daily operations" });
-    expect(operations).toBeChecked();
+    expect(operations).not.toBeChecked();
     await user.click(operations);
     await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Pause operations for the starter launch package.");
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Growth", entitledModules: ["foundation", "revenue"] })]));
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", entitledModules: ["foundation", "revenue", "operations"] })]));
   });
 
   it("lets an operator package a non-default module into a lower tier with dependencies", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Edit Starter plan" }));
+    await user.click(screen.getByRole("button", { name: "Edit Basic plan" }));
     await user.click(screen.getByRole("checkbox", { name: "Management reporting" }));
     expect(screen.getByRole("checkbox", { name: "Daily operations" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Financial operating system" })).toBeChecked();
-    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Package reporting for a pilot Starter customer.");
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Package reporting for a pilot Basic customer.");
     await user.click(screen.getByRole("button", { name: "Save plan" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Starter", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] })]));
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", entitledModules: ["foundation", "revenue", "operations", "finance", "reporting"] })]));
   });
 
   it("publishes catalog edits to a public plan subscriber", async () => {
     const values: PlatformSaasPlan[][] = [];
     const unsubscribe = await api.subscribePublicSaasPlans((plans) => values.push(plans));
-    const starter = values[0]!.find((plan) => plan.name === "Starter")!;
-    await api.updatePlatformPlan({ name: "Starter", priceMinor: starter.priceMinor + 1_000, reason: "Public catalog review." });
-    expect(values.at(-1)?.find((plan) => plan.name === "Starter")).toMatchObject({ priceMinor: starter.priceMinor + 1_000 });
+    const starter = values[0]!.find((plan) => plan.name === "Basic")!;
+    await api.updatePlatformPlan({ name: "Basic", priceMinor: starter.priceMinor + 1_000, reason: "Public catalog review." });
+    expect(values.at(-1)?.find((plan) => plan.name === "Basic")).toMatchObject({ priceMinor: starter.priceMinor + 1_000 });
     unsubscribe();
   });
 });

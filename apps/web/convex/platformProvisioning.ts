@@ -7,7 +7,7 @@ import { domainError, publicBranchId, publicOrganizationId, publicUserId, requir
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 import { seedAccountingMetadata } from "./accounting";
-import { COMMERCIAL_TERMS_VERSION, findPlan } from "./planCatalogue";
+import { COMMERCIAL_TERMS_VERSION, findPlan, isCurrentPlan } from "./planCatalogue";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -403,7 +403,7 @@ async function upsertSettings(ctx: MutationCtx, organizationId: Id<"organization
   else await ctx.db.insert("domainRecords", { organizationId, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: value });
 }
 
-async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Starter" | "Growth" | "Pro" | "Enterprise"; billingInterval: BillingInterval; branchPublicId: string; branchName: string; address: string; now: number; organization: Doc<"organizations"> }) {
+async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizations">, input: { applicationId: string; marketplacePublicId: string; organizationPublicId: string; gymName: string; plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise"; billingInterval: BillingInterval; branchPublicId: string; branchName: string; address: string; now: number; organization: Doc<"organizations"> }) {
   const existing = await ctx.db
     .query("domainRecords")
     .withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organizationId).eq("entityType", "marketplaceGym").eq("publicId", input.marketplacePublicId))
@@ -482,7 +482,7 @@ export const createWorkspace = internalMutation({
     const requestedBillingInterval: BillingInterval = application.billingInterval === "annual" ? "annual" : "monthly";
     if (!organization) {
       const catalogRows = await ctx.db.query("domainRecords").withIndex("by_entity_type", q => q.eq("entityType", "platformPlan")).collect();
-      const storedPlan = catalogRows.map(row => row.data as Record<string, unknown>).find(row => row.name === application.plan);
+      const storedPlan = catalogRows.map(row => row.data as Record<string, unknown>).find(row => row.name === application.plan && (!isCurrentPlan(row.name) || row.commercialTermsVersion === COMMERCIAL_TERMS_VERSION));
       const setupFee = storedPlan?.onboardingFeeMinor ?? findPlan(application.plan)?.onboardingFeeMinor ?? 0;
       if (typeof setupFee !== "number" || !Number.isSafeInteger(setupFee) || setupFee < 0) domainError("CONFIGURATION_ERROR", "The plan onboarding fee is invalid.", { correlationId: args.correlationId });
       const organizationId = await ctx.db.insert("organizations", {

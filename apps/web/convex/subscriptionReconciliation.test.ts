@@ -137,7 +137,7 @@ describe("subscription reconciliation lifecycle", () => {
     await seed(t, { interval: "annual", status: "active", boundary });
     await t.mutation(internal.subscriptionReconciliation.reconcile, { now: boundary - 3 * 86_400_000 });
     const invoice = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).unique())!);
-    expect(invoice.data).toMatchObject({ amountMinor: 2_838_600, billingInterval: "annual", status: "open" });
+    expect(invoice.data).toMatchObject({ amountMinor: 2_268_600, billingInterval: "annual", status: "open" });
     const admin = t.withIdentity({ subject: "clerk-admin-reconcile" });
     await admin.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: invoice.publicId, reference: "BANK-ANNUAL-1", reason: "Annual transfer received." }));
     const state = await t.run(async (ctx) => ({

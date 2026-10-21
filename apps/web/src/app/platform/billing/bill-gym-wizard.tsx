@@ -15,11 +15,13 @@ import type { MarketplaceGym } from "@/lib/public/experience-data";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import { cn } from "@/lib/utils/cn";
 import { subscriptionBillingLineDescriptors } from "@/lib/platform/subscription-billing";
+import { AddOnControls, AddOnSummary } from "@/features/subscriptions/add-on-controls";
+import { addOnMonthlyPrice, validateAddOns, EMPTY_ADD_ONS, type SubscriptionAddOns } from "../../../../convex/subscriptionAddOns";
 import { termPriceMinor } from "../../../../convex/planCatalogue";
 import { money } from "@/lib/utils/money";
 import { searchKey } from "@/lib/utils/text";
 
-type PlanName = "Starter" | "Growth" | "Pro" | "Enterprise";
+type PlanName = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 const STEPS = [
   { key: "gym", message: "platformFinance.wizard.stepGym" },
   { key: "plan", message: "platformFinance.wizard.stepPlan" },
@@ -90,6 +92,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
   const [plan, setPlan] = useState<PlanName>();
   const [cadence, setCadence] = useState<BillingInterval>("monthly");
   const [reason, setReason] = useState("");
+  const [addOns, setAddOns] = useState<SubscriptionAddOns>({ ...EMPTY_ADD_ONS });
 
   const billableGyms = useMemo(
     () => gyms.filter((gym) => gym.isProvisioned === true && !gym.isArchived),
@@ -102,9 +105,12 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
   const gym = billableGyms.find((item) => item.id === gymId);
   const selectedPlan = plan ?? gym?.rivetPlan;
   const currentCadence = gym?.billingInterval ?? "monthly";
-  const planPrice = plans.find((item) => item.name === selectedPlan)?.priceMinor;
+  const basePrice = plans.find((item) => item.name === selectedPlan)?.priceMinor;
+  const selectedAddOns = selectedPlan === "Basic" ? addOns : EMPTY_ADD_ONS;
+  const planPrice = basePrice === undefined ? undefined : basePrice + addOnMonthlyPrice(selectedAddOns);
+  const addOnsChanged = JSON.stringify(selectedAddOns) !== JSON.stringify(validateAddOns(gym?.addOns, gym?.rivetPlan));
   const currentPlanPrice = plans.find((item) => item.name === gym?.rivetPlan)?.priceMinor;
-  const alreadyExact = Boolean(gym && gym.subscriptionStatus === "active" && selectedPlan === gym.rivetPlan && cadence === currentCadence);
+  const alreadyExact = Boolean(gym && gym.subscriptionStatus === "active" && selectedPlan === gym.rivetPlan && cadence === currentCadence && !addOnsChanged);
   const needsActivation = Boolean(gym && gym.subscriptionStatus !== "active");
 
   const reset = () => {
@@ -114,6 +120,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
     setPlan(undefined);
     setCadence("monthly");
     setReason("");
+    setAddOns({ ...EMPTY_ADD_ONS });
   };
 
   useEffect(() => {
@@ -122,6 +129,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
     if (preselected) {
       setGymId(preselected.id);
       setPlan(preselected.rivetPlan);
+      setAddOns(validateAddOns(preselected.addOns, preselected.rivetPlan));
       setCadence(preselected.billingInterval ?? "monthly");
       setStep("plan");
     }
@@ -135,6 +143,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
   const chooseGym = (item: MarketplaceGym) => {
     setGymId(item.id);
     setPlan(item.rivetPlan);
+    setAddOns(validateAddOns(item.addOns, item.rivetPlan));
     setCadence(item.billingInterval ?? "monthly");
     setStep("plan");
   };
@@ -145,6 +154,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
       gymId: gym.id,
       plan: selectedPlan,
       billingInterval: cadence,
+      ...(selectedPlan === "Basic" || gym.rivetPlan === "Basic" ? { addOns: selectedAddOns, expectedAddOnsRevision: gym.addOnsRevision ?? 0 } : {}),
       ...(needsActivation ? { status: "active" as const } : {}),
       reason: reason.trim(),
     });
@@ -203,7 +213,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
             <div className="grid gap-4">
               <p className="text-[13px] text-ink-2">{t("platformFinance.wizard.gymStatus", { gym: isolate(gym.name), status: statusText(gym.subscriptionStatus, t), plan: isolateLtr(selectedPlan ?? gym.rivetPlan), cadence: currentCadence === "annual" ? t("platformFinance.wizard.annualInline") : t("platformFinance.wizard.monthlyInline") })}</p>
               <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("renewFlow.adjust.planChange.rowPlan")}>
-                {plans.map((item) => (
+                {plans.filter((item) => item.name === "Basic" || item.name === "Pro" || item.name === gym?.rivetPlan).map((item) => (
                   <button key={item.name} type="button" role="radio" aria-checked={selectedPlan === item.name} onClick={() => setPlan(item.name as PlanName)} className={cn("grid gap-1 rounded-md border px-4 py-3 text-start transition-colors", selectedPlan === item.name ? "border-ink bg-sunken" : "border-line-2 hover:border-line-3")}>
                     <span className="flex items-center justify-between gap-2">
                       <span className="text-[13.5px] font-semibold"><bdi dir="ltr">{item.name}</bdi></span>
@@ -213,6 +223,7 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                   </button>
                 ))}
               </div>
+              {selectedPlan === "Basic" ? <AddOnControls value={addOns} onChange={setAddOns} /> : null}
               <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t("platformFinance.wizard.planAndBilling")}>
                 {(["monthly", "annual"] as const).map((interval) => {
                   const amount = planPrice === undefined ? undefined : termPriceMinor(planPrice, interval);
@@ -236,11 +247,12 @@ export function BillGymWizard({ open, onOpenChange, gyms, plans, initialGymId }:
                     ? t("platformFinance.wizard.alreadyExact", { gym: isolate(gym.name) })
                     : t("platformFinance.wizard.changing", { gym: isolate(gym.name), plan: isolateLtr(selectedPlan), cadence: cadence === "annual" ? t("platformFinance.wizard.annualInline") : t("platformFinance.wizard.monthlyInline") })}
               </p>
+              {selectedPlan === "Basic" ? <AddOnSummary value={selectedAddOns} /> : null}
               {!alreadyExact ? (
                 <div className="rounded-md border border-line bg-sunken/60 px-4 py-3 text-[12.5px] leading-relaxed" role="note" aria-label={t("platformFinance.wizard.previewAria")}>
                   <p className="flex items-start gap-2 font-semibold text-ink"><Receipt className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden />{t("platformFinance.wizard.whenSaved")}</p>
                   <ul className="mt-2 grid gap-1 text-ink-2">
-                    {subscriptionBillingLineDescriptors({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, currentTermValueMinor: gym.currentTermValueMinor, pendingOnboardingFeeMinor: gym.pendingOnboardingFeeMinor, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice, currentBillingInterval: currentCadence }).map((line, index) => <li key={`${line.kind}-${index}`}>{previewLine(line, f, t)}</li>)}
+                    {subscriptionBillingLineDescriptors({ currentStatus: gym.subscriptionStatus, currentPeriodEndsAt: gym.currentPeriodEndsAt, currentTermValueMinor: gym.currentTermValueMinor, pendingOnboardingFeeMinor: gym.pendingOnboardingFeeMinor, plan: selectedPlan, billingInterval: cadence, priceMinor: planPrice, currentPlanPriceMinor: currentPlanPrice === undefined ? undefined : currentPlanPrice + addOnMonthlyPrice(validateAddOns(gym.addOns, gym.rivetPlan)), currentBillingInterval: currentCadence }).map((line, index) => <li key={`${line.kind}-${index}`}>{previewLine(line, f, t)}</li>)}
                   </ul>
                 </div>
               ) : null}

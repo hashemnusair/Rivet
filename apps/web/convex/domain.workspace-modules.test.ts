@@ -45,7 +45,7 @@ describe("server-owned workspace entitlements", () => {
     expect(access.entitlements.subscriptionPlan).toBeUndefined();
   });
 
-  it("uses an explicit platform catalog selection instead of a stale materialized entitlement row", async () => {
+  it("preserves every Pro feature despite stale catalog and materialized entitlements", async () => {
     const { owner, t } = await seeded("Pro");
     await t.run(async (ctx) => {
       const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "workspace-org")).unique();
@@ -69,7 +69,7 @@ describe("server-owned workspace entitlements", () => {
       });
     });
     const access = await owner.query(api.domain.query, operation("workspace.access")) as { entitlements: { entitledModules: string[] } };
-    expect(access.entitlements.entitledModules).toEqual(["foundation", "revenue", "operations"]);
+    expect(access.entitlements.entitledModules).toEqual(["foundation", "revenue", "operations", "finance", "reporting"]);
   });
 
   it("allows only the owner to change preferences and appends an audit event", async () => {

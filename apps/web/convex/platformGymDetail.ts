@@ -5,7 +5,7 @@ export type PlatformField<T> =
 
 type SubscriptionStatus = "trial" | "active" | "overdue" | "suspended" | "cancelled";
 type OrganizationStatus = "trial" | "active" | "past_due" | "suspended" | "cancelled";
-type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+type PlatformPlan = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 type BillingInterval = "monthly" | "annual";
 
 export interface PlatformGymDetailSource {

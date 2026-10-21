@@ -1864,3 +1864,33 @@ Stop and ask the product owner before proceeding if:
 11. `apps/web/convex/invitations.ts`
 12. `apps/web/convex/gymApplications.ts`
 13. `apps/web/convex/platformProvisioningAction.ts`
+
+
+## Two-plan pricing cutover — 21 October 2026 (not yet released)
+
+Read `docs/14_SUBSCRIPTION_PRICING.md` and the newest `CURRENT_STATE.md` checkpoint.
+Deploy the Convex schema/functions with `pnpm convex:deploy` before the frontend
+that submits Basic applications. Coordinate the cutover; old open forms submitting
+Starter/Growth/Enterprise will be rejected and should reload to choose Basic/Pro.
+Do not run a raw Convex deploy or print environment values.
+
+Before release, review any custom Pro catalogue configuration through the operator
+UI. The `2026-10-21` catalogue version intentionally ignores older Basic/Pro rows;
+current audited editor saves stamp the new version. Retired plan records remain
+usable by existing subscribers. No tenant rename, signed agreement rewrite or
+historical invoice update is required. Do not use the old launch migration as an
+add-on provisioning mechanism.
+
+In isolated staging verify Basic signup → approval → trial → first invoice at
+JD 124 monthly or JD 633.600 annually; Pro first invoice is JD 349 monthly or
+JD 2,418.600 annually. Confirm onboarding is charged once, renewals use the correct
+recurring amount, Basic rejects branch 2 / staff seat 6 / simultaneous member 301,
+and Pro admits capacity above its former limits. Confirm expired members/leads do
+not consume seats, future/frozen terms do, and a too-large Pro gym cannot downgrade
+to Basic. A tenant owner must not edit the platform catalogue or grant modules.
+Check English/Arabic public pages, two signup choices, annual links, and the
+first-three website offer. Operational-email allowances remain metered.
+
+Optional Basic add-ons are a documented proposal, not a released purchase flow.
+No per-gym paid add-on should be sold by changing the global base-plan editor.
+Existing release/acceptance items elsewhere in this runbook remain in force.

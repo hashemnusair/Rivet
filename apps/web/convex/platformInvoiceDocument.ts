@@ -1,3 +1,4 @@
+import { ADD_ON_CATALOGUE, type SubscriptionInvoiceLine } from "./subscriptionAddOns";
 import { createTranslator } from "../src/lib/i18n/core";
 import { makeFormatters } from "../src/lib/i18n/formatters";
 import { isolateLtr } from "../src/lib/i18n/bidi";
@@ -11,6 +12,7 @@ import { isolateLtr } from "../src/lib/i18n/bidi";
 import { invoicePdfFilename, renderInvoicePdfBase64, type InvoicePdfInput, type InvoicePdfStatus } from "./platformInvoicePdf";
 
 export interface StoredInvoice {
+  lines?: unknown;
   amountMinor?: unknown;
   /** The term at list price, before any credit. Defaults to the amount. */
   subtotalMinor?: unknown;
@@ -100,6 +102,8 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
   const interval = intervalOf(invoice.billingInterval);
   const onboardingFeeMinor = typeof invoice.onboardingFeeMinor === "number" && invoice.onboardingFeeMinor > 0 ? invoice.onboardingFeeMinor : 0;
   const creditDays = typeof invoice.creditDays === "number" ? invoice.creditDays : 0;
+  const storedLines = Array.isArray(invoice.lines) ? invoice.lines.filter((line): line is SubscriptionInvoiceLine => Boolean(line && typeof line === "object" && (line.key === "base" || ADD_ON_CATALOGUE.some(item => item.key === line.key)) && Number.isSafeInteger(line.quantity) && line.quantity > 0 && Number.isSafeInteger(line.amountMinor) && line.amountMinor >= 0)) : [];
+  const itemized = storedLines.length > 0 && storedLines.reduce((sum, line) => sum + line.amountMinor, 0) === subtotalMinor - onboardingFeeMinor;
   const amount = amountText(amountMinor, currency);
   const periodStart = dateText(invoice.periodStart);
   const periodEnd = dateText(invoice.periodEnd);
@@ -118,11 +122,11 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
     interval,
     ...(paymentTermDays === undefined ? {} : { paymentTermDays }),
     customer: { name: customer.name, address: customer.address, contactName: customer.contactName, contactEmail: customer.contactEmail },
-    lines: [{
+    lines: [...(itemized ? storedLines.map(line => ({ description: t("platformFinance.addOns.line", { name: t(`platformFinance.addOns.${line.key}`), quantity: line.quantity }), period: `${periodStart} – ${periodEnd}`, amount: amountText(line.amountMinor, currency) })) : [{
       description: t("documents.subscriptionLine", { plan, interval: t(interval === "annual" ? "documents.annualAdjective" : "documents.monthlyAdjective") }),
       period: `${periodStart} – ${periodEnd}`,
       amount: amountText(subtotalMinor - onboardingFeeMinor, currency),
-    }, ...(onboardingFeeMinor > 0 ? [{ description: t("documents.onboardingFee"), period: "—", amount: amountText(onboardingFeeMinor, currency) }] : [])],
+    }]), ...(onboardingFeeMinor > 0 ? [{ description: t("documents.onboardingFee"), period: "—", amount: amountText(onboardingFeeMinor, currency) }] : [])],
     subtotal: amountText(subtotalMinor, currency),
     ...(creditMinor > 0
       ? {

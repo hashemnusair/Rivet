@@ -422,7 +422,7 @@ export function monthlyDepreciationAmount(costMinor: number, usefulLifeMonths: n
 async function requireFinance(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preference = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
-  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
+  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan, actor.organization.subscriptionAddOns);
   const entitlements = resolveWorkspaceEntitlements(actor.organization.subscriptionPlan, entitlement ? {
     subscriptionPlan: entitlement.subscriptionPlan,
     entitledModules: entitlement.entitledModules,

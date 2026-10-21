@@ -57,13 +57,16 @@ type MaybeUser = {
 } | null;
 
 type MaybeOrganization = {
+  subscriptionAddOns?: import("./subscriptionAddOns").SubscriptionAddOns;
+  addOnsRevision?: number;
+  addOnsEffectiveAt?: number;
   _id: Id<"organizations">;
   _creationTime: number;
   publicId?: string;
   name: string;
   slug: string;
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
-  subscriptionPlan?: "Starter" | "Growth" | "Pro" | "Enterprise";
+  subscriptionPlan?: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
   subscriptionStartedAt?: number;
   trialEndsAt?: number;

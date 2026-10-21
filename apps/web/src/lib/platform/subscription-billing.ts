@@ -6,7 +6,7 @@ export type SubscriptionBillingInput = {
   currentStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
   /** Persisted paid-period boundary, ISO string, when one exists. */
   currentPeriodEndsAt?: string;
-  plan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval: BillingInterval;
   /** Monthly catalog price in minor units for the selected plan. */
   priceMinor?: number;

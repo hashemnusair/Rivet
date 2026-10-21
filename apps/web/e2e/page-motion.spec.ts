@@ -202,8 +202,8 @@ test("the pricing link keeps the chosen plan and cadence on the night applicatio
     await annual.click();
     await expect(annual).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
   }).toPass();
-  await page.locator('a[href="/signup?plan=Growth&interval=annual"]').click();
-  await expect(page).toHaveURL(/\/signup\?plan=Growth&interval=annual$/);
+  await page.locator('a[href="/signup?plan=Pro&interval=annual"]').click();
+  await expect(page).toHaveURL(/\/signup\?plan=Pro&interval=annual$/);
   await settled(page);
   await expect(page.locator('[data-landing-header] img')).toHaveAttribute("src", /rivet-lockup-rev/);
   await expect(page.getByRole("button", { name: /Send gym application/ })).toBeVisible();
@@ -211,7 +211,7 @@ test("the pricing link keeps the chosen plan and cadence on the night applicatio
   await expect(page).toHaveURL(/\/$/);
   await settled(page);
   await page.goForward();
-  await expect(page).toHaveURL(/\/signup\?plan=Growth&interval=annual$/);
+  await expect(page).toHaveURL(/\/signup\?plan=Pro&interval=annual$/);
   await settled(page);
 });
 

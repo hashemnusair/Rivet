@@ -1,3 +1,4 @@
+import type { SubscriptionAddOns } from "../../../convex/subscriptionAddOns";
 import type { Money, PlanKind, TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/store";
 
@@ -44,7 +45,9 @@ export interface MarketplaceGym {
   accent: string;
   featured: boolean;
   subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
-  rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
+  addOns?: SubscriptionAddOns;
+  addOnsRevision?: number;
+  rivetPlan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
   joinedAt: string;
   lastActiveAt: string;

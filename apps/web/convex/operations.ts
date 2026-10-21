@@ -121,7 +121,7 @@ function assertOneOf<T extends string>(input: unknown, values: readonly T[], lab
 export async function requireOperations(ctx: ReadContext, actor: ActorContext): Promise<void> {
   const entitlementRow = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
   const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).unique();
-  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan);
+  const catalogSelection = await platformPlanEntitledModules(ctx, actor.organization.subscriptionPlan, actor.organization.subscriptionAddOns);
   const entitlements = resolveWorkspaceEntitlements(actor.organization.subscriptionPlan, entitlementRow ? {
     subscriptionPlan: entitlementRow.subscriptionPlan,
     entitledModules: entitlementRow.entitledModules,

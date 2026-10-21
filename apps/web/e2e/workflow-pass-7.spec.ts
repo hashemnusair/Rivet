@@ -127,7 +127,7 @@ const CONSOLE_RECORD_ROUTES: Route[] = [
 
 const CONSOLE_LEDGER_ROUTES: Route[] = [
   { path: "/platform/billing", slug: "platform-billing", ready: (page) => page.getByRole("row", { name: /Forge Fitness Club/ }), shoot: true },
-  { path: "/platform/subscriptions", slug: "platform-subscriptions", ready: (page) => page.getByRole("button", { name: "Edit Starter plan" }), shoot: true },
+  { path: "/platform/subscriptions", slug: "platform-subscriptions", ready: (page) => page.getByRole("button", { name: "Edit Basic plan" }), shoot: true },
   { path: "/platform/agreements", slug: "platform-agreements", ready: (page) => page.getByRole("button", { name: /Open agreement RVT-20260815-FORGE/ }), shoot: true },
   { path: "/platform/email-log", slug: "platform-email-log", ready: (page) => page.getByText("1 of 2 sent"), shoot: true },
   { path: "/platform/support?case=SUP-218", slug: "platform-support", ready: (page) => page.getByRole("heading", { level: 2, name: "Payment retry failed" }), shoot: true },
@@ -304,10 +304,10 @@ test("the gym application validates before sending and ends on a receipt", async
   await page.getByLabel("Gym name").fill("Northstar QA Fitness");
   await page.getByLabel("Gym address").fill("12 Airport Road, Amman");
   await page.getByRole("tab", { name: /Annual/ }).click();
-  await page.getByRole("radio", { name: /Starter/ }).click();
-  await expect(page.getByText(/444\.600/).first()).toBeVisible();
+  await page.getByRole("radio", { name: /Basic/ }).click();
+  await expect(page.getByText(/558\.600/).first()).toBeVisible();
   await expect(page.getByText(/One-time onboarding fee:.*75\.000/).first()).toBeVisible();
-  await expect(page.getByText(/First payment subtotal before applicable tax, including onboarding:.*519\.600/).first()).toBeVisible();
+  await expect(page.getByText(/First payment subtotal before applicable tax, including onboarding:.*633\.600/).first()).toBeVisible();
   await submit.click();
   await expect(page.getByRole("heading", { level: 1, name: /be in touch soon/ })).toBeVisible();
   await expect(page.getByText("omar.qa@example.com")).toBeVisible();

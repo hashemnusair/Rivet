@@ -157,7 +157,7 @@ export async function sha256Hex(text: string): Promise<string> {
  * signer. The copy carries the masked ID number only.
  */
 export const AGREEMENT_COPY_RECIPIENTS = ["elias@rivetjo.com", "hashem@rivetjo.com"] as const;
-export const AGREEMENT_PLANS = ["Starter", "Growth", "Pro", "Enterprise"] as const;
+export const AGREEMENT_PLANS = ["Basic", "Starter", "Growth", "Pro", "Enterprise"] as const;
 export const AGREEMENT_ID_TYPES = ["national", "passport"] as const;
 export const SIGNATURE_METHODS = ["drawn", "typed"] as const;
 /** PNG data URL cap; a drawn signature at 2× on a phone is well under this. */

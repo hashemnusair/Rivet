@@ -1,3 +1,4 @@
+import type { SubscriptionAddOns, SubscriptionInvoiceLine } from "../../../convex/subscriptionAddOns";
 import type { MemberImportErrorMessage } from "../imports/member-import-errors";
 import type { SystemMessage } from "../i18n/system-messages";
 import type {
@@ -394,6 +395,8 @@ export interface PlatformBillingInvoice {
   cycleKey?: string;
   billingInterval?: BillingInterval;
   /** The term at list price, before any credit is applied. */
+  lines?: SubscriptionInvoiceLine[];
+  addOns?: SubscriptionAddOns;
   subtotalMinor?: number;
   /** One-time setup fee included in the first term invoice, when applicable. */
   onboardingFeeMinor?: number;
@@ -659,7 +662,8 @@ export interface PlatformOverview {
 }
 
 export interface PlatformSaasPlan {
-  name: "Starter" | "Growth" | "Pro" | "Enterprise";
+  commercialTermsVersion?: string;
+  name: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   priceMinor: number;
   branches: number;
   staff: number;
@@ -821,6 +825,8 @@ export interface RecordOfferOutcomeInput {
  * and the backing Convex organization are updated together when a match is
  * available; this keeps the console from being a read-only mock surface. */
 export interface UpdatePlatformGymInput {
+  addOns?: SubscriptionAddOns;
+  expectedAddOnsRevision?: number;
   gymId: string;
   status?: import("@/lib/public/experience-data").MarketplaceGym["subscriptionStatus"];
   plan?: import("@/lib/public/experience-data").MarketplaceGym["rivetPlan"];

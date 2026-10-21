@@ -1,3 +1,4 @@
+import { validateAddOns } from "./subscriptionAddOns";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -14,7 +15,7 @@ import { communicationCompletion as enCommunication } from "../src/lib/i18n/mess
 import { domain as enDomain } from "../src/lib/i18n/messages/en/domain";
 import { resolveBrandColor } from "./brand";
 import { BRAND_CONTACT } from "./brandTokens";
-import { findPlan } from "./planCatalogue";
+import { findPlan, isCurrentPlan, COMMERCIAL_TERMS_VERSION } from "./planCatalogue";
 
 const RETRY_MINUTES = [1, 5, 30] as const;
 const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -438,6 +439,7 @@ async function persistedOperationalEmailLimits(ctx: MutationCtx): Promise<Map<st
   for (const row of rows) {
     const value = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data as Record<string, unknown> : {};
     const name = typeof value.name === "string" ? value.name : row.publicId;
+    if (isCurrentPlan(name) && value.commercialTermsVersion !== COMMERCIAL_TERMS_VERSION) continue;
     if (validQuotaLimit(value.operationalEmails)) limits.set(name, value.operationalEmails);
   }
   return limits;
@@ -458,7 +460,7 @@ async function organizationOperationalEmailLimit(
     : await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
   const planName = organization?.subscriptionPlan ?? entitlement?.subscriptionPlan ?? "Starter";
   const starterLimit = findPlan("Starter")?.operationalEmails ?? 600;
-  const monthlyLimit = persistedLimits.get(planName) ?? findPlan(planName)?.operationalEmails ?? starterLimit;
+  const monthlyLimit = planName === "Basic" ? 900 + 300 * validateAddOns(organization?.subscriptionAddOns, planName).members : persistedLimits.get(planName) ?? findPlan(planName)?.operationalEmails ?? starterLimit;
   cache.set(key, monthlyLimit);
   return monthlyLimit;
 }

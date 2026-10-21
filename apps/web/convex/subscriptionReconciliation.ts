@@ -1,16 +1,17 @@
+import { addOnMonthlyPrice, validateAddOns, subscriptionInvoiceLines } from "./subscriptionAddOns";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
-import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { PLAN_CATALOGUE, LEGACY_PLAN_CATALOGUE, isCurrentPlan, COMMERCIAL_TERMS_VERSION, termPriceMinor } from "./planCatalogue";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
-type PlatformPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+type PlatformPlan = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 
 /** The published prices, should a deployment's catalog row be missing. */
-const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = Object.fromEntries(PLAN_CATALOGUE.map((plan) => [plan.name, plan.priceMinor])) as Record<PlatformPlan, number>;
+const DEFAULT_PLAN_PRICES: Record<PlatformPlan, number> = Object.fromEntries([...PLAN_CATALOGUE, ...LEGACY_PLAN_CATALOGUE].map((plan) => [plan.name, plan.priceMinor])) as Record<PlatformPlan, number>;
 const SYSTEM_AUDIT_ACTOR_PUBLIC_ID = "system:subscription-reconciliation";
 const SYSTEM_AUDIT_ACTOR_NAME = "RIVET billing automation";
 const RECONCILIATION_ENABLED_ENV = "RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED";
@@ -121,7 +122,7 @@ function intervalOf(value: unknown): BillingInterval {
 }
 
 function planOf(value: unknown): PlatformPlan | undefined {
-  return value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
+  return value === "Basic" || value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
 }
 
 function iso(timestamp: number): string {
@@ -190,7 +191,8 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   if (decision.shouldCreate && !invoiceRow) {
     const plan = planPrice({ subscriptionPlan: organization.subscriptionPlan }, planPrices);
     const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
-    const amountMinor = termPriceMinor(plan, interval) + onboardingFeeMinor;
+    const addOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
+    const amountMinor = termPriceMinor(plan + addOnMonthlyPrice(addOns), interval) + onboardingFeeMinor;
     const invoiceId = `INV-${crypto.randomUUID()}`;
     const createdAt = Date.now();
     const invoice = {
@@ -208,6 +210,8 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
       periodEnd: iso(periodEnd),
       cycleKey,
       billingInterval: interval,
+      addOns,
+      lines: subscriptionInvoiceLines(plan, addOns, interval),
       status: "open",
       createdAt: iso(createdAt),
       updatedAt: iso(createdAt),
@@ -312,6 +316,7 @@ export const reconcile = internalMutation({
     const planPrices = new Map<string, number>();
     for (const row of planRows) {
       const data = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data as Record<string, unknown> : {};
+      if (isCurrentPlan(data.name) && data.commercialTermsVersion !== COMMERCIAL_TERMS_VERSION) continue;
       if (typeof data.name === "string" && typeof data.priceMinor === "number") planPrices.set(data.name, data.priceMinor);
     }
     const organizations = await ctx.db.query("organizations").collect();

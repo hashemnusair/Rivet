@@ -3,7 +3,7 @@ import { PLAN_CATALOGUE, findPlan, planFee, planSummary } from "./planCatalogue"
 
 describe("plan catalogue", () => {
   it("describes a plan the way the agreement and the invoice print it", () => {
-    expect(PLAN_CATALOGUE.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
+    expect(PLAN_CATALOGUE.map((plan) => plan.name)).toEqual(["Basic", "Pro"]);
     // The agreement names the plan and nothing it does not promise.
     expect(planSummary("Growth")).toBe("Growth");
     expect(planSummary("starter")).toBe("Starter");

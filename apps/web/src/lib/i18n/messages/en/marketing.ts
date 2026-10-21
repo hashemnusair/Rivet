@@ -269,12 +269,12 @@ export const marketing = {
 
   pricing: {
     eyebrow: "Pricing",
-    title: "One, two or five branches. Choose your plan.",
+    title: "Start with Basic. Grow without limits on Pro.",
     description:
-      "Starter, Growth and Pro include the modules listed below. Every plan includes the member app, staff permissions and audit history; Enterprise is priced by custom quote.",
+      "Basic covers your gym’s essentials. Pro includes every feature with unlimited branches, members and staff accounts.",
     emptyTitle: "Pricing is being prepared",
     emptyDescription: "RIVET pricing is not available from the live catalog yet.",
-    mostPopular: "Most popular",
+    mostPopular: "Every feature included",
     perMonth: "/ month",
     price: "JD {amount}",
     branches: plural({ one: "{count} branch", other: "{count} branches" }),

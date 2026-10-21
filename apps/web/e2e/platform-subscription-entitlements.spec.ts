@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-type SubscriptionPlan = "Starter" | "Growth" | "Pro" | "Enterprise";
+type SubscriptionPlan = "Basic" | "Pro";
 
 /**
  * Return to the billing subscription controls between tier rounds. History
@@ -48,10 +48,10 @@ async function changeSubscriptionFromBilling(page: Page, plan: SubscriptionPlan,
   await expect(row).toContainText(plan);
 }
 
-async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth") {
+async function expectRestrictedWorkspace(page: Page, plan: "Basic") {
   const primaryNav = page.locator('aside[aria-label="Primary navigation"]');
   await expect(primaryNav).toBeVisible();
-  if (plan === "Starter") {
+  if (plan === "Basic") {
     await expect(primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true })).toHaveCount(0);
   } else {
     await expect(primaryNav.getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
@@ -61,7 +61,7 @@ async function expectRestrictedWorkspace(page: Page, plan: "Starter" | "Growth")
 
   // Reports is a primary Finance destination. The Payments switcher stays
   // focused on payment work, while Statements remains a separate,
-  // reporting-entitled workspace that Starter/Growth must not advertise.
+  // reporting-entitled workspace that Basic must not advertise.
   await primaryNav.getByRole("link", { name: "Payments", exact: true }).click();
   await expect(page).toHaveURL(/\/payments$/);
   const financeNav = page.getByRole("navigation", { name: "Finance views" });
@@ -113,7 +113,7 @@ async function expectPremiumWorkspace(page: Page) {
 }
 
 test.describe("RIVET platform subscription entitlements", () => {
-  test("updates Forge workspace modules and navigation live across all four tiers", async ({ page }) => {
+  test("updates Forge workspace modules and navigation live across Basic and Pro", async ({ page }) => {
     // Keep a real gym workspace session alive while the platform operator
     // changes the tenant subscription in the same browser/runtime. This is
     // the path that previously required a reload or a fresh login to observe.
@@ -130,39 +130,21 @@ test.describe("RIVET platform subscription entitlements", () => {
     await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
     await returnToBilling(page);
 
-    await changeSubscriptionFromBilling(page, "Starter", "Confirm Starter access boundary for live entitlement coverage.", { assertBillingPreview: true });
+    await changeSubscriptionFromBilling(page, "Basic", "Confirm Basic access boundary for live entitlement coverage.", { assertBillingPreview: true });
 
     // The platform mutation response is consumed by the active gym session
     // without a logout or page reload. The navigation and route gate must
-    // reflect Starter immediately.
+    // reflect Basic immediately.
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expectRestrictedWorkspace(page, "Starter");
+    await expectRestrictedWorkspace(page, "Basic");
 
     await returnToBilling(page);
-    await changeSubscriptionFromBilling(page, "Growth", "Verify Growth operations access boundary.");
-
-    await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
-    await expectRestrictedWorkspace(page, "Growth");
-
-    await returnToBilling(page);
-
     await changeSubscriptionFromBilling(page, "Pro", "Restore Pro access and verify immediate module unlocks.", { cadence: "Annual" });
 
     await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
     await expectPremiumWorkspace(page);
 
-    // Pro and Enterprise both expose the complete five-pillar workspace. The
-    // second transition proves the fourth tier does not accidentally lose the
-    // reporting link while the catalog expands.
-    await returnToBilling(page);
-
-    await changeSubscriptionFromBilling(page, "Enterprise", "Verify Enterprise retains every workspace module.");
-
-    await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
-    await expectPremiumWorkspace(page);
   });
 });

@@ -266,12 +266,12 @@ export const marketing: typeof EnMarketing = {
 
   pricing: {
     eyebrow: "الأسعار",
-    title: "فرع واحد أو فرعان أو خمسة. اختر الباقة المناسبة.",
+    title: "ابدأ مع Basic. توسّع بلا حدود مع Pro.",
     description:
-      "تشمل باقات Starter وGrowth وPro الوحدات الموضحة أدناه. وتشمل كل باقة تطبيق المشترك وصلاحيات فريق العمل وسجل التغييرات، أما باقة المؤسسات فسعرها وفق عرض مخصص.",
+      "تشمل Basic أساسيات إدارة النادي. وتشمل Pro جميع المزايا مع فروع وأعضاء وحسابات غير محدودة لفريق العمل.",
     emptyTitle: "يجري تجهيز الأسعار",
     emptyDescription: "أسعار RIVET غير متاحة من الكتالوج المباشر بعد.",
-    mostPopular: "الأكثر طلبًا",
+    mostPopular: "جميع المزايا مشمولة",
     perMonth: "/ شهريًا",
     price: "{amount} د.أ",
     branches: plural({

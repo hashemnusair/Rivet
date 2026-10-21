@@ -129,7 +129,7 @@ describe("plan capacity enforcement", () => {
     const { organizationId } = await seed(t, { members: 17, branches: 2.5, staff: 0 });
     const plans = await t.run(async (ctx) => ({ starter: await effectivePlan(ctx, "Starter"), pro: await effectivePlan(ctx, "Pro") }));
     expect(plans.starter).toMatchObject({ name: "Starter", members: 17, branches: 1, staff: 3, onboardingFeeMinor: expect.any(Number) });
-    expect(plans.pro).toMatchObject({ name: "Pro", members: 1_000, branches: 5, staff: 20 });
+    expect(plans.pro).toMatchObject({ name: "Pro", members: -1, branches: -1, staff: -1 });
     expect(organizationId).toBeTruthy();
 
     const today = "2026-10-07";

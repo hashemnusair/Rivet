@@ -243,6 +243,7 @@ export default function LandingPage() {
                 <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("publicCompletion.landing.pricing.launchTitle")} emptyDescription={t("publicCompletion.landing.pricing.launchDescription")} />
               </div>
             ) : null}
+            <p className="mt-6 text-[15px] font-semibold text-ink">{t("publicCompletion.landing.pricing.websiteOffer")}</p>
             <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="text-[13.5px] font-semibold tracking-[-0.01em]">{t("publicCompletion.landing.pricing.billing")}</p>
@@ -267,7 +268,7 @@ export default function LandingPage() {
                 })}
               </div>
             </div>
-            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div id="pricing-plans" role="tabpanel" className="mt-6 grid gap-4 md:grid-cols-2">
                 {pricingPlans.map((plan, index) => {
                   const price = calculatePlanPrice(plan, billingInterval);
                   const features = localizedPublicPlanFeatures(plan, f, t);
@@ -286,7 +287,7 @@ export default function LandingPage() {
                   >
                     <div className={styles.tierBody}>
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-[15px] font-semibold tracking-[-0.01em]">{plan.name}</p>
+                        <p className="text-[18px] font-semibold tracking-[-0.01em]"><bdi dir="ltr">{plan.name}</bdi></p>
                         {isSignal ? (
                           <span className="rounded-sm bg-signal px-2 py-1 text-[11px] font-medium leading-none text-white">{t("marketing.pricing.mostPopular")}</span>
                         ) : isEnterprise ? (
@@ -295,6 +296,7 @@ export default function LandingPage() {
                           </span>
                         ) : null}
                       </div>
+                      <p className="mt-4 text-[14px] text-ink-2">{t(plan.name === "Pro" ? "publicCompletion.landing.pricing.proDescription" : "publicCompletion.landing.pricing.basicDescription")}</p>
                       <p className="mt-6">
                         {isEnterprise ? (
                           <span className="text-[25px] font-semibold">{t("publicCompletion.landing.pricing.customQuote")}</span>
@@ -349,6 +351,8 @@ export default function LandingPage() {
                 })}
             </div>
             <p className="mt-4 text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.activeMemberAllowanceNote")}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.emailNote")}</p>
+            <SheetLink href="#contact" className="mt-4 inline-block text-[13px] text-ink-2 underline underline-offset-4">{t("publicCompletion.landing.pricing.addOns")}</SheetLink>
           </div>
         </section>
 

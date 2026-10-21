@@ -1,5 +1,5 @@
 import type { PlatformSaasPlan } from "@/lib/api/GymOSApi";
-import { DEFAULT_PUBLIC_PRICING_PLANS } from "./pricing";
+import { DEFAULT_PUBLIC_PRICING_PLANS, resolvePublicPricingPlans } from "./pricing";
 
 /**
  * Approved launch defaults keep the public application usable while an
@@ -10,5 +10,5 @@ import { DEFAULT_PUBLIC_PRICING_PLANS } from "./pricing";
 export const DEFAULT_APPLICATION_PLANS: PlatformSaasPlan[] = DEFAULT_PUBLIC_PRICING_PLANS.map((plan) => ({ ...plan }));
 
 export function resolveApplicationPlans(livePlans: PlatformSaasPlan[]): PlatformSaasPlan[] {
-  return livePlans.length > 0 ? livePlans : DEFAULT_APPLICATION_PLANS;
+  return resolvePublicPricingPlans(livePlans);
 }

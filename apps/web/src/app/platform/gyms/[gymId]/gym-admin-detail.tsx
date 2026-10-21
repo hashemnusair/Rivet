@@ -391,8 +391,9 @@ function billingIntervalLabel(value: BillingInterval, t: ReturnType<typeof useT>
 }
 
 function Usage({ label, field }: { label: string; field: PlatformData<number | string> }) {
+  const t = useT();
   const f = useFormat();
-  return <div className="bg-surface px-4 py-3.5 sm:px-5"><ContextLabel as="dt">{label}</ContextLabel><dd className="mt-1.5 text-[18px] font-semibold leading-6 tabular"><FieldValue field={field} render={(value) => typeof value === "number" ? f.number(value) : value} /></dd></div>;
+  return <div className="bg-surface px-4 py-3.5 sm:px-5"><ContextLabel as="dt">{label}</ContextLabel><dd className="mt-1.5 text-[18px] font-semibold leading-6 tabular"><FieldValue field={field} render={(value) => value === -1 ? t("platformFinance.detail.unlimitedCapacity") : typeof value === "number" ? f.number(value) : value} /></dd></div>;
 }
 
 /** Label-over-value cell for the subscription grid; every cell lines up on the same baseline. */

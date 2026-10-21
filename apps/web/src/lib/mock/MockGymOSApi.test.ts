@@ -284,9 +284,9 @@ describe("workspace entitlement and preference boundary", () => {
     expect((await api.listMarketplaceGyms()).map((gym) => gym.id)).toEqual(["forge-fitness"]);
   });
 
-  it("keeps the four-tier catalog ordered with the Enterprise price", async () => {
+  it("keeps retired tiers available internally for historical subscriptions", async () => {
     const plans = (await api.getPlatformSnapshot()).plans;
-    expect(plans.map((plan) => plan.name)).toEqual(["Starter", "Growth", "Pro", "Enterprise"]);
+    expect(plans.map((plan) => plan.name)).toEqual(["Basic", "Pro", "Starter", "Growth", "Enterprise"]);
     expect(plans.at(-1)).toMatchObject({ name: "Enterprise", priceMinor: 500_000 });
   });
 });
@@ -439,8 +439,8 @@ describe("platform subscription controls", () => {
 
   it("records a plan upgrade request without changing the tenant plan", async () => {
     const before = await api.getWorkspaceAccess();
-    const request = await api.createSupportCase({ email: DEMO_IDENTITY.email ?? "demo@example.test", subject: "Request Growth", body: "Please review our operations needs.", priority: "normal", requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
-    expect(request).toMatchObject({ requestType: "plan_upgrade", requestedPlan: "Growth", billingInterval: "annual" });
+    const request = await api.createSupportCase({ email: DEMO_IDENTITY.email ?? "demo@example.test", subject: "Request Pro", body: "Please review our operations needs.", priority: "normal", requestType: "plan_upgrade", requestedPlan: "Pro", billingInterval: "annual" });
+    expect(request).toMatchObject({ requestType: "plan_upgrade", requestedPlan: "Pro", billingInterval: "annual" });
     expect((await api.getWorkspaceAccess()).entitlements.subscriptionPlan).toBe(before.entitlements.subscriptionPlan);
   });
 
@@ -689,13 +689,10 @@ describe("platform subscription controls", () => {
     unsubscribe();
   });
 
-  it("projects catalog capability toggles to the assigned gym entitlement", async () => {
-    const updated = await api.updatePlatformPlan({ name: "Pro", entitledModules: ["foundation", "revenue"], reason: "Keep finance and reporting behind an approved add-on." });
-    expect(updated.entitledModules).toEqual(["foundation", "revenue"]);
+  it("cannot remove included Pro capabilities through the plan editor", async () => {
+    await expect(api.updatePlatformPlan({ name: "Pro", entitledModules: ["foundation", "revenue"], reason: "Try narrowing Pro." })).rejects.toMatchObject({ code: ERR.VALIDATION });
     const access = await api.getWorkspaceAccess();
-    expect(access.entitlements).toMatchObject({ subscriptionPlan: "Pro", entitledModules: ["foundation", "revenue"] });
-    expect(access.modules.find((module) => module.key === "finance")).toMatchObject({ entitled: false, enabled: false });
-    expect((await api.listPublicSaasPlans()).find((plan) => plan.name === "Pro")).toMatchObject({ entitledModules: ["foundation", "revenue"] });
+    expect(access.entitlements.entitledModules).toContain("reporting");
   });
 
   it("reports initial platform snapshot failures to subscribers instead of claiming ready data", async () => {
