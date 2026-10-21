@@ -107,6 +107,14 @@ Elias asked for the two small billing gaps left by the Enterprise quote work.
   Northline Strength (Growth, first invoice JD 164), changed it to Pro before
   payment; the JD 164 invoice is void and a JD 274 one (199 + 75 onboarding)
   is open. The browser PDF's contents were checked by unit test, not by eye.
+- **Released 21 October 2026:** pushed to `main` as `f5a80c82`. Convex
+  through the guarded wrapper (`CONVEX_DEPLOY_KEY=''`): the dry run selected
+  Production `descriptive-meerkat-589` with no index deletions and schema
+  validation passing; the deploy finished at 11:30 UTC and `health:check`
+  returned `ok` (`1792582212359`). Vercel Production deployed the same commit
+  (GitHub deployment `7224919338`, 11:32 UTC) and all 11 jobs passed in
+  [CI 39592359779](https://github.com/hashemnusair/Rivet/actions/runs/39592359779).
+  Not tried signed in as an administrator in Production.
 
 ## 21 October 2026 — Enterprise is priced per gym; RIVET changes a gym's plan again
 
