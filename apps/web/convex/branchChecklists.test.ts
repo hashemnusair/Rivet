@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { addDays, todayISODate } from "../src/lib/utils/dates";
 import { api } from "./_generated/api";
@@ -39,6 +39,8 @@ const TEMPLATE_INPUT = {
     { label: "Fresh towels", required: false },
   ],
 };
+
+afterEach(() => vi.useRealTimers());
 
 describe("branch checklists", () => {
   it("validates branch staff, snapshots ownership, and carries unresolved work into handover", async () => {
@@ -182,6 +184,10 @@ describe("branch checklists", () => {
 
 
   it("contributes due, overdue, and failed checklist items to the Today queue", async () => {
+    // A real-clock run at 00:01 in Amman is still due, not late. Keep this
+    // overdue scenario at midday without replacing asynchronous timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T12:00:00+03:00"));
     const t = convexTest(schema, modules);
     await seed(t);
     const owner = t.withIdentity({ subject: "clerk-owner-check" });

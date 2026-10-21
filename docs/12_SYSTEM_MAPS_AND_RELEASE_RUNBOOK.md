@@ -1900,3 +1900,23 @@ billing writes when usage is too high. Verify finance/reporting dependencies and
 that a paid Pro upgrade clears Basic add-ons. The global editor cannot change
 Basic's base capacity. No per-gym sale should change the global catalogue.
 Existing release/acceptance items elsewhere in this runbook remain in force.
+
+
+### Basic/Pro and add-on release evidence — 22 October 2026 (Amman)
+
+Runtime `8babeeb9`, release source `22e5157b`, is pushed on main and deployed.
+Guarded Convex production deploy succeeded against `descriptive-meerkat-589`,
+with no index deletions; post-release health `ok` at `1792616418277`.
+Full private backup `/private/tmp/rivet-before-basic-addons-2026-10-21.zip`
+includes file storage, has mode 0600, passes ZIP integrity, and has SHA-256
+`c06ec3f35d93208dc67bead0d0048feb03cc18c7c0af40dddc1acd479f3eadef`.
+Vercel `dpl_28CBtqDQHg21rrzcXPuESB4KvnAD` is READY at release source; the
+canonical www/platform/dashboard/app/admin aliases all resolve to it.
+Wait for alias propagation after READY before public smoke checks.
+Anonymous production reads verify Basic49/75, Pro199/150, correct capacities,
+and three website places. Four live EN/AR desktop/phone pricing/signup checks
+pass without submitting applications or payment transactions.
+The [release CI run](https://github.com/hashemnusair/Rivet/actions/runs/39674533792)
+passed all eleven jobs; the following main run found a midnight-dependent
+checklist test, corrected with a fixed midday clock (test-only).
+Read CURRENT_STATE.md and docs/14 for operation, billing and cap details.

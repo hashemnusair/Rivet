@@ -2,7 +2,7 @@
 
 ## Current checkpoint — Basic/Pro and paid add-ons, 21 October 2026
 
-**Release preparation in progress.** The complete pricing/add-on implementation
+**Released to production.** The complete pricing/add-on implementation
 is integrated with origin/main `4af7972f`, including payment-first onboarding,
 website reservations, promo codes, owner upgrade collection, and the current
 platform billing console. `FRONTEND_HANDOFF.md` remains frozen.
@@ -38,8 +38,26 @@ opt-in benchmarks skipped. The 14 repository safety checks, production build,
 web/Convex type checks, lint and Arabic lock pass. Eight targeted browser flows
 and twelve responsive public/console journeys pass. All 11 [release CI jobs](https://github.com/hashemnusair/Rivet/actions/runs/39674533792)
 passed on runtime `8babeeb9`, including all six Linux browser shards. Browser
-captures are in `docs/ui-evidence/pricing-2026-10-21/`. Deployment is in progress;
-exact production results are recorded in the release entry below when complete.
+captures are in `docs/ui-evidence/pricing-2026-10-21/`.
+
+**Production release — 22 October (Amman):** source `22e5157b` (runtime changes
+at `8babeeb9`) is pushed to main. Guarded Convex deploy to
+`descriptive-meerkat-589` succeeded with schema validation and no index deletions;
+health returned `ok` at `1792616418277`. Anonymous catalogue reads return exactly
+Basic/Pro with the approved prices/caps; website offer returns three places.
+Vercel Production `dpl_28CBtqDQHg21rrzcXPuESB4KvnAD` is READY, and all five
+canonical website/app/platform/admin/dashboard aliases were verified at that
+deployment. Four read-only live browser checks pass (English/Arabic at 390/1440px):
+pricing, first-three offer, Basic annual signup, no overflow or runtime errors.
+The first smoke ran before alias propagation finished; rerunning after the alias
+check passed. No live application, add-on purchase or payment was submitted.
+
+The repeated main CI run `39675185606` exposed one existing real-clock test at
+00:01 Amman: a checklist due at 00:01 is not late yet. All other ten jobs passed.
+The final test-only correction pins that overdue scenario to midday while
+retaining real asynchronous timers; all seven checklist tests pass locally.
+This correction and release documentation do not change deployed application
+behavior. No source deployment remains owed for the pricing/add-on feature.
 
 **Preflight:** the guarded production dry run targets `descriptive-meerkat-589`,
 passes schema validation and deletes no indexes. Fresh full export (including
