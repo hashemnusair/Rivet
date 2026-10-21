@@ -317,6 +317,13 @@ describe("platform gym applications", () => {
     const gym = snapshot.gyms.find((item) => item.name === "Quoted Gym");
     expect(gym).toMatchObject({ rivetPlan: "Enterprise", quotedPriceMinor: 425_500 });
     expect(snapshot.invoices.find((invoice) => invoice.gymId === gym?.id && invoice.firstPayment)).toMatchObject({ subtotalMinor: 425_500, amountMinor: 425_500 });
+
+    // Corrected before the gym pays: the first invoice is issued again.
+    await expect(api.updatePlatformGym({ gymId: gym!.id, quotedPriceMinor: 425_500, reason: "Same quote." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: gym!.id, plan: "Growth", reason: "Owner chose Growth." })).resolves.toMatchObject({ rivetPlan: "Growth", subscriptionStatus: "pending_payment", quotedPriceMinor: undefined });
+    const firstInvoices = (await api.getPlatformSnapshot()).invoices.filter((invoice) => invoice.gymId === gym!.id && invoice.firstPayment);
+    expect(firstInvoices.map((invoice) => invoice.status).sort()).toEqual(["open", "void"]);
+    expect(firstInvoices.find((invoice) => invoice.status === "open")).toMatchObject({ onboardingFeeMinor: 75_000, amountMinor: 89_000 + 75_000 });
   });
 
   it("delivers the current application queue through the mock subscription contract", async () => {

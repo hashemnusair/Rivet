@@ -121,12 +121,17 @@ describe("Gym subscriptions section", () => {
     expect(state.api.updatePlatformGym).toHaveBeenLastCalledWith({ gymId: "gym-active", billingInterval: "annual", reason: "Owner asked for yearly billing." });
   });
 
-  it("offers no plan change while a gym waits for its first payment", async () => {
+  it("corrects a gym that has not paid yet by replacing its first invoice", async () => {
     const user = userEvent.setup();
-    render(<GymSubscriptions gyms={[gym({ id: "gym-new", name: "New Gym", subscriptionStatus: "pending_payment" })]} />);
+    render(<GymSubscriptions gyms={[gym({ id: "gym-new", name: "New Gym", subscriptionStatus: "pending_payment", rivetPlan: "Starter", currentPeriodEndsAt: undefined })]} />);
     await openMenu(user, "New Gym");
-    expect(await screen.findByRole("menuitem", { name: "Cancel subscription" })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Change plan" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("menuitem", { name: "Change plan" }));
+    const dialog = screen.getByRole("dialog", { name: /Change New Gym's plan/ });
+    expect(dialog).toHaveTextContent("New Gym has not paid yet. Its first invoice is replaced with one for the new plan.");
+    await user.click(within(dialog).getByRole("radio", { name: /Growth/ }));
+    await user.type(within(dialog).getByLabelText("Reason for this change"), "Owner chose Growth on the phone.");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-new", plan: "Growth", reason: "Owner chose Growth on the phone." });
   });
 
   it("suspends through a reasoned dialog that promises no invoice", async () => {

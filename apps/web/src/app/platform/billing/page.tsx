@@ -3,7 +3,7 @@ import { makeExportCopy } from "@/lib/exports/copy";
 import { useLocale, useT, type TFunction } from "@/lib/i18n/provider";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 
-import { invoicePdfIntent, openInvoicePdf } from "@/features/billing/invoice-pdf";
+import { invoicePdfIntent, openInvoicePdf, usePaymentDetailsLoader } from "@/features/billing/invoice-pdf";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -197,6 +197,7 @@ function InvoiceRow({ invoice, focused, onAction }: { invoice: PlatformBillingIn
   const amount = invoice.amountMinor !== undefined ? f.money(money(invoice.amountMinor, invoice.currency ?? "JOD")) : invoice.amount;
   const unpaid = UNPAID.includes(invoice.status);
   const waiting = invoice.paymentClaim?.status === "submitted";
+  const paymentDetails = usePaymentDetailsLoader("platform");
   const date = invoice.status === "paid" && invoice.paidAt
     ? t("platformFinance.billingPage.paidOn", { date: f.date(invoice.paidAt) })
     : invoice.dueAt && Number.isFinite(Date.parse(invoice.dueAt)) ? t("platformFinance.billingPage.dueOn", { date: f.date(invoice.dueAt) }) : "—";
@@ -212,7 +213,7 @@ function InvoiceRow({ invoice, focused, onAction }: { invoice: PlatformBillingIn
       <TableCell>{waiting ? <Badge variant="warning">{t("platformFinance.billingPage.waiting")}</Badge> : <InvoiceStatusBadge status={invoice.status} />}</TableCell>
       <TableCell className="pe-4 sm:pe-5">
         <div className="flex justify-end gap-1">
-          <Button size="sm" variant="ghost" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, { name: invoice.gym })} aria-label={t("platformFinance.billing.table.viewPdf", { invoiceId: isolateLtr(invoice.id) })} data-testid="view-invoice-pdf"><FileText /><span dir="ltr">{t("platformFinance.billing.table.pdf")}</span></Button>
+          <Button size="sm" variant="ghost" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, { name: invoice.gym }, undefined, paymentDetails)} aria-label={t("platformFinance.billing.table.viewPdf", { invoiceId: isolateLtr(invoice.id) })} data-testid="view-invoice-pdf"><FileText /><span dir="ltr">{t("platformFinance.billing.table.pdf")}</span></Button>
           {unpaid ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

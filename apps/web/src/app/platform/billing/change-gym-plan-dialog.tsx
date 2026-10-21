@@ -22,7 +22,8 @@ type PlanName = PlatformSaasPlan["name"];
 /**
  * RIVET changes a gym's plan, billing cycle or Enterprise price. An active gym
  * starts a new paid term today and gets an invoice, less the days it already
- * paid for; the server prices it, so this dialog only says what will happen.
+ * paid for; a gym that has not paid yet gets its first invoice replaced. The
+ * server prices both, so this dialog only says what will happen.
  */
 export function ChangeGymPlanDialog({ gym, onOpenChange }: { gym: MarketplaceGym; onOpenChange: (open: boolean) => void }) {
   const { t, isolate, isolateLtr } = useLocale();
@@ -37,6 +38,7 @@ export function ChangeGymPlanDialog({ gym, onOpenChange }: { gym: MarketplaceGym
   const [errors, setErrors] = useState<{ quote?: string; changes?: string }>({});
   const quoted = isQuotedPlan(plan);
   const active = gym.subscriptionStatus === "active" || gym.subscriptionStatus === "overdue";
+  const awaitingFirstPayment = gym.subscriptionStatus === "pending_payment";
 
   const save = useApiMutation((api, input: { plan?: PlanName; billingInterval?: BillingInterval; quotedPriceMinor?: number }) => api.updatePlatformGym({ gymId: gym.id, ...input, reason: reason.trim() }), {
     onSuccess: () => onOpenChange(false),
@@ -98,7 +100,7 @@ export function ChangeGymPlanDialog({ gym, onOpenChange }: { gym: MarketplaceGym
               <RadioCard value="annual" className="text-[13px] font-medium">{t("platformFinance.subscriptions.annual")}</RadioCard>
             </RadioGroup>
           </fieldset>
-          <p className="rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-2">{active ? t("platformFinance.subscriptions.invoiceToday", { gym: isolate(gym.name) }) : t("platformFinance.subscriptions.noInvoice")}</p>
+          <p className="rounded-md border border-line bg-sunken/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-2">{awaitingFirstPayment ? t("platformFinance.subscriptions.replaceFirstInvoice", { gym: isolate(gym.name) }) : active ? t("platformFinance.subscriptions.invoiceToday", { gym: isolate(gym.name) }) : t("platformFinance.subscriptions.noInvoice")}</p>
           <Field label={t("platformFinance.subscriptions.reason")} htmlFor="change-plan-reason">
             <Textarea id="change-plan-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("platformFinance.subscriptions.auditReasonPlaceholder")} />
           </Field>

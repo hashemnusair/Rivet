@@ -512,10 +512,12 @@ order.
 
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals
-with the total due at 20pt, and a how-to-pay panel. Emailed invoices print
+with the total due at 20pt, and a how-to-pay panel. Invoices print
 the CliQ and bank details from console → Billing → **Where gyms pay**; with
 none set, the `BRAND_LEGAL` details, and with neither, a line saying RIVET
-sends them. The PDF opened in the browser still prints that line. It is attached to the invoice issued,
+sends them. Since 21 October 2026 the PDF opened in the browser (console
+Billing, Settings → Subscription) prints the same details as the emailed
+copy. It is attached to the invoice issued,
 past due and paid emails. Tax treatment is shown as undecided rather than
 guessed.
 
@@ -710,7 +712,10 @@ after the 19 October billing page lost its wizard.
   a quote; a quote on another plan is refused; a new quote, plan or cycle on
   an active gym starts a new term today and bills it less the unused paid
   days; leaving Enterprise clears the quote. The audit row records the quote
-  before and after. Not offered while a gym waits for its first payment.
+  before and after. For a gym still waiting for its first payment, the same
+  dialog corrects the plan, cycle or quote and replaces its first invoice
+  (old one voided; onboarding fee, website place and promo re-checked); it is
+  refused while the gym's payment details wait for RIVET.
 - **Pricing & entitlements.** Enterprise shows "Custom quote", as the website
   does, and its edit dialog has no price field (limits and modules only).
 - **The gym's view.** `billing.plans` returns `monthlyPriceMinor`, the price

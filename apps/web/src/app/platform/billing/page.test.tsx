@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/exports/download", () => ({ downloadTextFile: state.download }));
+// The page renders without a query client here; the PDF reads RIVET's payment details through one.
+vi.mock("@/features/billing/invoice-pdf", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/features/billing/invoice-pdf")>()), usePaymentDetailsLoader: () => async () => undefined }));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),

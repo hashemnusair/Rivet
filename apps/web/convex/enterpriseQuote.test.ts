@@ -163,3 +163,66 @@ describe("Enterprise renewals and the gym's own view", () => {
     expect(snapshot.overview.activeMrr.amount).toBe(410_000);
   });
 });
+
+/** An approved Enterprise application set up and waiting for its first payment. */
+async function provisionPendingEnterprise(t: TestConvex<typeof schema>, quotedPriceMinor: number) {
+  await seedAdmin(t);
+  const applicationId = "30000000-0000-4a00-8a00-000000000010";
+  await t.run(async (ctx) => {
+    const now = Date.now();
+    await ctx.db.insert("gymApplications", { publicId: applicationId, applicationKey: "owner@wait.jo::wait-gym", gymName: "Wait Gym", gymAddress: "Amman", ownerName: "Wait Owner", email: "owner@wait.jo", contactNumber: "+962790000125", plan: "Enterprise", billingInterval: "monthly", status: "under_review", notificationStatus: "sent", submittedAt: now, updatedAt: now });
+  });
+  const platform = t.withIdentity({ subject: "clerk-platform" });
+  await platform.mutation(internal.gymApplications.reviewRecord, { applicationId, decision: "approved", quotedPriceMinor, correlationId: "cor-wait-review" });
+  const claim = await platform.mutation(internal.platformProvisioning.begin, { applicationId, correlationId: "cor-wait-provision" }) as { correlationId: string; leaseId: string };
+  await platform.mutation(internal.platformProvisioning.rememberClerkOrganization, { applicationId, clerkOrganizationId: "org_clerk_wait", correlationId: claim.correlationId, leaseId: claim.leaseId });
+  await platform.mutation(internal.platformProvisioning.createWorkspace, { applicationId, clerkOrganizationId: "org_clerk_wait", correlationId: claim.correlationId, leaseId: claim.leaseId });
+  const gymId = await t.run(async (ctx) => (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "marketplaceGym")).collect())[0]!.publicId);
+  return { platform, gymId };
+}
+
+async function waitingGym(t: TestConvex<typeof schema>) {
+  return await t.run(async (ctx) => (await ctx.db.query("organizations").collect()).find((row) => row.name === "Wait Gym")!);
+}
+
+describe("a gym that has not paid yet", () => {
+  it("has a mistyped quote corrected, and its first invoice issued again", async () => {
+    const t = convexTest(schema, modules);
+    const { platform, gymId } = await provisionPendingEnterprise(t, 4_255_000);
+    const corrected = await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId, quotedPriceMinor: 425_500, reason: "Typed the quote with an extra zero." })) as Data;
+    expect(corrected).toMatchObject({ rivetPlan: "Enterprise", subscriptionStatus: "pending_payment", quotedPriceMinor: 425_500 });
+    expect(await waitingGym(t)).toMatchObject({ status: "pending_payment", subscriptionPlan: "Enterprise", quotedPriceMinor: 425_500 });
+    const all = await invoices(t);
+    expect(all.filter((invoice) => invoice.status === "void")).toEqual([expect.objectContaining({ firstPayment: true, subtotalMinor: 4_255_000 })]);
+    expect(all.filter((invoice) => invoice.status === "open")).toEqual([expect.objectContaining({ firstPayment: true, subtotalMinor: 425_500, amountMinor: 425_500 })]);
+    const audit = await t.run((ctx) => ctx.db.query("platformAuditEvents").collect());
+    expect(audit.find((event) => event.action === "gym.subscription.update")).toMatchObject({ before: expect.objectContaining({ quotedPriceMinor: 4_255_000 }), after: expect.objectContaining({ quotedPriceMinor: 425_500 }) });
+    expect(audit.filter((event) => event.action === "invoice.void")).toHaveLength(1);
+  });
+
+  it("moves to a published plan and yearly billing with that plan's onboarding fee", async () => {
+    const t = convexTest(schema, modules);
+    const { platform, gymId } = await provisionPendingEnterprise(t, 425_500);
+    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId, plan: "Growth", billingInterval: "annual", reason: "Owner chose Growth, paid yearly." }));
+    const gym = await waitingGym(t);
+    expect(gym).toMatchObject({ status: "pending_payment", subscriptionPlan: "Growth", billingInterval: "annual", onboardingFeeMinor: 75_000 });
+    expect(gym.quotedPriceMinor).toBeUndefined();
+    const open = (await invoices(t)).filter((invoice) => invoice.status === "open");
+    // Twelve months of Growth at 5% off, plus the one onboarding fee.
+    expect(open).toEqual([expect.objectContaining({ firstPayment: true, billingInterval: "annual", onboardingFeeMinor: 75_000, amountMinor: 1_014_600 + 75_000 })]);
+    const entitlement = await t.run(async (ctx) => await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", gym._id)).unique());
+    expect(entitlement).toMatchObject({ subscriptionPlan: "Growth", entitledModules: ["foundation", "revenue", "operations"] });
+  });
+
+  it("is not changed while the gym's payment details wait for RIVET, or when nothing changes", async () => {
+    const t = convexTest(schema, modules);
+    const { platform, gymId } = await provisionPendingEnterprise(t, 425_500);
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId, quotedPriceMinor: 425_500, reason: "Same quote." })), "VALIDATION_ERROR");
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformInvoice")).collect())[0]!;
+      await ctx.db.patch(row._id, { data: { ...(row.data as Data), paymentClaim: { status: "submitted", method: "cliq", reference: "REF-1" } } });
+    });
+    await expectCode(platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId, quotedPriceMinor: 400_000, reason: "Lower quote." })), "CONFLICT");
+    expect((await invoices(t)).filter((invoice) => invoice.status === "void")).toHaveLength(0);
+  });
+});

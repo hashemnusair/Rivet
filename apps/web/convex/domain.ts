@@ -63,7 +63,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "./planCatalogue";
 import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, settlePaymentRequest } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -9039,6 +9039,77 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         after: platformSubscriptionSnapshot(hidden, null, null),
       });
       return marketplaceView(platformMarketplaceProjection(hidden, null), true);
+    }
+    // A gym still waiting for its first payment has no paid term to change.
+    // RIVET corrects the plan, billing or Enterprise quote it was set up
+    // with, and the first invoice is issued again for the corrected plan.
+    if (organization.status === "pending_payment" && requestedStatus === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined) {
+      const nextPlan = requestedPlan ?? organization.subscriptionPlan;
+      const modulePlan = workspacePlan(nextPlan);
+      if (!nextPlan || !modulePlan) domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
+      if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) {
+        domainError("VALIDATION_ERROR", "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] }, correlationId: admin.correlationId });
+      }
+      const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+      if (isQuotedPlan(nextPlan) && nextQuote === undefined) {
+        domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] }, correlationId: admin.correlationId });
+      }
+      const interval = requestedBillingInterval ?? billingInterval(organization.billingInterval);
+      if (nextPlan === organization.subscriptionPlan && interval === billingInterval(organization.billingInterval) && nextQuote === organization.quotedPriceMinor) {
+        domainError("VALIDATION_ERROR", "Change the plan, the billing or the price first.", { correlationId: admin.correlationId });
+      }
+      const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+      const firstInvoices = invoiceRows.filter((row) => booleanValue(data(row.data).firstPayment) && stringValue(data(row.data).status) !== "void");
+      if (firstInvoices.some((row) => stringValue(data(row.data).status) === "paid")) {
+        domainError("CONFLICT", "This gym's first payment is already recorded.", { correlationId: admin.correlationId });
+      }
+      // Details the gym already sent belong to the invoice it paid against;
+      // RIVET answers them before the invoice changes under the gym.
+      if (firstInvoices.some((row) => stringValue(data(data(row.data).paymentClaim).status) === "submitted")) {
+        domainError("CONFLICT", "The gym has sent its payment details. Confirm them or send them back before you change the plan.", { correlationId: admin.correlationId });
+      }
+      const applicationId = optionalString(current.applicationId);
+      const application = applicationId ? await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", applicationId)).unique() : null;
+      if (!application) domainError("CONFIGURATION_ERROR", "This gym's application could not be found, so its first invoice cannot be issued again.", { correlationId: admin.correlationId });
+      const catalog = await platformPlans(ctx);
+      // The fee a gym set up on this plan today would pay (Enterprise folds it into the quote).
+      const onboardingFeeMinor = Math.max(0, numberValue(catalog.find((candidate) => stringValue(candidate.name) === nextPlan)?.onboardingFeeMinor));
+      const nowMs = Date.now();
+      const now = new Date(nowMs).toISOString();
+      for (const row of firstInvoices) {
+        const invoice = data(row.data);
+        await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
+        await insertPlatformAudit(ctx, admin, {
+          action: "invoice.void",
+          entityType: "platform_invoice",
+          entityPublicId: row.publicId,
+          entityLabel: row.publicId,
+          summary: "Voided a first-payment invoice replaced by a plan correction",
+          reason,
+          before: { status: stringValue(invoice.status) },
+          after: { status: "void" },
+        });
+      }
+      await ctx.db.patch(organization._id, { subscriptionPlan: modulePlan, billingInterval: interval, quotedPriceMinor: nextQuote, onboardingFeeMinor, subscriptionStatusReason: reason, updatedAt: nowMs });
+      const correctedOrganization = await ctx.db.get(organization._id);
+      if (!correctedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
+      const correctedEntitlement = await syncPlanEntitlement(ctx, organization._id, entitlementBefore, modulePlan, catalog, { planChanged: nextPlan !== organization.subscriptionPlan, previousModulePlan: workspacePlan(organization.subscriptionPlan) });
+      const corrected = { ...current, rivetPlan: modulePlan, billingInterval: interval, subscriptionStatusReason: reason };
+      await ctx.db.patch(record._id, { data: corrected, updatedAt: nowMs });
+      await createFirstInvoice(ctx, admin, { organization: correctedOrganization, application, listingPublicId: gymId, now: nowMs });
+      const reissued = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
+        .find((row) => booleanValue(data(row.data).firstPayment) && stringValue(data(row.data).status) !== "void");
+      await insertPlatformAudit(ctx, admin, {
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gymId,
+        entityLabel: stringValue(current.name, gymId),
+        summary: `Corrected the plan before the first payment${reissued ? ` and issued ${reissued.publicId}` : ""}`,
+        reason,
+        before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
+        after: { ...platformSubscriptionSnapshot(corrected, correctedOrganization, correctedEntitlement), onboardingFeeMinor, ...(reissued ? { firstInvoice: { invoiceId: reissued.publicId, amountMinor: numberValue(data(reissued.data).amountMinor) } } : {}) },
+      });
+      return marketplaceView(platformMarketplaceProjection(corrected, correctedOrganization, correctedEntitlement), true);
     }
     const organizationStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : undefined;
     const previousSubscriptionStatus = organizationStatus ?? optionalString(current.subscriptionStatus);

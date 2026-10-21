@@ -293,6 +293,7 @@ export const platformFinance = {
     quoteRequired: "Enter the monthly price you agreed with the gym.",
     invoiceToday: "{gym} gets an invoice today for the new plan. Days it already paid for come off that invoice.",
     noInvoice: "The plan changes now. No invoice is sent until the gym is active again.",
+    replaceFirstInvoice: "{gym} has not paid yet. Its first invoice is replaced with one for the new plan.",
     nothingChanged: "Change the plan, the billing or the price first.",
     planSaved: "Plan changed and recorded.",
   },

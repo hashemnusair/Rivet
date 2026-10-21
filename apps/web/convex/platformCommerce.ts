@@ -261,7 +261,8 @@ async function gymPlanPriceMinor(ctx: ReadContext, organization: Pick<Doc<"organ
 export async function createFirstInvoice(ctx: MutationCtx, admin: PlatformAdmin, input: { organization: Doc<"organizations">; application: Doc<"gymApplications">; listingPublicId: string; now: number }): Promise<void> {
   const { organization, application, now } = input;
   const cycleKey = `first:${organization.publicId ?? organization._id}`;
-  const existing = (await organizationInvoices(ctx, organization._id)).find((row) => record(row.data).cycleKey === cycleKey);
+  // A voided first invoice (a plan corrected before payment) is replaced.
+  const existing = (await organizationInvoices(ctx, organization._id)).find((row) => record(row.data).cycleKey === cycleKey && record(row.data).status !== "void");
   if (existing) return;
   const plan = organization.subscriptionPlan ?? application.plan;
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";

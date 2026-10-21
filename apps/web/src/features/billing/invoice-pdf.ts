@@ -1,9 +1,15 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { getApi } from "@/lib/api/client";
 import type { PlatformBillingInvoice } from "@/lib/api/GymOSApi";
+import { qk } from "@/lib/api/keys";
 import { createTranslator, loadCatalogue } from "@/lib/i18n/core";
 import type { InvoiceCustomer, InvoiceDocumentContext } from "../../../convex/platformInvoiceDocument";
+
+type PaymentDetails = NonNullable<InvoiceDocumentContext["paymentDetails"]>;
 
 /**
  * The renderer carries its own fonts and shaping engine (about 0.7 MB of
@@ -55,13 +61,34 @@ export async function invoicePdf(invoice: PlatformBillingInvoice, customer: Invo
 }
 
 /**
+ * Where RIVET is paid (console → Billing → Where gyms pay), for a PDF opened
+ * in the browser, so it prints what the emailed copy prints. The console reads
+ * its own settings; a gym reads them from its payment page. A screen that
+ * already loaded them answers from the cache. A failed read leaves the PDF's
+ * general payment line rather than stopping the PDF.
+ */
+export function usePaymentDetailsLoader(reader: "platform" | "gym"): () => Promise<PaymentDetails | undefined> {
+  const queryClient = useQueryClient();
+  return useCallback(async () => {
+    try {
+      const view = reader === "platform"
+        ? await queryClient.fetchQuery({ queryKey: qk.platformCommerce, queryFn: () => getApi().getPlatformCommerce(), staleTime: 60_000 })
+        : await queryClient.fetchQuery({ queryKey: qk.billingCheckout, queryFn: () => getApi().getBillingCheckout(), staleTime: 60_000 });
+      return view.paymentDetails;
+    } catch {
+      return undefined;
+    }
+  }, [queryClient, reader]);
+}
+
+/**
  * Open the invoice in a new tab as a PDF; the viewer offers save and print.
  * The tab opens inside the click, so a popup blocker allows it, and shows the
  * file once it is built. A blocked tab falls back to a download.
  */
-export function openInvoicePdf(invoice: PlatformBillingInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = { locale: document.documentElement.lang === "ar" ? "ar" : "en" }): void {
+export function openInvoicePdf(invoice: PlatformBillingInvoice, customer: InvoiceCustomer, context: InvoiceDocumentContext = { locale: document.documentElement.lang === "ar" ? "ar" : "en" }, loadPaymentDetails?: () => Promise<PaymentDetails | undefined>): void {
   const tab = window.open("", "_blank");
-  void invoicePdf(invoice, customer, context).then(({ bytes, fileName }) => {
+  void (loadPaymentDetails?.() ?? Promise.resolve(undefined)).then((paymentDetails) => invoicePdf(invoice, customer, paymentDetails ? { ...context, paymentDetails } : context)).then(({ bytes, fileName }) => {
     const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
     if (tab && !tab.closed) {
       tab.opener = null;

@@ -923,10 +923,10 @@ export class MockGymOSApi implements GymOSApi {
     return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
   }
 
-  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean }> {
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean; quotedPriceMinor?: number }> {
     return [
-      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt },
-      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt })),
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt, quotedPriceMinor: this.db.organization.quotedPriceMinor },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt, quotedPriceMinor: organization.quotedPriceMinor })),
     ];
   }
 
@@ -3215,12 +3215,14 @@ export class MockGymOSApi implements GymOSApi {
 
   /** Parity with Convex: the invoice a new gym pays before its workspace opens. */
   private createFirstInvoice(application: PlatformGymApplication, organization: T.Organization, gymId: string, now: string): void {
-    if (this.platformInvoices.some((invoice) => invoice.gymId === gymId && invoice.firstPayment)) return;
+    if (this.platformInvoices.some((invoice) => invoice.gymId === gymId && invoice.firstPayment && invoice.status !== "void")) return;
     const interval = organization.billingInterval ?? "monthly";
-    const plan = this.platformPlans.find((item) => item.name === application.plan);
-    const promo = application.promoCode ? this.checkPromo(application.promoCode, application.plan) : undefined;
+    // Parity with Convex: the gym's plan, which RIVET may have corrected since it applied.
+    const planName = organization.subscriptionPlan ?? application.plan;
+    const plan = this.platformPlans.find((item) => item.name === planName);
+    const promo = application.promoCode ? this.checkPromo(application.promoCode, planName) : undefined;
     const quote = firstPaymentQuote({
-      subscriptionMinor: termPriceMinor(gymMonthlyPriceMinor(application.plan, plan?.priceMinor ?? 0, organization.quotedPriceMinor), interval),
+      subscriptionMinor: termPriceMinor(gymMonthlyPriceMinor(planName, plan?.priceMinor ?? 0, organization.quotedPriceMinor), interval),
       onboardingFeeMinor: organization.onboardingFeeMinor ?? 0,
       website: { requested: application.websiteRequested === true, free: this.commerce.websiteOffer.enabled && this.websitePlaceHolders().length < this.commerce.websiteOffer.places, priceMinor: this.commerce.websiteOffer.priceMinor },
       promo: promo?.valid ? promo.promo : undefined,
@@ -3469,6 +3471,53 @@ export class MockGymOSApi implements GymOSApi {
         return cloneMarketplaceGym(gym);
       }
       if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") throw ApiError.of(ERR.VALIDATION, "Public listing must be a boolean.");
+
+      // Parity with Convex: a gym still waiting for its first payment gets
+      // its plan, billing or quote corrected and its first invoice reissued.
+      if (organization.status === "pending_payment" && input.status === undefined && requestedPeriodEndsAtInput === undefined && input.isPublic === undefined) {
+        const correctedPlan = input.plan ?? organization.subscriptionPlan;
+        if (!correctedPlan) throw ApiError.of(ERR.CONFIGURATION, "This gym does not have a complete platform subscription plan.");
+        if (requestedQuote !== undefined && !isQuotedPlan(correctedPlan)) throw ApiError.of(ERR.VALIDATION, "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] } });
+        const correctedQuote = isQuotedPlan(correctedPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+        if (isQuotedPlan(correctedPlan) && correctedQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+        const correctedInterval = input.billingInterval ?? organization.billingInterval ?? "monthly";
+        if (correctedPlan === organization.subscriptionPlan && correctedInterval === (organization.billingInterval ?? "monthly") && correctedQuote === organization.quotedPriceMinor) throw ApiError.of(ERR.VALIDATION, "Change the plan, the billing or the price first.");
+        const firstInvoices = this.platformInvoices.filter((invoice) => invoice.gymId === gym.id && invoice.firstPayment && invoice.status !== "void");
+        if (firstInvoices.some((invoice) => invoice.status === "paid")) throw ApiError.of(ERR.CONFLICT, "This gym's first payment is already recorded.");
+        if (firstInvoices.some((invoice) => invoice.paymentClaim?.status === "submitted")) throw ApiError.of(ERR.CONFLICT, "The gym has sent its payment details. Confirm them or send them back before you change the plan.");
+        const applicationId = [...this.provisionedTenants.entries()].find(([, candidate]) => candidate === tenant)?.[0];
+        const application = this.gymApplications.find((item) => item.id === applicationId);
+        if (!application) throw ApiError.of(ERR.CONFIGURATION, "This gym's application could not be found, so its first invoice cannot be issued again.");
+        const nowIso = nowISO();
+        for (const invoice of firstInvoices) {
+          invoice.status = "void";
+          invoice.voidedAt = nowIso;
+        }
+        const before = { rivetPlan: gym.rivetPlan, billingInterval: organization.billingInterval ?? "monthly", quotedPriceMinor: organization.quotedPriceMinor ?? null };
+        organization.subscriptionPlan = correctedPlan as T.Organization["subscriptionPlan"];
+        organization.billingInterval = correctedInterval;
+        organization.quotedPriceMinor = correctedQuote;
+        organization.onboardingFeeMinor = this.platformPlans.find((plan) => plan.name === correctedPlan)?.onboardingFeeMinor ?? 0;
+        organization.subscriptionStatusReason = input.reason.trim();
+        organization.updatedAt = nowIso;
+        gym.rivetPlan = correctedPlan;
+        gym.billingInterval = correctedInterval;
+        gym.quotedPriceMinor = correctedQuote;
+        gym.subscriptionStatusReason = input.reason.trim();
+        this.createFirstInvoice(application, organization, gym.id, nowIso);
+        const reissued = this.platformInvoices.find((invoice) => invoice.gymId === gym.id && invoice.firstPayment && invoice.status !== "void");
+        this.recordPlatformAudit({
+          action: "gym.subscription.update",
+          entityType: "platform_gym",
+          entityPublicId: gym.id,
+          entityLabel: gym.name,
+          summary: `Corrected ${gym.name}'s plan before the first payment${reissued ? ` and issued ${reissued.id}` : ""}`,
+          reason: input.reason.trim(),
+          before,
+          after: { rivetPlan: correctedPlan, billingInterval: correctedInterval, quotedPriceMinor: correctedQuote ?? null, firstInvoiceAmountMinor: reissued?.amountMinor ?? null },
+        });
+        return cloneMarketplaceGym(gym);
+      }
 
       const nowTimestamp = Date.now();
       const existingBillingInterval = organization?.billingInterval ?? gym.billingInterval ?? "monthly";

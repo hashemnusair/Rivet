@@ -76,6 +76,38 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 21 October 2026 — RIVET corrects a gym before its first payment; browser invoice PDFs say where to pay
+
+Elias asked for the two small billing gaps left by the Enterprise quote work.
+
+- **Correct a gym that has not paid yet:** Billing → Gyms → **Change plan**
+  now also works for a gym in `pending_payment`. `platform.gym.update` takes
+  the plan, billing cycle and Enterprise quote (same rules as for active
+  gyms), voids the open first invoice, sets the plan's onboarding fee again
+  (JOD 75, or none on Enterprise), syncs the features, and issues a new first
+  invoice through `createFirstInvoice`, which now skips a voided one. The
+  website place and promo code are re-checked against the new invoice. It
+  refuses while the gym's payment details wait for RIVET (answer them first),
+  after the first payment, and when nothing changed. Audited as
+  `gym.subscription.update` plus `invoice.void`. The dialog says "{gym} has
+  not paid yet. Its first invoice is replaced with one for the new plan."
+- **Browser PDFs:** the invoice PDF opened from console Billing and from
+  Settings → Subscription now prints the Where gyms pay details, like the
+  emailed copy. `usePaymentDetailsLoader` (`features/billing/invoice-pdf.ts`)
+  reads them from `platform.commerce.view` (console) or `billing.checkout`
+  (gym), from cache when the screen already has them; a failed read keeps the
+  general payment line.
+- **Copy:** one new English and Arabic string; `verify-lock.py` passes at
+  revision 607.
+- **Evidence:** 3 new Convex tests (mistyped quote reissued, move to Growth
+  yearly with the onboarding fee and features, refused while details wait or
+  nothing changed), mock parity test, console dialog test, 3 PDF tests. Full
+  Vitest run: 2,303 passed, 2 opt-in benchmarks skipped; `tsc` (web and
+  Convex) and eslint clean. Mock browser, Arabic: approved and set up
+  Northline Strength (Growth, first invoice JD 164), changed it to Pro before
+  payment; the JD 164 invoice is void and a JD 274 one (199 + 75 onboarding)
+  is open. The browser PDF's contents were checked by unit test, not by eye.
+
 ## 21 October 2026 — Enterprise is priced per gym; RIVET changes a gym's plan again
 
 Elias reported that the console's Pricing page showed Enterprise at JOD 500 a
@@ -126,10 +158,9 @@ quotes and RIVET's own plan changes" is the full description.
   fields and rewrites no data. Not checked with a signed-in administrator in
   Production.
 - **Not done:** gyms already on Enterprise in Production (if any) keep paying
-  the catalogue price until RIVET enters a quote with Change plan. A gym still waiting for
-  its first payment cannot be re-priced from the console
-  (`platform.gym.update` does not accept `pending_payment`), so a mistyped
-  quote at approval has no fix in the UI yet.
+  the catalogue price until RIVET enters a quote with Change plan. (A gym
+  still waiting for its first payment can now be corrected too; see the
+  entry above.)
 
 ## 20 October 2026 — Activity logs show 5, 10 or 20 entries a page
 

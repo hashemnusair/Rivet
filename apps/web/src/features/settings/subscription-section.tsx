@@ -17,7 +17,7 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { useFormat } from "@/lib/i18n/format";
 import { money } from "@/lib/utils/money";
 import { formatBillingDate } from "@/lib/platform/subscription-billing";
-import { invoicePdfIntent, openInvoicePdf } from "@/features/billing/invoice-pdf";
+import { invoicePdfIntent, openInvoicePdf, usePaymentDetailsLoader } from "@/features/billing/invoice-pdf";
 import { SettingsPanel, SettingsSection } from "@/features/settings/settings-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -147,6 +147,7 @@ export function SubscriptionSection() {
   const { session } = useApp();
   const f = useFormat(session?.organization.timezone);
   const query = useApiQuery(qk.myPlatformInvoices, (api) => api.listMyPlatformInvoices());
+  const paymentDetails = usePaymentDetailsLoader("gym");
   if (query.isLoading) {
     return (
       <SettingsSection title={t("settingsCore.text183")} description={DESCRIPTION}>
@@ -189,7 +190,7 @@ export function SubscriptionSection() {
                     </div>
                     <p className="mt-1 text-[12.5px] text-ink-2"><span className="font-semibold tabular text-ink">{invoice.amountMinor === undefined ? invoice.amount : f.money(money(invoice.amountMinor, invoice.currency ?? "JOD"))}</span> {" "}{t("settingsDetails.text141")}{" "}<span dir="ltr">{invoice.issuedAt ? f.date(invoice.issuedAt) : invoice.date}</span>{invoice.dueAt ? <> {" "}{t("settingsDetails.text142")}{" "}<span dir="ltr">{f.date(invoice.dueAt)}</span></> : null}</p>
                   </div>
-                  <Button size="sm" variant="secondary" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, customer, { locale, timeZone: session?.organization.timezone })} aria-label={t("settingsDetails.viewInvoice", { number: invoice.id })} data-testid="view-invoice-pdf"><FileText /> PDF</Button>
+                  <Button size="sm" variant="secondary" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, customer, { locale, timeZone: session?.organization.timezone }, paymentDetails)} aria-label={t("settingsDetails.viewInvoice", { number: invoice.id })} data-testid="view-invoice-pdf"><FileText /> PDF</Button>
                 </li>
               );
             })}
@@ -215,7 +216,7 @@ export function SubscriptionSection() {
                     <TableCell>{invoice.dueAt ? f.date(invoice.dueAt) : "—"}</TableCell>
                     <TableCell className="text-end font-semibold tabular">{invoice.amountMinor === undefined ? invoice.amount : f.money(money(invoice.amountMinor, invoice.currency ?? "JOD"))}</TableCell>
                     <TableCell><Badge variant={status.variant} dot>{status.label}</Badge></TableCell>
-                    <TableCell className="text-end"><Button size="xs" variant="secondary" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, customer, { locale, timeZone: session?.organization.timezone })} aria-label={t("settingsDetails.viewInvoice", { number: invoice.id })} data-testid="view-invoice-pdf"><FileText /> {" "}{t("settingsDetails.text145")}</Button></TableCell>
+                    <TableCell className="text-end"><Button size="xs" variant="secondary" {...invoicePdfIntent} onClick={() => openInvoicePdf(invoice, customer, { locale, timeZone: session?.organization.timezone }, paymentDetails)} aria-label={t("settingsDetails.viewInvoice", { number: invoice.id })} data-testid="view-invoice-pdf"><FileText /> {" "}{t("settingsDetails.text145")}</Button></TableCell>
                   </TableRow>
                 );
               })}

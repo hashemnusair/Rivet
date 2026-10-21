@@ -80,7 +80,7 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
                           <Button size="icon-sm" variant="ghost" aria-label={t("platformFinance.billingPage.gymMore", { gym: isolate(gym.name) })}><MoreHorizontal /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {gym.subscriptionStatus !== "pending_payment" ? <DropdownMenuItem onClick={() => setChangingPlan(gym)}><ArrowUpDown /> {t("platformFinance.subscriptions.changePlan")}</DropdownMenuItem> : null}
+                          <DropdownMenuItem onClick={() => setChangingPlan(gym)}><ArrowUpDown /> {t("platformFinance.subscriptions.changePlan")}</DropdownMenuItem>
                           {active ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "suspend" }); }}><CircleAlert /> {t("platformFinance.subscriptions.suspend")}</DropdownMenuItem> : null}
                           {gym.subscriptionStatus !== "cancelled" ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "cancel" }); }}><Ban /> {t("platformFinance.subscriptions.cancelSubscription")}</DropdownMenuItem> : null}
                           {gym.subscriptionStatus === "suspended" || gym.subscriptionStatus === "cancelled" ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "reactivate" }); }}><RotateCcw /> {t("platformFinance.subscriptions.reactivateAndBill")}</DropdownMenuItem> : null}
