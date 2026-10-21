@@ -99,7 +99,7 @@ import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
-import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
+import { feeLabel, findPlan, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "../../../convex/planCatalogue";
 import { DEFAULT_WEBSITE_PLACES, DEFAULT_WEBSITE_PRICE_MINOR, firstPaymentQuote, normalizePromoCode, paymentNoteReference, PROMO_TARGETS, validPromoCodeShape, type PromoCheck } from "../../../convex/firstPayment";
 import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
@@ -2437,7 +2437,7 @@ export class MockGymOSApi implements GymOSApi {
     let invoice = this.platformInvoices.find((item) => item.cycleKey === cycleKey);
     let invoicesCreated = 0;
     if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
-      const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
+      const plan = gymMonthlyPriceMinor(organization.subscriptionPlan, this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0, organization.quotedPriceMinor);
       const onboardingFeeMinor = this.platformInvoices.some(item => item.gymId === gym.id && item.status !== "void" && (item.onboardingFeeMinor ?? 0) > 0) ? 0 : organization.onboardingFeeMinor ?? 0;
       const amountMinor = termPriceMinor(plan, billingInterval) + onboardingFeeMinor;
       invoice = {
@@ -2728,7 +2728,7 @@ export class MockGymOSApi implements GymOSApi {
     const end = Date.parse(org.currentPeriodEndsAt ?? "");
     const funded = Number.isFinite(end) ? this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end) : undefined;
     const value = funded ? fundedSubscriptionValue(funded) : undefined;
-    const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, monthlyPriceMinor: price(org.subscriptionPlan), amountMinor: value, interval } : undefined;
+    const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, price(org.subscriptionPlan), org.quotedPriceMinor), amountMinor: value, interval } : undefined;
     const now = Date.now();
     return (["Starter", "Growth", "Pro"] as const)
       .filter((plan) => rank(plan) > rank(org.subscriptionPlan) && price(plan) > 0)
@@ -2744,8 +2744,10 @@ export class MockGymOSApi implements GymOSApi {
     const canPay = role === "owner" || permissionsFor(this.db, role).includes("settings.manage");
     const blockedReason = !canPay ? "owner_only" as const : org.status !== "active" ? "not_active" as const : undefined;
     const pending = this.pendingPlanChange();
+    const catalogPrice = this.platformPlans.find((item) => item.name === org.subscriptionPlan)?.priceMinor ?? findPlan(org.subscriptionPlan)?.priceMinor;
     return {
       plan: org.subscriptionPlan,
+      ...(org.subscriptionPlan && catalogPrice !== undefined ? { monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, catalogPrice, org.quotedPriceMinor) } : {}),
       billingInterval: org.billingInterval ?? "monthly",
       status: org.status,
       currentPeriodEndsAt: org.currentPeriodEndsAt,
@@ -3045,7 +3047,7 @@ export class MockGymOSApi implements GymOSApi {
           // Mirror the Convex derivation: the catalog price with the shared
           // annual formula, and the platform invoices scoped to this gym.
           recurringAmount: organization && plan
-            ? available({ amount: termPriceMinor(plan.priceMinor, organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
+            ? available({ amount: termPriceMinor(gymMonthlyPriceMinor(organization.subscriptionPlan, plan.priceMinor, organization.quotedPriceMinor), organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
             : organization ? notConfigured() : notAvailable(),
           renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
@@ -3154,8 +3156,14 @@ export class MockGymOSApi implements GymOSApi {
       const provisioningDeadEnd = application.status === "approved" && input.decision === "rejected" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
       if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
       if (input.decision === "rejected" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Add a reason before rejecting an application.", { fieldErrors: { note: ["Required when rejecting an application"] } });
+      // Parity with Convex: approving Enterprise fixes the gym's quoted price.
+      const quotedPriceMinor = input.decision === "approved" && isQuotedPlan(application.plan) ? validQuotedPriceMinor(input.quotedPriceMinor ?? application.quotedPriceMinor) : undefined;
+      if (input.decision === "approved" && isQuotedPlan(application.plan) && quotedPriceMinor === undefined) {
+        throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+      }
       const now = nowISO();
       application.status = input.decision;
+      if (quotedPriceMinor !== undefined) application.quotedPriceMinor = quotedPriceMinor;
       if (provisioningDeadEnd) {
         application.provisioningStatus = undefined;
         application.provisioningCheckpoint = undefined;
@@ -3212,7 +3220,7 @@ export class MockGymOSApi implements GymOSApi {
     const plan = this.platformPlans.find((item) => item.name === application.plan);
     const promo = application.promoCode ? this.checkPromo(application.promoCode, application.plan) : undefined;
     const quote = firstPaymentQuote({
-      subscriptionMinor: termPriceMinor(plan?.priceMinor ?? 0, interval),
+      subscriptionMinor: termPriceMinor(gymMonthlyPriceMinor(application.plan, plan?.priceMinor ?? 0, organization.quotedPriceMinor), interval),
       onboardingFeeMinor: organization.onboardingFeeMinor ?? 0,
       website: { requested: application.websiteRequested === true, free: this.commerce.websiteOffer.enabled && this.websitePlaceHolders().length < this.commerce.websiteOffer.places, priceMinor: this.commerce.websiteOffer.priceMinor },
       promo: promo?.valid ? promo.promo : undefined,
@@ -3313,6 +3321,7 @@ export class MockGymOSApi implements GymOSApi {
         slug: `${application.gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "gym"}-${application.id.slice(0, 8)}`,
         subscriptionPlan: application.plan,
         onboardingFeeMinor: this.platformPlans.find(plan => plan.name === application.plan)?.onboardingFeeMinor ?? 0,
+        quotedPriceMinor: isQuotedPlan(application.plan) ? validQuotedPriceMinor(application.quotedPriceMinor) : undefined,
         billingInterval: application.billingInterval ?? "monthly",
         // Pay first: the workspace opens when RIVET confirms the first payment.
         status: "pending_payment",
@@ -3353,6 +3362,7 @@ export class MockGymOSApi implements GymOSApi {
       listing.subscriptionStatus = "pending_payment";
       listing.rivetPlan = application.plan;
       listing.billingInterval = application.billingInterval ?? "monthly";
+      listing.quotedPriceMinor = organization.quotedPriceMinor;
       listing.joinedAt = startedAt;
       listing.lastActiveAt = startedAt;
       listing.monthlyRevenueMinor = 0;
@@ -3433,10 +3443,12 @@ export class MockGymOSApi implements GymOSApi {
       const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
       const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
       if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "The membership end date must be a valid calendar date.");
-      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
+      const requestedQuote = input.quotedPriceMinor === undefined ? undefined : validQuotedPriceMinor(input.quotedPriceMinor);
+      if (input.quotedPriceMinor !== undefined && requestedQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the quoted monthly price in dinars.", { fieldErrors: { quotedPriceMinor: ["Invalid"] } });
+      const hasControlChange = input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
       if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
       if (!organization) {
-        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
+        if (input.isPublic !== false || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined) {
           throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
         }
         gym.isPublic = false;
@@ -3466,23 +3478,30 @@ export class MockGymOSApi implements GymOSApi {
       const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt ? Date.parse(organization.currentPeriodEndsAt) : undefined;
       const currentStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
       const currentPlan = organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
+      // Parity with Convex: Enterprise bills the gym's own quote.
+      if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) throw ApiError.of(ERR.VALIDATION, "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] } });
+      const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+      if (input.plan !== undefined && isQuotedPlan(nextPlan) && !isQuotedPlan(currentPlan) && nextQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+      const quoteChanged = requestedQuote !== undefined && requestedQuote !== organization.quotedPriceMinor;
       const materialMembershipChange = (input.status !== undefined && nextStatus !== currentStatus)
         || (input.plan !== undefined && input.plan !== currentPlan)
-        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
+        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval)
+        || quoteChanged;
       const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
       if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) throw ApiError.of(ERR.VALIDATION, "Trial end is fixed automatically from onboarding; do not provide a paid period end date.");
       // Parity with Convex: a material change landing on an active
       // subscription starts a new server-derived paid term today, rolls the
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
-      const outgoingMonthlyPrice = this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0;
+      const outgoingMonthlyPrice = gymMonthlyPriceMinor(currentPlan, this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0, organization.quotedPriceMinor);
+      const incomingMonthlyPrice = gymMonthlyPriceMinor(nextPlan, this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0, nextQuote);
       const fundedTerm = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === storedCurrentPeriodEndsAt);
       const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
       const change = startsNewPaidTerm
         ? termChange({
             now: nowTimestamp,
             interval: billingInterval,
-            monthlyPriceMinor: this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0,
+            monthlyPriceMinor: incomingMonthlyPrice,
             // Only a paid, running term is worth anything back; an overdue
             // term was never paid for, so its invoice is voided instead.
             ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingValue !== undefined
@@ -3504,7 +3523,8 @@ export class MockGymOSApi implements GymOSApi {
       const previousStatus = gym.subscriptionStatus;
       const previousPlan = gym.rivetPlan;
       const previousIsPublic = gym.isPublic === true;
-      const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic };
+      const previousQuote = organization.quotedPriceMinor;
+      const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic, quotedPriceMinor: previousQuote ?? null };
       gym.subscriptionStatus = nextStatus;
       gym.rivetPlan = nextPlan;
       gym.isPublic = PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus) ? input.isPublic ?? previousIsPublic : false;
@@ -3513,6 +3533,7 @@ export class MockGymOSApi implements GymOSApi {
       gym.currentPeriodEndsAt = nextCurrentPeriodEndsAt === undefined ? undefined : new Date(nextCurrentPeriodEndsAt).toISOString();
       gym.cancelledAt = nextCancelledAt === undefined ? undefined : new Date(nextCancelledAt).toISOString();
       gym.billingInterval = billingInterval;
+      gym.quotedPriceMinor = nextQuote;
       gym.subscriptionStatusReason = input.reason.trim();
       if (PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus)) gym.lastActiveAt = nowISO();
 
@@ -3521,6 +3542,7 @@ export class MockGymOSApi implements GymOSApi {
         organization.status = organizationStatusForPlatform(nextStatus);
         organization.subscriptionPlan = nextPlan as T.Organization["subscriptionPlan"];
         organization.billingInterval = billingInterval;
+        organization.quotedPriceMinor = nextQuote;
         organization.subscriptionStartedAt = gym.subscriptionStartedAt;
         organization.trialEndsAt = gym.trialEndsAt;
         organization.currentPeriodEndsAt = gym.currentPeriodEndsAt;
@@ -3572,7 +3594,7 @@ export class MockGymOSApi implements GymOSApi {
             invoice.voidedAt = nowIso;
           }
         }
-        const priceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
+        const priceMinor = incomingMonthlyPrice;
         // An admin-chosen end date replaces the derived term, so the credit
         // that belongs to the derived term is not applied to it.
         const termInvoice = periodBoundaryChanged || !change
@@ -3609,10 +3631,10 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "platform_gym",
         entityPublicId: gym.id,
         entityLabel: gym.name,
-        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
+        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousQuote === nextQuote || nextQuote === undefined ? "" : ` · quote JOD ${(nextQuote / 1_000).toFixed(3)} a month`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
         reason: input.reason.trim(),
         before: beforeAudit,
-        after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic },
+        after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic, quotedPriceMinor: nextQuote ?? null },
       });
       return cloneMarketplaceGym(gym);
     });

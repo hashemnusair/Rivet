@@ -169,6 +169,10 @@ export default defineSchema({
     billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("annual"))),
     // Captured only for newly provisioned gyms; no retroactive setup charges.
     onboardingFeeMinor: v.optional(v.number()),
+    // An Enterprise gym's own monthly price, agreed with RIVET. Every
+    // Enterprise invoice, renewal and agreement uses it instead of the
+    // catalogue's Enterprise row; other plans ignore it.
+    quotedPriceMinor: v.optional(v.number()),
     commercialTermsVersion: v.optional(v.string()),
     subscriptionStartedAt: v.optional(v.number()),
     trialEndsAt: v.optional(v.number()),
@@ -1519,6 +1523,9 @@ export default defineSchema({
     // invoice when the gym is set up, not here.
     websiteRequested: v.optional(v.boolean()),
     promoCode: v.optional(v.string()),
+    // The monthly price RIVET quoted an Enterprise applicant, set when the
+    // application is approved and copied onto the gym when it is set up.
+    quotedPriceMinor: v.optional(v.number()),
     status: gymApplicationStatus,
     notificationStatus: gymApplicationNotificationStatus,
     notificationError: v.optional(v.string()),

@@ -9,11 +9,14 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/hooks/use-api", () => ({
-  useApiMutation: (factory: (api: typeof state.api) => Promise<unknown>, options?: { onSuccess?: () => void }) => ({
-    mutate: () => factory(state.api).then(() => options?.onSuccess?.()),
+  useApiMutation: (factory: (api: typeof state.api, input?: unknown) => Promise<unknown>, options?: { onSuccess?: () => void }) => ({
+    mutate: (input?: unknown) => factory(state.api, input).then(() => options?.onSuccess?.()),
     isPending: false,
   }),
 }));
+
+// The plan list falls back to the launch catalogue, as on the landing page.
+vi.mock("@/lib/providers/experience-provider", () => ({ useExperience: () => ({ saasPlans: [] }) }));
 
 function gym(overrides: Partial<MarketplaceGym>): MarketplaceGym {
   return {
@@ -48,6 +51,7 @@ function gym(overrides: Partial<MarketplaceGym>): MarketplaceGym {
 
 const gyms: MarketplaceGym[] = [
   gym({}),
+  gym({ id: "gym-enterprise", name: "Summit Club", rivetPlan: "Enterprise", quotedPriceMinor: 420_000 }),
   gym({ id: "gym-suspended", name: "Iron Temple", subscriptionStatus: "suspended", rivetPlan: "Growth", currentPeriodEndsAt: undefined }),
   gym({ id: "gym-directory", name: "Legacy Row", isProvisioned: false }),
 ];
@@ -61,15 +65,68 @@ describe("Gym subscriptions section", () => {
     await user.click(screen.getByRole("button", { name: `More actions for ${gym}` }));
   };
 
-  it("lists provisioned gyms with their plan, status and paid-through date, and no plan changes", () => {
+  it("lists provisioned gyms with their plan, status and paid-through date, and an Enterprise gym's quote", () => {
     render(<GymSubscriptions gyms={gyms} />);
 
     expect(screen.queryByText("Legacy Row")).not.toBeInTheDocument();
     const activeRow = screen.getByRole("row", { name: /Forge Fitness/ });
     expect(activeRow).toHaveTextContent("Pro · Monthly");
     expect(activeRow).toHaveTextContent("15 Sept 2026");
-    // Gyms change their own plan now.
-    expect(screen.queryByRole("button", { name: /Change plan/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /Summit Club/ })).toHaveTextContent("JOD 420.000 a month");
+  });
+
+  it("moves a gym onto Enterprise only with the price agreed with it", async () => {
+    const user = userEvent.setup();
+    render(<GymSubscriptions gyms={gyms} />);
+
+    await openMenu(user, "Forge Fitness");
+    await user.click(await screen.findByRole("menuitem", { name: "Change plan" }));
+    const dialog = screen.getByRole("dialog", { name: /Change Forge Fitness's plan/ });
+    expect(dialog).toHaveTextContent("Days it already paid for come off that invoice.");
+    expect(within(dialog).getByRole("radio", { name: /Enterprise/ })).toHaveTextContent("Custom quote");
+    await user.click(within(dialog).getByRole("radio", { name: /Enterprise/ }));
+    await user.type(within(dialog).getByLabelText("Reason for this change"), "Signed the Enterprise quote.");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(dialog).toHaveTextContent("Enter the monthly price you agreed with the gym.");
+    expect(state.api.updatePlatformGym).not.toHaveBeenCalled();
+
+    await user.type(within(dialog).getByRole("textbox", { name: /Price a month/ }), "380");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(state.api.updatePlatformGym).toHaveBeenCalledWith({ gymId: "gym-active", plan: "Enterprise", quotedPriceMinor: 380_000, reason: "Signed the Enterprise quote." });
+  });
+
+  it("changes only what RIVET changed: an Enterprise quote, or a billing cycle", async () => {
+    const user = userEvent.setup();
+    render(<GymSubscriptions gyms={gyms} />);
+
+    await openMenu(user, "Summit Club");
+    await user.click(await screen.findByRole("menuitem", { name: "Change plan" }));
+    let dialog = screen.getByRole("dialog", { name: /Change Summit Club's plan/ });
+    const price = within(dialog).getByRole("textbox", { name: /Price a month/ });
+    expect(price).toHaveValue("420.000");
+    await user.type(within(dialog).getByLabelText("Reason for this change"), "Nothing yet.");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(dialog).toHaveTextContent("Change the plan, the billing or the price first.");
+    await user.clear(price);
+    await user.type(price, "450");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(state.api.updatePlatformGym).toHaveBeenLastCalledWith({ gymId: "gym-enterprise", quotedPriceMinor: 450_000, reason: "Nothing yet." });
+
+    await openMenu(user, "Forge Fitness");
+    await user.click(await screen.findByRole("menuitem", { name: "Change plan" }));
+    dialog = screen.getByRole("dialog", { name: /Change Forge Fitness's plan/ });
+    await user.click(within(dialog).getByRole("radio", { name: "Yearly (5% off)" }));
+    await user.type(within(dialog).getByLabelText("Reason for this change"), "Owner asked for yearly billing.");
+    await user.click(within(dialog).getByRole("button", { name: "Change plan" }));
+    expect(state.api.updatePlatformGym).toHaveBeenLastCalledWith({ gymId: "gym-active", billingInterval: "annual", reason: "Owner asked for yearly billing." });
+  });
+
+  it("offers no plan change while a gym waits for its first payment", async () => {
+    const user = userEvent.setup();
+    render(<GymSubscriptions gyms={[gym({ id: "gym-new", name: "New Gym", subscriptionStatus: "pending_payment" })]} />);
+    await openMenu(user, "New Gym");
+    expect(await screen.findByRole("menuitem", { name: "Cancel subscription" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Change plan" })).not.toBeInTheDocument();
   });
 
   it("suspends through a reasoned dialog that promises no invoice", async () => {

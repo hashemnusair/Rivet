@@ -9,6 +9,7 @@ import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
 import { checkPromo } from "./platformCommerce";
 import { normalizePromoCode } from "./firstPayment";
+import { isQuotedPlan, validQuotedPriceMinor } from "./planCatalogue";
 
 const plan = v.union(v.literal("Starter"), v.literal("Growth"), v.literal("Pro"), v.literal("Enterprise"));
 const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
@@ -288,6 +289,8 @@ const reviewArgs = {
   applicationId: v.string(),
   decision: reviewDecision,
   note: v.optional(v.string()),
+  /** Approving an Enterprise application records its quoted monthly price. */
+  quotedPriceMinor: v.optional(v.number()),
   correlationId: v.string(),
 };
 
@@ -325,6 +328,18 @@ export const reviewRecord = internalMutation({
       });
     }
 
+    // Enterprise is sold by quote, so approving one fixes the price the gym
+    // will be billed. Other plans use the published catalogue.
+    const quotedPriceMinor = args.decision === "approved" && isQuotedPlan(application.plan)
+      ? validQuotedPriceMinor(args.quotedPriceMinor ?? application.quotedPriceMinor)
+      : undefined;
+    if (args.decision === "approved" && isQuotedPlan(application.plan) && quotedPriceMinor === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", {
+        correlationId: args.correlationId,
+        fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] },
+      });
+    }
+
     const now = Date.now();
     const reviewNotificationStatus = args.decision === "under_review" ? "not_configured" : "pending";
     const nextReviewNotes = note ?? application.reviewNotes;
@@ -335,6 +350,7 @@ export const reviewRecord = internalMutation({
       reviewedAt: args.decision === "under_review" ? undefined : now,
       reviewedBy: admin.user.fullName,
       reviewNotes: nextReviewNotes,
+      ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}),
       // Rejecting a provisioning dead end clears the failure so the operator
       // queue and overview stop flagging an application that can never ship.
       ...(provisioningDeadEnd ? {
@@ -358,11 +374,12 @@ export const reviewRecord = internalMutation({
       summary: `${args.decision === "under_review" ? "Moved to review" : args.decision === "approved" ? "Approved" : "Rejected"} gym application for ${application.gymName}`,
       reason: note,
       before: { status: application.status },
-      after: { status: args.decision, plan: application.plan },
+      after: { status: args.decision, plan: application.plan, ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}) },
       correlationId: args.correlationId,
       occurredAt: now,
     });
 
+    const recordedQuote = quotedPriceMinor ?? application.quotedPriceMinor;
     return {
       applicationDocumentId: application._id,
       applicantLanguage: application.language,
@@ -373,6 +390,7 @@ export const reviewRecord = internalMutation({
       email: application.email,
       plan: application.plan,
       billingInterval: application.billingInterval ?? "monthly",
+      ...(recordedQuote !== undefined ? { quotedPriceMinor: recordedQuote } : {}),
       status: args.decision,
       reviewNotificationStatus,
       reviewNotificationError: undefined,
@@ -482,6 +500,7 @@ export const review = action({
       email: string;
       plan: "Starter" | "Growth" | "Pro" | "Enterprise";
       billingInterval: "monthly" | "annual";
+      quotedPriceMinor?: number;
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
       reviewNotificationError?: string;

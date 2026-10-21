@@ -11,7 +11,7 @@ import { enqueueOperationalEmail } from "./operationalEmail";
 import { renderAgreementCopyEmail, type AgreementCopy } from "./legalAgreementEmail";
 import { attachmentSizeLabel } from "./emailTemplate";
 import { agreementPdfFilename, renderAgreementPdfBase64 } from "./legalAgreementPdf";
-import { feeLabel, findPlan } from "./planCatalogue";
+import { feeLabel, findPlan, gymMonthlyPriceMinor } from "./planCatalogue";
 import {
   AGREEMENT_COPY_RECIPIENTS,
   AGREEMENT_ID_TYPES,
@@ -84,15 +84,17 @@ function requireField(condition: boolean, field: string, message: string, correl
 }
 
 /**
- * The fee RIVET publishes for a plan right now: the console's catalogue when
- * an operator has set one, else the launch price. Frozen onto the agreement
- * at signing so the document keeps saying what was true then.
+ * The fee RIVET charges this gym for a plan right now: its own quote on
+ * Enterprise, else the console's catalogue when an operator has set one, else
+ * the launch price. Frozen onto the agreement at signing so the document keeps
+ * saying what was true then.
  */
-async function publishedFee(ctx: ReadContext, plan: string, interval: "monthly" | "annual" | undefined, language: "en" | "ar" = "en"): Promise<string | undefined> {
+async function publishedFee(ctx: ReadContext, plan: string, interval: "monthly" | "annual" | undefined, language: "en" | "ar" = "en", quotedPriceMinor?: number): Promise<string | undefined> {
   const rows = await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "platformPlan")).collect();
   const row = rows.map((item) => value(item.data)).find((item) => String(item.name ?? "").toLowerCase() === plan.toLowerCase());
-  const priceMinor = typeof row?.priceMinor === "number" ? row.priceMinor : findPlan(plan)?.priceMinor;
-  if (priceMinor === undefined) return undefined;
+  const catalogPriceMinor = typeof row?.priceMinor === "number" ? row.priceMinor : findPlan(plan)?.priceMinor;
+  if (catalogPriceMinor === undefined) return undefined;
+  const priceMinor = gymMonthlyPriceMinor(plan, catalogPriceMinor, quotedPriceMinor);
   if (language === "ar") return createTranslator(language)(interval === "annual" ? "agreementDocument.feePerYear" : "agreementDocument.feePerMonth", { amount: makeFormatters(language, "").money({ amount: termPriceMinor(priceMinor, interval ?? "monthly"), currency: "JOD" }) });
   return feeLabel(priceMinor, interval ?? "monthly");
 }
@@ -208,7 +210,7 @@ async function signingContext(ctx: ReadContext, actor: ActorContext, language: "
       email: actor.user.email,
       plan: organization.subscriptionPlan ?? application?.plan ?? "Growth",
       billingInterval: (await ctx.db.get(organization._id))?.billingInterval ?? "monthly",
-      feeLabel: await publishedFee(ctx, organization.subscriptionPlan ?? application?.plan ?? "Growth", (await ctx.db.get(organization._id))?.billingInterval, agreementLanguageForVersion(version)),
+      feeLabel: await publishedFee(ctx, organization.subscriptionPlan ?? application?.plan ?? "Growth", (await ctx.db.get(organization._id))?.billingInterval, agreementLanguageForVersion(version), (await ctx.db.get(organization._id))?.quotedPriceMinor),
       startDate,
     },
     agreement: current ? agreementView(current, organization.name) : undefined,
@@ -448,7 +450,7 @@ async function signAgreement(ctx: MutationCtx, actor: ActorContext, input: Data)
   const quote = optionalTrimmed(subscription.quote);
   requireField(!quote || quote.length <= 60, "quote", "Quote number is too long.", correlationId);
   const organizationRow = await ctx.db.get(actor.organization._id);
-  const agreedFee = await publishedFee(ctx, plan, organizationRow?.billingInterval, language);
+  const agreedFee = await publishedFee(ctx, plan, organizationRow?.billingInterval, language, organizationRow?.quotedPriceMinor);
 
   for (const key of ["agreement", "authority", "electronic", "accurate"] as const) {
     requireField(consents[key] === true, `consent_${key}`, "Every declaration must be accepted before signing.", correlationId);

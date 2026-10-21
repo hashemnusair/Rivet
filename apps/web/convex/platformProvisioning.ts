@@ -7,7 +7,7 @@ import { domainError, publicBranchId, publicOrganizationId, publicUserId, requir
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 import { seedAccountingMetadata } from "./accounting";
-import { COMMERCIAL_TERMS_VERSION, findPlan } from "./planCatalogue";
+import { COMMERCIAL_TERMS_VERSION, findPlan, isQuotedPlan, validQuotedPriceMinor } from "./planCatalogue";
 import { createFirstInvoice } from "./platformCommerce";
 
 const provisionArgs = {
@@ -478,6 +478,9 @@ export const createWorkspace = internalMutation({
       const storedPlan = catalogRows.map(row => row.data as Record<string, unknown>).find(row => row.name === application.plan);
       const setupFee = storedPlan?.onboardingFeeMinor ?? findPlan(application.plan)?.onboardingFeeMinor ?? 0;
       if (typeof setupFee !== "number" || !Number.isSafeInteger(setupFee) || setupFee < 0) domainError("CONFIGURATION_ERROR", "The plan onboarding fee is invalid.", { correlationId: args.correlationId });
+      // An Enterprise gym is billed the price RIVET quoted when it approved
+      // the application, never the catalogue's placeholder.
+      const quotedPriceMinor = isQuotedPlan(application.plan) ? validQuotedPriceMinor(application.quotedPriceMinor) : undefined;
       const organizationId = await ctx.db.insert("organizations", {
         publicId: ids.organizationPublicId,
         name: application.gymName,
@@ -488,6 +491,7 @@ export const createWorkspace = internalMutation({
         subscriptionPlan: application.plan,
         billingInterval: requestedBillingInterval,
         onboardingFeeMinor: setupFee,
+        ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}),
         commercialTermsVersion: COMMERCIAL_TERMS_VERSION,
         clerkOrganizationId: args.clerkOrganizationId,
         timezone: "Asia/Amman",

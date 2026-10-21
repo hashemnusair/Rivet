@@ -308,6 +308,17 @@ describe("platform gym applications", () => {
     expect((await api.listGymApplications()).find((application) => application.id === submitted.applicationId)).toMatchObject({ gymAddress: "12 Airport Road, Amman", plan: "Pro", billingInterval: "annual" });
   });
 
+  it("approves an Enterprise application only with a quote, and bills the new gym that quote", async () => {
+    const submitted = await api.submitGymApplication({ gymName: "Quoted Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Quoted Owner", email: "quoted-owner@example.test", contactNumber: "+962 79 700 0011", plan: "Enterprise", billingInterval: "monthly" });
+    await expect(api.reviewGymApplication({ applicationId: submitted.applicationId, decision: "approved" })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.reviewGymApplication({ applicationId: submitted.applicationId, decision: "approved", quotedPriceMinor: 425_500 })).resolves.toMatchObject({ status: "approved", quotedPriceMinor: 425_500 });
+    await api.provisionGym({ applicationId: submitted.applicationId });
+    const snapshot = await api.getPlatformSnapshot();
+    const gym = snapshot.gyms.find((item) => item.name === "Quoted Gym");
+    expect(gym).toMatchObject({ rivetPlan: "Enterprise", quotedPriceMinor: 425_500 });
+    expect(snapshot.invoices.find((invoice) => invoice.gymId === gym?.id && invoice.firstPayment)).toMatchObject({ subtotalMinor: 425_500, amountMinor: 425_500 });
+  });
+
   it("delivers the current application queue through the mock subscription contract", async () => {
     const values: unknown[] = [];
     const unsubscribe = await api.subscribePlatformApplications((applications) => values.push(applications));
@@ -640,7 +651,7 @@ describe("platform subscription controls", () => {
     ];
 
     for (const transition of transitions) {
-      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
+      await api.updatePlatformGym({ gymId: "forge-fitness", status: "active", plan: transition.plan, ...(transition.plan === "Enterprise" ? { quotedPriceMinor: 450_000 } : {}), currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: `Unlock ${transition.plan} modules for the tenant.` });
       const access = values.at(-1);
       expect(access?.entitlements).toMatchObject({ subscriptionPlan: transition.plan, entitledModules: transition.entitled });
       expect(access?.modules.filter((module) => module.entitled && module.enabled).map((module) => module.key)).toEqual(transition.entitled);
@@ -660,7 +671,8 @@ describe("platform subscription controls", () => {
   it("rejects invalid lifecycle transitions and never publishes non-operational statuses", async () => {
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "trial", reason: "Attempt to restart the one-month onboarding trial." })).rejects.toMatchObject({ code: ERR.VALIDATION });
     await expect(api.updatePlatformGym({ gymId: "forge-fitness", status: "active", cancelledAt: "2026-01-01T00:00:00.000Z", reason: "Invalid cancellation date." } as Parameters<MockGymOSApi["updatePlatformGym"]>[0])).rejects.toMatchObject({ code: ERR.VALIDATION });
-    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise" });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Move the tenant to the Enterprise workspace tier." })).rejects.toMatchObject({ code: ERR.VALIDATION });
+    await expect(api.updatePlatformGym({ gymId: "forge-fitness", plan: "Enterprise", quotedPriceMinor: 450_000, currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", reason: "Move the tenant to the Enterprise workspace tier." })).resolves.toMatchObject({ rivetPlan: "Enterprise", quotedPriceMinor: 450_000 });
 
     const overdue = await api.updatePlatformGym({ gymId: "forge-fitness", status: "overdue", currentPeriodEndsAt: "2099-12-31T23:59:59.999Z", isPublic: true, reason: "Payment is past due." });
     expect(overdue).toMatchObject({ subscriptionStatus: "overdue", isPublic: false });

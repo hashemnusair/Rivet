@@ -3,7 +3,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { enqueueOperationalEmail } from "./operationalEmail";
-import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { PLAN_CATALOGUE, gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termEnd, type BillingInterval } from "./subscriptionTerm";
 
@@ -136,10 +136,11 @@ function amountLabel(amountMinor: number): string {
   return `JOD ${(amountMinor / 1_000).toFixed(3)}`;
 }
 
-function planPrice(data: Record<string, unknown>, plans: Map<string, number>): number {
-  const plan = planOf(data.subscriptionPlan);
+/** The gym's monthly price: its own quote on Enterprise, else the catalogue's. */
+function planPrice(organization: Pick<Doc<"organizations">, "subscriptionPlan" | "quotedPriceMinor">, plans: Map<string, number>): number {
+  const plan = planOf(organization.subscriptionPlan);
   if (!plan) return 0;
-  return plans.get(plan) ?? DEFAULT_PLAN_PRICES[plan];
+  return gymMonthlyPriceMinor(plan, plans.get(plan) ?? DEFAULT_PLAN_PRICES[plan], organization.quotedPriceMinor);
 }
 
 async function ownerRecipient(ctx: MutationCtx, organizationId: Id<"organizations">): Promise<{ reference: string; email?: string } | null> {
@@ -215,7 +216,7 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   let invoiceCreated = false;
   const recipient = await ownerRecipient(ctx, organization._id);
   if (decision.shouldCreate && !invoiceRow) {
-    const plan = planPrice({ subscriptionPlan: organization.subscriptionPlan }, planPrices);
+    const plan = planPrice(organization, planPrices);
     const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
     const amountMinor = termPriceMinor(plan, interval) + onboardingFeeMinor;
     const invoiceId = `INV-${crypto.randomUUID()}`;

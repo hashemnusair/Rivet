@@ -76,6 +76,48 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
 
+## 21 October 2026 — Enterprise is priced per gym; RIVET changes a gym's plan again
+
+Elias reported that the console's Pricing page showed Enterprise at JOD 500 a
+month while the website said "Custom quote", and asked for subscriptions that
+actually work. Two real faults sat behind it: an Enterprise applicant was
+billed the hidden JOD 500 on its first invoice (no place existed to enter the
+quote), and since the 19 October billing simplification the console had no way
+to change a gym's plan, billing cycle or price at all. docs/19 §5 "Enterprise
+quotes and RIVET's own plan changes" is the full description.
+
+- **Price rule:** `gymMonthlyPriceMinor` (`convex/planCatalogue.ts`). An
+  Enterprise gym pays its own `organizations.quotedPriceMinor` (new optional
+  field; also on `gymApplications`); every other plan pays the catalogue. Used
+  by the first invoice, renewals, `platform.gym.update`, upgrade credits, the
+  agreement fee, the gym record's recurring amount and platform MRR.
+- **Console:** approving an Enterprise application asks for the quoted monthly
+  price (required, audited, shown on the application). Billing → Gyms → menu →
+  **Change plan** (plan, monthly/yearly, quote for Enterprise, reason) over the
+  existing `platform.gym.update`, which now accepts and audits
+  `quotedPriceMinor`. Pricing & entitlements shows Enterprise as "Custom quote"
+  with no price field. Gyms table shows an Enterprise gym's quote.
+- **Gym side:** `billing.plans` returns `monthlyPriceMinor`; Settings →
+  Subscription and the gym's Change plan dialog show what the gym actually pays.
+- **Copy:** English and Arabic (`باقة المؤسسات`, `عرض سعر مخصص` as already used);
+  `verify-lock.py` passes at revision 607.
+- **Evidence:** new `convex/enterpriseQuote.test.ts` (7 tests: approval needs a
+  quote, set-up bills it, plan change to/within/off Enterprise with credit and
+  audit, yearly quote, renewal, the gym's own view, MRR); UI tests for the
+  Change plan dialog, Enterprise approval and the Pricing card; mock parity
+  test; existing tier tests now pass a quote for Enterprise. Full Vitest run:
+  2,296 passed and 1 failed (raw "Enterprise" in two Arabic strings; fixed to
+  `باقة المؤسسات`, that file then passed), 2 opt-in benchmarks skipped. `tsc` (web and Convex) and eslint
+  clean. Mock browser at 1024px: Pricing shows "Custom quote"; Forge moved to
+  Enterprise at JOD 380 gets a JOD 380 invoice and the row shows the quote;
+  the dialog in Arabic RTL has no overflow.
+- **Not done:** Convex changes take effect only after `pnpm convex:deploy`.
+  Gyms already on Enterprise in Production (if any) keep paying the catalogue
+  price until RIVET enters a quote with Change plan. A gym still waiting for
+  its first payment cannot be re-priced from the console
+  (`platform.gym.update` does not accept `pending_payment`), so a mistyped
+  quote at approval has no fix in the UI yet.
+
 ## 20 October 2026 — Activity logs show 5, 10 or 20 entries a page
 
 Elias asked for the activity logs to come in pages, with a choice of 5, 10 or

@@ -175,6 +175,27 @@ describe("PlatformApplicationsPage", () => {
     expect(state.provision).toHaveBeenCalledWith({ applicationId: pending.id });
   });
 
+  it("approves an Enterprise application only with the monthly price RIVET quoted", async () => {
+    const user = userEvent.setup();
+    const pending = application({ plan: "Enterprise" });
+    state.rows = [pending];
+    state.review.mockImplementation(async ({ quotedPriceMinor }: { quotedPriceMinor?: number }) => application({ plan: "Enterprise", status: "approved", quotedPriceMinor, reviewedBy: "RIVET Admin", reviewedAt: "2026-08-20T10:00:00.000Z" }));
+
+    render(<PlatformApplicationsPage />);
+    await screen.findByRole("heading", { name: "Northline Strength" });
+    await user.click(screen.getByRole("tab", { name: "Decision" }));
+    await user.click(screen.getByRole("button", { name: "Approve application" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter the monthly price you quoted this gym.");
+    expect(state.review).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole("textbox", { name: /Quoted price a month/ }), "425.5");
+    await user.click(screen.getByRole("button", { name: "Approve application" }));
+    await waitFor(() => expect(screen.getByText("Application approved", { selector: "strong" })).toBeInTheDocument());
+    expect(state.review).toHaveBeenCalledWith({ applicationId: pending.id, decision: "approved", quotedPriceMinor: 425_500 });
+    await user.click(screen.getByRole("tab", { name: "Applicant" }));
+    expect(screen.getByText("JOD 425.500 a month")).toBeInTheDocument();
+  });
+
   it("keeps an Arabic rejection draft across a locale switch and retry", async () => {
     const user = userEvent.setup();
     const pending = application();

@@ -46,6 +46,8 @@ export interface MarketplaceGym {
   subscriptionStatus: "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
   rivetPlan: "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
+  /** Platform-only: an Enterprise gym's quoted monthly price in JOD minor units. */
+  quotedPriceMinor?: number;
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;

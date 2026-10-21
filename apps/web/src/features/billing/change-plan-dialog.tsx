@@ -31,7 +31,7 @@ export function ChangePlanDialog({ open, onOpenChange, plans }: { open: boolean;
   const cadence = t(annual ? "commerce.lines.year" : "commerce.lines.month");
   const money = (minor: number) => isolateLtr(f.money({ amount: minor, currency: "JOD" }));
   const price = (monthlyMinor: number) => t(annual ? "commerce.plans.perYear" : "commerce.plans.perMonth", { amount: money(termPriceMinor(monthlyMinor, plans.billingInterval)) });
-  const currentPrice = plans.plan ? findPlan(plans.plan)?.priceMinor : undefined;
+  const currentPrice = plans.monthlyPriceMinor ?? (plans.plan ? findPlan(plans.plan)?.priceMinor : undefined);
   const request = useApiMutation((api, plan: PlatformSaasPlan["name"]) => api.requestPlanChange({ plan }), {
     onSuccess: (checkout) => {
       queryClient.setQueryData(qk.billingCheckout, checkout);

@@ -1,7 +1,7 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireBillingActor, requirePlatformAdmin, requireReason, type ActorContext, type RequestArgs } from "./security";
-import { findPlan, termPriceMinor } from "./planCatalogue";
+import { findPlan, gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
 import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, fundedSubscriptionValue, termChange, termEnd, type BillingInterval, type OutgoingTerm } from "./subscriptionTerm";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import {
@@ -247,6 +247,11 @@ async function planPriceMinor(ctx: ReadContext, plan: PlanName): Promise<number>
   return wholeAtLeast(stored?.priceMinor, 0) ?? findPlan(plan)?.priceMinor ?? 0;
 }
 
+/** What one month costs this gym on a plan: its Enterprise quote, else the catalogue price. */
+async function gymPlanPriceMinor(ctx: ReadContext, organization: Pick<Doc<"organizations">, "quotedPriceMinor">, plan: PlanName): Promise<number> {
+  return gymMonthlyPriceMinor(plan, await planPriceMinor(ctx, plan), organization.quotedPriceMinor);
+}
+
 /**
  * The invoice a newly set-up gym pays before it can open its workspace. Its
  * term dates are provisional: the paid term starts when RIVET confirms the
@@ -265,7 +270,7 @@ export async function createFirstInvoice(ctx: MutationCtx, admin: PlatformAdmin,
   const freePlaceOpen = settings.websiteOffer.enabled && websitePlaceHolders(allInvoices).length < settings.websiteOffer.places;
   const promoCheck = application.promoCode ? await checkPromo(ctx, application.promoCode, plan, now) : undefined;
   const quote = firstPaymentQuote({
-    subscriptionMinor: termPriceMinor(await planPriceMinor(ctx, plan), interval),
+    subscriptionMinor: termPriceMinor(await gymPlanPriceMinor(ctx, organization, plan), interval),
     onboardingFeeMinor: organization.onboardingFeeMinor ?? 0,
     website: { requested: application.websiteRequested === true, free: freePlaceOpen, priceMinor: settings.websiteOffer.priceMinor },
     promo: promoCheck?.valid ? promoCheck.promo : undefined,
@@ -534,7 +539,7 @@ async function planChangeOptions(ctx: ReadContext, organization: Doc<"organizati
   const current = planName(organization.subscriptionPlan);
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";
   const rows = await organizationInvoices(ctx, organization._id);
-  const outgoing = outgoingTerm(organization, rows, current ? await planPriceMinor(ctx, current) : 0, interval);
+  const outgoing = outgoingTerm(organization, rows, current ? await gymPlanPriceMinor(ctx, organization, current) : 0, interval);
   const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
   const options: PlanChangeOption[] = [];
   for (const plan of SELF_SERVE_PLANS) {
@@ -559,8 +564,11 @@ async function plansView(ctx: ReadContext, actor: ActorContext): Promise<Data> {
   if (!organization) domainError("NOT_FOUND", "Gym not found.", { correlationId: actor.correlationId });
   const pending = pendingPlanChange(await organizationInvoices(ctx, organization._id));
   const block = planChangeBlock({ ...actor, organization });
+  const current = planName(organization.subscriptionPlan);
   return {
     plan: organization.subscriptionPlan,
+    // What this gym pays a month now: its own quote on Enterprise.
+    ...(current ? { monthlyPriceMinor: await gymPlanPriceMinor(ctx, organization, current) } : {}),
     billingInterval: organization.billingInterval ?? "monthly",
     status: organization.status,
     ...(organization.currentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: iso(organization.currentPeriodEndsAt) } : {}),

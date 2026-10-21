@@ -3,7 +3,7 @@ import { useLocale, useT } from "@/lib/i18n/provider";
 import { useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
 
 import { useState } from "react";
-import { Ban, CircleAlert, MoreHorizontal, RotateCcw } from "lucide-react";
+import { ArrowUpDown, Ban, CircleAlert, MoreHorizontal, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
 import { SubscriptionStatusBadge } from "@/components/platform/platform-status";
@@ -16,24 +16,29 @@ import { Textarea } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { MarketplaceGym } from "@/lib/public/experience-data";
 import { useApiMutation } from "@/lib/hooks/use-api";
+import { money } from "@/lib/utils/money";
+import { ChangeGymPlanDialog } from "./change-gym-plan-dialog";
 
 type StatusAction = { gym: MarketplaceGym; kind: "suspend" | "cancel" | "reactivate" };
 const NEXT_STATUS = { suspend: "suspended", cancel: "cancelled", reactivate: "active" } as const;
 
 /**
  * Every provisioned gym with its plan, status and paid-through date. Gyms
- * change their own plan; RIVET only suspends, cancels or reactivates here,
- * with a reason. Reactivating starts a new term and bills it.
+ * move up a plan themselves; RIVET changes any plan, billing cycle or
+ * Enterprise price here, and suspends, cancels or reactivates, each with a
+ * reason. Reactivating or re-pricing an active gym starts a new term and
+ * bills it.
  */
 export function GymSubscriptions({ gyms, focusedGymId }: {
   gyms: MarketplaceGym[];
   focusedGymId?: string;
 }) {
   const t = useT();
-  const { isolate } = useLocale();
+  const { isolate, isolateLtr } = useLocale();
   const timeZone = useFormattingTimeZone();
   const f = useFormat(timeZone);
   const [action, setAction] = useState<StatusAction>();
+  const [changingPlan, setChangingPlan] = useState<MarketplaceGym>();
   const [reason, setReason] = useState("");
   const tenants = gyms.filter((gym) => gym.isProvisioned === true && !gym.isArchived);
 
@@ -65,7 +70,7 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
               return (
                 <TableRow key={gym.id} id={`platform-gym-${gym.id}`} className={cn(focusedGymId === gym.id && "bg-sunken/60")}>
                   <TableCell className="ps-4 sm:ps-5"><Link href={`/platform/gyms/${gym.id}`} className="text-[13px] font-semibold underline-offset-4 hover:underline">{gym.name}</Link></TableCell>
-                  <TableCell className="text-[13px] text-ink-2"><bdi dir="ltr">{gym.rivetPlan}</bdi> · {gym.billingInterval === "annual" ? t("platformFinance.wizard.annual") : t("platformFinance.wizard.monthly")}</TableCell>
+                  <TableCell className="text-[13px] text-ink-2"><bdi dir="ltr">{gym.rivetPlan}</bdi> · {gym.billingInterval === "annual" ? t("platformFinance.wizard.annual") : t("platformFinance.wizard.monthly")}{gym.rivetPlan === "Enterprise" && gym.quotedPriceMinor ? <span className="block text-[12.5px] text-ink-3">{t("platformFinance.subscriptions.perMonth", { amount: isolateLtr(f.money(money(gym.quotedPriceMinor, "JOD"))) })}</span> : null}</TableCell>
                   <TableCell><SubscriptionStatusBadge status={gym.subscriptionStatus} /></TableCell>
                   <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">{gym.subscriptionStatus === "trial" && gym.trialEndsAt ? t("platformFinance.subscriptions.trialEnds", { date: f.date(gym.trialEndsAt) }) : gym.currentPeriodEndsAt ? f.date(gym.currentPeriodEndsAt) : t("platformFinance.subscriptions.notRecorded")}</TableCell>
                   <TableCell className="pe-4 sm:pe-5">
@@ -75,6 +80,7 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
                           <Button size="icon-sm" variant="ghost" aria-label={t("platformFinance.billingPage.gymMore", { gym: isolate(gym.name) })}><MoreHorizontal /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {gym.subscriptionStatus !== "pending_payment" ? <DropdownMenuItem onClick={() => setChangingPlan(gym)}><ArrowUpDown /> {t("platformFinance.subscriptions.changePlan")}</DropdownMenuItem> : null}
                           {active ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "suspend" }); }}><CircleAlert /> {t("platformFinance.subscriptions.suspend")}</DropdownMenuItem> : null}
                           {gym.subscriptionStatus !== "cancelled" ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "cancel" }); }}><Ban /> {t("platformFinance.subscriptions.cancelSubscription")}</DropdownMenuItem> : null}
                           {gym.subscriptionStatus === "suspended" || gym.subscriptionStatus === "cancelled" ? <DropdownMenuItem onClick={() => { setReason(""); setAction({ gym, kind: "reactivate" }); }}><RotateCcw /> {t("platformFinance.subscriptions.reactivateAndBill")}</DropdownMenuItem> : null}
@@ -88,6 +94,8 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
           </TableBody>
         </Table>
       )}
+
+      {changingPlan ? <ChangeGymPlanDialog gym={changingPlan} onOpenChange={(open) => { if (!open) setChangingPlan(undefined); }} /> : null}
 
       <Dialog open={Boolean(action)} onOpenChange={(open) => { if (!applyStatus.isPending && !open) setAction(undefined); }}>
         <DialogContent>

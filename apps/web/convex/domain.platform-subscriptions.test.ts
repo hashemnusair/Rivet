@@ -408,6 +408,7 @@ describe("exported Convex platform subscription lifecycle", () => {
         gymId: "subscription-gym",
         status: "active",
         plan: tier.plan,
+        ...(tier.plan === "Enterprise" ? { quotedPriceMinor: 450_000 } : {}),
         currentPeriodEndsAt: SELECTED_PERIOD_END,
         isPublic: true,
         reason: `Enable ${tier.plan} workspace tier for the tenant.`,

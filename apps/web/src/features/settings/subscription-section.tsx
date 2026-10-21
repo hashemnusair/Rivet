@@ -58,10 +58,13 @@ function SubscriptionSummary() {
   const cadence = subscription.billingInterval ?? "monthly";
   const term = subscription.status === "trial" ? subscription.trialEndsAt : subscription.currentPeriodEndsAt;
   const termDate = term ? (locale === "en" ? formatBillingDate(new Date(term)) : f.date(term)) : undefined;
-  const fee = subscription.plan === "Enterprise"
-    ? t("publicCompletion.landing.pricing.customQuote")
-    : plan
-      ? t("settingsDetails.feeWithTax", { fee: locale === "en" ? feeLabel(plan.priceMinor, cadence) : t(cadence === "annual" ? "settingsDetails.annualFee" : "settingsDetails.monthlyFee", { amount: f.money(money(termPriceMinor(plan.priceMinor, cadence), "JOD")) }) })
+  // The server prices the gym's own plan (an Enterprise gym's quote); the
+  // public catalogue stands in until that answer arrives.
+  const monthlyPriceMinor = plans?.monthlyPriceMinor ?? (subscription.plan === "Enterprise" ? undefined : plan?.priceMinor);
+  const fee = monthlyPriceMinor !== undefined
+    ? t("settingsDetails.feeWithTax", { fee: locale === "en" ? feeLabel(monthlyPriceMinor, cadence) : t(cadence === "annual" ? "settingsDetails.annualFee" : "settingsDetails.monthlyFee", { amount: f.money(money(termPriceMinor(monthlyPriceMinor, cadence), "JOD")) }) })
+    : subscription.plan === "Enterprise"
+      ? t("publicCompletion.landing.pricing.customQuote")
       : undefined;
   const when = !termDate
     ? undefined

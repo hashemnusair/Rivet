@@ -18,6 +18,8 @@ import { getApi } from "@/lib/api/client";
 import { localizeApiError } from "@/lib/api/errors";
 import type { GymApplicationStatus, PlatformGymApplication, ProvisionGymInput, ReviewGymApplicationInput } from "@/lib/api/GymOSApi";
 import { cn } from "@/lib/utils/cn";
+import { money, readMoneyInput, toMajorString } from "@/lib/utils/money";
+import { isQuotedPlan } from "../../../../convex/planCatalogue";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type Filter = "all" | GymApplicationStatus;
@@ -65,6 +67,8 @@ export default function PlatformApplicationsPage() {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string>();
   const [note, setNote] = useState("");
+  // Enterprise is sold by quote: approving one records the monthly price.
+  const [quote, setQuote] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyDecision, setBusyDecision] = useState<ReviewGymApplicationInput["decision"]>();
@@ -190,12 +194,14 @@ export default function PlatformApplicationsPage() {
   const selected = visibleApplications.find((application) => application.id === selectedId) ?? visibleApplications[0];
   const selectedApplicationId = selected?.id;
   const selectedReviewNote = selected?.reviewNotes;
+  const selectedQuote = selected?.quotedPriceMinor;
 
   useEffect(() => {
     if (!selectedApplicationId) return;
     setSelectedId(selectedApplicationId);
     setNote(selectedReviewNote ?? "");
-  }, [selectedApplicationId, selectedReviewNote]);
+    setQuote(selectedQuote ? toMajorString(money(selectedQuote, "JOD")) : "");
+  }, [selectedApplicationId, selectedReviewNote, selectedQuote]);
 
   // An application opened from a link may sit below the fold of the
   // scrolling list. Only the list moves; on a phone it does not scroll on its
@@ -229,11 +235,20 @@ export default function PlatformApplicationsPage() {
       setError(t("platformConsole.applications.rejectionNeedsReason"));
       return;
     }
+    let quotedPriceMinor: number | undefined;
+    if (decision === "approved" && isQuotedPlan(selected.plan)) {
+      const parsed = readMoneyInput(quote, "JOD");
+      if (!parsed.ok || parsed.money.amount <= 0) {
+        setError(t("platformConsole.applications.quoteRequired"));
+        return;
+      }
+      quotedPriceMinor = parsed.money.amount;
+    }
     setBusyDecision(decision);
     setError(undefined);
     setFeedback(undefined);
     try {
-      const updated = await getApi().reviewGymApplication({ applicationId: selected.id, decision, note: note.trim() || undefined });
+      const updated = await getApi().reviewGymApplication({ applicationId: selected.id, decision, note: note.trim() || undefined, ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}) });
       setApplications((current) => current.map((application) => application.id === updated.id ? updated : application));
       setNote(updated.reviewNotes ?? "");
       const notification = updated.reviewNotificationStatus === "sent"
@@ -365,6 +380,8 @@ export default function PlatformApplicationsPage() {
                   onBack={() => setParams({ application: undefined })}
                   note={note}
                   setNote={setNote}
+                  quote={quote}
+                  setQuote={setQuote}
                   busyDecision={busyDecision}
                   busyNote={busyNote}
                   busyProvisioning={busyProvisioning}
@@ -388,7 +405,7 @@ export default function PlatformApplicationsPage() {
  * without scrolling: who applied, the decision, and (once approved) the
  * gym's workspace. Every tab stays mounted, only hidden.
  */
-function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; tab: ApplicationTab; onTabChange: (tab: ApplicationTab) => void; onBack: () => void; note: string; setNote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
+function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNote, quote, setQuote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; tab: ApplicationTab; onTabChange: (tab: ApplicationTab) => void; onBack: () => void; note: string; setNote: (value: string) => void; quote: string; setQuote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
   const t = useT();
   const f = useFormat();
   const { isolate } = useLocale();
@@ -433,6 +450,7 @@ function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNot
               <Detail label={t("platformConsole.applications.chosenPlan")} value={billing ? `${application.plan} · ${billing}` : application.plan} />
               {application.websiteRequested ? <Detail label={t("commerce.lines.website")} value={t("commerce.applications.website")} /> : null}
               {application.promoCode ? <Detail label={t("commerce.offer.promoLabel")} value={application.promoCode} ltr /> : null}
+              {application.quotedPriceMinor ? <Detail label={t("platformConsole.applications.quotedPrice")} value={t("platformConsole.applications.quotedPriceValue", { amount: f.money(money(application.quotedPriceMinor, "JOD")) })} /> : null}
             </dl>
             <section aria-labelledby={`emails-${application.id}`}>
               <h3 id={`emails-${application.id}`} className="text-[13px] font-semibold text-ink-2">{t("platformConsole.applications.emailDelivery")}</h3>
@@ -456,6 +474,11 @@ function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNot
             {!finalized ? (
               <section className="border-t border-line pt-5">
                 {provisioningDeadEnd ? <p className="mb-3 text-[12.5px] leading-relaxed text-ink-2">{t("platformConsole.applications.failedProvisionCanOnlyReject")}</p> : null}
+                {!provisioningDeadEnd && isQuotedPlan(application.plan) ? (
+                  <Field label={t("platformConsole.applications.quoteLabel")} hint={t("platformConsole.applications.quoteHint")} required className="mb-4 max-w-sm">
+                    <Input value={quote} onChange={(event) => setQuote(event.target.value)} inputMode="decimal" disabled={Boolean(busyDecision)} />
+                  </Field>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   {!provisioningDeadEnd ? <><Button onClick={() => void onReview("approved")} loading={busyDecision === "approved"} disabled={Boolean(busyDecision)}><Check />{t("platformConsole.applications.approve")}</Button><Button variant="secondary" onClick={() => void onReview("under_review")} loading={busyDecision === "under_review"} disabled={Boolean(busyDecision) || application.status === "under_review"}><Clock3 />{t("platformConsole.applications.markUnderReview")}</Button></> : null}
                   <Button variant="danger" onClick={() => void onReview("rejected")} loading={busyDecision === "rejected"} disabled={Boolean(busyDecision)}><X />{t("platformConsole.applications.reject")}</Button>

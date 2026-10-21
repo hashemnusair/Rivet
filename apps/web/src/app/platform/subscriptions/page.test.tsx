@@ -63,6 +63,25 @@ describe("pricing and entitlement catalog", () => {
     expect(screen.getByText("Up to 50,000 members")).toBeInTheDocument();
   });
 
+  it("shows Enterprise as a custom quote, as the website does, and never offers a price to edit", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const enterprise = screen.getByRole("region", { name: "Enterprise plan" });
+    expect(enterprise).toHaveTextContent("Custom quote");
+    expect(enterprise).not.toHaveTextContent("500.000");
+    expect(screen.queryByText(/JOD 500\.000/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit Enterprise plan" }));
+    expect(screen.queryByRole("textbox", { name: "Monthly price (JOD)" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Enterprise has no list price/)).toBeInTheDocument();
+    const branches = screen.getByRole("textbox", { name: "Branches" });
+    await user.clear(branches);
+    await user.type(branches, "30");
+    await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Bigger default for quoted gyms.");
+    await user.click(screen.getByRole("button", { name: "Save plan" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Enterprise", branches: 30, priceMinor: 500_000 })]));
+  });
+
   it("requires an audit reason and updates the shared catalog", async () => {
     const user = userEvent.setup();
     renderPage();

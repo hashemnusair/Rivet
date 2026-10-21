@@ -126,10 +126,13 @@ Deployment evidence is recorded in CURRENT_STATE.md.
 Implemented launch defaults are Starter JOD 39/month, Growth 89 and Pro 199,
 with one one-time onboarding fee of JOD 75 on every plan (since 19 October
 2026; it was 75/150/300 by plan before) and a 5% annual
-subscription discount. Enterprise is publicly quote-only; its JOD 500 base
-is retained for negotiated/legacy configuration. Current limits, allowances
-and modules are in section 4. A catalogue override can change an actual quote;
-these implementation facts do not establish founder sign-off or legal approval.
+subscription discount. Enterprise is quote-only, on the website and in the
+console: each Enterprise gym is billed its own monthly quote
+(`organizations.quotedPriceMinor`, since 21 October 2026). RIVET records the
+quote when it approves the application, or with Billing → Gyms → **Change
+plan**. The catalogue's JOD 500 row only bills an Enterprise gym with no quote
+on record. Current limits, allowances and modules are in section 4. These
+implementation facts do not establish founder sign-off or legal approval.
 `BRAND_LEGAL` is empty: legal entity, registration, address and tax treatment
 must be provided by the founders and verified with counsel/accountant.
 
@@ -583,7 +586,7 @@ Implemented in the current candidate under the request to fix nonlegal launch is
 | Operations | — | Yes | Yes |
 | Finance and reporting | — | — | Yes |
 
-Enterprise is quote-only on public surfaces; its legacy numeric configuration is retained for existing records. Valid operator catalogue overrides remain authoritative. The release migration previews by default and updates only exact former Starter/Growth/Pro defaults; customized rows remain unchanged and require review. No existing invoice or signed agreement is rewritten.
+Enterprise is quote-only on public surfaces and in the console; each Enterprise gym's monthly price is its own quote (see "Enterprise quotes" in section 5), and the catalogue row keeps Enterprise's default limits and modules. Valid operator catalogue overrides remain authoritative. The release migration previews by default and updates only exact former Starter/Growth/Pro defaults; customized rows remain unchanged and require review. No existing invoice or signed agreement is rewritten.
 
 Capacity checks run inside server mutations, including branch activation, staff invitation/reactivation, membership sale/import/date changes. Membership capacity counts distinct people with overlapping current or future terms across the organization; frozen terms reserve capacity. Existing excess is not deleted or automatically billed: corrections that do not increase an over-limit interval remain allowed, and new over-limit increases require freeing capacity or changing plan.
 
@@ -650,7 +653,8 @@ are told the gym is unavailable; only the owner (or a role with
 Elias decided that gyms change their own plan. Settings → Subscription →
 **Change plan** offers the plans above the gym's own (Starter → Growth → Pro;
 Enterprise stays quoted by RIVET; a smaller plan or a different billing cycle
-is a message to RIVET). `billing.plans` prices each one with the same term
+is a message to RIVET, which makes the change itself in Billing → Gyms →
+**Change plan**, below). `billing.plans` prices each one with the same term
 change RIVET used for its own plan changes (`termChange` in
 `convex/subscriptionTerm.ts`): one term of the new plan less the unused days
 of the paid term, valued at what the gym paid. **Continue to payment**
@@ -681,6 +685,37 @@ bill-a-gym wizard, manual exception invoices, the renewal-policy dialog, the
 lifecycle cards and manual "mark past due" were removed; the operations
 behind them still exist. Gym pages link to Billing with `?gym=<id>`, which
 shows that gym's invoices.
+
+### Enterprise quotes and RIVET's own plan changes — 21 October 2026
+
+Elias reported that the console showed Enterprise at JOD 500 a month while the
+website said "Custom quote", and asked for subscriptions that actually work.
+An Enterprise applicant was billed the hidden JOD 500 on its first invoice,
+and the console had no way to change a gym's plan, billing cycle or price
+after the 19 October billing page lost its wizard.
+
+- **One price rule.** `gymMonthlyPriceMinor` in `convex/planCatalogue.ts`: an
+  Enterprise gym pays `organizations.quotedPriceMinor`; every other plan, and
+  an Enterprise gym with no quote, pays the catalogue price. The first
+  invoice, renewals, RIVET's plan changes (term and credit), the gym's own
+  upgrade credit, the agreement fee, the gym record's recurring amount and
+  platform MRR all use it. Yearly billing is twelve months of the quote less
+  5%, as for the other plans.
+- **Approval.** Approving an Enterprise application requires the quoted
+  monthly price (`gymApplications.review` → `quotedPriceMinor`, audited);
+  set-up copies it onto the gym. Other plans ignore it.
+- **Change plan (console).** Billing → Gyms → a gym's menu → **Change plan**:
+  plan, monthly or yearly, and the quote when Enterprise, with a reason. It
+  calls the existing `platform.gym.update`. Moving a gym onto Enterprise needs
+  a quote; a quote on another plan is refused; a new quote, plan or cycle on
+  an active gym starts a new term today and bills it less the unused paid
+  days; leaving Enterprise clears the quote. The audit row records the quote
+  before and after. Not offered while a gym waits for its first payment.
+- **Pricing & entitlements.** Enterprise shows "Custom quote", as the website
+  does, and its edit dialog has no price field (limits and modules only).
+- **The gym's view.** `billing.plans` returns `monthlyPriceMinor`, the price
+  the gym pays now, so Settings → Subscription shows an Enterprise gym its
+  quote and every gym the live catalogue price rather than the launch one.
 
 ### Website add-on and free places
 

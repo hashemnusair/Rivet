@@ -493,6 +493,8 @@ export interface PlanChangeOption {
 
 export interface BillingPlans {
   plan?: PlatformSaasPlan["name"];
+  /** What the gym pays a month on its plan now; an Enterprise gym's own quote. */
+  monthlyPriceMinor?: number;
   billingInterval: BillingInterval;
   status: BillingCheckout["gym"]["status"];
   currentPeriodEndsAt?: string;
@@ -897,6 +899,8 @@ export interface PlatformGymApplication {
   websiteRequested?: boolean;
   /** A promo code that worked when the gym applied. */
   promoCode?: string;
+  /** Enterprise only: the monthly price RIVET quoted, recorded on approval. */
+  quotedPriceMinor?: number;
   status: GymApplicationStatus;
   notificationStatus: GymApplicationNotificationStatus;
   notificationError?: string;
@@ -928,6 +932,8 @@ export interface ReviewGymApplicationInput {
   applicationId: UUID;
   decision: Exclude<GymApplicationStatus, "pending">;
   note?: string;
+  /** Required to approve an Enterprise application: the quoted monthly price in JOD minor units. */
+  quotedPriceMinor?: number;
 }
 
 export interface SaveGymApplicationReviewNoteInput {
@@ -1022,6 +1028,10 @@ export interface UpdatePlatformGymInput {
    * invoice. Trial ends remain server-derived from onboarding. */
   currentPeriodEndsAt?: string;
   isPublic?: boolean;
+  /** An Enterprise gym's monthly price in JOD minor units, agreed by quote.
+   * Required when moving a gym onto Enterprise; a new quote on an active gym
+   * starts a new term billed at it. Refused for any other plan. */
+  quotedPriceMinor?: number;
   reason: string;
 }
 

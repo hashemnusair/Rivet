@@ -1283,6 +1283,8 @@ export interface Organization {
   subscriptionPlan?: WorkspaceModulePlan;
   billingInterval?: "monthly" | "annual";
   onboardingFeeMinor?: number;
+  /** Enterprise only: the monthly price RIVET quoted this gym, in JOD minor units. */
+  quotedPriceMinor?: number;
   commercialTermsVersion?: string;
   /** Platform subscription state mirrored by the preview adapter. */
   status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";

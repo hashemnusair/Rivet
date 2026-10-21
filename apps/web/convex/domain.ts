@@ -60,7 +60,7 @@ import { agreementSessionState, agreementSummaryForOrganization, legalAgreementM
 import { PLATFORM_PROSPECT_MUTATIONS, PLATFORM_PROSPECT_QUERIES, platformProspectsMutation, platformProspectsQuery } from "./platformProspects";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
-import { PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "./planCatalogue";
 import { effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, settlePaymentRequest } from "./platformCommerce";
@@ -611,6 +611,7 @@ function platformSubscriptionSnapshot(
     cancelledAt: optionalString(gym.cancelledAt) ?? null,
     subscriptionStatusReason: optionalString(gym.subscriptionStatusReason) ?? null,
     billingInterval: organization?.billingInterval ?? optionalString(gym.billingInterval) ?? null,
+    quotedPriceMinor: organization?.quotedPriceMinor ?? null,
     lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
     isArchived: Boolean(gym.isArchived || organization?.archivedAt),
     archivedAt: organization?.archivedAt !== undefined ? utcIso(organization.archivedAt) : optionalString(gym.archivedAt) ?? null,
@@ -2778,6 +2779,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
       cancelledAt: optionalString(value.cancelledAt),
       subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
       billingInterval: optionalString(value.billingInterval),
+      quotedPriceMinor: typeof value.quotedPriceMinor === "number" ? value.quotedPriceMinor : undefined,
       logoUrl: optionalString(value.logoUrl),
     } : {}),
     branches: arrayValue(value.branches).map((item) => {
@@ -2808,6 +2810,7 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
     cancelledAt: undefined,
     subscriptionStatusReason: "Organization is not provisioned.",
     billingInterval: undefined,
+    quotedPriceMinor: undefined,
     logoUrl: undefined,
     lastActiveAt: undefined,
   };
@@ -2832,6 +2835,7 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
     cancelledAt: organization.cancelledAt !== undefined ? utcIso(organization.cancelledAt) : undefined,
     subscriptionStatusReason: organization.subscriptionStatusReason ?? undefined,
     billingInterval: organization.billingInterval ?? "monthly",
+    quotedPriceMinor: organization.quotedPriceMinor,
   };
 }
 
@@ -2854,6 +2858,7 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     billingInterval: application.billingInterval ?? "monthly",
     ...(application.websiteRequested ? { websiteRequested: true } : {}),
     ...(application.promoCode ? { promoCode: application.promoCode } : {}),
+    ...(application.quotedPriceMinor !== undefined ? { quotedPriceMinor: application.quotedPriceMinor } : {}),
     status: application.status,
     notificationStatus: application.notificationStatus,
     notificationError: application.notificationError,
@@ -5670,7 +5675,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const provisionedOrganizationIds = new Set(gymProjections.filter(({ view, provisioned, organizationId }) => provisioned && !booleanValue(view.isArchived) && organizationId).map(({ organizationId }) => organizationId as string));
     const overview = buildPlatformOverview({
       gyms: gymProjections.map(({ view, provisioned, organizationId }) => ({ id: stringValue(view.id), organizationId, subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned: provisioned && !booleanValue(view.isArchived) })),
-      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)) })),
+      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)), quotedPriceMinor: organization.quotedPriceMinor })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
       branches: branches.map((branch) => ({ organizationId: String(branch.organizationId), active: branch.active, status: branch.status })),
       members: memberRows.map((member) => ({ organizationId: String(member.organizationId), status: optionalString(data(member.data).status) })),
@@ -5902,7 +5907,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       // with the ledger it summarizes.
       const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
       if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
-        recurringAmountMinor = termPriceMinor(configuredPrice, billingInterval(organization.billingInterval));
+        recurringAmountMinor = termPriceMinor(gymMonthlyPriceMinor(effectivePlan, configuredPrice, organization.quotedPriceMinor), billingInterval(organization.billingInterval));
       }
       invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
@@ -8982,6 +8987,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (requestedBillingInterval !== undefined && requestedBillingInterval !== "monthly" && requestedBillingInterval !== "annual") domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
+    const requestedQuote = input.quotedPriceMinor === undefined ? undefined : validQuotedPriceMinor(input.quotedPriceMinor);
+    if (input.quotedPriceMinor !== undefined && requestedQuote === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the quoted monthly price in dinars.", { fieldErrors: { quotedPriceMinor: ["Invalid"] }, correlationId: request.correlationId });
+    }
     // Trial, subscription-start, and cancellation timestamps remain
     // server-owned. The current paid period boundary is the one lifecycle
     // value an admin may select for a material membership change.
@@ -8994,7 +9003,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) {
       domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
     }
-    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
+    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedQuote === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
@@ -9009,7 +9018,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const entitlementBefore = organization
       ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
       : null;
-    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
+    const hasTenantMutation = Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
     if (!organization) {
       // Directory-only and mismatched rows stay in the platform snapshot for
       // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
@@ -9053,6 +9062,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
     }
     const nextPlan = rawPlan as (typeof plans)[number];
+    // Enterprise is billed at the gym's own quote. Moving a gym onto it needs
+    // one, and a quote means nothing on any other plan.
+    if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) {
+      domainError("VALIDATION_ERROR", "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] }, correlationId: admin.correlationId });
+    }
+    const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization?.quotedPriceMinor) : undefined;
+    if (requestedPlan !== undefined && isQuotedPlan(nextPlan) && !isQuotedPlan(organization?.subscriptionPlan) && nextQuote === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] }, correlationId: admin.correlationId });
+    }
+    const quoteChanged = requestedQuote !== undefined && requestedQuote !== organization?.quotedPriceMinor;
     // Once a row is linked, organization lifecycle timestamps are authoritative.
     // Never promote stale directory dates into the tenant on an unrelated save.
     const storedTrialEndsAt = organization?.trialEndsAt;
@@ -9063,7 +9082,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const interval = requestedBillingInterval === undefined ? existingInterval : requestedBillingInterval;
     const materialMembershipChange = (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
       || (requestedPlan !== undefined && requestedPlan !== organization?.subscriptionPlan)
-      || (requestedBillingInterval !== undefined && interval !== existingInterval);
+      || (requestedBillingInterval !== undefined && interval !== existingInterval)
+      || quoteChanged;
     const storedPeriodEndsAt = storedCurrentPeriodEndsAt === undefined ? undefined : validSubscriptionTimestamp(new Date(storedCurrentPeriodEndsAt).toISOString());
     const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, storedPeriodEndsAt);
     if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) {
@@ -9077,7 +9097,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
     const catalog = await platformPlans(ctx);
     const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
-    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan);
+    // What a month costs before and after: an Enterprise gym's own quote.
+    const outgoingMonthlyPrice = gymMonthlyPriceMinor(organization?.subscriptionPlan, monthlyCatalogPrice(organization?.subscriptionPlan), organization?.quotedPriceMinor);
+    const incomingMonthlyPrice = gymMonthlyPriceMinor(nextPlan, monthlyCatalogPrice(nextPlan), nextQuote);
     const priorInvoices = startsNewPaidTerm && organization
       ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
       : [];
@@ -9087,7 +9109,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ? termChange({
           now: nowMs,
           interval,
-          monthlyPriceMinor: monthlyCatalogPrice(nextPlan),
+          monthlyPriceMinor: incomingMonthlyPrice,
           // Only a paid, running term is worth anything back. An overdue term
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
@@ -9149,6 +9171,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         status: organizationStatus,
         subscriptionPlan: modulePlan,
         billingInterval: interval,
+        quotedPriceMinor: nextQuote,
         ...(nextTrialEndsAt !== undefined ? { trialEndsAt: nextTrialEndsAt } : { trialEndsAt: undefined }),
         ...(nextSubscriptionStartedAt !== undefined ? { subscriptionStartedAt: nextSubscriptionStartedAt } : {}),
         ...(nextCurrentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: nextCurrentPeriodEndsAt } : { currentPeriodEndsAt: undefined }),
@@ -9182,7 +9205,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             after: { status: "void" },
           });
         }
-        const catalogPrice = monthlyCatalogPrice(modulePlan);
+        const catalogPrice = incomingMonthlyPrice;
         if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
           domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
         }
