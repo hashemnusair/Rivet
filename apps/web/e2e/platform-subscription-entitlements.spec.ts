@@ -3,49 +3,21 @@ import { expect, test, type Page } from "@playwright/test";
 type SubscriptionPlan = "Basic" | "Pro";
 
 /**
- * Return to the billing subscription controls between tier rounds. History
- * unwinding is unreliable here: the workspace tours coalesce client-side
- * entries and a back-restored document re-enters the console at its root.
- * Reloading billing mirrors the test's opening navigation instead. Each tier
- * round stays reload-free between the platform save and the gym-workspace
- * observation, which is the realtime entitlement contract this suite proves.
+ * Gyms change their own plan, and the plan takes effect when RIVET confirms
+ * the payment. The mock preview starts the demo gym on the plan a test names
+ * (sessionStorage "rivet.demo.plan"), so each tier is checked from a fresh
+ * workspace; the confirmation itself is covered by the Convex tests.
  */
-async function returnToBilling(page: Page) {
-  await page.goto("/platform/billing");
-  await expect(page.getByRole("heading", { name: "Gym subscriptions", exact: true })).toBeVisible();
-}
-
-async function changeSubscriptionFromBilling(page: Page, plan: SubscriptionPlan, reason: string, options: { assertBillingPreview?: boolean; cadence?: "Monthly" | "Annual" } = {}) {
-  await expect(page).toHaveURL(/\/platform\/billing$/);
-  // Subscription work lives on the billing page; gym pages are informational.
-  // Scope to the subscriptions section: after a save, the invoice ledger
-  // below also contains rows naming the gym.
-  const subscriptions = page.locator('section[aria-labelledby="gym-subscriptions-heading"]');
-  const row = subscriptions.getByRole("row", { name: /Forge Fitness Club/ });
-  await row.getByRole("button", { name: /Change plan|Reactivate & bill/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Bill a gym" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("radio", { name: new RegExp(`^${plan} `) }).click();
-  if (options.cadence) {
-    // The demo tenant reseeds on a full navigation, so a round that targets
-    // the seeded tier flips the cadence to stay a real, billable save.
-    await dialog.getByRole("radio", { name: new RegExp(options.cadence) }).click();
+async function openOnPlan(page: Page, plan: SubscriptionPlan, options: { signIn?: boolean } = {}) {
+  // Init scripts run in order on every load, so the latest plan wins.
+  await page.addInitScript((value) => window.sessionStorage.setItem("rivet.demo.plan", value), plan);
+  if (options.signIn) {
+    await page.goto("/login/gym");
+    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
+  } else {
+    await page.goto("/dashboard");
   }
-  await dialog.getByRole("button", { name: /Review/ }).click();
-  if (options.assertBillingPreview) {
-    const preview = dialog.getByRole("note", { name: "Billing preview" });
-    await expect(preview.getByText("What happens when you save", { exact: true })).toBeVisible();
-    const invoiceLine = preview.getByRole("list").getByRole("listitem").first();
-    await expect(invoiceLine).toBeVisible();
-    await expect(invoiceLine).toContainText("An invoice for");
-    await expect(invoiceLine).toContainText("JOD");
-    await expect(invoiceLine).toContainText(plan);
-    await expect(invoiceLine).toContainText("is issued today.");
-  }
-  await dialog.getByLabel("Reason for this change").fill(reason);
-  await dialog.getByRole("button", { name: /Confirm & bill/ }).click();
-  await expect(page.getByText("Subscription saved. The term invoice is now in the ledger below.", { exact: true }).last()).toBeVisible();
-  await expect(row).toContainText(plan);
+  await expect(page).toHaveURL(/\/dashboard$/);
 }
 
 async function expectRestrictedWorkspace(page: Page, plan: "Basic") {
@@ -112,39 +84,46 @@ async function expectPremiumWorkspace(page: Page) {
   await expect(financeNav.getByRole("link", { name: "Management statements", exact: true })).toHaveCount(0);
 }
 
-test.describe("RIVET platform subscription entitlements", () => {
-  test("updates Forge workspace modules and navigation live across Basic and Pro", async ({ page }) => {
-    // Keep a real gym workspace session alive while the platform operator
-    // changes the tenant subscription in the same browser/runtime. This is
-    // the path that previously required a reload or a fresh login to observe.
-    await page.goto("/login/gym");
-    await page.getByRole("button", { name: /Sign in as Omar/i }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Stock & purchasing", exact: true })).toBeVisible();
-
-    // A signed-in persona is sent away from every sign-in door, so the
-    // console is entered through the preview's own session flag while the
-    // gym persona stays in the same runtime; this is the point of the test.
-    await page.evaluate(() => window.sessionStorage.setItem("rivet.demo.platformAdmin", "1"));
-    await page.goto("/platform");
-    await expect(page.getByRole("heading", { name: "Platform overview" })).toBeVisible();
-    await returnToBilling(page);
-
-    await changeSubscriptionFromBilling(page, "Basic", "Confirm Basic access boundary for live entitlement coverage.", { assertBillingPreview: true });
-
-    // The platform mutation response is consumed by the active gym session
-    // without a logout or page reload. The navigation and route gate must
-    // reflect Basic immediately.
-    await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+test.describe("RIVET plan entitlements", () => {
+  test("shows each tier's modules and navigation", async ({ page }) => {
+    await openOnPlan(page, "Basic", { signIn: true });
     await expectRestrictedWorkspace(page, "Basic");
 
-    await returnToBilling(page);
-    await changeSubscriptionFromBilling(page, "Pro", "Restore Pro access and verify immediate module unlocks.", { cadence: "Annual" });
 
-    await page.getByRole("link", { name: "Gym workspace", exact: true }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await openOnPlan(page, "Pro");
     await expectPremiumWorkspace(page);
 
+  });
+
+  test("a gym upgrades itself and follows the payment until RIVET confirms it", async ({ page }) => {
+    await openOnPlan(page, "Basic", { signIn: true });
+    await page.goto("/settings?section=subscription");
+    const summary = page.getByTestId("subscription-summary");
+    await expect(summary.getByText("Basic", { exact: true })).toBeVisible();
+    await summary.getByRole("button", { name: "Change plan" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Change your plan" });
+    await expect(dialog.getByText("Current plan")).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: /Pro/ })).toBeChecked();
+    await expect(dialog.getByText("Pay today")).toBeVisible();
+    await dialog.getByRole("button", { name: "Continue to payment" }).click();
+
+    await expect(page).toHaveURL(/\/billing$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Upgrade to Pro" })).toBeVisible();
+    await page.getByRole("radio", { name: "CliQ" }).click();
+    await page.getByLabel("Reference number").fill("CLIQ-778");
+    await page.getByLabel("Name on the paying account").fill("Omar Al-Khatib");
+    await page.getByRole("button", { name: "Send payment details" }).click();
+
+    await expect(page.getByRole("heading", { name: "We are checking your payment" })).toBeVisible();
+    const progress = page.getByTestId("payment-progress");
+    await expect(progress).toContainText("Payment sent");
+    await expect(progress).toContainText("RIVET confirms the payment");
+    await expect(progress).toContainText("Plan changes to Pro");
+
+    await page.getByRole("link", { name: "See it in Support" }).click();
+    await expect(page).toHaveURL(/\/support\?case=/);
+    await expect(page.getByRole("heading", { level: 2, name: "Upgrade to Pro" })).toBeVisible();
+    await expect(page.getByTestId("payment-progress")).toContainText("Plan changes to Pro");
   });
 });

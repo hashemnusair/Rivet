@@ -3,8 +3,8 @@ export type PlatformField<T> =
   | { state: "not_available" }
   | { state: "not_configured" };
 
-type SubscriptionStatus = "trial" | "active" | "overdue" | "suspended" | "cancelled";
-type OrganizationStatus = "trial" | "active" | "past_due" | "suspended" | "cancelled";
+type SubscriptionStatus = "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
+type OrganizationStatus = "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
 type PlatformPlan = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 type BillingInterval = "monthly" | "annual";
 

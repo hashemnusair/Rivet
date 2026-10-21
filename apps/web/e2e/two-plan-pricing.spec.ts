@@ -11,7 +11,7 @@ for (const locale of ["en", "ar"] as const) {
       await expect(pricing.getByText("Basic", { exact: true })).toBeVisible();
       await expect(pricing.getByText("Pro", { exact: true })).toBeVisible();
       await expect(pricing.getByText(/Enterprise|Growth|Starter/)).toHaveCount(0);
-      await expect(pricing.getByText(locale === "en" ? "Free website for the first 3 gyms." : "موقع إلكتروني مجاني لأول 3 أندية.")).toBeVisible();
+      await expect(pricing.getByTestId("website-offer").getByRole("heading", { name: locale === "en" ? /first 3 gyms/ : /أول 3 من الأندية/ })).toBeVisible();
       await expect(pricing.getByText(locale === "en" ? "Unlimited branches" : "فروع غير محدودة")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await pricing.screenshot({ path: testInfo.outputPath(`${locale}-${width}.png`), animations: "disabled" });
@@ -21,7 +21,7 @@ for (const locale of ["en", "ar"] as const) {
       await expect(page).toHaveURL(/signup\?plan=Basic&interval=annual/);
       await expect(page.getByRole("radio", { name: /Basic/ })).toHaveAttribute("aria-checked", "true");
       await expect(page.getByRole("radio")).toHaveCount(2);
-      await expect(page.getByText(/633\.600/)).toBeVisible();
+      await expect(page.getByText(/633\.600/).first()).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     });
   }

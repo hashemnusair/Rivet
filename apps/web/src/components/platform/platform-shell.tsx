@@ -3,8 +3,10 @@ import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 import { LanguageButton } from "@/components/shared/language-switch";
 import { loginHref } from "@/lib/routing/host-routing";
+import { LANDING_VIEW_QUERY } from "@/lib/routing/signed-in-routing";
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useAuth, useClerk } from "@clerk/nextjs";
-import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, X } from "lucide-react";
+import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Globe, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, TicketPercent, X } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
@@ -30,6 +32,7 @@ const NAVIGATION: Array<{ href: string; labelKey: TKey; icon: typeof LayoutDashb
   { href: "/platform/gyms", labelKey: "platformConsole.navigation.gyms", icon: Building2 },
   { href: "/platform/subscriptions", labelKey: "platformConsole.navigation.entitlements", icon: BadgeDollarSign },
   { href: "/platform/billing", labelKey: "platformConsole.navigation.billing", icon: CreditCard },
+  { href: "/platform/promos", labelKey: "platformConsole.navigation.promos", icon: TicketPercent },
   { href: "/platform/agreements", labelKey: "platformConsole.navigation.agreements", icon: FileSignature },
   { href: "/platform/email-log", labelKey: "platformConsole.navigation.emailLog", icon: Mail },
   { href: "/platform/support", labelKey: "platformConsole.navigation.support", icon: CircleHelp },
@@ -139,16 +142,24 @@ export function PlatformShell({ children }: { children: ReactNode }) {
           <div className="ms-auto flex items-center gap-2 sm:gap-3">
             <LanguageButton className="shrink-0" />
             <NotificationCenter />
-            <div className="hidden text-end sm:block">
-              <p className="text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</p>
-              <ContextLabel>{t("platformConsole.shell.staff")}</ContextLabel>
-            </div>
-            <span
-              className="flex size-8 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-paper"
-              aria-label={t("platformConsole.shell.avatar", { name: isolate(administratorName) })}
+            {/* The administrator's own account page, where the password is changed. */}
+            <IntentPrefetchLink
+              href="/platform/account"
+              aria-label={t("platformConsole.account.open")}
+              aria-current={pathname === "/platform/account" ? "page" : undefined}
+              className="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 sm:gap-3"
             >
-              {administratorInitials}
-            </span>
+              <span className="hidden text-end sm:block">
+                <span className="block text-[12.5px] font-semibold leading-tight">{isolate(administratorName)}</span>
+                <ContextLabel as="span" className="block">{t("platformConsole.shell.staff")}</ContextLabel>
+              </span>
+              <span
+                className="flex size-8 items-center justify-center rounded-full bg-ink text-[11px] font-semibold text-paper"
+                aria-hidden
+              >
+                {administratorInitials}
+              </span>
+            </IntentPrefetchLink>
             <Button variant="ghost" size="icon" onClick={() => void signOut()} aria-label={t("common.action.signOut")}>
               <LogOut />
             </Button>
@@ -164,6 +175,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
 
 function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
   const t = useT();
+  // The landing on www, opened on purpose so a signed-in admin is not sent back here.
+  const publicSite = usePublicSiteHref();
   return (
     <>
       <div className="px-5 pb-6 pt-5">
@@ -198,12 +211,12 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
       </nav>
       <div className="border-t border-night-line p-3">
         <IntentPrefetchLink
-          href="/dashboard"
+          href={`${publicSite}?${LANDING_VIEW_QUERY}`}
           onClick={onNavigate}
           data-touch-target
           className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
         >
-          <Building2 className="size-4" aria-hidden /> {t("platformConsole.navigation.workspace")}
+          <Globe className="size-4" aria-hidden /> {t("platformConsole.navigation.landingPage")}
         </IntentPrefetchLink>
       </div>
     </>

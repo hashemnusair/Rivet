@@ -1,5 +1,8 @@
 export const documents = {
   onboardingFee: "One-time onboarding",
+  websiteLine: "Custom website",
+  websiteFreeLine: "Custom website, free (launch offer)",
+  promoDiscount: "Promo code {code}",
   csvTitle: "RIVET export",
   csvRowCount: "Data rows",
   csvNoRecords: "No records matched this export.",
@@ -42,6 +45,7 @@ export const documents = {
   "swift": "SWIFT {swift}",
   "cliq": "CliQ",
   "alias": "Alias {alias}",
+  "cliqName": "Name {name}",
   "bankInstructions": "Bank transfer or CliQ. RIVET sends the account details with each invoice and confirms them on request at {email}.",
   "quoteReference": "Quote {reference} as the payment reference.",
   "suspensionNotice": "Under the subscription agreement, access may be suspended after 7 days' notice once an invoice is past due.",

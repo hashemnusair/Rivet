@@ -87,8 +87,9 @@ describe("Platform gyms directory", () => {
     render(<PlatformGymsPage />);
 
     const filters = screen.getByRole("group", { name: "Filter gym organizations by subscription status" });
-    expect(filters.querySelectorAll("button")).toHaveLength(6);
+    expect(filters.querySelectorAll("button")).toHaveLength(7);
     expect(filters.querySelectorAll("button")[0]).toHaveAccessibleName("Active gyms 2");
+    expect(filters.querySelectorAll("button")[2]).toHaveAccessibleName("Waiting for payment 0");
     expect(filters.querySelectorAll("button")[0]).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("heading", { name: "active Fitness" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Hidden Fitness" })).toBeInTheDocument();

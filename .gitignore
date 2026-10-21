@@ -23,6 +23,8 @@ playwright/.cache/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+# ESLint content cache (CI restores it between runs)
+.eslintcache
 
 # Environment — never commit real values
 .env

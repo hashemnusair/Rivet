@@ -18,6 +18,7 @@ const EN = createTranslator("en");
 const SUBSCRIPTION_KEYS: Record<string, TKey> = {
   active: "platformConsole.status.subscription.active",
   trial: "platformConsole.status.subscription.trial",
+  pending_payment: "platformConsole.status.subscription.pendingPayment",
   overdue: "platformConsole.status.subscription.pastDue",
   past_due: "platformConsole.status.subscription.pastDue",
   suspended: "platformConsole.status.subscription.suspended",
@@ -27,6 +28,7 @@ const SUBSCRIPTION_KEYS: Record<string, TKey> = {
 const SUBSCRIPTION: Record<string, Presentation> = {
   active: { label: "Active", variant: "success" },
   trial: { label: "Trial", variant: "neutral" },
+  pending_payment: { label: "Waiting for payment", variant: "warning" },
   overdue: { label: "Past due", variant: "warning" },
   past_due: { label: "Past due", variant: "warning" },
   suspended: { label: "Suspended", variant: "danger" },

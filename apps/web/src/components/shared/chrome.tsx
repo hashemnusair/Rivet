@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ContextLabel } from "@/components/ui/typography";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { useT } from "@/lib/i18n/provider";
+import { useFormat } from "@/lib/i18n/format";
 import type { Page } from "@/lib/domain/types";
 
 /** Page title block: optional human context + display title + actions. */
@@ -69,13 +70,19 @@ export function Gate({ permission, children, fallback = null }: { permission: st
 export function DataPagination<T>({
   page,
   onPage,
+  pageSizes,
+  onPageSize,
   className,
 }: {
   page: Page<T>;
   onPage: (page: number) => void;
+  /** When given with `onPageSize`, a "Per page" choice sits beside the page buttons. */
+  pageSizes?: readonly number[];
+  onPageSize?: (pageSize: number) => void;
   className?: string;
 }) {
   const t = useT();
+  const format = useFormat();
   // A page number past the end (a stale link, or filters that narrowed the
   // set after the page was chosen) would otherwise show an empty page that
   // reads like "no matches". Move to the last real page instead.
@@ -90,28 +97,43 @@ export function DataPagination<T>({
   const to = Math.min(page.totalItems, page.page * page.pageSize);
   const from = Math.min((page.page - 1) * page.pageSize + 1, to);
   return (
-    <div className={cn("flex items-center justify-between gap-3 pt-3 text-[12.5px] text-ink-3", className)}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-3 text-[12.5px] text-ink-3", className)}>
       {/* The sentence follows the page direction; only the bare numbers are
           isolated by the catalogue text itself, so bidi cannot reorder them. */}
       <span className="tabular">
         {t("common.pagination.showing", { from, to, total: page.totalItems })}
       </span>
-      <div className="flex items-center gap-1">
-        <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.pagination.previous")}>
-          <ChevronLeft />
-        </Button>
-        <span className="px-2 tabular">
-          {t("common.pagination.page", { page: page.page, total: page.totalPages })}
-        </span>
-        <Button
-          variant="secondary"
-          size="icon-sm"
-          disabled={page.page >= page.totalPages}
-          onClick={() => onPage(page.page + 1)}
-          aria-label={t("common.pagination.next")}
-        >
-          <ChevronRight />
-        </Button>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {pageSizes?.length && onPageSize ? (
+          <label className="flex items-center gap-2">
+            <span>{t("common.pagination.perPage")}</span>
+            <select
+              value={page.pageSize}
+              onChange={(event) => onPageSize(Number(event.target.value))}
+              className="h-8 rounded-md border border-line-2 bg-surface px-2 text-[13px] text-ink tabular transition-colors hover:border-line-3 focus:border-ink"
+              data-touch-target
+            >
+              {pageSizes.map((size) => <option key={size} value={size}>{format.number(size)}</option>)}
+            </select>
+          </label>
+        ) : null}
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" size="icon-sm" disabled={page.page <= 1} onClick={() => onPage(page.page - 1)} aria-label={t("common.pagination.previous")}>
+            <ChevronLeft className="rtl:rotate-180" />
+          </Button>
+          <span className="px-2 tabular">
+            {t("common.pagination.page", { page: page.page, total: page.totalPages })}
+          </span>
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            disabled={page.page >= page.totalPages}
+            onClick={() => onPage(page.page + 1)}
+            aria-label={t("common.pagination.next")}
+          >
+            <ChevronRight className="rtl:rotate-180" />
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -82,6 +82,7 @@ export const common: typeof EnCommon = {
     page: "الصفحة {page} من {total}",
     previous: "الصفحة السابقة",
     next: "الصفحة التالية",
+    perPage: "لكل صفحة",
   },
   a11y: {
     closeDialog: "إغلاق النافذة",

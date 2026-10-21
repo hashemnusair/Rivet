@@ -22,6 +22,7 @@ import { calculatePlanPrice } from "@/lib/public/pricing";
 import { cn } from "@/lib/utils/cn";
 import { latinDigits } from "@/lib/utils/text";
 import { money, readMoneyInput, toMajorString } from "@/lib/utils/money";
+import { isQuotedPlan } from "../../../../convex/planCatalogue";
 
 type PlanUpdateInput = UpdatePlatformPlanInput & {
   name: PlatformSaasPlan["name"];
@@ -114,8 +115,19 @@ function PlanCard({ plan, onEdit }: { plan: PlatformSaasPlan; onEdit: () => void
         <h3 className="text-[15px] font-semibold"><bdi dir="ltr">{plan.name}</bdi></h3>
         <Button variant="ghost" size="icon-sm" aria-label={t("platformFinance.plans.editPlan", { plan: isolateLtr(plan.name) })} onClick={onEdit}><Pencil /></Button>
       </div>
-      <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{f.money(money(plan.priceMinor, "JOD"))}<span className="ms-1 text-[13px] font-medium text-ink-3">{t("marketing.pricing.perMonth")}</span></p>
-      <p className="mt-1.5 text-[12.5px] text-ink-3">{t("platformFinance.plans.annualPrice", { amount: f.money(money(annual.annualTotalMinor, "JOD"), { hideCurrency: true }) })}</p>
+      {/* Enterprise is sold by quote, as the website says; each gym's own
+          price lives on the gym, so the catalogue row carries no price here. */}
+      {isQuotedPlan(plan.name) ? (
+        <>
+          <p className="mt-3 text-[23px] font-semibold leading-none tracking-[-0.01em]">{t("platformFinance.plans.customQuote")}</p>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-3">{t("platformFinance.plans.quoteNote")}</p>
+        </>
+      ) : (
+        <>
+          <p className="mt-3 text-[23px] font-semibold leading-none tabular tracking-[-0.01em]">{f.money(money(plan.priceMinor, "JOD"))}<span className="ms-1 text-[13px] font-medium text-ink-3">{t("marketing.pricing.perMonth")}</span></p>
+          <p className="mt-1.5 text-[12.5px] text-ink-3">{t("platformFinance.plans.annualPrice", { amount: f.money(money(annual.annualTotalMinor, "JOD"), { hideCurrency: true }) })}</p>
+        </>
+      )}
       <ul className="mt-4 grid gap-1.5 border-t border-line pt-4 text-[12.5px] leading-relaxed text-ink-2">
         {features.map((feature, index) => <li key={`${index}-${feature}`} className="flex items-start gap-2"><Check className="mt-1 size-3.5 shrink-0 text-ink-3" aria-hidden />{feature}</li>)}
       </ul>
@@ -133,6 +145,7 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
   const [entitledModules, setEntitledModules] = useState<WorkspaceModuleKey[]>(selectedWorkspaceModules(plan));
   const [reason, setReason] = useState("");
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const quoted = isQuotedPlan(plan.name);
 
   useEffect(() => { setPrice(toMajorString(money(plan.priceMinor, "JOD"))); setBranches(String(plan.branches)); setStaff(String(plan.staff)); setMembers(String(plan.members)); setEntitledModules(selectedWorkspaceModules(plan)); setReason(""); setErrors({}); }, [plan]);
 
@@ -167,7 +180,8 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
 
   const submit = () => {
     const next: Record<string, string | undefined> = {};
-    const parsedPrice = readMoneyInput(price, "JOD");
+    // Enterprise keeps its stored value untouched: its price is each gym's quote.
+    const parsedPrice = quoted ? { ok: true as const, money: money(plan.priceMinor, "JOD") } : readMoneyInput(price, "JOD");
     const priceMinor = parsedPrice.ok ? parsedPrice.money.amount : 0;
     const branchCount = plan.name === "Pro" ? -1 : readPositiveInteger(branches);
     const staffCount = plan.name === "Pro" ? -1 : readPositiveInteger(staff);
@@ -191,9 +205,9 @@ function PlanDialog({ plan, open, onOpenChange, saving, error, onSave }: { plan:
         <DialogHeader><DialogTitle>{t("common.action.edit")} {t("platformFinance.plans.dialogTitle", { plan: isolateLtr(plan.name) })}</DialogTitle><DialogDescription>{t("platformFinance.plans.dialogDescription")}</DialogDescription></DialogHeader>
         <DialogBody className="grid gap-4 sm:grid-cols-2">
           <Field label={t("platformFinance.plans.monthlyPrice")} required error={errors.price}><Input value={price} onChange={(event) => { setPrice(event.target.value); setErrors((current) => ({ ...current, price: undefined, changes: undefined })); }} inputMode="decimal" aria-invalid={Boolean(errors.price)} /></Field>
-          <Field label={t("platformFinance.plans.branchLimit")} required error={errors.branches}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedBranches") : branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
-          <Field label={t("platformFinance.plans.staffLimit")} required error={errors.staff}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedStaff") : staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
-          <Field label={t("platformFinance.plans.memberLimit")} required error={errors.members}><Input disabled={plan.name === "Pro"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedMembers") : members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
+          <Field label={t("platformFinance.plans.branchLimit")} required error={errors.branches}><Input disabled={plan.name === "Pro" || plan.name === "Basic"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedBranches") : branches} onChange={(event) => { setBranches(event.target.value); setErrors((current) => ({ ...current, branches: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.branches)} /></Field>
+          <Field label={t("platformFinance.plans.staffLimit")} required error={errors.staff}><Input disabled={plan.name === "Pro" || plan.name === "Basic"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedStaff") : staff} onChange={(event) => { setStaff(event.target.value); setErrors((current) => ({ ...current, staff: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.staff)} /></Field>
+          <Field label={t("platformFinance.plans.memberLimit")} required error={errors.members}><Input disabled={plan.name === "Pro" || plan.name === "Basic"} value={plan.name === "Pro" ? t("publicCompletion.landing.pricing.unlimitedMembers") : members} onChange={(event) => { setMembers(event.target.value); setErrors((current) => ({ ...current, members: undefined, changes: undefined })); }} inputMode="numeric" aria-invalid={Boolean(errors.members)} /></Field>
           <fieldset className="rounded-md border border-line p-3 sm:col-span-2" aria-label={t("platformFinance.plans.capabilities")}>
             <legend className="px-1 text-[13px] font-medium">{t("platformFinance.plans.capabilities")}</legend>
             <p className="mb-3 text-[12.5px] leading-relaxed text-ink-3">{t("platformFinance.plans.capabilitiesDescription")}</p>

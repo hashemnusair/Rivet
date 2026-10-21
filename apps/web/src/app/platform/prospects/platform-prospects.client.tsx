@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarClock, ListPlus, Plus, Search } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import { useT } from "@/lib/i18n/provider";
 import { PROSPECT_BATCHES, followUpState, prospectStageGroup, type PlatformProspect, type PlatformProspectsView } from "@/lib/platform/prospects";
 import { todayISODate } from "@/lib/utils/dates";
 import { cn } from "@/lib/utils/cn";
-import { BATCH_KEYS, FILTERS, STAGE_COPY, type ProspectFilter } from "./prospect-copy";
+import { BATCH_KEYS, FILTERS, PROSPECT_TABS, STAGE_COPY, type ProspectFilter, type ProspectTab } from "./prospect-copy";
 import { ProspectDetail } from "./prospect-detail";
 import { ProspectFormDialog } from "./prospect-form-dialog";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
@@ -28,6 +28,10 @@ const PLATFORM_TIMEZONE = "Asia/Amman";
 
 function parseFilter(value: string | null): ProspectFilter {
   return FILTERS.some((item) => item.value === value) ? (value as ProspectFilter) : "all";
+}
+
+function parseTab(value: string | null): ProspectTab {
+  return PROSPECT_TABS.some((tab) => tab === value) ? (value as ProspectTab) : "progress";
 }
 
 /** Due means a follow-up date of today or earlier on a conversation that is still open. */
@@ -55,7 +59,9 @@ function matchesSearch(prospect: PlatformProspect, search: string): boolean {
  * Platform console → Prospects: the Amman pilot list that used to live in a
  * three-tab spreadsheet. One list grouped the way the sheet was (Selected,
  * Reserve, Hold), one gym open at a time with everything needed to contact
- * it, and the stage, owner and follow-up changed in place.
+ * it, and the stage, owner and follow-up changed in place. On wide screens
+ * the page fits the window: the list scrolls on its own and the open gym is
+ * split into a few tabs instead of one long column.
  */
 export function PlatformProspects() {
   const t = useT();
@@ -67,10 +73,13 @@ export function PlatformProspects() {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLElement>(null);
   const query = useApiQuery(qk.platformProspects, (api) => api.listPlatformProspects());
   const today = todayISODate(PLATFORM_TIMEZONE);
 
   const filter = parseFilter(searchParams.get("show"));
+  // The tab stays put while moving from gym to gym, and survives a reload.
+  const [tab, setTab] = useState<ProspectTab>(() => parseTab(searchParams.get("tab")));
   const requestedId = searchParams.get("gym") ?? undefined;
   const setParams = (changes: Record<string, string | undefined>) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -98,6 +107,19 @@ export function PlatformProspects() {
   // list; on wide screens the first gym opens when none is chosen.
   const selected = prospects.find((prospect) => prospect.id === requestedId) ?? visible[0];
 
+  // A gym opened from a link may sit below the fold of the scrolling list.
+  // Only the list moves; on a phone the list does not scroll on its own, so
+  // this does nothing there.
+  const selectedId = selected?.id;
+  useEffect(() => {
+    const list = listRef.current;
+    const row = selectedId ? list?.querySelector<HTMLElement>(`[data-prospect-id="${selectedId}"]`) : null;
+    if (!list || !row) return;
+    const bounds = list.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    if (box.bottom > bounds.bottom) list.scrollTop += box.bottom - bounds.bottom;
+  }, [selectedId]);
+
   // On a phone the list gives way to the gym, so bring the gym's top into view.
   const openProspect = (id: string) => {
     setParams({ gym: id });
@@ -116,7 +138,7 @@ export function PlatformProspects() {
   if (query.isError || !view) return <PlatformPage><QueryErrorState error={query.error} onRetry={() => void query.refetch()} /></PlatformPage>;
 
   return (
-    <PlatformPage className="space-y-5" data-testid="platform-prospects">
+    <PlatformPage className="flex flex-col gap-5 lg:h-[calc(100dvh-7rem)] lg:min-h-[600px]" data-testid="platform-prospects">
       <PageHeader
         title={t("platformConsole.prospects.title")}
         description={t("platformConsole.prospects.description")}
@@ -134,43 +156,54 @@ export function PlatformProspects() {
           action={<div className="flex flex-wrap justify-center gap-2"><Button onClick={() => importList.mutate()} loading={importList.isPending}><ListPlus />{t("platformConsole.prospects.importAmman")}</Button><Button variant="secondary" onClick={() => setAdding(true)} disabled={importList.isPending}><Plus />{t("platformConsole.prospects.addGym")}</Button></div>}
         />
       ) : (
-        <div ref={panelRef} className="scroll-mt-20">
-        <PlatformPanel className="overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-3">
-            <label className="relative min-w-[220px] flex-1 sm:max-w-sm">
-              <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
-              <Input className="ps-9" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("platformConsole.prospects.searchPlaceholder")} aria-label={t("platformConsole.prospects.searchLabel")} />
-            </label>
-            <FilterPills
-              label={t("platformConsole.prospects.filterLabel")}
-              value={filter}
-              items={FILTERS.filter((item) => item.value !== "due" || counts.due > 0 || filter === "due").map((item) => ({ value: item.value, label: t(item.labelKey), count: counts[item.value] }))}
-              onChange={(next) => setParams({ show: next === "all" ? undefined : next })}
-            />
-          </div>
+        <div ref={panelRef} className="scroll-mt-20 lg:min-h-0 lg:flex-1">
+        <PlatformPanel className="overflow-hidden lg:h-full">
+          <div className="grid lg:h-full lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className={cn("min-h-0 flex-col border-line lg:border-e", requestedId ? "hidden lg:flex" : "flex")}>
+              <div className="space-y-3 border-b border-line p-3">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
+                  <Input className="ps-9" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("platformConsole.prospects.searchPlaceholder")} aria-label={t("platformConsole.prospects.searchLabel")} />
+                </label>
+                <FilterPills
+                  label={t("platformConsole.prospects.filterLabel")}
+                  value={filter}
+                  items={FILTERS.filter((item) => item.value !== "due" || counts.due > 0 || filter === "due").map((item) => ({ value: item.value, label: t(item.labelKey), count: counts[item.value] }))}
+                  onChange={(next) => setParams({ show: next === "all" ? undefined : next })}
+                />
+              </div>
+              <nav ref={listRef} aria-label={t("platformConsole.prospects.listLabel")} className="min-h-0 flex-1 lg:overflow-y-auto">
+                {groups.length === 0 ? (
+                  <div className="p-4"><StatePanel layout="section" icon={Search} title={t("platformConsole.prospects.noMatchTitle")} description={t("platformConsole.prospects.noMatchDescription")} /></div>
+                ) : groups.map((group) => (
+                  <section key={group.batch} aria-labelledby={`prospect-batch-${group.batch}`}>
+                    <h2 id={`prospect-batch-${group.batch}`} className="border-b border-line bg-paper px-4 py-2 text-[12px] font-semibold text-ink-2 lg:sticky lg:top-0 lg:z-10">
+                      {t("platformConsole.prospects.batchCount", { batch: t(BATCH_KEYS[group.batch]), count: f.number(group.rows.length) })}
+                    </h2>
+                    <ul className="divide-y divide-line">
+                      {group.rows.map((prospect) => (
+                        <li key={prospect.id}>
+                          <ProspectRow prospect={prospect} today={today} selected={selected?.id === prospect.id} onSelect={() => openProspect(prospect.id)} />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </nav>
+            </div>
 
-          <div className="grid lg:min-h-[640px] lg:grid-cols-[minmax(300px,360px)_1fr]">
-            <nav aria-label={t("platformConsole.prospects.listLabel")} className={cn("border-line lg:border-e", requestedId ? "hidden lg:block" : "block")}>
-              {groups.length === 0 ? (
-                <div className="p-4"><StatePanel layout="section" icon={Search} title={t("platformConsole.prospects.noMatchTitle")} description={t("platformConsole.prospects.noMatchDescription")} /></div>
-              ) : groups.map((group) => (
-                <section key={group.batch} aria-labelledby={`prospect-batch-${group.batch}`}>
-                  <h2 id={`prospect-batch-${group.batch}`} className="border-b border-line bg-paper/70 px-4 py-2 text-[12px] font-semibold text-ink-2">
-                    {t("platformConsole.prospects.batchCount", { batch: t(BATCH_KEYS[group.batch]), count: f.number(group.rows.length) })}
-                  </h2>
-                  <ul className="divide-y divide-line">
-                    {group.rows.map((prospect) => (
-                      <li key={prospect.id}>
-                        <ProspectRow prospect={prospect} today={today} selected={selected?.id === prospect.id} onSelect={() => openProspect(prospect.id)} />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </nav>
-
-            <div className={cn("min-w-0", requestedId ? "block" : "hidden lg:block")}>
-              {selected ? <ProspectDetail key={selected.id} prospect={selected} owners={view.owners} today={today} onBack={() => setParams({ gym: undefined })} /> : null}
+            <div className={cn("min-h-0 min-w-0", requestedId ? "block" : "hidden lg:block")}>
+              {selected ? (
+                <ProspectDetail
+                  key={selected.id}
+                  prospect={selected}
+                  owners={view.owners}
+                  today={today}
+                  tab={tab}
+                  onTabChange={(next) => { setTab(next); setParams({ tab: next === "progress" ? undefined : next }); }}
+                  onBack={() => setParams({ gym: undefined })}
+                />
+              ) : null}
             </div>
           </div>
         </PlatformPanel>
@@ -199,6 +232,7 @@ function ProspectRow({ prospect, today, selected, onSelect }: { prospect: Platfo
       aria-current={selected ? "true" : undefined}
       onClick={onSelect}
       data-testid="prospect-row"
+      data-prospect-id={prospect.id}
       className={cn("block w-full px-4 py-3 text-start transition-colors hover:bg-sunken/60 focus-visible:relative", selected && "bg-sunken")}
     >
       <span className="flex items-start justify-between gap-3">

@@ -9,6 +9,8 @@ import { Skeleton } from "@/components/ui/misc";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, EmptyState } from "@/components/ui/states";
 import { MoneyText } from "@/components/shared/data-display";
+import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
+import { activityActionLabel } from "@/lib/i18n/activity-log";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useApp } from "@/lib/providers/app-providers";
@@ -47,24 +49,12 @@ export const OPERATIONAL_REPORT_QUESTIONS: Record<OperationalReportKind, TKey> =
 
 const WEEKDAYS: readonly TKey[] = ["reportsWorkspace.sunday", "reportsWorkspace.monday", "reportsWorkspace.tuesday", "reportsWorkspace.wednesday", "reportsWorkspace.thursday", "reportsWorkspace.friday", "reportsWorkspace.saturday"];
 
-/** Plain names for the staff actions the refunds and discounts report lists. */
-const CONTROL_ACTION_LABELS: Record<string, TKey> = {
-  "payment.refund": "reportsWorkspace.refund",
-  "payment.void": "reportsWorkspace.paymentCancelled",
-  "membership.price_override": "reportsWorkspace.priceChanged",
-  "membership.date_override": "reportsWorkspace.datesChanged",
-  "checkin.override": "reportsWorkspace.letIn",
-};
 
 
 /** "2026-08" reads as "August 2026"; anything unexpected is shown as it came. */
 function monthName(yearMonth: string, f: Formatters): string {
   const date = new Date(`${yearMonth}-01T12:00:00Z`);
   return /^\d{4}-\d{2}$/.test(yearMonth) && !Number.isNaN(date.valueOf()) ? f.monthYear(`${yearMonth}-01`) : yearMonth;
-}
-
-function controlActionLabel(action: string, t: TFunction): string {
-  return Object.hasOwn(CONTROL_ACTION_LABELS, action) ? t(CONTROL_ACTION_LABELS[action]!) : action;
 }
 
 const RENEWAL_BUCKET_LABELS: Record<string, TKey> = { "Next 7 days": "reportsWorkspace.next7", "8–14 days": "reportsWorkspace.next14", "15–30 days": "reportsWorkspace.next30" };
@@ -455,7 +445,7 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
         {
           title: t("reportsWorkspace.recentStaff"),
           headers: [t("reportsWorkspace.when"), t("reportsWorkspace.type"), t("reportsWorkspace.whatHappened"), t("reportsWorkspace.staff"), t("reportsWorkspace.reason")],
-          rows: report.recent.map((event) => [formatExportDateTime(event.occurredAt, timeZone, locale), controlActionLabel(event.action, t), event.summary, event.actorName, event.reason ?? ""]),
+          rows: report.recent.map((event) => [formatExportDateTime(event.occurredAt, timeZone, locale), activityActionLabel(t, event.action, locale), event.summary, event.actorName, event.reason ?? ""]),
           emptyMessage: t("reportsWorkspace.noStaffActions"),
         },
       ],
@@ -478,22 +468,18 @@ function ControlsView({ report, from, to, currency }: { report: ControlTrendsRep
       {report.recent.length === 0 ? (
         <p className="border-t border-line p-5 text-[13px] text-ink-3">{t("reportsWorkspace.noStaffActions")}</p>
       ) : (
-        <div className="overflow-x-auto border-t border-line">
-          <Table>
-            <TableHeader><TableRow><TableHead>{t("members.tabs.checkIns.when")}</TableHead><TableHead>{t("common.label.type")}</TableHead><TableHead>{t("reportsWorkspace.whatHappened")}</TableHead><TableHead>{t("reportsWorkspace.staff")}</TableHead><TableHead>{t("common.label.details")}</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {report.recent.map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell className="whitespace-nowrap text-[12px]">{f.date(event.occurredAt)}</TableCell>
-                  <TableCell className="text-[12px]">{controlActionLabel(event.action, t)}</TableCell>
-                  <TableCell className="max-w-72 truncate text-[12px]" title={event.summary}>{event.summary}</TableCell>
-                  <TableCell className="text-[12px]">{event.actorName}</TableCell>
-                  <TableCell><Link href="/audit" className="text-[12px] underline decoration-line-3 underline-offset-2 hover:text-ink">{t("nav.item.activityLog")}</Link></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ActivityLog className="border-t border-line" aria-label={t("reportsWorkspace.recentStaff")}>
+          {report.recent.map((event) => (
+            <ActivityRow
+              key={event.id}
+              title={activityActionLabel(t, event.action, locale)}
+              description={event.summary}
+              actor={event.actorName}
+              occurredAt={event.occurredAt}
+              action={<Link href="/audit" className="underline decoration-line-3 underline-offset-2 hover:text-ink">{t("nav.item.activityLog")}</Link>}
+            />
+          ))}
+        </ActivityLog>
       )}
     </section>
   );

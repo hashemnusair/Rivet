@@ -19,6 +19,8 @@ export interface ApplicantDetails {
   contactNumber: string;
   plan: string;
   billingInterval?: "monthly" | "annual";
+  websiteRequested?: boolean;
+  promoCode?: string;
 }
 
 /**
@@ -36,6 +38,8 @@ export function applicantDetailRows(values: ApplicantDetails, language: Applicat
     { label: t("communicationCompletion.email.application.details.email"), value: values.email, mono: true },
     { label: t("communicationCompletion.email.application.details.contactNumber"), value: values.contactNumber, mono: true },
     { label: t("communicationCompletion.email.application.details.plan"), value: t("communicationCompletion.email.application.details.planValue", { plan: values.plan, interval }) },
+    ...(values.websiteRequested ? [{ label: t("communicationCompletion.email.application.details.website"), value: t("communicationCompletion.email.application.details.websiteRequested") }] : []),
+    ...(values.promoCode ? [{ label: t("communicationCompletion.email.application.details.promoCode"), value: values.promoCode, mono: true }] : []),
   ];
 }
 

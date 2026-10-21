@@ -1866,7 +1866,7 @@ Stop and ask the product owner before proceeding if:
 13. `apps/web/convex/platformProvisioningAction.ts`
 
 
-## Two-plan pricing cutover — 21 October 2026 (not yet released)
+## Two-plan pricing and add-on cutover — 21 October 2026
 
 Read `docs/14_SUBSCRIPTION_PRICING.md` and the newest `CURRENT_STATE.md` checkpoint.
 Deploy the Convex schema/functions with `pnpm convex:deploy` before the frontend
@@ -1881,7 +1881,7 @@ usable by existing subscribers. No tenant rename, signed agreement rewrite or
 historical invoice update is required. Do not use the old launch migration as an
 add-on provisioning mechanism.
 
-In isolated staging verify Basic signup → approval → trial → first invoice at
+In isolated staging verify Basic signup → approval → pending first payment → first invoice at
 JD 124 monthly or JD 633.600 annually; Pro first invoice is JD 349 monthly or
 JD 2,418.600 annually. Confirm onboarding is charged once, renewals use the correct
 recurring amount, Basic rejects branch 2 / staff seat 6 / simultaneous member 301,
@@ -1891,6 +1891,12 @@ to Basic. A tenant owner must not edit the platform catalogue or grant modules.
 Check English/Arabic public pages, two signup choices, annual links, and the
 first-three website offer. Operational-email allowances remain metered.
 
-Optional Basic add-ons are a documented proposal, not a released purchase flow.
-No per-gym paid add-on should be sold by changing the global base-plan editor.
+Paid Basic add-ons are managed per gym in Platform → Billing → Gyms → Change plan.
+Verify activation/invoice lines, paid-time credits, first-payment lock, annual
+renewals, optimistic revision conflicts and submitted-transfer protection. At
+maximum quantities enforce 2 branches / 600 members / 11 accounts / 1,800 emails;
+branch 3, account 12 and member 601 require Pro. Capacity removal must fail before
+billing writes when usage is too high. Verify finance/reporting dependencies and
+that a paid Pro upgrade clears Basic add-ons. The global editor cannot change
+Basic's base capacity. No per-gym sale should change the global catalogue.
 Existing release/acceptance items elsewhere in this runbook remain in force.

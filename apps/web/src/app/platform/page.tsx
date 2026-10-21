@@ -1,16 +1,19 @@
 "use client";
-import { useT, type TKey } from "@/lib/i18n/provider";
+import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 import { useFormat } from "@/lib/i18n/format";
 
 import { ArrowRight, CircleAlert } from "lucide-react";
 import Link from "next/link";
-import { PageHeader, Stat } from "@/components/shared/chrome";
+import { DataPagination, PageHeader, Stat } from "@/components/shared/chrome";
 import { PlatformGymLogo } from "@/components/platform/platform-gym-logo";
 import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
 import { SubscriptionStatusBadge } from "@/components/platform/platform-status";
 import { Button } from "@/components/ui/button";
-import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
-import type { PlatformOverview } from "@/lib/api/GymOSApi";
+import { ContextLabel } from "@/components/ui/typography";
+import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
+import { activityActionLabel } from "@/lib/i18n/activity-log";
+import type { PlatformOverview, PlatformSnapshot } from "@/lib/api/GymOSApi";
+import { ACTIVITY_PAGE_SIZES, useClientPage } from "@/lib/hooks/use-client-page";
 import { useExperience } from "@/lib/providers/experience-provider";
 
 export default function PlatformOverviewPage() {
@@ -107,19 +110,25 @@ export default function PlatformOverviewPage() {
 
       <PlatformPanel className="mt-5" aria-labelledby="operator-activity-title">
         <PlatformPanelHeader id="operator-activity-title" title={t("platformConsole.home.recentActivity")} description={t("platformConsole.home.immutableAudit")} />
-        {platformSnapshot?.auditEvents.length ? (
-          <div className="divide-y divide-line">
-            {platformSnapshot.auditEvents.slice(0, 8).map((event) => (
-              <div key={event.id} className="grid gap-1 px-4 py-3 sm:grid-cols-[180px_1fr_auto] sm:items-center sm:gap-4 sm:px-5">
-                <TechnicalLabel as="span">{event.action}</TechnicalLabel>
-                <span className="text-[13px]" dir="auto">{event.summary}</span>
-                <span className="text-[12.5px] text-ink-3" dir="auto">{t("platformConsole.home.auditActorTime", { actor: event.actorName, time: displayTimestamp(event.occurredAt, f.dateTime, t("platformConsole.home.timestampUnavailable")) })}</span>
-              </div>
-            ))}
-          </div>
-        ) : <p className="px-5 py-8 text-center text-[12.5px] text-ink-3">{t("platformConsole.home.noOperatorActivity")}</p>}
+        {platformSnapshot?.auditEvents.length ? <PlatformActivity events={platformSnapshot.auditEvents} /> : <p className="px-5 py-8 text-center text-[12.5px] text-ink-3">{t("platformConsole.home.noOperatorActivity")}</p>}
       </PlatformPanel>
     </PlatformPage>
+  );
+}
+
+/** The recent operator history, a page at a time. */
+function PlatformActivity({ events }: { events: PlatformSnapshot["auditEvents"] }) {
+  const { t, locale } = useLocale();
+  const { page, setPage, setPageSize } = useClientPage(events);
+  return (
+    <>
+      <ActivityLog aria-labelledby="operator-activity-title">
+        {page.items.map((event) => (
+          <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
+        ))}
+      </ActivityLog>
+      <DataPagination page={page} onPage={setPage} pageSizes={ACTIVITY_PAGE_SIZES} onPageSize={setPageSize} className="border-t border-line px-4 py-3 sm:px-5" />
+    </>
   );
 }
 
@@ -167,8 +176,4 @@ function DirectoryFact({ label, value }: { label: string; value: string }) {
 function displayMonth(value: string, monthYear: (iso: string) => string) {
   const iso = `${value}-01`;
   return Number.isFinite(Date.parse(`${iso}T12:00:00.000Z`)) ? monthYear(iso) : value;
-}
-
-function displayTimestamp(value: string, dateTime: (iso: string) => string, fallback: string) {
-  return Number.isFinite(Date.parse(value)) ? dateTime(value) : fallback;
 }

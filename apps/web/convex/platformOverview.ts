@@ -1,10 +1,10 @@
-import { termPriceMinor } from "./planCatalogue";
+import { gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
 
 export type PlatformQueueSeverity = "danger" | "warning" | "info";
 export interface PlatformOverviewInput {
   now?: number;
   gyms: Array<{ id: string; organizationId?: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
-  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; billingInterval?: "monthly" | "annual"; provisioned?: boolean }>;
+  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; billingInterval?: "monthly" | "annual"; provisioned?: boolean; quotedPriceMinor?: number }>;
   plans: Array<{ name: string; priceMinor: number }>;
   branches: Array<{ organizationId?: string; active: boolean; status?: string }>;
   members: Array<{ organizationId?: string; status?: string }>;
@@ -120,10 +120,11 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
   });
   const billingCurrencyMismatches = provisionedInvoices.length - eligibleInvoices.length;
   const planPrices = new Map(input.plans.map((plan) => [plan.name, plan.priceMinor]));
-  const gymCounts = { trial: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
+  const gymCounts = { trial: 0, pending_payment: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 };
 
   for (const gym of provisionedGyms) {
     if (gym.subscriptionStatus === "trial") gymCounts.trial += 1;
+    else if (gym.subscriptionStatus === "pending_payment") gymCounts.pending_payment += 1;
     else if (gym.subscriptionStatus === "active") gymCounts.active += 1;
     else if (gym.subscriptionStatus === "overdue" || gym.subscriptionStatus === "past_due") gymCounts.past_due += 1;
     else if (gym.subscriptionStatus === "suspended") gymCounts.suspended += 1;
@@ -136,7 +137,7 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     // can lag a plan mutation and must never make MRR look stale.
     const plan = organization.subscriptionPlan ?? organization.entitlementPlan;
     if (!plan) return total;
-    const monthlyPrice = planPrices.get(plan) ?? 0;
+    const monthlyPrice = gymMonthlyPriceMinor(plan, planPrices.get(plan) ?? 0, organization.quotedPriceMinor);
     // Annual tenants pay twelve months with the published annual saving, so
     // their effective monthly revenue is the discounted rate — not the
     // headline monthly price.

@@ -20,7 +20,7 @@ export function validateAddOns(input: unknown, plan: string | undefined): Subscr
   if (Object.keys(source).some(key => !ADD_ON_CATALOGUE.some(item => item.key === key))) throw new Error("Unknown add-on; prices and limits are server-owned.");
   const result = { ...EMPTY_ADD_ONS };
   for (const item of ADD_ON_CATALOGUE) {
-    const quantity = source[item.key] ?? 0;
+    const quantity = source[item.key] === undefined ? 0 : source[item.key];
     if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 0 || quantity > item.max) throw new Error(`Invalid ${item.key} quantity. Basic is limited to 2 branches, 600 members and 11 staff accounts; choose Pro for more.`);
     result[item.key] = quantity;
   }

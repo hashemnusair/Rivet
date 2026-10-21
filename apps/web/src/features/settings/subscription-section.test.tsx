@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -17,6 +18,12 @@ vi.mock("next/navigation", () => ({ useRouter: () => routerMock, usePathname: ()
 vi.mock("@/lib/providers/experience-provider", () => ({ useExperience: () => experienceMock }));
 
 afterEach(() => { resetApiForTests(); vi.unstubAllGlobals(); });
+
+/** The demo session reseeds the mock when it loads, so the section mounts after the test adjusts it. */
+function Deferred({ children }: { children: ReactNode }) {
+  const [shown, setShown] = useState(false);
+  return shown ? <>{children}</> : <button type="button" onClick={() => setShown(true)}>Show page</button>;
+}
 
 describe("subscription and invoices", () => {
   it("starts loading the PDF renderer when the pointer reaches the button, before any click", async () => {
@@ -52,14 +59,33 @@ describe("subscription and invoices", () => {
     expect(tab.opener).toBeNull();
   });
 
-  it("states the plan, the cadence, the fee and the day the paid term ends", async () => {
+  it("states the plan, the fee and the day it renews, and says how to change it", async () => {
     await renderWithApp(<SubscriptionSection />, { role: "owner" });
     const summary = await screen.findByTestId("subscription-summary");
-    expect(within(summary).getByText("Plan")).toBeInTheDocument();
-    expect(within(summary).getByText("JOD 199.000 per month, plus any tax")).toBeInTheDocument();
-    expect(within(summary).getByText(/Monthly|Yearly, paid once a year/)).toBeInTheDocument();
-    expect(within(summary).getByText(/Paid until|Trial ends/)).toBeInTheDocument();
-    // The change rule is stated where the owner can read it.
-    expect(within(summary).getByText(/Days you have not used are taken off the new invoice/)).toBeInTheDocument();
+    expect(within(summary).getByText("Pro")).toBeInTheDocument();
+    expect(within(summary).getByText(/JOD 199\.000 per month, plus any tax/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Renews on|Paid until|Trial ends/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Need a smaller plan or a different billing cycle\? Message RIVET/)).toBeInTheDocument();
+    expect(await within(summary).findByRole("button", { name: "Change plan" })).toBeInTheDocument();
+  });
+
+  it("moves a gym up to a bigger plan, priced for today, and sends it to the payment page", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<Deferred><SubscriptionSection /></Deferred>, { role: "owner" });
+    (api as unknown as { db: { organization: { subscriptionPlan: string } } }).db.organization.subscriptionPlan = "Starter";
+    await user.click(screen.getByRole("button", { name: "Show page" }));
+    await user.click(await screen.findByRole("button", { name: "Change plan" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change your plan" });
+    expect(within(dialog).getByText("Current plan")).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /Basic/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /Pro/ })).toBeInTheDocument();
+    expect(within(dialog).getByText("Pay today")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Message RIVET" })).toHaveAttribute("href", "/support");
+    await user.click(within(dialog).getByRole("button", { name: "Continue to payment" }));
+    await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/billing"));
+    expect((await api.getBillingCheckout()).invoice?.planChange).toEqual({ from: "Starter", to: "Basic" });
+    // Until it is paid, the plan card says what is left to do.
+    expect(await screen.findByTestId("pending-upgrade")).toHaveTextContent("Upgrade to Basic");
   });
 });

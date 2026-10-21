@@ -29,7 +29,7 @@ export const PLAN_CATALOGUE: readonly PlanDefinition[] = [
 /** Read compatibility only: existing subscriptions and immutable agreements retain their names. */
 export const LEGACY_PLAN_CATALOGUE: readonly PlanDefinition[] = [
   { name: "Starter", priceMinor: 39_000, branches: 1, staff: 3, members: 150, onboardingFeeMinor: 75_000, operationalEmails: 600 },
-  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 150_000, operationalEmails: 1_500 },
+  { name: "Growth", priceMinor: 89_000, branches: 2, staff: 8, members: 300, onboardingFeeMinor: 75_000, operationalEmails: 1_500 },
   { name: "Enterprise", priceMinor: 500_000, branches: 25, staff: 250, members: 50_000, onboardingFeeMinor: 0, operationalEmails: 20_000 },
 ];
 
@@ -56,6 +56,31 @@ export function planCatalogueWithTone(): Array<PlanDefinition & { tone: "paper" 
 }
 
 export type PlanInterval = "monthly" | "annual";
+
+/** Enterprise is priced per gym by quote; the other plans by the catalogue. */
+export const QUOTED_PLAN = "Enterprise" as const;
+
+/** The largest monthly quote RIVET records: JOD 100,000. */
+export const MAX_QUOTED_PRICE_MINOR = 100_000_000;
+
+export function isQuotedPlan(name: string | undefined): boolean {
+  return (name ?? "").trim().toLowerCase() === QUOTED_PLAN.toLowerCase();
+}
+
+/** A usable quote: a whole number of fils above zero and within the cap. */
+export function validQuotedPriceMinor(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= MAX_QUOTED_PRICE_MINOR ? value : undefined;
+}
+
+/**
+ * What one month of a gym's plan costs. An Enterprise gym pays the price
+ * RIVET quoted it; every other plan, and an Enterprise gym with no quote on
+ * record, pays the catalogue price.
+ */
+export function gymMonthlyPriceMinor(plan: string | undefined, catalogPriceMinor: number, quotedPriceMinor: unknown): number {
+  const quote = isQuotedPlan(plan) ? validQuotedPriceMinor(quotedPriceMinor) : undefined;
+  return quote ?? catalogPriceMinor;
+}
 
 export function findPlan(name: string | undefined): PlanDefinition | undefined {
   return [...PLAN_CATALOGUE, ...LEGACY_PLAN_CATALOGUE].find((plan) => plan.name.toLowerCase() === (name ?? "").trim().toLowerCase());

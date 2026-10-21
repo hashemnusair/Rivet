@@ -129,6 +129,22 @@ describe("gym application durable email migration", () => {
     expect(JSON.stringify(guards[0])).not.toContain("rate-owner@example.test");
   });
 
+  it("limits each inbox however the phone number or address is varied", async () => {
+    const t = await seedAdmin();
+    // One script, one person's inbox: a new phone number, gym and spelling of
+    // the address on every request used to open a fresh window each time.
+    const addresses = ["target@gmail.com", "Target@Gmail.com", "tar.get@gmail.com", "target+1@gmail.com", "t.a.r.g.e.t+gym@googlemail.com"];
+    for (let index = 0; index < 5; index += 1) {
+      await t.action(api.gymApplications.submit, { gymName: `Relay Gym ${index}`, gymAddress: "12 Airport Road, Amman", ownerName: "Relay Owner", email: addresses[index]!, contactNumber: `+96279000010${index}`, plan: "Basic" });
+    }
+    await expect(t.action(api.gymApplications.submit, { gymName: "Relay Gym 5", gymAddress: "12 Airport Road, Amman", ownerName: "Relay Owner", email: "target+2@gmail.com", contactNumber: "+962790000109", plan: "Basic" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "RATE_LIMITED" }) });
+    const applicantCopies = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").collect()).filter((row) => row.kind === "gym_application_received_applicant"));
+    expect(applicantCopies).toHaveLength(5);
+    // Another inbox, and an address that differs only by dots outside Gmail, keep their own windows.
+    await expect(t.action(api.gymApplications.submit, { gymName: "Other Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Other Owner", email: "other@gmail.com", contactNumber: "+962790000110", plan: "Basic" })).resolves.toMatchObject({ duplicate: false });
+    await expect(t.action(api.gymApplications.submit, { gymName: "Dotted Gym", gymAddress: "12 Airport Road, Amman", ownerName: "Dotted Owner", email: "tar.get@example.test", contactNumber: "+962790000111", plan: "Basic" })).resolves.toMatchObject({ duplicate: false });
+  });
+
   it("canonicalizes phone formatting and counts repeated existing-application attempts", async () => {
     const t = await seedAdmin();
     const phones = ["+962 79 000 0000", "+962790000000", "00962790000000", "+962-79-000-0000", "00962 79 000 0000", "+962790000000"];

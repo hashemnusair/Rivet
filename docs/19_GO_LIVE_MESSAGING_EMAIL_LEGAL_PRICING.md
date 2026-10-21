@@ -54,6 +54,7 @@ to an operational sandbox mailbox.
 | Trial request confirmation / status | Member trial request, then staff trial-status change; requester | `convex/domain.ts` | Inbox delivery pending |
 | Support acknowledgement / reply / resolution | Case creation, platform reply, platform resolution; case creator/contact | `convex/domain.ts` | Inbox delivery pending |
 | Platform invoice issued / paid / past due | Platform invoice actions and subscription changes; gym owner; invoice PDF | `convex/domain.ts` | Resend shows issued and paid examples delivered to a test-owner mailbox; that recipient inbox was not inspected |
+| Platform payment sent back | `platform.invoice.payment_reject`; gym owner; RIVET's message and the invoice facts; once per set of details sent back | `convex/platformCommerce.ts`, `platform_payment_returned` | Code and Convex tests only (19 October) |
 | Platform upcoming-invoice / overdue / suspension notice | Hourly subscription reconciliation, only when its explicit enable flag is on; gym owner | `convex/subscriptionReconciliation.ts` | Production reconciliation flag absent; automated reconciliation is off |
 | Platform subscription suspended / cancelled | Explicit platform subscription-status transition; gym owner | `convex/domain.ts` | Inbox delivery pending |
 | PT package paid | Full package payment activates credits; member | `convex/domain.ts` | Inbox delivery pending |
@@ -123,11 +124,15 @@ Deployment evidence is recorded in CURRENT_STATE.md.
 ### Commercial/legal review status and next actions
 
 Implemented launch defaults are Starter JOD 39/month, Growth 89 and Pro 199,
-with one-time onboarding of JOD 75/150/300 respectively and a 5% annual
-subscription discount. Enterprise is publicly quote-only; its JOD 500 base
-is retained for negotiated/legacy configuration. Current limits, allowances
-and modules are in section 4. A catalogue override can change an actual quote;
-these implementation facts do not establish founder sign-off or legal approval.
+with one one-time onboarding fee of JOD 75 on every plan (since 19 October
+2026; it was 75/150/300 by plan before) and a 5% annual
+subscription discount. Enterprise is quote-only, on the website and in the
+console: each Enterprise gym is billed its own monthly quote
+(`organizations.quotedPriceMinor`, since 21 October 2026). RIVET records the
+quote when it approves the application, or with Billing → Gyms → **Change
+plan**. The catalogue's JOD 500 row only bills an Enterprise gym with no quote
+on record. Current limits, allowances and modules are in section 4. These
+implementation facts do not establish founder sign-off or legal approval.
 `BRAND_LEGAL` is empty: legal entity, registration, address and tax treatment
 must be provided by the founders and verified with counsel/accountant.
 
@@ -209,6 +214,11 @@ or indexes are removed.
   mandatory.
 - Every attempt records the mode and the address actually used; Settings →
   Operational email shows the mode in plain language.
+- The public gym application form accepts five submissions an hour per
+  applicant inbox, whatever phone number is sent. "+tag" addresses, and dots
+  in Gmail addresses, count as the same inbox. This bounds the applicant copy
+  (`gym_application_received_applicant`) once that kind is enabled through
+  `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES`.
 
 ### Before flipping `RIVET_EMAIL_MODE` to `live`
 
@@ -234,12 +244,21 @@ or indexes are removed.
 
 Implementation: `src/app/api/webhooks/clerk-email/route.ts`, public POST at
 `https://www.rivetjo.com/api/webhooks/clerk-email`. It verifies the Clerk
-signature via `verifyWebhook`, handles `email.created`, forwards Clerk's
-rendered HTML/plain text to Resend using the configured sender, and uses
-`clerk-email/<email-id>` as its retry key. Events already delivered by Clerk
-are acknowledged without a duplicate send. Missing configuration returns
-503; provider failures return 502 for webhook retry. No OTP, invitation link
-or rendered auth body is logged or stored in the staff-visible email ledger.
+signature via `verifyWebhook`, handles `email.created` and sends the email
+through Resend as "RIVET Beta" at the configured sender, with
+`clerk-email/<email-id>` as its retry key. An email that carries a code
+(`data.otp_code`) or an http(s) link (`data.action_url`) is rebuilt in RIVET's
+own branded template (`renderBrandedEmail` in `convex/emailTemplate.ts`, in
+English because the event names no language). Any other email, or a render
+that lost its code or link, goes out as Clerk's rendered HTML/plain text.
+Events already delivered by Clerk are acknowledged without a duplicate send.
+Missing configuration returns 503. Resend failures that can clear (401, 403,
+408, 409, 425, 429, 5xx, a network error or an incomplete response) return
+502 so Clerk retries. Any other 4xx is a permanent rejection: the route
+returns 200 so Clerk stops retrying a code that would arrive expired, and logs
+one line with the status, Resend's error name and Clerk's email id. No OTP,
+invitation link, address or rendered auth body is logged or stored in the
+staff-visible email ledger.
 
 1. Deploy the web handler. In Vercel server configuration, set
    `CLERK_WEBHOOK_SIGNING_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and
@@ -258,6 +277,8 @@ or rendered auth body is logged or stored in the staff-visible email ledger.
    without storing auth codes or invitation tokens. No fresh send is claimed
    by the current local tests.
 5. Check Clerk webhook failures and Resend delivery/bounce/complaint events.
+   A permanently rejected send counts as delivered in Clerk's webhook log; find
+   it in the Vercel function logs ("permanently rejected a message").
    Resend idempotency lasts 24 hours; avoid replaying old successful auth
    events after that window. Generate a fresh invite/code when needed.
 6. Roll back a template by restoring Delivered by Clerk, then reconcile any
@@ -491,8 +512,12 @@ order.
 
 **Invoice** (`convex/platformInvoicePdf.ts`). The same furniture with an
 `INVOICE` label: parties, a four-across meta grid, the line items, totals
-with the total due at 20pt, and a how-to-pay panel whose bank and CliQ
-details are labelled placeholders. It is attached to the invoice issued,
+with the total due at 20pt, and a how-to-pay panel. Invoices print
+the CliQ and bank details from console → Billing → **Where gyms pay**; with
+none set, the `BRAND_LEGAL` details, and with neither, a line saying RIVET
+sends them. Since 21 October 2026 the PDF opened in the browser (console
+Billing, Settings → Subscription) prints the same details as the emailed
+copy. It is attached to the invoice issued,
 past due and paid emails. Tax treatment is shown as undecided rather than
 guessed.
 
@@ -542,14 +567,19 @@ Two limits worth knowing:
 
 ## 4. Commercial launch catalogue — 7 October 2026
 
+Changed 19 October 2026: one onboarding fee for every plan, and new gyms pay
+their first invoice before they get access instead of starting a trial month.
+The trial and first-invoice paragraphs below describe gyms set up before that;
+see section 5.
+
 Implemented in the current candidate under the request to fix nonlegal launch issues. Deployment and provider acceptance are separate release gates; see CURRENT_STATE.md. Legal wording and signed history are unchanged.
 
 | | Starter | Growth | Pro |
 |---|---|---|---|
 | Monthly price (JOD) | 39.000 | 89.000 | 199.000 |
 | Annual subscription (JOD, 5% saving) | 444.600 | 1,014.600 | 2,268.600 |
-| One-time onboarding (JOD) | 75.000 | 150.000 | 300.000 |
-| First monthly invoice subtotal (JOD) | 114.000 | 239.000 | 499.000 |
+| One-time onboarding (JOD) | 75.000 | 75.000 | 75.000 |
+| First monthly invoice subtotal (JOD) | 114.000 | 164.000 | 274.000 |
 | Branches | 1 | 2 | 5 |
 | Owner and staff accounts, including pending invitations | 3 | 8 | 20 |
 | Active members pooled across branches | 150 | 300 | 1,000 |
@@ -558,7 +588,7 @@ Implemented in the current candidate under the request to fix nonlegal launch is
 | Operations | — | Yes | Yes |
 | Finance and reporting | — | — | Yes |
 
-Enterprise is quote-only on public surfaces; its legacy numeric configuration is retained for existing records. Valid operator catalogue overrides remain authoritative. The release migration previews by default and updates only exact former Starter/Growth/Pro defaults; customized rows remain unchanged and require review. No existing invoice or signed agreement is rewritten.
+Enterprise is quote-only on public surfaces and in the console; each Enterprise gym's monthly price is its own quote (see "Enterprise quotes" in section 5), and the catalogue row keeps Enterprise's default limits and modules. Valid operator catalogue overrides remain authoritative. The release migration previews by default and updates only exact former Starter/Growth/Pro defaults; customized rows remain unchanged and require review. No existing invoice or signed agreement is rewritten.
 
 Capacity checks run inside server mutations, including branch activation, staff invitation/reactivation, membership sale/import/date changes. Membership capacity counts distinct people with overlapping current or future terms across the organization; frozen terms reserve capacity. Existing excess is not deleted or automatically billed: corrections that do not increase an over-limit interval remain allowed, and new over-limit increases require freeing capacity or changing plan.
 
@@ -569,3 +599,191 @@ Plan/cadence changes retain the existing one-interval date rules. Credits now us
 Member-facing email sends reserve allowance transactionally before provider submission. Dedupe and retries reuse the reservation. Sandbox/allowlist-dropped messages do not consume it. Excess mail remains visibly deferred to the next Amman month; it is not reported as delivered. Authentication, platform invoice/account/legal notices and support/admin mail are outside this member-email allowance. Deferred notices can become stale, so operators must review the outbox before increasing allowance or retrying old notices; no automatic overage charge is implemented.
 
 **Legal decisions remain excluded and open.** Terms section 05 says "Onboarding is included"; counsel must reconcile that wording with the implemented fee. Agreement 1.2 section 4 refers to written quotes or published pricing, and section 6 describes onboarding services without explicitly promising free onboarding. The Terms' twelve-month default and agreement's termination provisions still require counsel reconciliation, as does tax treatment. The public first payment is explicitly a subtotal; no tax amount or legal approval is implied by this engineering change. See the refreshed [review brief](legal-review/2026-10-07/REVIEW_BRIEF.md).
+
+## 5. One onboarding fee, pay-first gyms, launch offers and renewals — 19 October 2026
+
+Elias decided on 19 October 2026: one JOD 75 onboarding fee on every plan; a
+custom website add-on, free for the first gyms that ask and JOD 150 after;
+promo codes managed in a new console page; gyms pay before they get access;
+and a workspace warning on the last day of a paid term.
+
+### Onboarding fee
+
+`ONBOARDING_FEE_MINOR = 75_000` in `convex/planCatalogue.ts` for Starter,
+Growth and Pro (it was 75/150/300); the public catalogue in
+`src/lib/public/pricing.ts` mirrors it. Enterprise stays quote-only with
+onboarding stored as zero. Gyms already provisioned keep the fee they were
+given. Production had no stored plan overrides on 19 October (read-only
+check), so the code catalogue applies there once Convex is deployed.
+`launchCatalogue.migrateDefaults` also treats untouched 7 October rows
+(Growth 150, Pro 300) as old defaults; edited rows are preserved.
+
+### Pay first
+
+1. **Apply.** The form now asks whether the gym wants a custom website and
+   takes an optional promo code (checked live with `public.promo.check`, and
+   again when the form is sent). Nothing is paid at this step.
+2. **Approve and set up.** Provisioning creates the gym with organization
+   status **`pending_payment`** (new) instead of a one-month `trial`, and
+   creates its **first invoice** at once (`createFirstInvoice` in
+   `convex/platformCommerce.ts`): term + JOD 75 + website (free or JOD 150) −
+   promo, due in 14 days. The owner gets the existing Clerk invitation.
+3. **Pay.** The owner can sign in, but `requireActor` refuses every workspace
+   operation for a `pending_payment` gym. `identity.current` returns
+   `billingAccess` for the owner, the sign-in page and `/dashboard` route to
+   **`/billing`**, and only `billing.checkout`, `billing.payment.submit` and
+   `billing.invoices.list` accept the gym (`requireBillingActor`). The page
+   shows the invoice lines, RIVET's CliQ and bank details, and a short note
+   reference (`INV-` + 8 characters). The owner pays outside RIVET and sends
+   method, reference, payer name and date; platform admins get a
+   notification.
+4. **Confirm.** Platform console → Billing → **Payments to confirm**. Confirm
+   uses the existing `platform.invoice.payment` (reason required, audited);
+   for a first payment the paid term starts at confirmation, the gym becomes
+   `active`, its listing becomes public, and the paid email goes out. **Send
+   back** (`platform.invoice.payment_reject`) records a message the owner sees
+   on the payment page and gets by email (`platform_payment_returned`). For a
+   plan upgrade, confirming also changes the plan (see below).
+
+A gym stopped for an unpaid invoice (`suspended`, not archived) gets the same
+billing-only access, so it can pay and be restored. Staff of an unpaid gym
+are told the gym is unavailable; only the owner (or a role with
+`settings.manage`) can send payment details.
+
+### Plan upgrades by the gym — 19 October 2026
+
+Elias decided that gyms change their own plan. Settings → Subscription →
+**Change plan** offers the plans above the gym's own (Starter → Growth → Pro;
+Enterprise stays quoted by RIVET; a smaller plan or a different billing cycle
+is a message to RIVET, which makes the change itself in Billing → Gyms →
+**Change plan**, below). `billing.plans` prices each one with the same term
+change RIVET used for its own plan changes (`termChange` in
+`convex/subscriptionTerm.ts`): one term of the new plan less the unused days
+of the paid term, valued at what the gym paid. **Continue to payment**
+(`billing.plan_change.request`) raises an invoice with `planChange: { from,
+to }` and takes the owner to `/billing`, which shows "Upgrade to {plan}". The
+plan does not change yet. Choosing another plan replaces the request; it can
+be cancelled until payment details are sent (`billing.plan_change.cancel`).
+
+When the owner sends payment details, a gym that can open its workspace gets a
+**support request** (`requestType: "billing"`, one per invoice) with a
+three-step tracker: payment sent → RIVET confirms → plan upgraded. Sending the
+details back moves it to "waiting" with RIVET's message; confirming resolves
+it. A gym still waiting for its first payment only has the payment page, so it
+gets no support request.
+
+Confirming an upgrade (`platform.invoice.payment`) changes the organization's
+plan and features (`syncPlanEntitlement`, shared with the console's own
+subscription change), starts a new term on the confirmation day, keeps the
+original subscription start date, and voids any unpaid renewal it replaces.
+Renewals then bill the new plan every month (or year). Only an `active` gym
+can upgrade; a gym behind on a renewal pays that first.
+
+The console's Billing page was cut down to: totals (to confirm, unpaid, paid
+this month), **Payments to confirm**, one invoice list (Unpaid / Paid / All,
+with PDF, **Mark paid** and **Void** in a menu), **Gyms** (plan, status, paid
+until; suspend, cancel or reactivate in a menu) and **Where gyms pay**. The
+bill-a-gym wizard, manual exception invoices, the renewal-policy dialog, the
+lifecycle cards and manual "mark past due" were removed; the operations
+behind them still exist. Gym pages link to Billing with `?gym=<id>`, which
+shows that gym's invoices.
+
+### Enterprise quotes and RIVET's own plan changes — 21 October 2026
+
+Elias reported that the console showed Enterprise at JOD 500 a month while the
+website said "Custom quote", and asked for subscriptions that actually work.
+An Enterprise applicant was billed the hidden JOD 500 on its first invoice,
+and the console had no way to change a gym's plan, billing cycle or price
+after the 19 October billing page lost its wizard.
+
+- **One price rule.** `gymMonthlyPriceMinor` in `convex/planCatalogue.ts`: an
+  Enterprise gym pays `organizations.quotedPriceMinor`; every other plan, and
+  an Enterprise gym with no quote, pays the catalogue price. The first
+  invoice, renewals, RIVET's plan changes (term and credit), the gym's own
+  upgrade credit, the agreement fee, the gym record's recurring amount and
+  platform MRR all use it. Yearly billing is twelve months of the quote less
+  5%, as for the other plans.
+- **Approval.** Approving an Enterprise application requires the quoted
+  monthly price (`gymApplications.review` → `quotedPriceMinor`, audited);
+  set-up copies it onto the gym. Other plans ignore it.
+- **Change plan (console).** Billing → Gyms → a gym's menu → **Change plan**:
+  plan, monthly or yearly, and the quote when Enterprise, with a reason. It
+  calls the existing `platform.gym.update`. Moving a gym onto Enterprise needs
+  a quote; a quote on another plan is refused; a new quote, plan or cycle on
+  an active gym starts a new term today and bills it less the unused paid
+  days; leaving Enterprise clears the quote. The audit row records the quote
+  before and after. For a gym still waiting for its first payment, the same
+  dialog corrects the plan, cycle or quote and replaces its first invoice
+  (old one voided; onboarding fee, website place and promo re-checked); it is
+  refused while the gym's payment details wait for RIVET.
+- **Pricing & entitlements.** Enterprise shows "Custom quote", as the website
+  does, and its edit dialog has no price field (limits and modules only).
+- **The gym's view.** `billing.plans` returns `monthlyPriceMinor`, the price
+  the gym pays now, so Settings → Subscription shows an Enterprise gym its
+  quote and every gym the live catalogue price rather than the launch one.
+
+### Website add-on and free places
+
+`platformSettings` key `commercial` holds `websiteOffer` (default: on, **5**
+places, JOD **150**). A place is **held when the gym's first invoice is
+issued with the website free** (at approval/set-up), not at payment, because
+the price must be fixed on the invoice. Voiding that invoice gives the place
+back. Gyms that did not ask for a website never take a place, so Test Gym is
+not counted. The landing panel and the form read `public.websiteOffer`; the
+console's Promos page lists the gyms holding places in order and lets admins
+change places, price, or switch the offer off (audited).
+
+### Promo codes
+
+`platformPromoCodes` table. A code takes a percent or an amount off one part
+of the first payment: the first month or year, the onboarding fee, the
+website, or the whole first payment. Optional plan list, maximum uses and last
+day. Codes are never edited after creation, only paused and resumed (audited),
+so an invoice that used one keeps meaning what it said. Uses are counted from
+non-void invoices carrying the code. A code that stopped working between
+application and set-up is not applied, and the invoice records
+`promoNotApplied` for the platform team. Only the subscription share of a
+discount (`subscriptionDiscountMinor`) is excluded from later term credits.
+
+### Renewals and the last-day warning
+
+- Renewal invoices are now raised **14 days** before the paid term ends
+  (`INVOICE_LEAD_DAYS`), so the agreement's 14-day payment term ends on the
+  last day of the paid term. Creating one sends `platform_invoice_issued`.
+- `platform_invoice_reminder` goes **7, 3 and 1 days** before the term ends
+  while the invoice is unpaid and no payment details are waiting; each mark
+  is sent once, and a late job sends only the nearest one.
+- The workspace shows `BillingNoticeBanner` on the **last day** of a paid
+  term with nothing paid for the next one (plus a once-a-day prompt for the
+  owner with **Pay now** → `/billing`), an **overdue** banner after the term
+  ends stating the day access stops, and a calm "payment sent" banner while
+  RIVET checks. Billing emails now link to `/billing`.
+- **Access still stops 21 days after the due date**, as agreement section 02
+  allows (more than 14 days overdue plus 7 days' written notice). Ending
+  access on the last day of the term would contradict the signed agreement;
+  that needs a new agreement version and counsel.
+
+### Before this works in Production
+
+- `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` is **not set** in Production
+  (names-only check, 19 October). Without it no renewal invoices, reminders,
+  past-due marking or suspension run. Set it to `1` once a paying gym exists.
+- Enter RIVET's CliQ alias and bank details in console → Billing → **Where
+  gyms pay**. Until then the payment page tells gyms to contact RIVET and
+  emailed invoice PDFs say RIVET sends the details; once set, both show them.
+  `BRAND_LEGAL` bank details stay empty and are only a fallback.
+- Deploy Convex (`pnpm convex:deploy`) together with the frontend; the
+  frontend alone would route new gyms to a payment page the backend does not
+  serve.
+
+### Open [decide] items
+
+- What the website includes (pages, domain, hosting, how long RIVET runs it,
+  who edits it later), and whether the offer and add-on need Terms or
+  agreement wording. The public copy promises no specifics.
+- Whether the owner should sign the subscription agreement before paying.
+  Today they apply under the Terms, pay, and sign the agreement on first
+  entry to the workspace, as before.
+- Whether to keep the 21-day grace or end access sooner (agreement change).
+- Promo codes and the website offer are public on the landing/form; codes can
+  be guessed but only discount a first payment RIVET still has to approve.

@@ -10,16 +10,27 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels that pull request's older run. Pushes to
+# main and manual runs each keep their own group, so every main commit is still
+# verified on its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   PNPM_VERSION: 11.20.0
   NODE_VERSION: 22
 
 jobs:
-  # The static gate is split so each part runs in parallel; the slowest of
-  # them (unit tests, sharded) sets the floor at a few minutes.
+  # The gate runs as eleven jobs (it was thirteen), so two overlapping runs
+  # nearly fit GitHub's 20-job limit and the overflow clears as the short jobs
+  # finish. The browser shards set the floor at about two and a half minutes.
   typecheck-lint:
-    name: Typecheck, lint, repository safety
+    name: Typecheck, lint, Convex codegen, repository safety
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HAS_CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY != '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -34,24 +45,73 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Typecheck web and Convex
+      # Codegen rewrites convex/_generated, so it runs before the typecheck
+      # reads those files.
+      - name: Regenerate and verify Convex types
+        if: ${{ env.HAS_CONVEX_DEPLOY_KEY == 'true' }}
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: pnpm convex:codegen
+      - name: Ensure generated Convex files are committed
+        if: ${{ env.HAS_CONVEX_DEPLOY_KEY == 'true' }}
+        run: git diff --exit-code -- apps/web/convex/_generated
+      - name: Report credential-gated codegen skip
+        if: ${{ env.HAS_CONVEX_DEPLOY_KEY != 'true' }}
+        run: echo "::notice::Convex code generation was skipped because CONVEX_DEPLOY_KEY is not configured for this repository."
+      # TypeScript's incremental build info and ESLint's content cache let a
+      # run recheck only what changed since the last one. Both tools validate
+      # every cached entry against file contents, so a stale cache only costs
+      # time. The key prefix drops the cache whenever dependencies or config
+      # change.
+      - name: Restore the typecheck and lint caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/web/tsconfig.tsbuildinfo
+            apps/web/.eslintcache
+          key: static-checks-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/tsconfig.json', 'apps/web/eslint.config.mjs') }}-${{ github.sha }}
+          restore-keys: |
+            static-checks-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'apps/web/tsconfig.json', 'apps/web/eslint.config.mjs') }}-
+      - name: Typecheck web and Convex, and lint, side by side
         run: |
-          pnpm typecheck
-          pnpm convex:typecheck
-      - name: Lint
-        run: pnpm lint
+          logs="$RUNNER_TEMP/static-checks"
+          mkdir -p "$logs"
+          check() {
+            name=$1
+            shift
+            { if "$@" > "$logs/$name.log" 2>&1; then echo 0; else echo 1; fi > "$logs/$name.status"; } &
+          }
+          check typecheck-web pnpm typecheck
+          check typecheck-convex pnpm convex:typecheck
+          # pnpm appends these flags to the lint script, so they reach ESLint.
+          check lint pnpm --filter web lint --cache --cache-strategy content --cache-location .eslintcache
+          wait
+          failed=0
+          for name in typecheck-web typecheck-convex lint; do
+            if [ "$(cat "$logs/$name.status")" = 0 ]; then
+              echo "::group::$name passed"
+              cat "$logs/$name.log"
+              echo "::endgroup::"
+            else
+              echo "::error::$name failed"
+              cat "$logs/$name.log"
+              failed=1
+            fi
+          done
+          exit "$failed"
       - name: Repository safety scripts
         run: pnpm --filter web exec node --test scripts/safe-convex-cli.test.mjs scripts/validate-vercel-env.test.mjs
       - name: Check patch formatting
         run: git diff --check
 
   unit:
-    name: Unit and component tests (${{ matrix.shard }}/2)
+    name: Unit and component tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -67,11 +127,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Vitest shard
-        run: pnpm --filter web exec vitest run --shard=${{ matrix.shard }}/2
+        run: pnpm --filter web exec vitest run --shard=${{ matrix.shard }}/3
 
   build:
     name: Production build and dependency audit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -93,6 +154,8 @@ jobs:
           key: nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/convex/**') }}
           restore-keys: |
             nextjs-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+      # This build keeps Next's full type check, including the generated route
+      # types, which the plain typecheck job cannot see.
       - name: Production build
         run: pnpm build
       - name: Production dependency audit
@@ -101,18 +164,22 @@ jobs:
         run: test -z "$(git status --porcelain=v1)"
 
   browser:
-    name: Credential-free Playwright (${{ matrix.shard }}/8)
+    name: Credential-free Playwright (${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     # On one runner against the dev server the preview suite took ~48 minutes,
     # most of it compiling each route on first visit. Each shard builds the
     # mock preview once as an approved preview bundle and serves it with
-    # `next start`; two workers share the bundle. The dev-only design gallery
-    # is served by that bundle too (RIVET_DESIGN_PREVIEW), so no dev-server
-    # job remains. A shard failure fails the workflow.
+    # `next start`; two workers share the bundle (a third starves the
+    # animation-timing checks in page-motion.spec.ts on the 4-core runner).
+    # Tests are fully parallel, so shards split by test, not by file. The
+    # dev-only design gallery is served by that bundle too
+    # (RIVET_DESIGN_PREVIEW), so no dev-server job remains. A shard failure
+    # fails the workflow.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     env:
       NEXT_PUBLIC_RIVET_DEMO_AUTH: "1"
       NEXT_PUBLIC_DATA_MODE: mock
@@ -139,16 +206,43 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - name: Install Chromium and required system dependencies
-        run: pnpm --filter web exec playwright install --with-deps chromium
-      - name: Build the mock preview bundle
-        run: pnpm --filter web exec next build --webpack
+      - name: Restore the mock preview build cache
+        id: mock-build-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/.next-playwright/cache
+          key: nextjs-mock-preview-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('apps/web/src/**', 'apps/web/convex/**') }}
+          restore-keys: |
+            nextjs-mock-preview-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+      # The production-build and typecheck jobs already run the full type
+      # check, so the shards skip it. Chromium and its system packages install
+      # while the bundle compiles.
+      - name: Build the mock preview bundle and install Chromium
+        env:
+          RIVET_SKIP_BUILD_TYPECHECK: "1"
+        run: |
+          pnpm --filter web exec playwright install --with-deps chromium > "$RUNNER_TEMP/chromium-install.log" 2>&1 &
+          chromium=$!
+          pnpm --filter web exec next build --webpack
+          if ! wait "$chromium"; then
+            echo "::error::Chromium install failed"
+            cat "$RUNNER_TEMP/chromium-install.log"
+            exit 1
+          fi
+      # One shard saves the build cache as soon as the bundle is built, so a
+      # failing test still leaves the next run a warm cache.
+      - name: Save the mock preview build cache
+        if: ${{ matrix.shard == 1 && steps.mock-build-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: apps/web/.next-playwright/cache
+          key: ${{ steps.mock-build-cache.outputs.cache-primary-key }}
       - name: Run credential-free browser suite against the built bundle
         env:
           PLAYWRIGHT_SERVER_MODE: start
           PLAYWRIGHT_DIST_DIR: .next-playwright
           PLAYWRIGHT_WORKERS: "2"
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/8
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/6
       - name: Save failed browser screenshots and context
         if: failure()
         uses: actions/upload-artifact@v4
@@ -161,32 +255,3 @@ jobs:
         run: git diff --check
       - name: Assert clean worktree after Playwright
         run: test -z "$(git status --porcelain=v1)"
-
-  convex-codegen:
-    name: Convex generated code check (credential-gated)
-    runs-on: ubuntu-latest
-    env:
-      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: ${{ env.PNPM_VERSION }}
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Regenerate and verify Convex types
-        if: ${{ env.CONVEX_DEPLOY_KEY != '' }}
-        run: pnpm convex:codegen
-      - name: Ensure generated files are committed
-        if: ${{ env.CONVEX_DEPLOY_KEY != '' }}
-        run: git diff --exit-code -- apps/web/convex/_generated
-      - name: Report credential-gated skip
-        if: ${{ env.CONVEX_DEPLOY_KEY == '' }}
-        run: echo "::notice::Convex code generation was skipped because CONVEX_DEPLOY_KEY is not configured for this repository."

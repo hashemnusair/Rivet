@@ -21,10 +21,11 @@ storage uses integer fils (1 JOD = 1,000 minor units). Applicable tax is exclude
 
 The landing section is labelled **Pricing**; the operator invoice/payment area
 remains **Billing**. Pro is highlighted with “Every feature included”, without an
-unsubstantiated popularity claim. The website offer is **the first 3 gyms**. No
-remaining-slot count or automatic website fulfillment is implied. The prior
-five-gym offer was not present in this checkout, so the three-gym statement is
-added to the existing pricing section. No other promotion was changed.
+unsubstantiated popularity claim. The website offer is **the first 3 gyms**.
+The existing live reservation/count mechanism is preserved: an eligible first
+invoice holds a free website place, voiding it releases that place, and subsequent
+requests pay the configured website fee. Existing issued offers are honored.
+Website fulfillment itself remains an operator task.
 
 ## Recorded product assumptions
 
@@ -46,15 +47,17 @@ added to the existing pricing section. No other promotion was changed.
   agreements and renewals. New signup and plan changes offer Basic/Pro; a legacy
   tenant can retain its current legacy tier while its status/cadence is managed.
 
-## Optional Basic add-ons — sales proposal, not activated
+## Paid Basic add-ons — implemented
 
-The user floated optional add-ons. This table records a concrete recommendation;
-it does **not** create per-tenant purchases, billing lines or entitlement grants.
-The landing only says “Need a little more room on Basic? Talk to us.” Do not use
-the global plan editor to sell an add-on to one gym: it changes every gym on that
-plan. Until per-tenant add-on billing exists, sell the base plans or move to Pro.
+Manage purchases in **Platform → Billing → Gyms → More actions → Change plan**.
+Choose Basic, select quantities, review the recurring price and invoice preview,
+and record the owner's approval in the required audit reason. Only platform
+administrators can activate purchases. The landing keeps the small “Need a little
+more room on Basic? Talk to us.” prompt; no public add-on matrix or self-service
+purchase controls are added. Never change the global base plan to sell one gym
+an add-on.
 
-| Proposed monthly add-on | JOD | Maximum / dependency |
+| Monthly add-on | JOD | Maximum / dependency |
 | --- | ---: | --- |
 | Second branch | 39 | Once; **2 branches total** |
 | 100 active members + 300 operational emails | 10 | Three packs; **600 members / 1,800 emails total** |
@@ -64,7 +67,7 @@ plan. Until per-tenant add-on billing exists, sell the base plans or move to Pro
 | Management reporting | 10 | Requires Financial OS |
 
 Examples: Basic plus a second branch costs **88/month**; adding 100 members to
-that costs **98/month**. Every proposed add-on at its maximum costs **158/month**,
+that costs **98/month**. Every add-on at its maximum costs **158/month**,
 41 below Pro, but still stops at 2 branches, 600 members and 11 accounts.
 A third branch or capacity beyond those ceilings requires Pro. No repeated branch
 packs, unlimited packs or independent branch quotas. All capacities aggregate
@@ -72,11 +75,32 @@ across the organization's branches. Onboarding review should keep one gym
 organization in one tenant; software caps alone cannot detect businesses using
 unrelated identities to create separate tenants.
 
-Before selling these add-ons, implement tenant-scoped quantities, server-derived
-price and dependency validation, immutable audit events, effective dates,
-recurring invoice lines, agreement disclosure, cancellation/downgrade capacity
-checks and owner-visible purchased allowances. This is intentionally separate
-from changing the global base catalogue; no speculative paid feature was enabled.
+Quantities, prices, dependencies, limits, effective dates and revision checks are
+server-owned. A stale operator form is rejected. Activation, invoice creation and
+entitlement changes are atomic and audited; saving unchanged quantities creates
+no duplicate term. Removing capacity is refused if current branches, active staff
+(including invitations), or peak simultaneous memberships would exceed the new
+allowance. Module cancellation removes access through the server guards.
+
+For a **pending first payment**, changing add-ons voids and replaces the first
+invoice, preserving the setup fee/promo/website rules. The gym stays locked until
+payment is confirmed. A submitted transfer claim must be confirmed or returned
+before the invoice can be changed. For an **active gym**, a change starts a new
+term immediately, invoices the base and each purchased add-on, and credits unused
+funded time. Unpaid replaced cycles are voided; they never earn new credit.
+Renewals carry the same quantities and itemized charges. Annual add-ons receive
+the existing 5% discount: the maximum package is JD 1,801.200/year, or
+JD 1,876.200 for the first year including Basic onboarding. Onboarding is charged
+once, not on every add-on change.
+
+Owners can see purchased allowances in Settings → Subscription and line items in
+checkout/PDF invoices. New subscription agreements disclose the package and total;
+previously signed agreements stay immutable. A paid self-service upgrade to Pro
+clears the old purchases; it never bills Pro plus redundant Basic add-ons.
+
+Basic's base allowances are fixed in the global editor and backend. Only its
+bounded per-gym packs can expand them. Global base prices/capability definitions
+remain audited operator settings, not tenant-controlled purchase parameters.
 
 ## Enforcement and compatibility
 
@@ -100,8 +124,7 @@ capacity and all-feature inclusion remain fixed.
 
 Release must be **backend first**, then frontend: the old public submit validator
 does not accept Basic. A coordinated cutover is required because an old open
-signup form may still submit a retired tier after the backend changes. There is
-no deployment or production-data mutation in this local implementation.
+signup form may still submit a retired tier after the backend changes. See CURRENT_STATE.md for the exact release evidence.
 
 Read next: `CURRENT_STATE.md`, `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`,
 `apps/web/convex/planCatalogue.ts`, `apps/web/convex/planCapacity.ts` and

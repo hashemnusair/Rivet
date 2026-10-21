@@ -35,6 +35,7 @@ export async function effectivePlan(ctx: ReadContext, requestedName: string | un
   const result = { ...base };
   for (const key of ["priceMinor", "branches", "staff", "members", "onboardingFeeMinor", "operationalEmails"] as const) {
     if (base.name === "Pro" && ["branches", "staff", "members"].includes(key)) continue;
+    if (base.name === "Basic" && ["branches", "staff", "members", "operationalEmails"].includes(key)) continue;
     const override = value[key];
     const minimum = key === "branches" || key === "staff" || key === "members" ? 1 : 0;
     if (typeof override === "number" && Number.isSafeInteger(override) && override >= minimum) {

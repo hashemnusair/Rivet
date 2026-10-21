@@ -47,7 +47,7 @@ function snapshot(supportCases: PlatformSupportCase[]): PlatformSnapshot {
     applications: [],
     auditEvents: [],
     overview: {
-      gymCounts: { trial: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 },
+      gymCounts: { trial: 0, pending_payment: 0, active: 0, past_due: 0, suspended: 0, cancelled: 0 },
       branchCount: 0,
       memberCount: 0,
       activeStaffCount: 0,

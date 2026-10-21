@@ -1,51 +1,54 @@
 # GymOS / RIVET current implementation state
 
-## Local checkpoint — two subscription plans, 21 October 2026
+## Current checkpoint — Basic/Pro and paid add-ons, 21 October 2026
 
-**Implemented locally; not deployed.** Public pricing/signup now offer Basic
-(JD 49/month + JD 75 onboarding) and Pro (JD 199/month + JD 150 onboarding).
-Basic includes 1 branch, 300 active members, 5 owner/staff accounts and 900
-operational emails/month. Pro has genuinely unlimited branches, members and
-accounts, all workspace modules and an explicitly disclosed 10,000-email monthly
-allowance. Annual billing retains its 5% discount. Pricing copy and forms match in
-English and Arabic; the free-website offer is for the first **3 gyms**.
+**Release preparation in progress.** The complete pricing/add-on implementation
+is integrated with origin/main `4af7972f`, including payment-first onboarding,
+website reservations, promo codes, owner upgrade collection, and the current
+platform billing console. `FRONTEND_HANDOFF.md` remains frozen.
 
-Server capacity, plan assignment, signup validation, provisioning fees, recurring
-invoices, public catalogue reads and feature projections share the new terms.
-Downgrades that exceed the target plan are refused before billing/audit writes.
-Pro caps and included features are protected in the editor and server. Historical
-Starter/Growth/Enterprise records remain readable; retired plans are not offered
-to new applicants. New commercial version `2026-10-21` prevents old saved Pro
-catalogue values from undoing the new contract. Signed documents and existing
-invoice/onboarding facts remain unchanged. `FRONTEND_HANDOFF.md` stays frozen.
+Only Basic (JD49/month +75 onboarding) and Pro (JD199/month +150 onboarding) are
+sold. Basic starts at 1 branch / 300 active members / 5 accounts / 900 emails.
+Pro includes every module and unlimited branches, members and accounts, with the
+explicit 10,000 operational-email allowance. Annual recurring billing remains
+5% off. Public copy calls the section Pricing and limits free websites to the
+first three gyms, using the existing invoice-backed reservation mechanism.
 
-**Decisions and remaining scope:** read [the commercial contract](docs/14_SUBSCRIPTION_PRICING.md)
-first. It records why 300 members was selected, the Pro email assumption, and a
-concrete **proposed** Basic add-on menu (JD 39 second branch; JD 5–10 features and
-capacity packs; maximum 2 branches / 600 members / 11 accounts, JD 158 fully
-configured). Per-tenant add-on activation and billing are not implemented or
-advertised for purchase. The global plan editor must not be used for individual
-add-on sales. Deployment, old custom-Pro review, live-role/provider acceptance,
-and manual tracking/fulfillment of the three-gym website offer remain operational
-follow-up work.
+Paid Basic add-ons are now available to platform admins in Billing → Gyms →
+Change plan. Per-tenant quantities control invoices, renewals, agreements,
+effective capacity and server module permissions. The maximum package is
+JD158/month: 2 branches, 600 members, 11 accounts and 1,800 operational emails.
+There is no way to buy additional packs beyond those organization-wide ceilings.
+Basic base allowances and Pro unlimited/all-feature promises are protected.
+Changing/removing purchases requires an audit reason, current revision, eligible
+status and usage within the resulting caps. Submitted payment claims block
+repricing. Pending gyms retain payment-first access; active changes start a new
+invoiced term with funded-time credit. Pro upgrades clear redundant purchases.
+The owner sees purchased allowances and itemized invoice charges. The landing
+keeps a subtle contact prompt. Historical plans and signed records are preserved.
 
-**Verification:** full Vitest suite passed **2,196 tests** across 347 files (two
-opt-in benchmarks skipped). After the final capacity-read optimization and admin
-limit-label cleanup, 34 capacity/subscription tests and 42 affected UI/i18n/signup
-tests passed again. The 14 repository safety tests, both TypeScript checks,
-lint/secret-output audit, production build and Arabic decision lock passed.
-Eleven distinct browser journeys passed: four English/Arabic pricing/signup cases,
-three pricing-link/live-entitlement flows, and four public/console responsive
-journeys. The two affected macOS plan-editor baselines were refreshed and
-inspected; Linux-specific snapshots were not regenerated locally. Browser evidence
-for both languages at 390px and 1440px is in
-`docs/ui-evidence/pricing-2026-10-21/`. These are synthetic/local checks, not
-live-provider acceptance. A transient TypeScript read failed while the browser
-server regenerated its generated types; rerunning after that server stopped passed.
-Run `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, `pnpm build`
-and `pnpm --filter web exec playwright test e2e/two-plan-pricing.spec.ts`.
-Preview locally with `pnpm dev`; release backend first through `pnpm convex:deploy`
-only, following docs/12. No deployment was performed in this pass.
+**Assumptions:** 300 Basic members and 10,000 Pro monthly emails remain the
+recorded product choices. Purchases are sales-managed; website fulfillment and
+review of organizations attempting separate registrations remain operator work.
+Read [the commercial contract](docs/14_SUBSCRIPTION_PRICING.md) for prices,
+dependencies, counting rules and the exact billing policy.
+
+**Verification:** full regression suite passed 2,316 tests in 361 files with two
+opt-in benchmarks skipped. The 14 repository safety checks, production build,
+web/Convex type checks, lint and Arabic lock pass. Eight targeted browser flows
+and twelve responsive public/console journeys pass. Release CI and deployment
+results will be recorded after the remaining release gates finish.
+
+**Preflight:** the guarded production dry run targets `descriptive-meerkat-589`,
+passes schema validation and deletes no indexes. Fresh full export (including
+file storage): `/private/tmp/rivet-before-basic-addons-2026-10-21.zip`, mode 0600,
+ZIP integrity verified, SHA-256
+`c06ec3f35d93208dc67bead0d0048feb03cc18c7c0af40dddc1acd479f3eadef`.
+No tenant purchase or payment was created in production during verification. Run `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`,
+`pnpm lint`, `pnpm build`; relevant browser journeys are
+`subscription-add-ons.spec.ts`, `two-plan-pricing.spec.ts` and
+`platform-subscription-entitlements.spec.ts`. Read this file, docs/14 and docs/12
+first, then `convex/subscriptionAddOns.ts` and `convex/subscriptionAddOns.test.ts`.
 
 
 ## Current checkpoint — PR review and backlog reconciliation, 17 October 2026
@@ -123,6 +126,461 @@ the exact-target/backup procedure in docs/12. The Arabic lock passed at revision
 607 (247 agreements), and the frozen frontend handoff is byte-for-byte unchanged.
 Documentation reconciliation changes only this file and docs/12, /13, /17, /19
 and /20; it adds no application behavior or new product scope.
+
+## 21 October 2026 — RIVET corrects a gym before its first payment; browser invoice PDFs say where to pay
+
+Elias asked for the two small billing gaps left by the Enterprise quote work.
+
+- **Correct a gym that has not paid yet:** Billing → Gyms → **Change plan**
+  now also works for a gym in `pending_payment`. `platform.gym.update` takes
+  the plan, billing cycle and Enterprise quote (same rules as for active
+  gyms), voids the open first invoice, sets the plan's onboarding fee again
+  (JOD 75, or none on Enterprise), syncs the features, and issues a new first
+  invoice through `createFirstInvoice`, which now skips a voided one. The
+  website place and promo code are re-checked against the new invoice. It
+  refuses while the gym's payment details wait for RIVET (answer them first),
+  after the first payment, and when nothing changed. Audited as
+  `gym.subscription.update` plus `invoice.void`. The dialog says "{gym} has
+  not paid yet. Its first invoice is replaced with one for the new plan."
+- **Browser PDFs:** the invoice PDF opened from console Billing and from
+  Settings → Subscription now prints the Where gyms pay details, like the
+  emailed copy. `usePaymentDetailsLoader` (`features/billing/invoice-pdf.ts`)
+  reads them from `platform.commerce.view` (console) or `billing.checkout`
+  (gym), from cache when the screen already has them; a failed read keeps the
+  general payment line.
+- **Copy:** one new English and Arabic string; `verify-lock.py` passes at
+  revision 607.
+- **Evidence:** 3 new Convex tests (mistyped quote reissued, move to Growth
+  yearly with the onboarding fee and features, refused while details wait or
+  nothing changed), mock parity test, console dialog test, 3 PDF tests. Full
+  Vitest run: 2,303 passed, 2 opt-in benchmarks skipped; `tsc` (web and
+  Convex) and eslint clean. Mock browser, Arabic: approved and set up
+  Northline Strength (Growth, first invoice JD 164), changed it to Pro before
+  payment; the JD 164 invoice is void and a JD 274 one (199 + 75 onboarding)
+  is open. The browser PDF's contents were checked by unit test, not by eye.
+- **Released 21 October 2026:** pushed to `main` as `f5a80c82`. Convex
+  through the guarded wrapper (`CONVEX_DEPLOY_KEY=''`): the dry run selected
+  Production `descriptive-meerkat-589` with no index deletions and schema
+  validation passing; the deploy finished at 11:30 UTC and `health:check`
+  returned `ok` (`1792582212359`). Vercel Production deployed the same commit
+  (GitHub deployment `7224919338`, 11:32 UTC) and all 11 jobs passed in
+  [CI 39592359779](https://github.com/hashemnusair/Rivet/actions/runs/39592359779).
+  Not tried signed in as an administrator in Production.
+
+## 21 October 2026 — Enterprise is priced per gym; RIVET changes a gym's plan again
+
+Elias reported that the console's Pricing page showed Enterprise at JOD 500 a
+month while the website said "Custom quote", and asked for subscriptions that
+actually work. Two real faults sat behind it: an Enterprise applicant was
+billed the hidden JOD 500 on its first invoice (no place existed to enter the
+quote), and since the 19 October billing simplification the console had no way
+to change a gym's plan, billing cycle or price at all. docs/19 §5 "Enterprise
+quotes and RIVET's own plan changes" is the full description.
+
+- **Price rule:** `gymMonthlyPriceMinor` (`convex/planCatalogue.ts`). An
+  Enterprise gym pays its own `organizations.quotedPriceMinor` (new optional
+  field; also on `gymApplications`); every other plan pays the catalogue. Used
+  by the first invoice, renewals, `platform.gym.update`, upgrade credits, the
+  agreement fee, the gym record's recurring amount and platform MRR.
+- **Console:** approving an Enterprise application asks for the quoted monthly
+  price (required, audited, shown on the application). Billing → Gyms → menu →
+  **Change plan** (plan, monthly/yearly, quote for Enterprise, reason) over the
+  existing `platform.gym.update`, which now accepts and audits
+  `quotedPriceMinor`. Pricing & entitlements shows Enterprise as "Custom quote"
+  with no price field. Gyms table shows an Enterprise gym's quote.
+- **Gym side:** `billing.plans` returns `monthlyPriceMinor`; Settings →
+  Subscription and the gym's Change plan dialog show what the gym actually pays.
+- **Copy:** English and Arabic (`باقة المؤسسات`, `عرض سعر مخصص` as already used);
+  `verify-lock.py` passes at revision 607.
+- **Evidence:** new `convex/enterpriseQuote.test.ts` (7 tests: approval needs a
+  quote, set-up bills it, plan change to/within/off Enterprise with credit and
+  audit, yearly quote, renewal, the gym's own view, MRR); UI tests for the
+  Change plan dialog, Enterprise approval and the Pricing card; mock parity
+  test; existing tier tests now pass a quote for Enterprise. Full Vitest run:
+  2,296 passed and 1 failed (raw "Enterprise" in two Arabic strings; fixed to
+  `باقة المؤسسات`, that file then passed), 2 opt-in benchmarks skipped. `tsc` (web and Convex) and eslint
+  clean. Mock browser at 1024px: Pricing shows "Custom quote"; Forge moved to
+  Enterprise at JOD 380 gets a JOD 380 invoice and the row shows the quote;
+  the dialog in Arabic RTL has no overflow.
+- **Released 21 October 2026:** pushed to `main` as `59300faa` (Elias asked
+  to ship). Convex: the guarded wrapper (`safe-convex-cli.mjs deploy`, what
+  `pnpm convex:deploy` runs, with `CONVEX_DEPLOY_KEY=''`) dry run selected
+  Production `descriptive-meerkat-589`, no index deletions, schema validation
+  passed; the deploy finished at 10:31 UTC. Afterwards `health:check` returned
+  `ok` (`1792578716827`), `public.catalog` was unchanged, and an anonymous
+  `gymApplications.review` call carrying `quotedPriceMinor` passed argument
+  validation and was refused `UNAUTHENTICATED` (new code live, nothing
+  written). Vercel Production deployed the same commit (GitHub deployment
+  `7223793471`, 10:33 UTC) and all 11 jobs passed in
+  [CI 39585121459](https://github.com/hashemnusair/Rivet/actions/runs/39585121459).
+  No fresh backup export was taken: the schema change adds two optional
+  fields and rewrites no data. Not checked with a signed-in administrator in
+  Production.
+- **Not done:** gyms already on Enterprise in Production (if any) keep paying
+  the catalogue price until RIVET enters a quote with Change plan. (A gym
+  still waiting for its first payment can now be corrected too; see the
+  entry above.)
+
+## 20 October 2026 — Activity logs show 5, 10 or 20 entries a page
+
+Elias asked for the activity logs to come in pages, with a choice of 5, 10 or
+20 entries on each page.
+
+- **Shared bar:** `DataPagination` takes optional `pageSizes` and
+  `onPageSize` and then shows a "Per page" choice (a native select, so phones
+  get their own picker) beside the page buttons. Other lists that use the bar
+  are unchanged. The bar now wraps on narrow screens, and its previous/next
+  arrows point the right way in Arabic. Arabic label: `لكل صفحة`.
+- **Where:** the gym Activity log (`/audit`) asks the server for one page. The
+  size lives in the URL (`?size=5` or `?size=20`; 10 has no parameter), so it
+  survives a reload and can be shared. Choosing a size goes back to page 1.
+  The platform overview's "Recent activity" and a gym's "Platform history" page
+  through the events they already load (the overview gets the latest 100)
+  with `useClientPage` in `lib/hooks/use-client-page.ts`. The overview used to
+  show only the latest 8.
+- **Default:** 10 a page everywhere. The Activity log used to show 20.
+- **Evidence:** new tests for the per-page choice, `pageOf`/`useClientPage`,
+  and paging on the platform overview (23 events: 10, then 3 on page 3, then 5
+  and 20). A headless mock-browser check of `/audit`: 10 by default; 5 and 20
+  change the rows and the URL; the next page keeps the size; a reload keeps it;
+  the Arabic page reads `?size=5&page=2` correctly. No sideways scroll at
+  1280, 1024 or 390px in either language. Both platform panels were checked
+  the same way.
+
+## 20 October 2026 — Activity logs read as plain rows on every screen
+
+Elias called the platform console's "Recent operator activity" panel bad. Raw
+upper-case mono codes ran into the sentence beside them
+(`GYM.PROVISIONING.WORKSPACE_CREATED`, `GYM_APPLICATION.UNDER_REVIEW`), a full
+invoice UUID was shown, and the subtitle was system-speak. Presentation only:
+no Convex function, audit payload or stored record changed.
+
+- **One row design:** `components/shared/activity-log.tsx` (`ActivityLog`,
+  `ActivityRow`, `ActivityEntry`, `ActivityMeta`, `ActivityText`). A row is a
+  plain label (plus what it was about, for gym records), the stored sentence,
+  then a quiet "who · role · when" line. Text wraps (`overflow-wrap: anywhere`)
+  instead of sitting in fixed columns, so nothing can print over its
+  neighbour. No mono or upper-case labels. A sentence that only repeats the
+  label is hidden.
+- **Where:** platform overview (now "Recent activity — What the RIVET team
+  changed, newest first."), platform gym detail ("Platform history"), the gym
+  Activity log (`/audit`, still expandable with reason, before/after and the
+  request reference), `TimelineFeed` (member timeline, lead activity, owner
+  dashboard feed: it keeps its spine and icons, drops the second time stamp on
+  the right, and "View receipt" moved into the who/when line, no longer mono),
+  prospect history, and Reports → refunds and discounts "recent staff actions"
+  (a table before). The gallery's Activity tab (`/dev/design-system`) shows the
+  eight rows from Elias's screenshot.
+- **Labels:** new `activityLog` namespace (en + ar), 228 labels keyed by the
+  camel-cased code; `lib/i18n/activity-log.ts` looks them up. `x.approved` /
+  `x.rejected` / `x.denied` on a known action reads "Approved: Refund". An
+  unknown code is spelled out in English ("Gym provisioning dns verified") and
+  shows "تم تسجيل تغيير" in Arabic. A test scans every `convex/*.ts` action
+  literal plus the template-built codes and fails if one has no label. The
+  page-local tables (`staffTools.audit.action.*`,
+  `reportsWorkspace.refund…letIn`) and the unused `auditActorTime`,
+  `timestampUnavailable` and `historyBy` keys were removed. The refunds report
+  CSV "type" now uses the approved `استرداد المبلغ`.
+- **Ids:** `INV-<uuid>` inside a stored sentence shows as `INV-C234D937`, the
+  same as `paymentNoteReference`, the billing page and the gym's payment note.
+  A bare UUID shows its first eight characters. The full id stays in the hover
+  title. Reference numbers never break across lines. A record label that is
+  only an id is hidden, and unknown before/after field names are spelled out.
+- **Arabic:** labels follow STANDARD.md and the approved terms (استرداد المبلغ،
+  إلغاء تسجيل الدفعة، فتح الصندوق، رفع قائمة المشتركين، دمج سجل المشتركين، السماح
+  بالدخول استثنائيًا، عكس دفعة المورّد). `docs/arabic/decision-coverage.json`
+  points three moved keys at their new names and maps 28 labels that equal an
+  approved decision, so `messages.test.ts` guards them. `verify-lock.py`
+  passed (revision 607, 247 agreements). Stored sentences written by Convex
+  stay English in Arabic; translating them needs structured summaries in
+  Convex, the historical limit IMPLEMENTATION_PLAN §E already records.
+- **"Hashem Nusair admin":** that is the account's stored full name. Each event
+  stores `actorName` when it is written, so renaming the account only changes
+  new entries.
+- **Evidence:** new `activity-log.test.ts` (catalogue coverage, Arabic,
+  fallbacks, id shortening) and `activity-log.test.tsx` (row, subject, wrap,
+  unknown code, Arabic), a platform overview case with Elias's rows, and the
+  updated Arabic report test. The full Vitest run passed (2,279 tests in 356
+  files, 2 opt-in benchmarks skipped). `tsc` and eslint are clean. Mock
+  browser: the manager-override, audit-filter and platform suspend/gym-record
+  specs pass. A headless capture of every surface at 1280, 1024 and 390px in
+  English and Arabic found no overlapping text, no text outside its panel and
+  no page-level sideways scroll (30 captures).
+- **Screenshot references:** the old ones still passed, but only inside the
+  4% tolerance. Refreshed on the built mock bundle: `pass-5-audit` (1440, 390
+  and the CI-made `390-linux`), `pass-2-lead-detail` (1440, 390),
+  `pass-7-platform-1440` and `workflow-member-detail-phone`. The owner
+  dashboard and phone platform captures stop above the feed, so they were
+  left alone. The 97 screenshot tests pass locally.
+- **Not verified:** real Convex data in a browser. Frontend only: Vercel
+  deploys it from main; nothing to `pnpm convex:deploy`.
+
+## 19 October 2026 — Faster GitHub CI
+
+GitHub CI now runs 11 jobs instead of 13 and finishes in about 3m10s from the
+first job starting to the last one ending. Before, it took 4m15s–4m35s. Runner
+time per run fell from about 40 to 24 minutes. Test coverage is unchanged.
+
+- **Browser tests:** 6 shards instead of 8, still 2 workers each. Playwright now
+  runs tests in parallel within a file (`fullyParallel`), so shards split by
+  test rather than by file. Each shard restores a webpack build cache and skips
+  Next's repeat type check (`RIVET_SKIP_BUILD_TYPECHECK=1`, read only by
+  `next.config.mjs`). Chromium installs while the bundle builds. The bundle
+  build fell from about 100s to about 38s. A third worker made the timing check
+  in `page-motion.spec.ts` (sign-in doors at 1440px) fail every attempt, so
+  shards stay at 2 workers. That test was already flaky at 2 workers.
+- **Static checks:** the web typecheck, the Convex typecheck and lint run side
+  by side. TypeScript's incremental file and ESLint's content cache are restored
+  between runs, so warm runs take 18s instead of about 124s. Convex codegen
+  moved into this job and runs first. The production-build job still runs
+  Next's full type check, including the generated route types.
+- **Unit tests:** 3 shards instead of 2.
+- **Queueing:** a new push to a pull request cancels that pull request's older
+  run. Pushes to `main` are never cancelled. Every job has a timeout. Job names
+  changed (`…(N/6)`, `…(N/3)`, and the static job now says "Convex codegen").
+  `main` has no required status checks, so nothing needed updating.
+
+Verified with manual runs on the branch: cold caches with 5×2 shards
+([39285341291](https://github.com/hashemnusair/Rivet/actions/runs/39285341291), green, 3m37s),
+3 workers per shard
+([39288378748](https://github.com/hashemnusair/Rivet/actions/runs/39288378748), the motion test failed),
+and the final 6×2 layout with warm caches
+([39291522431](https://github.com/hashemnusair/Rivet/actions/runs/39291522431), all 11 jobs green, 3m10s).
+Locally, the full browser suite passed fully parallel with 4 workers: 222 passed
+and 14 credential-gated tests were skipped.
+
+## 19 October 2026 — Staff, members and administrators change their own password
+
+Elias asked for a change-password feature for RIVET administrators, gym
+members and gym staff.
+
+- **Where:** staff use Settings → My profile → **Password**, open to every
+  role, and **Change password** in the account menu, which opens that panel.
+  Members use Profile → **Password** and the same account-menu item
+  (`/customer/profile#password`). Administrators use a new **Your account**
+  page (`/platform/account`), opened by clicking their name in the console
+  header. The sign-out button there is unchanged.
+- **How:** one shared form (`components/auth/change-password-form.tsx`)
+  asks for the current password, the new one twice, and has **Sign out on my
+  other devices** (on by default). It calls Clerk's `user.updatePassword`
+  through `useReverification`. If the sign-in is old, Clerk asks for the
+  password, a code or a second factor again, then retries. An account with no
+  password sets its first one without the current-password field.
+  `lib/auth/password-change.ts` checks the length (8 to 128 characters), the
+  match, and that the new password differs from the current one. It also
+  shows each Clerk refusal on the field it belongs to: a wrong current
+  password, a breached, weak or short new password, or a cancelled identity
+  check. The form sits on a page, not in a dialog. A dialog's focus trap would
+  stop people from typing into Clerk's confirm-it-is-you window.
+- **Assumptions:** Clerk holds the password, so RIVET adds no Convex function,
+  stored field or audit event. AGENTS.md does not list a person changing their
+  own password as an audited action. Clerk's own "password changed" email, if
+  it is turned on in the Clerk dashboard, goes through the existing
+  `clerk-email` webhook with Clerk's body. Demo and keyless builds
+  (`DEMO_AUTH_BYPASS` or no Convex URL, as CI is) show a notice and never ask
+  for a password, as the demo sign-up page does.
+- **Copy:** English in `auth.changePassword` and `platformConsole.account`,
+  following docs/22. Arabic follows the v1 standard: verbal-noun buttons,
+  `تسجيل الخروج`, impersonal `يرجى`, and the approved save-failed pattern.
+  `verify-lock.py` passed (revision 607, 247 agreements). The unused
+  `platformConsole.shell.avatar` key was removed.
+- **Evidence:** new unit tests for validation and Clerk error mapping, and for
+  the form: field checks, focus, wrong current password, cancelled check, first
+  password, Clerk wiring and the demo notice. Also updated tests for the member
+  menu, the staff panel and the console account link. The full Vitest run
+  passed (2,255 tests in 353 files, 2 opt-in benchmarks skipped). `tsc` is
+  clean and eslint is clean on the changed files. In a mock browser at
+  1024px, the staff (reception), member and administrator entry points reach
+  their panel, and the `#password` links scroll to it. The real form was rendered with a fake submit at 1024px, at
+  375px (44px fields, no sideways scroll) and in Arabic RTL.
+- **Not verified:** the real Clerk path has not run in a browser (it needs a
+  signed-in Clerk account), including Clerk's confirm-it-is-you window. Not
+  merged. The change is frontend only, so Vercel deploys it on merge; there is
+  nothing to run with `pnpm convex:deploy`.
+
+## 19 October 2026 — Gyms upgrade their own plan; a simpler billing page
+
+Elias asked for self-serve plan changes and a much simpler admin billing page.
+docs/19 §5 "Plan upgrades by the gym" is the full description.
+
+- **Gym side:** Settings → Subscription shows the plan, its price and renewal
+  date, and **Change plan** (owner or `settings.manage`). The dialog lists the
+  bigger plans with what is paid today (new plan less the unused paid days).
+  Continuing raises an upgrade invoice and opens `/billing` ("Upgrade to
+  Growth"). After the details are sent, the page and a new Support request show
+  payment sent → RIVET confirms → plan upgraded. Support's "Request plan
+  upgrade" form was replaced by a **Change plan** link.
+- **Backend:** `billing.plans`, `billing.plan_change.request`,
+  `billing.plan_change.cancel` in `convex/platformCommerce.ts`; payment
+  details sent by an active gym open or move a `requestType: "billing"` support
+  case; `platform.invoice.payment` applies a `planChange` (plan, features via
+  the extracted `syncPlanEntitlement`, new term from confirmation, superseded
+  renewal voided, `gym.plan.upgrade` audit) and resolves the case. Renewal
+  automation never touches upgrade invoices, so an unpaid upgrade cannot get a
+  gym suspended.
+- **Console:** Billing is now totals, Payments to confirm (with an upgrade
+  badge), one filtered invoice list, Gyms and Where gyms pay. The wizard and
+  manual invoices are gone; suspend, cancel and reactivate moved into each
+  gym's menu. Gym pages link with `?gym=`.
+- **Preview:** sessionStorage `rivet.demo.plan` starts the mock gym on another
+  plan, so an upgrade can be tried from Starter.
+- **Evidence:** Convex tests for pricing, owner-only requests, replacing and
+  cancelling, the support request following send/return/confirm, and the plan,
+  features, term, renewal void and audit on confirmation; UI tests for the
+  subscription card and dialog, Support, the console page and gym list;
+  Playwright entitlement and upgrade journeys plus the edited pass-5/7 and
+  public-experience tests pass against a local mock server. Screens checked in
+  the browser at 1280px, 375px and Arabic RTL.
+- **Not done:** not merged or deployed (Convex changes need `pnpm
+  convex:deploy`). The cross-role "gym pays, RIVET confirms" journey cannot run
+  in one mock browser session; it is covered by Convex tests. The browser PDF
+  still prints the general payment line. Screenshot references for the
+  console billing page, the subscription section and Support need refreshing
+  (Linux ones from CI artifacts).
+
+## 19 October 2026 — Sent-back payments are emailed; emailed invoices show where to pay
+
+Two gaps left by the pay-first entry below.
+
+- **Payment sent back:** `platform.invoice.payment_reject` now emails the gym
+  owner (`platform_payment_returned`, mandatory like the other platform
+  invoice kinds, button to `/billing`). The email carries RIVET's message as
+  written ("Our message: …") and the invoice number, amount, period and due
+  date, in the gym's language. One email per set of details sent back
+  (dedupe on invoice + submission time). English and Arabic copy are in
+  `communicationCompletion.email.kinds`. The Arabic reuses the payment page's
+  "لم نتمكن من مطابقة دفعتك" and "إرسال البيانات الجديدة" (lock check passed
+  at revision 607). The console's send-back dialog now says the message is
+  emailed. Settings and the email log label the new kind; the mock records it.
+- **Invoice PDFs:** emailed invoice PDFs (issued on a plan change, and
+  issued/past due/paid from the console) print the CliQ alias and name, bank,
+  account name, IBAN and note from console → Billing → **Where gyms pay**,
+  under the same rule as `/billing` (a CliQ alias or an IBAN must be set).
+  Otherwise they fall back to `BRAND_LEGAL`, then to the general line.
+  `subscriptionReconciliation` attaches no PDFs, so nothing changed there. The
+  PDF opened in the browser (Settings → Subscription, console Billing) still
+  prints the general line. `InvoiceDocumentContext.paymentDetails` is ready for
+  it, but both screens would need a query for the details first.
+- **Evidence:** new Convex tests for the email (queued on send-back, the
+  message in text and HTML, no second email for the same details, a second
+  email in Arabic after the details are sent again) and for the PDF (general
+  line before details are set, every configured detail after), plus PDF unit
+  tests (CliQ only, note only, Arabic labels). Vitest: 19 related files,
+  315 tests, all passing. `tsc` web and Convex clean; eslint clean on changed
+  files.
+- **Not done:** both changes run in Convex, so Production has them only after
+  a `pnpm convex:deploy` from a checkout that includes this commit. Real
+  delivery needs `RIVET_EMAIL_MODE`. No inbox check was made.
+
+## 19 October 2026 — Pay-first gyms, one JOD 75 onboarding fee, website add-on, promo codes, renewal warnings
+
+Elias asked for a fixed JOD 75 onboarding fee, a website offer with a live
+count (first 5 gyms free, JOD 150 after), a Promos page with discount codes,
+a pay-first application flow (approve → credentials → pay by CliQ or bank
+transfer → RIVET confirms → access), and a dashboard warning on the last day
+of a paid term. docs/19 §5 is the full description and decision list.
+
+- **Backend:** new status `pending_payment`; `requireBillingActor` and
+  `identity.current.billingAccess` give an unpaid or suspended gym's owner the
+  payment page only. Provisioning creates the first invoice
+  (`convex/platformCommerce.ts`) with the website and promo priced in; pure
+  pricing is `convex/firstPayment.ts`. New tables `platformPromoCodes` and
+  `platformSettings`. New operations: `public.websiteOffer`,
+  `public.promo.check`, `platform.commerce.view`,
+  `platform.commerce.website_offer.update`,
+  `platform.commerce.payment_details.update`, `platform.promo.create`,
+  `platform.promo.set_active`, `platform.invoice.payment_reject`,
+  `billing.checkout`, `billing.payment.submit`. Confirming a first payment
+  starts the term at confirmation. Renewal invoices are raised 14 days ahead
+  with reminders at 7/3/1 days; the session carries `billingNotice`.
+  `_generated/api.d.ts` gained `firstPayment` and `platformCommerce` by hand,
+  in codegen order.
+- **Frontend:** `/billing` payment page; `BillingNoticeBanner` in the
+  workspace layout; "Pay now" in Settings → Subscription; website add-on,
+  promo code and first-payment summary on `/signup`; landing offer panel at 5
+  places with the JOD 150 price; console **Promos** page; Billing → **Payments
+  to confirm** and **Where gyms pay**; application review shows website and
+  promo; invoice PDFs print website and promo lines. Mock parity throughout
+  (preview CliQ/bank details are marked "Preview details").
+- **Arabic:** all new copy translated under the locked standard (lock check
+  passed at revision 607); CliQ is written كليك and IBAN as رقم الحساب المصرفي
+  الدولي, as existing Arabic does.
+- **Evidence:** full Vitest run 2,236 passed (Convex: 11 new pay-first,
+  promo, place, reminder and warning tests plus pricing unit tests; UI tests
+  for the payment page, warning, Promos, confirmations, signup and landing);
+  `tsc` web and Convex clean; eslint clean on changed files. The mock preview
+  was driven end to end in headless Chromium: admin issues an invoice → owner
+  opens Settings → Pay now → sends CliQ details → "We are checking your
+  payment", checked at 1280px, 390px (no overflow) and in Arabic RTL.
+- **Not done or not verified:** nothing is committed or deployed. Production
+  needs `pnpm convex:deploy` with the frontend, RIVET's real CliQ and bank
+  details entered in the console, and `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1`
+  (not set today, so no renewals or reminders run). Real Clerk invitation →
+  `/billing` routing was verified only with Convex tests and the mock, not on
+  a deployed environment. Access still stops 21 days after the due date per
+  the agreement; the website's scope, promo terms and pay-before-signing are
+  open for founders and counsel. Playwright against the local dev server:
+  pricing, application, console review/suspension and member specs pass; the
+  long "entitlements across four tiers" journey failed three times at
+  different steps when the dev server dropped connections, so it is
+  unverified here and CI is the gate. Visual references that include the
+  platform sidebar may need refreshing for the new Promos item.
+
+## 18 October 2026 — Review of the Convex batch, and three fixes it found
+
+Elias reported running the guarded `pnpm convex:deploy` for the pending batch
+on 17 October 2026 (dashboard and front-desk reads, visit summaries and their
+backfill, platform prospects, beta email branding and PR #20). This session did
+not see the deploy output and has not checked the backfill state or the screens
+listed in docs/12, so those checks are still open.
+
+Three Sonnet reviewers then read every production change in `apps/web/convex/`
+since `1ca43d8a` (the 7 October release), plus the Clerk email route and the
+prospects page. Each finding was rechecked by hand. They found nothing that
+shows a wrong figure, misses a refund or widens access: the new reads find the
+same records as the old whole-table reads, and branch scope is unchanged.
+
+**Fixed on `claude/signup-limit-phone-links-relay`:**
+
+- **Gym application limit per inbox** (`convex/gymApplications.ts`). The public
+  form's limit (five an hour) was keyed on email *and* phone together, so a
+  script could send the same address a new phone number each time and queue an
+  unlimited number of "RIVET Beta" applicant copies to someone's inbox. The key
+  is now the inbox alone; "+tag" addresses, and dots in Gmail addresses, count
+  as one inbox. **Convex change: it takes effect only after `pnpm
+  convex:deploy`.** The existing `gym_application` guard rows simply expire.
+- **Prospect phone and WhatsApp links** (`src/lib/platform/prospects.ts`). The
+  form accepted `79 097 9998`, `06 585 0000` and `+962 (0) 79…`, but the links
+  dialled `+7 909…` (Russia), `+06…` and `+9620…`. `whatsappDigits` now uses the
+  shared `normalizePhoneToE164` rules (no country code means Jordan; `+` and
+  `00` keep theirs) after dropping a written "(0)". Arabic-Indic digits work
+  too. Web only.
+- **Clerk email relay retries** (`src/app/api/webhooks/clerk-email/route.ts`).
+  Every Resend failure returned 502, so a permanent rejection (a malformed
+  address, a field Resend never accepts) made Clerk retry for days and could
+  deliver a stale code. 401, 403, 408, 409, 425, 429 and 5xx still return 502;
+  any other 4xx now returns 200 and logs one line with the status, Resend's
+  error name (only when it is a plain identifier) and Clerk's email id. Web
+  only; nothing changes for live users until the Clerk cutover in docs/19.
+- docs/19 section 2 now describes the branded relay, the retry rule and the
+  application limit.
+
+Checked: each new test fails against the old code and passes now
+(`gymApplications.email-queue.test.ts`, `prospects.test.ts`,
+`clerk-email/route.test.ts`).
+
+**Noted, not changed (scale, not wrong output today):**
+
+- `callAttemptsByMember` (`convex/domain.ts`) makes one index read per member
+  for the renewal and at-risk queues. A queue of several thousand members could
+  pass Convex's per-request index-range limit; pilot gyms are far below it.
+- `leadLinkedTimeline` reads every lead-keyed record (tasks, offers,
+  automation rows) and keeps the timeline ones. It would grow fast only with
+  automation rules switched on, and no screen can create one today.
+- Prospect import skips by code only, and an owner change between two
+  platform admins with the same display name is dropped (history compares
+  names, finds no change and skips the save). The first needs a direct API
+  call; the second, two admins sharing a name.
 
 ## 17 October 2026 — A member's payments no longer read every payment in the gym
 

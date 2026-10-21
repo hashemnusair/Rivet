@@ -2,6 +2,9 @@ import type { documents as EnDocuments } from "../en/documents";
 
 export const documents: typeof EnDocuments = {
   onboardingFee: "رسوم الإعداد لمرة واحدة",
+  websiteLine: "موقع إلكتروني مخصص",
+  websiteFreeLine: "موقع إلكتروني مخصص، مجاني (عرض الإطلاق)",
+  promoDiscount: "رمز الخصم {code}",
   csvTitle: "تصدير RIVET",
   csvRowCount: "عدد صفوف البيانات",
   csvNoRecords: "لا توجد سجلات مطابقة لهذا التصدير.",
@@ -43,6 +46,7 @@ export const documents: typeof EnDocuments = {
   "swift": "رمز سويفت: {swift}",
   "cliq": "كليك",
   "alias": "الاسم المستعار: {alias}",
+  "cliqName": "الاسم: {name}",
   "bankInstructions": "حوالة بنكية أو كليك. يرسل RIVET بيانات الحساب مع كل فاتورة، ويؤكدها عند الطلب عبر {email}.",
   "quoteReference": "يرجى استخدام {reference} كرقم مرجع للدفعة.",
   "suspensionNotice": "بموجب اتفاقية الاشتراك، قد يُعلَّق الوصول بعد إشعار مدته 7 أيام عند تجاوز موعد دفع الفاتورة.",

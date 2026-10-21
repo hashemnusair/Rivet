@@ -38,6 +38,17 @@ import type {
   PlatformSnapshot,
   PlatformSupportCase,
   PlatformSaasPlan,
+  WebsiteOffer,
+  BillingCheckout,
+  BillingPlans,
+  PlanChangeOption,
+  SupportPaymentRequest,
+  CreatePromoCodeInput,
+  PlatformCommerceView,
+  PlatformPaymentDetails,
+  PlatformPromoCode,
+  PromoCodeCheck,
+  SubmitPlatformPaymentInput,
   EntryPass,
   SubmitGymApplicationInput,
   SubmitGymApplicationResult,
@@ -90,8 +101,9 @@ import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
-import { feeLabel, findPlan, termPriceMinor } from "../../../convex/planCatalogue";
-import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue } from "../../../convex/subscriptionTerm";
+import { feeLabel, findPlan, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "../../../convex/planCatalogue";
+import { DEFAULT_WEBSITE_PLACES, DEFAULT_WEBSITE_PRICE_MINOR, firstPaymentQuote, normalizePromoCode, paymentNoteReference, PROMO_TARGETS, validPromoCodeShape, type PromoCheck } from "../../../convex/firstPayment";
+import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
@@ -477,6 +489,27 @@ function revokeMockMediaUrl(url?: string): void {
   if (url && typeof URL.revokeObjectURL === "function" && url.startsWith("blob:")) URL.revokeObjectURL(url);
 }
 
+type MockPromoCode = Omit<PlatformPromoCode, "uses" | "state">;
+
+/** Parity with `renewalReminderDay` in convex/subscriptionReconciliation.ts. */
+function renewalReminderDay(boundary: number, now: number): number | undefined {
+  if (now >= boundary) return undefined;
+  const passed = RENEWAL_REMINDER_DAYS.filter((days) => now >= boundary - days * DAY_MS);
+  return passed.length > 0 ? Math.min(...passed) : undefined;
+}
+
+/** Sample details for the local preview only; production details are set in the platform console. */
+function mockCommerceSettings(): { websiteOffer: { enabled: boolean; places: number; priceMinor: number }; paymentDetails: PlatformPaymentDetails } {
+  return {
+    websiteOffer: { enabled: true, places: DEFAULT_WEBSITE_PLACES, priceMinor: DEFAULT_WEBSITE_PRICE_MINOR },
+    paymentDetails: { cliqAlias: "RIVETDEMO", cliqName: "RIVET (preview)", bankName: "Preview Bank", accountName: "RIVET (preview)", iban: "JO00PREV0000000000000000000000", note: "Preview details. Do not send money." },
+  };
+}
+
+function mockPromoCodes(): MockPromoCode[] {
+  return [{ id: "promo-launch50", code: "LAUNCH50", note: "Launch: half off the first month", target: "subscription", percentOff: 50, plans: [], maxRedemptions: 10, active: true, createdAt: "2026-10-19T08:00:00.000Z" }];
+}
+
 const MOCK_INVOICES: PlatformBillingInvoice[] = [
   { id: "RV-1048", gymId: "pulse-lab", gym: "Pulse Lab", amount: "JD 149.000", date: "31 Jul 2026", status: "failed" },
   { id: "RV-1047", gymId: "her-house", gym: "Her House Fitness", amount: "JD 249.000", date: "28 Jul 2026", status: "paid" },
@@ -542,7 +575,7 @@ type PageParams = { page?: number; pageSize?: number; sort?: string; search?: st
 type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
 
 type MockPlatformAuditEvent = PlatformGymActivity & {
-  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects";
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects" | "platform_setting" | "platform_promo" | "platform_invoice";
   entityPublicId: string;
   entityLabel: string;
   reason: string;
@@ -735,6 +768,10 @@ export class MockGymOSApi implements GymOSApi {
   private readonly prospects = new MockProspectStore();
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
   private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
+  private readonly websiteOfferSubscribers = new Map<(offer: WebsiteOffer) => void, ((error: unknown) => void) | undefined>();
+  private commerce: { websiteOffer: { enabled: boolean; places: number; priceMinor: number }; paymentDetails: PlatformPaymentDetails } = mockCommerceSettings();
+  private promoCodes: MockPromoCode[] = mockPromoCodes();
+  private readonly sentRenewalReminders = new Set<string>();
   private readonly platformSnapshotSubscribers = new Map<(snapshot: PlatformSnapshot) => void, ((error: unknown) => void) | undefined>();
   private readonly platformGymDetailSubscribers = new Map<(detail: PlatformGymDetail) => void, { gymId: string; onError?: (error: unknown) => void }>();
   private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
@@ -805,6 +842,7 @@ export class MockGymOSApi implements GymOSApi {
     this.db = db ?? buildSeed();
     this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
+    this.applyPreviewPlan();
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.platformPlans = mockSaasPlans();
     this.classCoaches = this.seedClassCoaches();
@@ -817,6 +855,8 @@ export class MockGymOSApi implements GymOSApi {
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.commerce = mockCommerceSettings();
+    this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     const trainer = this.db.users.find((user) => user.role === "trainer" && user.status === "active");
@@ -885,10 +925,10 @@ export class MockGymOSApi implements GymOSApi {
     return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
   }
 
-  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean }> {
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean; quotedPriceMinor?: number }> {
     return [
-      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt },
-      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt })),
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt, quotedPriceMinor: this.db.organization.quotedPriceMinor },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt, quotedPriceMinor: organization.quotedPriceMinor })),
     ];
   }
 
@@ -2399,7 +2439,7 @@ export class MockGymOSApi implements GymOSApi {
     let invoice = this.platformInvoices.find((item) => item.cycleKey === cycleKey);
     let invoicesCreated = 0;
     if (now >= boundary - INVOICE_LEAD_DAYS * DAY_MS && !invoice) {
-      const plan = this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0;
+      const plan = gymMonthlyPriceMinor(organization.subscriptionPlan, this.platformPlans.find((item) => item.name === organization.subscriptionPlan)?.priceMinor ?? 0, organization.quotedPriceMinor);
       const addOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
       const onboardingFeeMinor = this.platformInvoices.some(item => item.gymId === gym.id && item.status !== "void" && (item.onboardingFeeMinor ?? 0) > 0) ? 0 : organization.onboardingFeeMinor ?? 0;
       const amountMinor = termPriceMinor(plan + addOnMonthlyPrice(addOns), billingInterval) + onboardingFeeMinor;
@@ -2423,11 +2463,18 @@ export class MockGymOSApi implements GymOSApi {
         status: "open",
       };
       this.platformInvoices.unshift(invoice);
-      this.operationalEmailKinds.push("platform_invoice_reminder");
+      this.operationalEmailKinds.push("platform_invoice_issued");
       invoicesCreated = 1;
     }
     if (!invoice) return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
     if (invoice.status === "void") return { processed: 1, invoicesCreated, markedPastDue: 0, suspended: 0 };
+    // Parity with Convex: reminders 7, 3 and 1 days before the term ends, once each.
+    const reminderDay = renewalReminderDay(boundary, now);
+    const reminderKey = reminderDay === undefined ? undefined : `${invoice.id}:${reminderDay}`;
+    if (reminderKey && ["draft", "open"].includes(invoice.status) && invoice.paymentClaim?.status !== "submitted" && !this.sentRenewalReminders.has(reminderKey)) {
+      this.sentRenewalReminders.add(reminderKey);
+      this.operationalEmailKinds.push("platform_invoice_reminder");
+    }
     // Parity with Convex: the agreement's payment term, not the term
     // boundary, is what decides when an invoice falls past due.
     const dueAt = Date.parse(invoice.dueAt ?? "") || boundary;
@@ -2481,6 +2528,402 @@ export class MockGymOSApi implements GymOSApi {
       onError?.(error);
     }
     return () => { this.publicPlanSubscribers.delete(onValue); };
+  }
+
+  async subscribeWebsiteOffer(onValue: (offer: WebsiteOffer) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    try {
+      onValue(await this.respond(() => this.websiteOffer(), "public"));
+      this.websiteOfferSubscribers.set(onValue, onError);
+    } catch (error) {
+      onError?.(error);
+    }
+    return () => { this.websiteOfferSubscribers.delete(onValue); };
+  }
+
+  /** Parity with Convex: a gym holds a place while an invoice that gave it the website free is not void. */
+  private websitePlaceHolders(): PlatformBillingInvoice[] {
+    const byGym = new Map<string, PlatformBillingInvoice>();
+    for (const invoice of this.platformInvoices) {
+      if (invoice.websiteFree !== true || invoice.status === "void") continue;
+      const key = invoice.gymId ?? invoice.id;
+      const existing = byGym.get(key);
+      if (!existing || (invoice.issuedAt ?? invoice.date) < (existing.issuedAt ?? existing.date)) byGym.set(key, invoice);
+    }
+    return [...byGym.values()].sort((left, right) => (left.issuedAt ?? left.date).localeCompare(right.issuedAt ?? right.date));
+  }
+
+  private websiteOffer(): WebsiteOffer {
+    const { websiteOffer } = this.commerce;
+    return { enabled: websiteOffer.enabled, places: websiteOffer.places, claimed: Math.min(this.websitePlaceHolders().length, websiteOffer.places), priceMinor: websiteOffer.priceMinor };
+  }
+
+  private promoUses(code: string): number {
+    return this.platformInvoices.filter((invoice) => invoice.promoCode === code && invoice.status !== "void").length;
+  }
+
+  private promoState(row: MockPromoCode): PlatformPromoCode["state"] {
+    if (!row.active) return "paused";
+    if (row.expiresOn && row.expiresOn < todayISODate()) return "expired";
+    if (row.maxRedemptions !== undefined && this.promoUses(row.code) >= row.maxRedemptions) return "used_up";
+    return "active";
+  }
+
+  private checkPromo(rawCode: unknown, plan: PlatformSaasPlan["name"]): PromoCheck {
+    const code = normalizePromoCode(rawCode);
+    const row = validPromoCodeShape(code) ? this.promoCodes.find((item) => item.code === code) : undefined;
+    if (!row) return { valid: false, reason: "not_found" };
+    const state = this.promoState(row);
+    if (state !== "active") return { valid: false, reason: state };
+    if (row.plans.length > 0 && !row.plans.includes(plan)) return { valid: false, reason: "plan" };
+    return { valid: true, promo: { code: row.code, target: row.target, ...(row.percentOff !== undefined ? { percentOff: row.percentOff } : { amountOffMinor: row.amountOffMinor ?? 0 }) } };
+  }
+
+  private commerceView(): PlatformCommerceView {
+    const holders = this.websitePlaceHolders();
+    return {
+      websiteOffer: {
+        ...this.commerce.websiteOffer,
+        claimed: Math.min(holders.length, this.commerce.websiteOffer.places),
+        holders: holders.map((invoice, index) => ({ place: index + 1, gym: invoice.gym, invoiceId: invoice.id, status: invoice.status, issuedAt: invoice.issuedAt })),
+      },
+      paymentDetails: { ...this.commerce.paymentDetails },
+      promoCodes: [...this.promoCodes]
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map((row) => ({ ...row, plans: [...row.plans], uses: this.promoUses(row.code), state: this.promoState(row) })),
+    };
+  }
+
+  checkPromoCode(input: { code: string; plan: PlatformSaasPlan["name"] }): Promise<PromoCodeCheck> {
+    return this.respond(() => this.checkPromo(input.code, input.plan), "public");
+  }
+
+  getPlatformCommerce(): Promise<PlatformCommerceView> {
+    return this.respond(() => this.commerceView());
+  }
+
+  async updateWebsiteOffer(input: { enabled: boolean; places: number; priceMinor: number; reason: string }): Promise<PlatformCommerceView> {
+    const view = await this.respond(() => {
+      this.requireReason(input.reason);
+      if (!Number.isSafeInteger(input.places) || input.places < 0 || input.places > 3) throw ApiError.of(ERR.VALIDATION, "Places must be a whole number from 0 to 3.", { fieldErrors: { places: ["Invalid"] } });
+      if (!Number.isSafeInteger(input.priceMinor) || input.priceMinor < 0) throw ApiError.of(ERR.VALIDATION, "Enter a website price in dinars.", { fieldErrors: { priceMinor: ["Invalid"] } });
+      const before = { ...this.commerce.websiteOffer };
+      this.commerce.websiteOffer = { enabled: input.enabled, places: input.places, priceMinor: input.priceMinor };
+      this.recordPlatformAudit({ action: "commerce.website_offer_update", entityType: "platform_setting", entityPublicId: "commercial", entityLabel: "Website offer", summary: "Changed the website offer", reason: input.reason.trim(), before, after: { ...this.commerce.websiteOffer } });
+      return this.commerceView();
+    });
+    await this.emitWebsiteOfferSubscribers();
+    return view;
+  }
+
+  updatePaymentDetails(input: PlatformPaymentDetails & { reason: string }): Promise<PlatformCommerceView> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const iban = input.iban.trim().toUpperCase().replace(/\s+/g, "");
+      if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban)) throw ApiError.of(ERR.VALIDATION, "Check the IBAN.", { fieldErrors: { iban: ["Invalid"] } });
+      const before = { ...this.commerce.paymentDetails };
+      this.commerce.paymentDetails = { cliqAlias: input.cliqAlias.trim(), cliqName: input.cliqName.trim(), bankName: input.bankName.trim(), accountName: input.accountName.trim(), iban, note: input.note.trim() };
+      this.recordPlatformAudit({ action: "commerce.payment_details_update", entityType: "platform_setting", entityPublicId: "commercial", entityLabel: "Payment details", summary: "Changed where gyms send payments", reason: input.reason.trim(), before, after: { ...this.commerce.paymentDetails } });
+      return this.commerceView();
+    });
+  }
+
+  createPromoCode(input: CreatePromoCodeInput): Promise<PlatformCommerceView> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const code = normalizePromoCode(input.code);
+      const fieldErrors: Record<string, string[]> = {};
+      if (!validPromoCodeShape(code)) fieldErrors.code = ["Invalid"];
+      else if (this.promoCodes.some((row) => row.code === code)) fieldErrors.code = ["Taken"];
+      if (!PROMO_TARGETS.includes(input.target)) fieldErrors.target = ["Required"];
+      const percent = input.percentOff !== undefined && Number.isSafeInteger(input.percentOff) && input.percentOff >= 1 && input.percentOff <= 100;
+      const amount = input.amountOffMinor !== undefined && Number.isSafeInteger(input.amountOffMinor) && input.amountOffMinor >= 1;
+      if (percent === amount) fieldErrors.discount = ["Invalid"];
+      if (input.maxRedemptions !== undefined && (!Number.isSafeInteger(input.maxRedemptions) || input.maxRedemptions < 1)) fieldErrors.maxRedemptions = ["Invalid"];
+      if (input.expiresOn && !/^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn)) fieldErrors.expiresOn = ["Invalid"];
+      if (Object.keys(fieldErrors).length > 0) throw ApiError.of(ERR.VALIDATION, "Check the highlighted fields and try again.", { fieldErrors });
+      const row: MockPromoCode = {
+        id: mockUuid(),
+        code,
+        note: input.note.trim(),
+        target: input.target,
+        ...(percent ? { percentOff: input.percentOff } : { amountOffMinor: input.amountOffMinor }),
+        plans: [...new Set(input.plans)],
+        ...(input.maxRedemptions !== undefined ? { maxRedemptions: input.maxRedemptions } : {}),
+        ...(input.expiresOn ? { expiresOn: input.expiresOn } : {}),
+        active: true,
+        createdAt: nowISO(),
+      };
+      this.promoCodes.unshift(row);
+      this.recordPlatformAudit({ action: "promo.create", entityType: "platform_promo", entityPublicId: row.id, entityLabel: code, summary: `Created promo code ${code}`, reason: input.reason.trim(), after: { code, target: row.target, percentOff: row.percentOff, amountOffMinor: row.amountOffMinor } });
+      return this.commerceView();
+    });
+  }
+
+  setPromoCodeActive(input: { promoId: string; active: boolean; reason: string }): Promise<PlatformCommerceView> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const row = this.promoCodes.find((item) => item.id === input.promoId);
+      if (!row) throw ApiError.of(ERR.NOT_FOUND, "Promo code not found.");
+      if (row.active !== input.active) {
+        row.active = input.active;
+        this.recordPlatformAudit({ action: input.active ? "promo.resume" : "promo.pause", entityType: "platform_promo", entityPublicId: row.id, entityLabel: row.code, summary: `${input.active ? "Resumed" : "Paused"} promo code ${row.code}`, reason: input.reason.trim(), before: { active: !input.active }, after: { active: input.active } });
+      }
+      return this.commerceView();
+    });
+  }
+
+  rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice> {
+    return this.respond(() => {
+      this.requireReason(input.reason);
+      const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (invoice.paymentClaim?.status !== "submitted") throw ApiError.of(ERR.CONFLICT, "There are no payment details waiting on this invoice.");
+      const before = { ...invoice.paymentClaim };
+      invoice.paymentClaim = { ...invoice.paymentClaim, status: "rejected", rejectedAt: nowISO(), rejectionReason: input.reason.trim() };
+      this.recordPlatformAudit({ action: "invoice.payment_rejected", entityType: "platform_invoice", entityPublicId: invoice.id, entityLabel: invoice.id, summary: "Sent payment details back to the gym", reason: input.reason.trim(), before, after: { ...invoice.paymentClaim } });
+      this.updatePaymentRequest(invoice, { state: "returned", returnedAt: nowISO(), returnReason: input.reason.trim() }, "waiting");
+      // Parity with Convex: the gym owner is emailed our message.
+      this.operationalEmailKinds.push("platform_payment_returned");
+      return { ...invoice, paymentClaim: { ...invoice.paymentClaim } };
+    });
+  }
+
+  private checkoutView(): BillingCheckout {
+    const org = this.db.organization;
+    const renewal = this.platformInvoices
+      .filter((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && !invoice.planChange && ["open", "past_due", "failed"].includes(invoice.status))
+      .sort((left, right) => (left.dueAt ?? "").localeCompare(right.dueAt ?? ""))[0];
+    const upgrade = this.pendingPlanChange();
+    // Parity with Convex: the upgrade the owner asked for comes first while the gym is in good standing.
+    const unpaid = (org.status === "active" ? upgrade : undefined) ?? renewal ?? upgrade;
+    const role = currentRole(this.db);
+    const dueAt = unpaid?.dueAt && !unpaid.planChange ? Date.parse(unpaid.dueAt) : Number.NaN;
+    return {
+      gym: { name: org.name, status: org.status, plan: org.subscriptionPlan, billingInterval: org.billingInterval ?? "monthly", currentPeriodEndsAt: org.currentPeriodEndsAt, timezone: org.timezone },
+      ...(unpaid ? { invoice: { ...unpaid, ...(unpaid.paymentClaim ? { paymentClaim: { ...unpaid.paymentClaim } } : {}) } } : {}),
+      paymentDetails: { ...this.commerce.paymentDetails },
+      canPay: role === "owner" || permissionsFor(this.db, role).includes("settings.manage"),
+      ...(Number.isFinite(dueAt) && org.status !== "pending_payment" && org.status !== "suspended" ? { accessEndsAt: new Date(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS).toISOString() } : {}),
+    };
+  }
+
+  getBillingCheckout(): Promise<BillingCheckout> {
+    return this.respond(() => this.checkoutView());
+  }
+
+  /** Browser previews can start the demo gym on a smaller plan, to try an upgrade. */
+  private applyPreviewPlan(): void {
+    const storage = previewBehaviorStorage();
+    let plan: string | null = null;
+    try { plan = storage?.getItem("rivet.demo.plan") ?? null; } catch { plan = null; }
+    if (plan === "Basic" || plan === "Starter" || plan === "Growth" || plan === "Pro" || plan === "Enterprise") this.db.organization.subscriptionPlan = plan;
+  }
+
+  private pendingPlanChange(): PlatformBillingInvoice | undefined {
+    return this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.planChange && ["open", "past_due", "failed"].includes(invoice.status));
+  }
+
+  /** Parity with Convex: bigger plans priced from the unused days of the paid term. */
+  private planChangeOptions(): PlanChangeOption[] {
+    const org = this.db.organization;
+    const order: string[] = ["Starter", "Basic", "Growth", "Pro", "Enterprise"];
+    const rank = (plan: string | undefined) => (plan ? order.indexOf(plan) : -1);
+    const interval = org.billingInterval ?? "monthly";
+    const price = (plan: string | undefined) => this.platformPlans.find((item) => item.name === plan)?.priceMinor ?? findPlan(plan)?.priceMinor ?? 0;
+    const end = Date.parse(org.currentPeriodEndsAt ?? "");
+    const funded = Number.isFinite(end) ? this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end) : undefined;
+    const value = funded ? fundedSubscriptionValue(funded) : undefined;
+    const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, price(org.subscriptionPlan), org.quotedPriceMinor), amountMinor: value, interval } : undefined;
+    const now = Date.now();
+    return (["Basic", "Pro"] as const)
+      .filter((plan) => rank(plan) > rank(org.subscriptionPlan) && price(plan) > 0)
+      .map((plan) => {
+        const change = termChange({ now, interval, monthlyPriceMinor: price(plan), ...(outgoing ? { outgoing } : {}) });
+        return { plan, monthlyPriceMinor: price(plan), subtotalMinor: change.subtotalMinor, creditMinor: change.creditMinor, creditDays: change.creditDays, onboardingFeeMinor: 0, amountMinor: change.amountMinor };
+      });
+  }
+
+  private billingPlansView(): BillingPlans {
+    const org = this.db.organization;
+    const role = currentRole(this.db);
+    const canPay = role === "owner" || permissionsFor(this.db, role).includes("settings.manage");
+    const blockedReason = !canPay ? "owner_only" as const : org.status !== "active" ? "not_active" as const : undefined;
+    const pending = this.pendingPlanChange();
+    const catalogPrice = this.platformPlans.find((item) => item.name === org.subscriptionPlan)?.priceMinor ?? findPlan(org.subscriptionPlan)?.priceMinor;
+    return {
+      plan: org.subscriptionPlan,
+      ...(org.subscriptionPlan && catalogPrice !== undefined ? { monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, catalogPrice, org.quotedPriceMinor) + addOnMonthlyPrice(validateAddOns(org.subscriptionAddOns, org.subscriptionPlan)) } : {}),
+      billingInterval: org.billingInterval ?? "monthly",
+      status: org.status,
+      currentPeriodEndsAt: org.currentPeriodEndsAt,
+      options: blockedReason ? [] : this.planChangeOptions(),
+      ...(blockedReason ? { blockedReason } : {}),
+      ...(pending ? { pending: { ...pending, ...(pending.paymentClaim ? { paymentClaim: { ...pending.paymentClaim } } : {}) } } : {}),
+    };
+  }
+
+  getBillingPlans(): Promise<BillingPlans> {
+    return this.respond(() => this.billingPlansView());
+  }
+
+  requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout> {
+    return this.respond(() => {
+      const view = this.billingPlansView();
+      if (view.blockedReason === "owner_only") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can change the plan.");
+      if (view.blockedReason === "not_active") throw ApiError.of(ERR.CONFLICT, "Pay your open RIVET invoice before you change the plan.");
+      const option = view.options.find((candidate) => candidate.plan === input.plan);
+      if (!option) throw ApiError.of(ERR.VALIDATION, "Choose a bigger plan. To move to a smaller plan, message RIVET.", { fieldErrors: { plan: ["Invalid"] } });
+      const pending = this.pendingPlanChange();
+      if (pending) {
+        if (pending.paymentClaim?.status === "submitted") throw ApiError.of(ERR.CONFLICT, "RIVET is checking your payment for the last plan change. Wait until it is confirmed.");
+        if (pending.planChange?.to === input.plan) return this.checkoutView();
+        pending.status = "void";
+        pending.voidedAt = nowISO();
+      }
+      const org = this.db.organization;
+      const now = Date.now();
+      const interval = org.billingInterval ?? "monthly";
+      const id = `INV-${mockUuid()}`;
+      this.platformInvoices.unshift({
+        id,
+        gymId: PROVISIONED_MOCK_GYM_ID,
+        gym: org.name,
+        amountMinor: option.amountMinor,
+        amount: `JOD ${(option.amountMinor / 1_000).toFixed(3)}`,
+        subtotalMinor: option.subtotalMinor,
+        ...(option.creditMinor > 0 ? { creditMinor: option.creditMinor, creditDays: option.creditDays } : {}),
+        planChange: { from: org.subscriptionPlan, to: input.plan },
+        currency: "JOD",
+        date: new Date(now).toISOString(),
+        issuedAt: new Date(now).toISOString(),
+        dueAt: new Date(now + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
+        periodStart: new Date(now).toISOString(),
+        periodEnd: new Date(termEnd(now, interval)).toISOString(),
+        cycleKey: `upgrade:${org.id}:${now}`,
+        billingInterval: interval,
+        status: "open",
+      });
+      this.recordPlatformAudit({ action: "plan_change.requested", entityType: "platform_invoice", entityPublicId: id, entityLabel: id, summary: `${org.name} asked to upgrade to ${input.plan}`, reason: "", after: { from: org.subscriptionPlan, to: input.plan, amountMinor: option.amountMinor } });
+      return this.checkoutView();
+    });
+  }
+
+  cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans> {
+    return this.respond(() => {
+      if (this.billingPlansView().blockedReason === "owner_only") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can change the plan.");
+      const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId && item.gymId === PROVISIONED_MOCK_GYM_ID && item.planChange);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Plan change not found.");
+      if (!["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.CONFLICT, "This plan change is already paid or closed.");
+      if (invoice.paymentClaim?.status === "submitted") throw ApiError.of(ERR.CONFLICT, "RIVET is checking your payment for this plan change.");
+      invoice.status = "void";
+      invoice.voidedAt = nowISO();
+      this.updatePaymentRequest(invoice, { state: "cancelled" }, "resolved");
+      return this.billingPlansView();
+    });
+  }
+
+  /** Parity with Convex: a gym that can open its workspace follows a payment it sent in Support. */
+  private openPaymentRequest(invoice: PlatformBillingInvoice): void {
+    const org = this.db.organization;
+    const claim = invoice.paymentClaim;
+    if (!claim || (org.status !== "active" && org.status !== "past_due")) return;
+    const sent = { state: "sent" as const, method: claim.method, reference: claim.reference, amountMinor: claim.amountMinor, sentAt: claim.submittedAt, returnedAt: undefined, returnReason: undefined };
+    const existing = invoice.supportCaseId ? this.platformSupportCases.find((item) => item.id === invoice.supportCaseId) : undefined;
+    if (existing?.billing) {
+      existing.billing = { ...existing.billing, ...sent };
+      existing.status = "open";
+      existing.resolvedAt = undefined;
+      existing.resolutionSummary = undefined;
+      existing.updatedAt = sent.sentAt;
+      return;
+    }
+    const actor = this.actor();
+    const to = invoice.planChange?.to;
+    const caseId = `SUP-${mockUuid()}`;
+    this.platformSupportCases.unshift({
+      id: caseId,
+      gymId: org.id,
+      gym: org.name,
+      creatorId: actor.id,
+      creatorName: actor.name,
+      creatorEmail: actor.email,
+      subject: to ? `Upgrade to ${to}` : `Payment for invoice ${paymentNoteReference(invoice.id)}`,
+      body: `Payment sent: JOD ${(claim.amountMinor / 1_000).toFixed(3)} by ${claim.method === "cliq" ? "CliQ" : "bank transfer"}, reference ${claim.reference}. Waiting for RIVET to confirm it.`,
+      priority: "normal",
+      requestType: "billing",
+      billing: { invoiceId: invoice.id, kind: to ? "upgrade" : "payment", ...(to ? { planFrom: invoice.planChange?.from, planTo: to } : {}), currency: invoice.currency ?? "JOD", ...sent },
+      status: "open",
+      createdAt: sent.sentAt,
+      updatedAt: sent.sentAt,
+      messages: [],
+    });
+    invoice.supportCaseId = caseId;
+  }
+
+  private updatePaymentRequest(invoice: PlatformBillingInvoice, billing: Partial<SupportPaymentRequest>, status: PlatformSupportCase["status"], resolution?: string): void {
+    const supportCase = invoice.supportCaseId ? this.platformSupportCases.find((item) => item.id === invoice.supportCaseId) : undefined;
+    if (!supportCase?.billing) return;
+    const now = nowISO();
+    supportCase.billing = { ...supportCase.billing, ...billing };
+    supportCase.status = status;
+    if (status === "resolved") {
+      supportCase.resolvedAt = now;
+      if (resolution) supportCase.resolutionSummary = resolution;
+    }
+    supportCase.updatedAt = now;
+  }
+
+  submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout> {
+    return this.respond(() => {
+      const view = this.checkoutView();
+      if (!view.canPay) throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can send payment details.");
+      const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId && item.gymId === PROVISIONED_MOCK_GYM_ID);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      if (!["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.CONFLICT, "This invoice is already paid or closed.");
+      const fieldErrors: Record<string, string[]> = {};
+      if (input.method !== "cliq" && input.method !== "bank_transfer") fieldErrors.method = ["Required"];
+      if (input.reference.trim().length < 3) fieldErrors.reference = ["Required"];
+      if (input.payerName.trim().length < 2) fieldErrors.payerName = ["Required"];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) || input.paidOn > todayISODate()) fieldErrors.paidOn = ["Invalid"];
+      if (Object.keys(fieldErrors).length > 0) throw ApiError.of(ERR.VALIDATION, "Check the payment details and try again.", { fieldErrors });
+      const user = this.actor();
+      invoice.paymentClaim = {
+        status: "submitted",
+        method: input.method,
+        reference: input.reference.trim(),
+        payerName: input.payerName.trim(),
+        paidOn: input.paidOn,
+        ...(input.note?.trim() ? { note: input.note.trim() } : {}),
+        amountMinor: invoice.amountMinor ?? 0,
+        submittedAt: nowISO(),
+        submittedBy: { id: user.id, name: user.name },
+      };
+      this.openPaymentRequest(invoice);
+      return this.checkoutView();
+    });
+  }
+
+  /** Parity with Convex: the workspace warning for the last day of a paid term and after it. */
+  private billingNotice(): T.BillingNotice | undefined {
+    const org = this.db.organization;
+    if (org.status !== "active" && org.status !== "past_due") return undefined;
+    const end = org.currentPeriodEndsAt ? Date.parse(org.currentPeriodEndsAt) : Number.NaN;
+    if (!Number.isFinite(end)) return undefined;
+    const invoices = this.platformInvoices.filter((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID);
+    if (invoices.some((invoice) => invoice.status === "paid" && Date.parse(invoice.periodEnd ?? "") > end)) return undefined;
+    const now = Date.now();
+    const day = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: org.timezone || "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+    const lastDay = now < end && day(now) === day(end - 1);
+    if (!lastDay && now < end) return undefined;
+    const unpaid = invoices.filter((invoice) => !invoice.planChange && ["open", "past_due", "failed"].includes(invoice.status)).sort((left, right) => (left.dueAt ?? "").localeCompare(right.dueAt ?? ""))[0];
+    const dueAt = unpaid?.dueAt ? Date.parse(unpaid.dueAt) : end;
+    return {
+      state: unpaid?.paymentClaim?.status === "submitted" ? "payment_sent" : lastDay ? "last_day" : "overdue",
+      periodEndsAt: new Date(end).toISOString(),
+      ...(unpaid ? { invoiceId: unpaid.id, amountMinor: unpaid.amountMinor, currency: unpaid.currency ?? "JOD" } : {}),
+      accessEndsAt: new Date(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS).toISOString(),
+      ...(unpaid?.paymentClaim?.status === "rejected" ? { paymentReturned: true } : {}),
+    };
   }
 
   async subscribeWorkspaceAccess(onValue: (access: T.WorkspaceAccess) => void, onError?: (error: unknown) => void): Promise<() => void> {
@@ -2592,7 +3035,7 @@ export class MockGymOSApi implements GymOSApi {
         usage: {
           memberCount: organization ? available(activeMemberCount) : notAvailable(),
           activeStaffCount: organization ? available(activeStaffCount) : notAvailable(),
-          staffLimit: organization ? field(plan?.staff, "not_configured") : notAvailable(),
+          staffLimit: organization ? field(plan ? applyAddOns({ ...findPlan(plan.name)!, ...plan }, organization.subscriptionAddOns).staff : undefined, "not_configured") : notAvailable(),
           automationRuleCount: organization ? available(tenant ? 0 : this.db.rules.length) : notAvailable(),
           paymentTransactionCount: organization ? available(tenant ? 0 : this.db.payments.length) : notAvailable(),
           storage: notConfigured(),
@@ -2609,7 +3052,7 @@ export class MockGymOSApi implements GymOSApi {
           // Mirror the Convex derivation: the catalog price with the shared
           // annual formula, and the platform invoices scoped to this gym.
           recurringAmount: organization && plan
-            ? available({ amount: termPriceMinor(plan.priceMinor, organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
+            ? available({ amount: termPriceMinor(gymMonthlyPriceMinor(organization.subscriptionPlan, plan.priceMinor, organization.quotedPriceMinor) + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan)), organization.billingInterval ?? gym.billingInterval ?? "monthly"), currency: organization.currency ?? "JOD" })
             : organization ? notConfigured() : notAvailable(),
           renewalDate: organization ? field(organization.currentPeriodEndsAt ?? gym.currentPeriodEndsAt, "not_configured") : notAvailable(),
           paymentMethod: notConfigured(),
@@ -2660,6 +3103,11 @@ export class MockGymOSApi implements GymOSApi {
       const existing = this.gymApplications.find((application) => application.status !== "rejected" && publicApplicationKey(application.email, application.gymName) === applicationKey);
       if (existing) return { applicationId: existing.id, status: existing.status, notificationStatus: existing.notificationStatus, submittedAt: existing.submittedAt, duplicate: true };
       enforceMockRateLimit(this.publicApplicationRateLimits, `${normalizedEmail}|${input.contactNumber.trim()}`, 5, 60 * 60 * 1000);
+      const promoCode = normalizePromoCode(input.promoCode);
+      if (promoCode) {
+        const promo = this.checkPromo(promoCode, input.plan);
+        if (!promo.valid) throw ApiError.of(ERR.VALIDATION, "This promo code cannot be used.", { fieldErrors: { promoCode: [promo.reason ?? "not_found"] } });
+      }
       const submittedAt = nowISO();
       const applicationId = `application-${Date.now()}`;
       const result = { applicationId, status: "pending" as const, notificationStatus: "sent" as const, submittedAt, duplicate: false };
@@ -2672,6 +3120,8 @@ export class MockGymOSApi implements GymOSApi {
         contactNumber: input.contactNumber.trim(),
         plan: input.plan,
         billingInterval: input.billingInterval ?? "monthly",
+        ...(input.websiteRequested ? { websiteRequested: true } : {}),
+        ...(promoCode ? { promoCode } : {}),
         status: "pending",
         notificationStatus: "sent",
         reviewNotificationStatus: "not_configured",
@@ -2712,8 +3162,14 @@ export class MockGymOSApi implements GymOSApi {
       const provisioningDeadEnd = application.status === "approved" && input.decision === "rejected" && application.provisioningStatus === "failed" && !application.provisionedOrganizationId;
       if ((application.status === "approved" && !provisioningDeadEnd) || application.status === "rejected") throw ApiError.of(ERR.VALIDATION, "This gym application has already been finalized.");
       if (input.decision === "rejected" && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Add a reason before rejecting an application.", { fieldErrors: { note: ["Required when rejecting an application"] } });
+      // Parity with Convex: approving Enterprise fixes the gym's quoted price.
+      const quotedPriceMinor = input.decision === "approved" && isQuotedPlan(application.plan) ? validQuotedPriceMinor(input.quotedPriceMinor ?? application.quotedPriceMinor) : undefined;
+      if (input.decision === "approved" && isQuotedPlan(application.plan) && quotedPriceMinor === undefined) {
+        throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+      }
       const now = nowISO();
       application.status = input.decision;
+      if (quotedPriceMinor !== undefined) application.quotedPriceMinor = quotedPriceMinor;
       if (provisioningDeadEnd) {
         application.provisioningStatus = undefined;
         application.provisioningCheckpoint = undefined;
@@ -2760,6 +3216,47 @@ export class MockGymOSApi implements GymOSApi {
         after: { reviewNotes: application.reviewNotes ?? null },
       });
       return { ...application };
+    });
+  }
+
+  /** Parity with Convex: the invoice a new gym pays before its workspace opens. */
+  private createFirstInvoice(application: PlatformGymApplication, organization: T.Organization, gymId: string, now: string): void {
+    if (this.platformInvoices.some((invoice) => invoice.gymId === gymId && invoice.firstPayment && invoice.status !== "void")) return;
+    const interval = organization.billingInterval ?? "monthly";
+    // Parity with Convex: the gym's plan, which RIVET may have corrected since it applied.
+    const planName = organization.subscriptionPlan ?? application.plan;
+    const plan = this.platformPlans.find((item) => item.name === planName);
+    const promo = application.promoCode ? this.checkPromo(application.promoCode, planName) : undefined;
+    const quote = firstPaymentQuote({
+      subscriptionMinor: termPriceMinor(gymMonthlyPriceMinor(planName, plan?.priceMinor ?? 0, organization.quotedPriceMinor) + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, planName)), interval),
+      onboardingFeeMinor: organization.onboardingFeeMinor ?? 0,
+      website: { requested: application.websiteRequested === true, free: this.commerce.websiteOffer.enabled && this.websitePlaceHolders().length < this.commerce.websiteOffer.places, priceMinor: this.commerce.websiteOffer.priceMinor },
+      promo: promo?.valid ? promo.promo : undefined,
+    });
+    const nowMs = Date.parse(now);
+    this.platformInvoices.unshift({
+      id: `INV-${mockUuid()}`,
+      gymId,
+      gym: organization.name,
+      amount: `JD ${(quote.totalMinor / 1000).toFixed(3)}`,
+      amountMinor: quote.totalMinor,
+      subtotalMinor: quote.subtotalMinor,
+      ...(quote.onboardingFeeMinor > 0 ? { onboardingFeeMinor: quote.onboardingFeeMinor } : {}),
+      ...(quote.websiteRequested ? { websiteMinor: quote.websiteMinor, websiteListMinor: quote.websiteListMinor, websiteFree: quote.websiteFree } : {}),
+      ...(quote.promo ? { promoCode: quote.promo.code, promoTarget: quote.promo.target, ...(quote.promo.percentOff !== undefined ? { promoPercentOff: quote.promo.percentOff } : { promoAmountOffMinor: quote.promo.amountOffMinor }), discountMinor: quote.discountMinor, subscriptionDiscountMinor: quote.subscriptionDiscountMinor } : {}),
+      ...(application.promoCode && !promo?.valid ? { promoNotApplied: { code: normalizePromoCode(application.promoCode), reason: promo?.reason ?? "not_found" } } : {}),
+      currency: "JOD",
+      date: now,
+      issuedAt: now,
+      dueAt: new Date(nowMs + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
+      periodStart: now,
+      periodEnd: new Date(termEnd(nowMs, interval)).toISOString(),
+      cycleKey: `first:${organization.id}`,
+      firstPayment: true,
+      addOns: validateAddOns(organization.subscriptionAddOns, planName),
+      lines: subscriptionInvoiceLines(gymMonthlyPriceMinor(planName, plan?.priceMinor ?? 0, organization.quotedPriceMinor), validateAddOns(organization.subscriptionAddOns, planName), interval),
+      billingInterval: interval,
+      status: "open",
     });
   }
 
@@ -2812,7 +3309,6 @@ export class MockGymOSApi implements GymOSApi {
       const clerkInvitationId = `clerk-inv-${application.id.slice(0, 8)}`;
       const listingId = `gym-${application.id}`;
       const startedAt = now;
-      const trialEndsAt = new Date(addCalendarMonths(Date.parse(now), 1)).toISOString();
       const template = this.platformGyms.find((item) => item.id === PROVISIONED_MOCK_GYM_ID) ?? MARKETPLACE_GYMS[0]!;
       const existingOwner = this.db.users.find((user) => user.email.trim().toLowerCase() === application.email.trim().toLowerCase() && user.status !== "deactivated");
       const owner = existingOwner ?? {
@@ -2835,10 +3331,12 @@ export class MockGymOSApi implements GymOSApi {
         slug: `${application.gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "gym"}-${application.id.slice(0, 8)}`,
         subscriptionPlan: application.plan,
         onboardingFeeMinor: this.platformPlans.find(plan => plan.name === application.plan)?.onboardingFeeMinor ?? 0,
+        quotedPriceMinor: isQuotedPlan(application.plan) ? validQuotedPriceMinor(application.quotedPriceMinor) : undefined,
         billingInterval: application.billingInterval ?? "monthly",
-        status: "trial",
-        subscriptionStartedAt: startedAt,
-        trialEndsAt,
+        // Pay first: the workspace opens when RIVET confirms the first payment.
+        status: "pending_payment",
+        subscriptionStartedAt: undefined,
+        trialEndsAt: undefined,
         currentPeriodEndsAt: undefined,
         cancelledAt: undefined,
         archivedAt: undefined,
@@ -2871,20 +3369,22 @@ export class MockGymOSApi implements GymOSApi {
       listing.fromPriceMinor = 0;
       listing.amenities = [];
       listing.featured = false;
-      listing.subscriptionStatus = "trial";
+      listing.subscriptionStatus = "pending_payment";
       listing.rivetPlan = application.plan;
       listing.billingInterval = application.billingInterval ?? "monthly";
+      listing.quotedPriceMinor = organization.quotedPriceMinor;
       listing.joinedAt = startedAt;
       listing.lastActiveAt = startedAt;
       listing.monthlyRevenueMinor = 0;
-      listing.isPublic = true;
+      listing.isPublic = false;
       listing.isProvisioned = true;
-      listing.trialEndsAt = trialEndsAt;
-      listing.subscriptionStartedAt = startedAt;
+      listing.trialEndsAt = undefined;
+      listing.subscriptionStartedAt = undefined;
       listing.currentPeriodEndsAt = undefined;
       listing.subscriptionStatusReason = organization.subscriptionStatusReason;
       listing.branches = [{ id: branchId, name: branch.name, area: "Amman", address: branch.address, trialSlots: [], internalBranchId: branchId }];
       this.provisionedTenants.set(application.id, { organization, branch, owner, membershipStatus, clerkInvitationId, listingId });
+      this.createFirstInvoice(application, organization, listing.id, now);
       this.provisionedMockGymIds.add(listing.id);
       this.platformGyms = [...this.platformGyms.filter((item) => item.id !== listing.id), listing];
       application.provisioningStatus = "completed";
@@ -2903,7 +3403,7 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "platform_gym",
         entityPublicId: listing.id,
         entityLabel: listing.name,
-        summary: `Provisioned ${listing.name} with a ${application.plan} trial`,
+        summary: `Provisioned ${listing.name} on ${application.plan}, waiting for its first payment`,
         reason: "Approved gym application provisioned",
         after: { organizationId, branchId, ownerMembershipStatus: membershipStatus, clerkInvitationStatus: application.clerkInvitationStatus },
       });
@@ -2953,10 +3453,12 @@ export class MockGymOSApi implements GymOSApi {
       const requestedPeriodEndsAtInput = input.currentPeriodEndsAt;
       const requestedPeriodEndsAt = requestedPeriodEndsAtInput === undefined ? undefined : validSubscriptionTimestamp(requestedPeriodEndsAtInput);
       if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) throw ApiError.of(ERR.VALIDATION, "The membership end date must be a valid calendar date.");
-      const hasControlChange = input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
+      const requestedQuote = input.quotedPriceMinor === undefined ? undefined : validQuotedPriceMinor(input.quotedPriceMinor);
+      if (input.quotedPriceMinor !== undefined && requestedQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the quoted monthly price in dinars.", { fieldErrors: { quotedPriceMinor: ["Invalid"] } });
+      const hasControlChange = input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined || input.isPublic !== undefined;
       if (!hasControlChange) throw ApiError.of(ERR.VALIDATION, "Choose a status, plan, listing, or lifecycle change.");
       if (!organization) {
-        if (input.isPublic !== false || input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedPeriodEndsAtInput !== undefined) {
+        if (input.isPublic !== false || input.addOns !== undefined || input.status !== undefined || input.plan !== undefined || input.billingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined) {
           throw ApiError.of(ERR.CONFIGURATION, "This directory row is not linked to a provisioned organization; only hiding it is supported.");
         }
         gym.isPublic = false;
@@ -2978,6 +3480,62 @@ export class MockGymOSApi implements GymOSApi {
       }
       if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") throw ApiError.of(ERR.VALIDATION, "Public listing must be a boolean.");
 
+      // Parity with Convex: a gym still waiting for its first payment gets
+      // its plan, billing or quote corrected and its first invoice reissued.
+      const previousAddOns = validateAddOns(organization.subscriptionAddOns, (organization.subscriptionPlan ?? gym.rivetPlan));
+      const nextAddOns = validateAddOns(input.addOns ?? (nextPlan === (organization.subscriptionPlan ?? gym.rivetPlan) ? organization.subscriptionAddOns : undefined), nextPlan);
+      const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
+      if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) throw ApiError.of(ERR.CONFLICT, "Subscription add-ons changed. Reload and review before saving.");
+      if (addOnsChanged && (nextStatus !== "active" && nextStatus !== "pending_payment" || requestedPeriodEndsAtInput !== undefined)) throw ApiError.of(ERR.VALIDATION, "Add-on changes require an active billed term with its automatic end date.");
+      if (organization.status === "pending_payment" && input.status === undefined && requestedPeriodEndsAtInput === undefined && input.isPublic === undefined) {
+        const correctedPlan = input.plan ?? organization.subscriptionPlan;
+        if (!correctedPlan) throw ApiError.of(ERR.CONFIGURATION, "This gym does not have a complete platform subscription plan.");
+        if (requestedQuote !== undefined && !isQuotedPlan(correctedPlan)) throw ApiError.of(ERR.VALIDATION, "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] } });
+        const correctedQuote = isQuotedPlan(correctedPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+        if (isQuotedPlan(correctedPlan) && correctedQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+        const correctedInterval = input.billingInterval ?? organization.billingInterval ?? "monthly";
+        if (correctedPlan === organization.subscriptionPlan && correctedInterval === (organization.billingInterval ?? "monthly") && correctedQuote === organization.quotedPriceMinor && !addOnsChanged) throw ApiError.of(ERR.VALIDATION, "Change the plan, the billing or the price first.");
+        const firstInvoices = this.platformInvoices.filter((invoice) => invoice.gymId === gym.id && invoice.firstPayment && invoice.status !== "void");
+        if (firstInvoices.some((invoice) => invoice.status === "paid")) throw ApiError.of(ERR.CONFLICT, "This gym's first payment is already recorded.");
+        if (firstInvoices.some((invoice) => invoice.paymentClaim?.status === "submitted")) throw ApiError.of(ERR.CONFLICT, "The gym has sent its payment details. Confirm them or send them back before you change the plan.");
+        const applicationId = [...this.provisionedTenants.entries()].find(([, candidate]) => candidate === tenant)?.[0];
+        const application = this.gymApplications.find((item) => item.id === applicationId);
+        if (!application) throw ApiError.of(ERR.CONFIGURATION, "This gym's application could not be found, so its first invoice cannot be issued again.");
+        const nowIso = nowISO();
+        for (const invoice of firstInvoices) {
+          invoice.status = "void";
+          invoice.voidedAt = nowIso;
+        }
+        const before = { rivetPlan: gym.rivetPlan, billingInterval: organization.billingInterval ?? "monthly", quotedPriceMinor: organization.quotedPriceMinor ?? null };
+        organization.subscriptionPlan = correctedPlan as T.Organization["subscriptionPlan"];
+        organization.subscriptionAddOns = nextAddOns;
+        if (addOnsChanged) { organization.addOnsRevision = (organization.addOnsRevision ?? 0) + 1; organization.addOnsEffectiveAt = nowIso; }
+        gym.addOns = nextAddOns;
+        gym.addOnsRevision = organization.addOnsRevision ?? 0;
+        organization.billingInterval = correctedInterval;
+        organization.quotedPriceMinor = correctedQuote;
+        organization.onboardingFeeMinor = this.platformPlans.find((plan) => plan.name === correctedPlan)?.onboardingFeeMinor ?? 0;
+        organization.subscriptionStatusReason = input.reason.trim();
+        organization.updatedAt = nowIso;
+        gym.rivetPlan = correctedPlan;
+        gym.billingInterval = correctedInterval;
+        gym.quotedPriceMinor = correctedQuote;
+        gym.subscriptionStatusReason = input.reason.trim();
+        this.createFirstInvoice(application, organization, gym.id, nowIso);
+        const reissued = this.platformInvoices.find((invoice) => invoice.gymId === gym.id && invoice.firstPayment && invoice.status !== "void");
+        this.recordPlatformAudit({
+          action: "gym.subscription.update",
+          entityType: "platform_gym",
+          entityPublicId: gym.id,
+          entityLabel: gym.name,
+          summary: `Corrected ${gym.name}'s plan before the first payment${reissued ? ` and issued ${reissued.id}` : ""}`,
+          reason: input.reason.trim(),
+          before,
+          after: { rivetPlan: correctedPlan, billingInterval: correctedInterval, quotedPriceMinor: correctedQuote ?? null, firstInvoiceAmountMinor: reissued?.amountMinor ?? null },
+        });
+        return cloneMarketplaceGym(gym);
+      }
+
       const nowTimestamp = Date.now();
       const existingBillingInterval = organization?.billingInterval ?? gym.billingInterval ?? "monthly";
       const billingInterval = input.billingInterval ?? existingBillingInterval;
@@ -2986,28 +3544,30 @@ export class MockGymOSApi implements GymOSApi {
       const storedCurrentPeriodEndsAt = organization?.currentPeriodEndsAt ? Date.parse(organization.currentPeriodEndsAt) : undefined;
       const currentStatus = organization ? platformStatusForOrganization(organization.status) : gym.subscriptionStatus;
       const currentPlan = organization?.subscriptionPlan ?? this.db.organizationEntitlements.subscriptionPlan ?? gym.rivetPlan;
-      const previousAddOns = validateAddOns(organization.subscriptionAddOns, currentPlan);
-      const nextAddOns = validateAddOns(input.addOns ?? (nextPlan === currentPlan ? organization.subscriptionAddOns : undefined), nextPlan);
-      const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
-      if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) throw ApiError.of(ERR.CONFLICT, "Subscription add-ons changed. Reload and review before saving.");
-      if (addOnsChanged && (nextStatus !== "active" || requestedPeriodEndsAtInput !== undefined)) throw ApiError.of(ERR.VALIDATION, "Add-on changes require an active billed term with its automatic end date.");
+      // Parity with Convex: Enterprise bills the gym's own quote.
+      if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) throw ApiError.of(ERR.VALIDATION, "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] } });
+      const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+      if (input.plan !== undefined && isQuotedPlan(nextPlan) && !isQuotedPlan(currentPlan) && nextQuote === undefined) throw ApiError.of(ERR.VALIDATION, "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] } });
+      const quoteChanged = requestedQuote !== undefined && requestedQuote !== organization.quotedPriceMinor;
       const materialMembershipChange = addOnsChanged || (input.status !== undefined && nextStatus !== currentStatus)
         || (input.plan !== undefined && input.plan !== currentPlan)
-        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval);
+        || (input.billingInterval !== undefined && billingInterval !== existingBillingInterval)
+        || quoteChanged;
       const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, Number.isFinite(storedCurrentPeriodEndsAt) ? storedCurrentPeriodEndsAt : undefined);
       if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) throw ApiError.of(ERR.VALIDATION, "Trial end is fixed automatically from onboarding; do not provide a paid period end date.");
       // Parity with Convex: a material change landing on an active
       // subscription starts a new server-derived paid term today, rolls the
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
-      const outgoingMonthlyPrice = (this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0) + addOnMonthlyPrice(previousAddOns);
+      const outgoingMonthlyPrice = gymMonthlyPriceMinor(currentPlan, this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0, organization.quotedPriceMinor) + addOnMonthlyPrice(previousAddOns);
+      const incomingMonthlyPrice = gymMonthlyPriceMinor(nextPlan, this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0, nextQuote) + addOnMonthlyPrice(nextAddOns);
       const fundedTerm = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === storedCurrentPeriodEndsAt);
       const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
       const change = startsNewPaidTerm
         ? termChange({
             now: nowTimestamp,
             interval: billingInterval,
-            monthlyPriceMinor: (this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0) + addOnMonthlyPrice(nextAddOns),
+            monthlyPriceMinor: incomingMonthlyPrice,
             // Only a paid, running term is worth anything back; an overdue
             // term was never paid for, so its invoice is voided instead.
             ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingValue !== undefined
@@ -3029,7 +3589,8 @@ export class MockGymOSApi implements GymOSApi {
       const previousStatus = gym.subscriptionStatus;
       const previousPlan = gym.rivetPlan;
       const previousIsPublic = gym.isPublic === true;
-      const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic };
+      const previousQuote = organization.quotedPriceMinor;
+      const beforeAudit = { subscriptionStatus: previousStatus, rivetPlan: previousPlan, billingInterval: existingBillingInterval, isPublic: previousIsPublic, quotedPriceMinor: previousQuote ?? null };
       gym.subscriptionStatus = nextStatus;
       gym.rivetPlan = nextPlan;
       gym.addOns = nextAddOns;
@@ -3040,6 +3601,7 @@ export class MockGymOSApi implements GymOSApi {
       gym.currentPeriodEndsAt = nextCurrentPeriodEndsAt === undefined ? undefined : new Date(nextCurrentPeriodEndsAt).toISOString();
       gym.cancelledAt = nextCancelledAt === undefined ? undefined : new Date(nextCancelledAt).toISOString();
       gym.billingInterval = billingInterval;
+      gym.quotedPriceMinor = nextQuote;
       gym.subscriptionStatusReason = input.reason.trim();
       if (PUBLIC_SUBSCRIPTION_STATUSES.has(nextStatus)) gym.lastActiveAt = nowISO();
 
@@ -3050,6 +3612,7 @@ export class MockGymOSApi implements GymOSApi {
         organization.subscriptionAddOns = nextAddOns;
         organization.addOnsRevision = gym.addOnsRevision;
         organization.billingInterval = billingInterval;
+        organization.quotedPriceMinor = nextQuote;
         organization.subscriptionStartedAt = gym.subscriptionStartedAt;
         organization.trialEndsAt = gym.trialEndsAt;
         organization.currentPeriodEndsAt = gym.currentPeriodEndsAt;
@@ -3102,7 +3665,7 @@ export class MockGymOSApi implements GymOSApi {
           }
         }
         const basePriceMinor = this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0;
-        const priceMinor = basePriceMinor + addOnMonthlyPrice(nextAddOns);
+        const priceMinor = incomingMonthlyPrice;
         // An admin-chosen end date replaces the derived term, so the credit
         // that belongs to the derived term is not applied to it.
         const termInvoice = periodBoundaryChanged || !change
@@ -3141,10 +3704,10 @@ export class MockGymOSApi implements GymOSApi {
         entityType: "platform_gym",
         entityPublicId: gym.id,
         entityLabel: gym.name,
-        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
+        summary: `Updated ${gym.name} subscription: ${previousStatus} → ${nextStatus}${previousPlan === nextPlan ? "" : ` · ${previousPlan} → ${nextPlan}`}${previousQuote === nextQuote || nextQuote === undefined ? "" : ` · quote JOD ${(nextQuote / 1_000).toFixed(3)} a month`}${previousIsPublic === gym.isPublic ? "" : ` · public listing ${gym.isPublic ? "enabled" : "suppressed"}`}${issuedTermInvoiceId ? ` · issued ${issuedTermInvoiceId}` : ""}`,
         reason: input.reason.trim(),
         before: beforeAudit,
-        after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic },
+        after: { subscriptionStatus: gym.subscriptionStatus, rivetPlan: gym.rivetPlan, billingInterval: gym.billingInterval, isPublic: gym.isPublic, quotedPriceMinor: nextQuote ?? null },
       });
       return cloneMarketplaceGym(gym);
     });
@@ -3223,6 +3786,7 @@ export class MockGymOSApi implements GymOSApi {
       this.requireReason(input.reason);
       const plan = this.platformPlans.find((item) => item.name === input.name);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      if (plan.name === "Basic" && (["branches", "staff", "members", "operationalEmails"] as const).some(key => input[key] !== undefined && input[key] !== ({ branches: 1, staff: 5, members: 300, operationalEmails: 900 })[key])) throw ApiError.of(ERR.VALIDATION, "Basic base allowances are fixed. Use the capped per-gym add-ons for more capacity.");
       const previousEntitled = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
       let entitledModules = entitledModulesForPlanSelection(plan.name, plan.entitledModules);
       if (input.entitledModules !== undefined) {
@@ -3355,8 +3919,8 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  recordPlatformInvoicePayment(input: RecordPlatformInvoicePaymentInput): Promise<PlatformBillingInvoice> {
-    return this.respond(() => {
+  async recordPlatformInvoicePayment(input: RecordPlatformInvoicePaymentInput): Promise<PlatformBillingInvoice> {
+    const paid = await this.respond(() => {
       this.requireReason(input.reason);
       if (!input.reference.trim()) throw ApiError.of(ERR.VALIDATION, "A payment reference is required.");
       const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId);
@@ -3367,14 +3931,47 @@ export class MockGymOSApi implements GymOSApi {
       invoice.status = "paid";
       invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();
       invoice.paymentReference = input.reference.trim();
-      if (gym && this.isProvisionedGym(gym) && invoice.periodEnd) {
+      if (invoice.paymentClaim?.status === "submitted") invoice.paymentClaim = { ...invoice.paymentClaim, status: "confirmed", confirmedAt: nowISO() };
+      // Parity with Convex: a new gym's first payment opens its workspace and starts its first term now.
+      const firstTenant = invoice.firstPayment ? [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === invoice.gymId && tenant.organization.status === "pending_payment") : undefined;
+      if (firstTenant && gym) {
+        const start = Date.now();
+        const interval = invoice.billingInterval ?? firstTenant.organization.billingInterval ?? "monthly";
+        invoice.periodStart = new Date(start).toISOString();
+        invoice.periodEnd = new Date(termEnd(start, interval)).toISOString();
+        firstTenant.organization = { ...firstTenant.organization, status: "active", subscriptionStartedAt: invoice.periodStart, currentPeriodEndsAt: invoice.periodEnd, subscriptionStatusReason: input.reason.trim() };
+        gym.subscriptionStatus = "active";
+        gym.isPublic = true;
+        gym.subscriptionStartedAt = invoice.periodStart;
+        gym.currentPeriodEndsAt = invoice.periodEnd;
+        gym.subscriptionStatusReason = input.reason.trim();
+      } else if (gym && this.isProvisionedGym(gym) && invoice.periodEnd) {
+        // Parity with Convex: an upgrade the gym asked for takes effect now, with a new term from today.
+        const upgradeTo = invoice.planChange?.to;
+        if (upgradeTo) {
+          const start = Date.now();
+          invoice.periodStart = new Date(start).toISOString();
+          invoice.periodEnd = new Date(termEnd(start, invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly")).toISOString();
+          this.db.organization.subscriptionPlan = upgradeTo;
+          this.db.organization.subscriptionAddOns = validateAddOns(undefined, upgradeTo);
+          this.db.organization.addOnsRevision = (this.db.organization.addOnsRevision ?? 0) + 1;
+          gym.addOns = this.db.organization.subscriptionAddOns;
+          gym.addOnsRevision = this.db.organization.addOnsRevision;
+          gym.rivetPlan = upgradeTo;
+          for (const other of this.platformInvoices) {
+            if (other.id === invoice.id || other.gymId !== gym.id || !other.cycleKey || !["draft", "open", "past_due", "failed"].includes(other.status)) continue;
+            other.status = "void";
+            other.voidedAt = nowISO();
+          }
+          this.recordPlatformAudit({ action: "gym.plan.upgrade", entityType: "platform_gym", entityPublicId: gym.id, entityLabel: gym.name, summary: `Upgraded ${gym.name} to ${upgradeTo} after confirming ${invoice.id}`, reason: input.reason.trim(), before: { plan: invoice.planChange?.from }, after: { plan: upgradeTo } });
+        }
         const periodEnd = Date.parse(invoice.periodEnd);
         if (Number.isFinite(periodEnd) && this.db.organization.status !== "cancelled") {
           const startedAt = this.db.organization.subscriptionStartedAt ?? invoice.periodStart ?? nowISO();
           // Parity with Convex: paying a late or superseded invoice never
           // shortens a term the gym has already paid past.
           const stored = Date.parse(this.db.organization.currentPeriodEndsAt ?? "");
-          const nextBoundary = Math.max(periodEnd, Number.isFinite(stored) ? stored : 0);
+          const nextBoundary = upgradeTo ? periodEnd : Math.max(periodEnd, Number.isFinite(stored) ? stored : 0);
           this.db.organization.status = "active";
           this.db.organization.billingInterval = invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly";
           this.db.organization.subscriptionStartedAt = startedAt;
@@ -3392,8 +3989,11 @@ export class MockGymOSApi implements GymOSApi {
           gym.lastActiveAt = invoice.paidAt;
         }
       }
+      this.updatePaymentRequest(invoice, { state: "confirmed", confirmedAt: nowISO() }, "resolved", invoice.planChange ? `Payment confirmed. Your plan is now ${invoice.planChange.to}.` : "Payment confirmed.");
       return { ...invoice };
     });
+    await this.emitWebsiteOfferSubscribers();
+    return paid;
   }
 
   voidPlatformInvoice(invoiceId: string, reason: string): Promise<PlatformBillingInvoice> {
@@ -3588,6 +4188,7 @@ export class MockGymOSApi implements GymOSApi {
     this.mediaAssets.clear();
     this.ptTrainerPhotoAssetIds.clear();
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
+    this.applyPreviewPlan();
     this.platformGyms = initialPlatformGyms(this.db.organization);
     this.provisionedMockGymIds = new Set([PROVISIONED_MOCK_GYM_ID]);
     this.provisionedTenants.clear();
@@ -3604,6 +4205,8 @@ export class MockGymOSApi implements GymOSApi {
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.commerce = mockCommerceSettings();
+    this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
     this.seedOperationalNotifications();
@@ -3692,6 +4295,16 @@ export class MockGymOSApi implements GymOSApi {
         subscription.onError?.(error);
       }
     }));
+  }
+
+  private async emitWebsiteOfferSubscribers(): Promise<void> {
+    if (this.websiteOfferSubscribers.size === 0) return;
+    try {
+      const offer = await this.respond(() => this.websiteOffer(), "public");
+      for (const onValue of this.websiteOfferSubscribers.keys()) onValue(offer);
+    } catch (error) {
+      for (const onError of this.websiteOfferSubscribers.values()) onError?.(error);
+    }
   }
 
   private async emitPublicPlanSubscribers(): Promise<void> {
@@ -4450,6 +5063,7 @@ export class MockGymOSApi implements GymOSApi {
           billingInterval: org.billingInterval ?? "monthly",
           currentPeriodEndsAt: org.currentPeriodEndsAt,
           trialEndsAt: org.trialEndsAt,
+          billingNotice: this.billingNotice(),
         },
       },
       branches: visibleBranches.map((b) => ({ id: b.id, name: b.name, code: b.code })),

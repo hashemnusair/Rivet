@@ -44,11 +44,13 @@ export interface MarketplaceGym {
   gallery?: import("@/lib/domain/types").MediaAsset[];
   accent: string;
   featured: boolean;
-  subscriptionStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
+  subscriptionStatus: "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
   addOns?: SubscriptionAddOns;
   addOnsRevision?: number;
   rivetPlan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
   billingInterval?: "monthly" | "annual";
+  /** Platform-only: an Enterprise gym's quoted monthly price in JOD minor units. */
+  quotedPriceMinor?: number;
   joinedAt: string;
   lastActiveAt: string;
   monthlyRevenueMinor: number;

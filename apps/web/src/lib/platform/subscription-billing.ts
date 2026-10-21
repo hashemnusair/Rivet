@@ -3,7 +3,7 @@ import { termChange } from "../../../convex/subscriptionTerm";
 
 export type SubscriptionBillingInput = {
   /** The tenant's persisted subscription status before this change. */
-  currentStatus: "trial" | "active" | "overdue" | "suspended" | "cancelled";
+  currentStatus: "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
   /** Persisted paid-period boundary, ISO string, when one exists. */
   currentPeriodEndsAt?: string;
   plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";

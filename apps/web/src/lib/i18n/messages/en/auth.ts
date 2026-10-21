@@ -193,6 +193,7 @@ export const auth = {
     openingGym: "Opening your gym",
     openingMemberships: "Opening your memberships",
     openingConsole: "Opening the platform console",
+    openingPayment: "Opening the payment page",
 
     deactivatedTitle: "This account was deactivated",
     deactivatedBody: "This RIVET account was deactivated by your gym. Ask the gym owner or manager to restore your access, or sign out and use another account.",
@@ -330,6 +331,39 @@ export const auth = {
       title: "You are already signed in",
       body: "Sign out first. The invitation must be accepted by the email address it was sent to.",
       submit: "Sign out and continue",
+    },
+  },
+
+  /** Changing the signed-in person's own password: staff (Settings → My
+   * profile), members (Profile) and RIVET administrators (Your account). */
+  changePassword: {
+    menu: "Change password",
+    title: "Password",
+    description: "Change the password you use to sign in.",
+    currentLabel: "Current password",
+    newLabel: "New password",
+    newHint: "At least 8 characters",
+    confirmLabel: "Confirm new password",
+    signOutOthers: "Sign out on my other devices",
+    signOutOthersHint: "Do this if someone else may know your password.",
+    submit: "Change password",
+    submitFirst: "Save password",
+    noPasswordYet: "Your account has no password yet. Add one to sign in with your email and password.",
+    saved: "Your password is changed.",
+    savedSignedOut: "Your password is changed. Your other devices are signed out.",
+    signedOut: "Sign in again to change your password.",
+    loading: "Loading your account",
+    errors: {
+      currentRequired: "Enter your current password.",
+      currentIncorrect: "Your current password is not correct.",
+      sameAsCurrent: "Choose a new password that is different from your current one.",
+      unsafe: "This password is not safe to use. Choose another one.",
+      cancelled: "Your password was not changed. Confirm it is you to change it.",
+      failed: "Your password was not changed. Try again.",
+    },
+    preview: {
+      title: "You cannot change a password in this demo.",
+      body: "Demo accounts have no password. In a real account, you change it here.",
     },
   },
 };

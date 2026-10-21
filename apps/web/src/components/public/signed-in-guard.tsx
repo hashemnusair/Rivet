@@ -4,6 +4,7 @@ import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef } from "react";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
+import { landingViewRequested } from "@/lib/routing/signed-in-routing";
 
 /**
  * Sends a visitor who arrives signed in at a signed-out page (the landing,
@@ -12,7 +13,7 @@ import { usePublicViewer } from "@/lib/auth/public-viewer";
  * covers demo mode, where the personas live in the browser, and a cached
  * client navigation. Only an arrival counts: a sign-in completed on the page
  * itself (a door's own form) is left to the page, which knows where it is
- * taking that person.
+ * taking that person, and so is a visit that asks for the landing on purpose.
  */
 export function SignedInGuard({ demoOnly = false }: { demoOnly?: boolean }) {
   const viewer = usePublicViewer();
@@ -25,6 +26,9 @@ export function SignedInGuard({ demoOnly = false }: { demoOnly?: boolean }) {
     if (arrival.current !== "signed-in") return;
     if (demoOnly && !DEMO_AUTH_BYPASS) return;
     if (viewer.status !== "signed-in") return;
+    // Only the landing asked for on purpose stays; the resolver at /login and
+    // every other page this guard sits on still hand off as before.
+    if (window.location.pathname === "/" && landingViewRequested(window.location.search)) return;
     router.replace(viewer.destination.href);
   }, [demoOnly, router, viewer]);
 

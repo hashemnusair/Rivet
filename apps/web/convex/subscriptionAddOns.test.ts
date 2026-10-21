@@ -31,7 +31,6 @@ describe("paid Basic add-ons", () => {
     for (const item of ADD_ON_CATALOGUE) {
       for (const quantity of [-1, 0.5, item.max + 1, Infinity, "1", null]) {
         // Null is not a request to buy a free/implicit pack.
-        if (quantity === null) continue;
         expect(() => validateAddOns({ ...max, [item.key]: quantity }, "Basic")).toThrow();
       }
     }
@@ -88,7 +87,7 @@ describe("paid Basic add-ons", () => {
     await admin.mutation(api.domain.mutate, request({ addOns: max, expectedAddOnsRevision: 0 }));
     await admin.mutation(api.domain.mutate, request({ addOns: EMPTY_ADD_ONS, expectedAddOnsRevision: 1 }));
     const organization = await t.run(ctx => ctx.db.get(org));
-    expect(await t.run(ctx => platformPlanEntitledModules(ctx, "Basic", organization!.subscriptionAddOns))).toBeUndefined();
+    expect(await t.run(ctx => platformPlanEntitledModules(ctx, "Basic", organization!.subscriptionAddOns))).toBeNull();
     await admin.mutation(api.domain.mutate, request({ plan: "Pro" }));
     expect((await t.run(ctx => ctx.db.get(org)))?.subscriptionAddOns).toEqual(EMPTY_ADD_ONS);
     await expect(admin.mutation(api.domain.mutate, request({ addOns: max, expectedAddOnsRevision: 2 }))).rejects.toMatchObject({ data: { code: "VALIDATION_ERROR" } });

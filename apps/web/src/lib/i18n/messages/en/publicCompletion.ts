@@ -55,6 +55,7 @@ export const publicCompletion = {
     destinations: {
       gym: { label: "Dashboard", action: "Open your dashboard" },
       reception: { label: "Reception", action: "Open reception" },
+      billing: { label: "Payment", action: "Open the payment page" },
       member: { label: "My gyms", action: "Open your gyms" },
       platform: { label: "Platform", action: "Open the platform" },
       resolving: { label: "Dashboard", action: "Open your dashboard" },
@@ -76,7 +77,6 @@ export const publicCompletion = {
       emailNote: "Operational emails are for running your gym, not bulk marketing. Pro includes 10,000 per month.",
       allFeatures: "Every feature included",
       addOns: "Need a little more room on Basic? Talk to us.",
-      websiteOffer: "Free website for the first 3 gyms.",
       proDescription: "Every feature. Every branch. Room for everyone.",
       basicDescription: "The essentials for your independent gym.",
       unlimitedStaff: "Unlimited owner and staff accounts",
@@ -114,6 +114,12 @@ export const publicCompletion = {
       },
       oneTimeOnboarding: "One-time onboarding fee: {amount}",
       firstPayment: "First payment subtotal before applicable tax, including onboarding: {amount}",
+      websiteOffer: {
+        title: "Free website for the first {formatted} gyms",
+        body: "Ask for a custom website when you apply. The first {formatted} gyms we approve get it free. After that it costs {price}.",
+        placesLeft: plural({ one: "{formatted} of {total} places left", other: "{formatted} of {total} places left" }),
+        allTaken: "All {formatted} places are taken.",
+      },
       memberApp: "Member app",
       staffPermissions: "Staff permissions and audit history",
       fromPrice: "From {amount}",

@@ -78,6 +78,11 @@ export interface RivetIdentity {
   /** More than one routable gym is available and a user choice is required. */
   organizationSelectionRequired?: boolean;
   memberships: RivetMembership[];
+  /**
+   * Gyms this person owns that may only pay: waiting for a first payment, or
+   * stopped for an unpaid invoice. They open the payment page, nothing else.
+   */
+  billingAccess?: Array<{ organizationId: string; organizationName: string; status: "pending_payment" | "suspended" }>;
 }
 
 /** Convex names the sales role `sales`; the app's permission model calls it `salesperson`. */
@@ -245,6 +250,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
         branchScope: m.branchScope,
         branches: m.branches,
       })),
+      ...(result.billingAccess?.length ? { billingAccess: result.billingAccess } : {}),
     };
   }
 
@@ -263,7 +269,7 @@ export function useRivetIdentity() {
   return useContext(IdentityContext);
 }
 
-export type Destination = { area: "platform" | "gym" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
+export type Destination = { area: "platform" | "gym" | "billing" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
 
 /**
  * Where this person belongs. Platform administration outranks gym staff, which
@@ -285,6 +291,9 @@ export function destinationFor(identity: RivetIdentity): Destination {
       role: membership.role,
     };
   }
+
+  // An owner whose gym is waiting for payment, or stopped for one, can pay.
+  if (identity.billingAccess?.length) return { area: "billing", href: "/billing" };
 
   if (identity.gymAccessUnavailable) return { area: "unavailable", href: "/login" };
 

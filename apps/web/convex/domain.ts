@@ -15,6 +15,7 @@ import {
   publicOrganizationId,
   publicUserId,
   requireActor,
+  requireBillingActor,
   requireAuthenticated,
   requireMember,
   requirePermission,
@@ -30,7 +31,7 @@ import { DEFAULT_ROLE_DEFINITIONS, PERMISSIONS, PERMISSION_CATALOG_VERSION, role
 import { approvalPermissionForAction, dashboardRevenueSummary, deriveServerMembershipStatus, duplicateMemberMatches, formatPaymentAuditEntityLabel, isValidMinorUnit, marketingPreference, paymentAllocation, refundAllocation, trialTransitionAllowed } from "./invariants";
 import { buildCustomerProfileDraft, customerProfileOwnership, findCustomerProfileByUserId } from "./customer";
 import { buildPlatformGymDetail } from "./platformGymDetail";
-import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange, fundedSubscriptionValue } from "./subscriptionTerm";
+import { addCalendarMonths, DAY_MS, PAYMENT_TERM_DAYS, termChange, termEnd, fundedSubscriptionValue } from "./subscriptionTerm";
 import { buildPlatformOverview } from "./platformOverview";
 import { varianceApprovalStatusForAmount, varianceAuditApprovalStatusForAmount } from "./reconciliation";
 import { logRedactedServerError } from "./telemetry";
@@ -60,9 +61,10 @@ import { agreementSessionState, agreementSummaryForOrganization, legalAgreementM
 import { PLATFORM_PROSPECT_MUTATIONS, PLATFORM_PROSPECT_QUERIES, platformProspectsMutation, platformProspectsQuery } from "./platformProspects";
 import { resolveEmailMode } from "./emailMode";
 import { platformInvoiceAttachment } from "./platformInvoiceDocument";
-import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, termPriceMinor } from "./planCatalogue";
+import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, validQuotedPriceMinor, termPriceMinor } from "./planCatalogue";
 import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -256,7 +258,7 @@ const ENTRY_PASS_PREFIX = "rivet-pass";
 const ENTRY_PASS_TTL_MS = 15 * 60_000;
 const MARKETING_WORDING_VERSION = "2026-08-explicit-consent-v2";
 const GYM_CONTROLLED_OPERATIONAL_EMAIL_KINDS = ["trial_request_confirmation", "trial_status", "payment_receipt", "support_acknowledgement", "support_reply", "support_resolved", "renewal_reminder", "membership_expiry", "pt_booking_confirmation", "pt_booking_reminder", "pt_booking_update", "pt_low_balance", "pt_package_paid"] as const;
-const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
+const MANDATORY_PLATFORM_EMAIL_KINDS = ["platform_invoice_issued", "platform_invoice_reminder", "platform_invoice_paid", "platform_invoice_past_due", "platform_payment_returned", "platform_subscription_suspended", "platform_subscription_cancelled", "subscription_agreement_signed", "subscription_agreement_countersigned", "subscription_agreement_copy"] as const;
 
 function data(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -581,7 +583,7 @@ function billingInterval(value: unknown): BillingInterval {
   return value === "annual" ? "annual" : "monthly";
 }
 
-function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
+function platformSubscriptionStatusForOrganization(status: Organization["status"]): "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled" {
   return status === "past_due" ? "overdue" : status;
 }
 
@@ -614,6 +616,7 @@ function platformSubscriptionSnapshot(
     addOnsRevision: organization?.addOnsRevision ?? 0,
     addOnsEffectiveAt: organization?.addOnsEffectiveAt ?? null,
     billingInterval: organization?.billingInterval ?? optionalString(gym.billingInterval) ?? null,
+    quotedPriceMinor: organization?.quotedPriceMinor ?? null,
     lastActiveAt: optionalString(gym.lastActiveAt) ?? null,
     isArchived: Boolean(gym.isArchived || organization?.archivedAt),
     archivedAt: organization?.archivedAt !== undefined ? utcIso(organization.archivedAt) : optionalString(gym.archivedAt) ?? null,
@@ -1369,6 +1372,61 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
   };
 }
 
+/**
+ * Point a gym's features at its plan. Newly purchased features start switched
+ * on so an upgrade is usable at once. On a downgrade the stored preferences
+ * stay as they were, so a later upgrade restores the gym's own choices;
+ * read-time entitlement filtering still locks what the plan does not include.
+ */
+async function syncPlanEntitlement(
+  ctx: MutationCtx,
+  organizationId: Id<"organizations">,
+  entitlementBefore: Doc<"organizationEntitlements"> | null,
+  modulePlan: WorkspaceModulePlan,
+  catalog: Data[],
+  change: { planChanged: boolean; previousModulePlan?: WorkspaceModulePlan },
+): Promise<Doc<"organizationEntitlements"> | null> {
+  const catalogPlan = catalog.find((candidate) => stringValue(candidate.name) === modulePlan);
+  const purchased = (await ctx.db.get(organizationId))?.subscriptionAddOns;
+  const entitledModules = [...new Set([...entitledModulesForPlanSelection(modulePlan, catalogPlan?.entitledModules), ...addOnModules(modulePlan, purchased)])];
+  const entitlementUpdatedAt = Date.now();
+  let updatedEntitlement = entitlementBefore;
+  const entitlementNeedsSync = !entitlementBefore
+    || change.planChanged
+    || entitlementBefore.subscriptionPlan !== modulePlan
+    || entitlementBefore.catalogVersion !== WORKSPACE_MODULE_CATALOG_VERSION
+    || entitlementBefore.source !== "subscription_plan"
+    || JSON.stringify(entitlementBefore.entitledModules) !== JSON.stringify(entitledModules);
+  if (entitlementBefore && entitlementNeedsSync) {
+    await ctx.db.patch(entitlementBefore._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+    updatedEntitlement = await ctx.db.get(entitlementBefore._id);
+  } else if (!entitlementBefore) {
+    const entitlementId = await ctx.db.insert("organizationEntitlements", { organizationId, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+    updatedEntitlement = await ctx.db.get(entitlementId);
+  }
+  if (change.planChanged && change.previousModulePlan !== modulePlan) {
+    const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+    if (preferences) {
+      const previousModulePlan = change.previousModulePlan;
+      const previousEntitled = previousModulePlan ? entitledModulesForPlanSelection(previousModulePlan, catalog.find((candidate) => stringValue(candidate.name) === previousModulePlan)?.entitledModules) : [];
+      const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
+      if (newlyEntitled.length > 0) {
+        const candidate = [...preferences.enabledModules, ...newlyEntitled];
+        let enabledModules: WorkspaceModuleKey[];
+        try {
+          enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+        } catch {
+          enabledModules = defaultWorkspacePreferences(entitledModules);
+        }
+        if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
+          await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
+        }
+      }
+    }
+  }
+  return updatedEntitlement;
+}
+
 function workspacePlan(value: unknown): WorkspaceModulePlan | undefined {
   return value === "Basic" || value === "Starter" || value === "Growth" || value === "Pro" || value === "Enterprise" ? value : undefined;
 }
@@ -1826,6 +1884,11 @@ async function roleViews(ctx: ReadContext, actor: ActorContext): Promise<Data[]>
   });
 }
 
+async function sessionBillingNotice(ctx: ReadContext, actor: ActorContext): Promise<Data | undefined> {
+  const organization = await ctx.db.get(actor.organization._id);
+  return organization ? await billingNotice(ctx, organization, Date.now()) : undefined;
+}
+
 async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchId?: string): Promise<Data> {
   const branches = await accessibleBranches(ctx, actor);
   const workspace = await workspaceAccessData(ctx, actor);
@@ -1867,6 +1930,7 @@ async function buildSession(ctx: ReadContext, actor: ActorContext, activeBranchI
         billingInterval: actor.organization.billingInterval ?? "monthly",
         currentPeriodEndsAt: actor.organization.currentPeriodEndsAt === undefined ? undefined : utcIso(actor.organization.currentPeriodEndsAt),
         trialEndsAt: actor.organization.trialEndsAt === undefined ? undefined : utcIso(actor.organization.trialEndsAt),
+        billingNotice: await sessionBillingNotice(ctx, actor),
       },
     },
     branches: branches.map((branch) => ({ id: publicBranchId(branch), name: branch.name, code: branch.code })),
@@ -2723,6 +2787,7 @@ function marketplaceView(value: Data, includePlatformFields = false): Data {
       cancelledAt: optionalString(value.cancelledAt),
       subscriptionStatusReason: optionalString(value.subscriptionStatusReason),
       billingInterval: optionalString(value.billingInterval),
+      quotedPriceMinor: typeof value.quotedPriceMinor === "number" ? value.quotedPriceMinor : undefined,
       logoUrl: optionalString(value.logoUrl),
       addOns: value.addOns,
       addOnsRevision: numberValue(value.addOnsRevision),
@@ -2755,6 +2820,7 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
     cancelledAt: undefined,
     subscriptionStatusReason: "Organization is not provisioned.",
     billingInterval: undefined,
+    quotedPriceMinor: undefined,
     logoUrl: undefined,
     lastActiveAt: undefined,
   };
@@ -2781,6 +2847,7 @@ function platformMarketplaceProjection(value: Data, organization: Organization |
     cancelledAt: organization.cancelledAt !== undefined ? utcIso(organization.cancelledAt) : undefined,
     subscriptionStatusReason: organization.subscriptionStatusReason ?? undefined,
     billingInterval: organization.billingInterval ?? "monthly",
+    quotedPriceMinor: organization.quotedPriceMinor,
   };
 }
 
@@ -2801,6 +2868,9 @@ function gymApplicationView(application: Doc<"gymApplications">): Data {
     contactNumber: application.contactNumber,
     plan: application.plan,
     billingInterval: application.billingInterval ?? "monthly",
+    ...(application.websiteRequested ? { websiteRequested: true } : {}),
+    ...(application.promoCode ? { promoCode: application.promoCode } : {}),
+    ...(application.quotedPriceMinor !== undefined ? { quotedPriceMinor: application.quotedPriceMinor } : {}),
     status: application.status,
     notificationStatus: application.notificationStatus,
     notificationError: application.notificationError,
@@ -3010,7 +3080,7 @@ async function linkExactEmailMembersToCustomerProfile(ctx: MutationCtx, user: Us
     const member = data(memberRecord.data);
     if (member.customerProfileId && member.customerProfileId !== profile.id) continue;
     const organization = await ctx.db.get(memberRecord.organizationId);
-    if (!organization || organization.status === "suspended" || organization.status === "cancelled") continue;
+    if (!organization || organization.status === "suspended" || organization.status === "cancelled" || organization.status === "pending_payment") continue;
     const staffMemberships = await ctx.db.query("organizationMemberships").withIndex("by_organization_user", (q) => q.eq("organizationId", organization._id).eq("userId", user._id)).collect();
     if (staffMemberships.some((item) => item.active)) continue;
     const memberships = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership")).collect())
@@ -4344,7 +4414,7 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
   const customerMembership = membershipRecord && belongsToAuthenticatedCustomer(data(membershipRecord.data), userId, optionalString(profile?.id)) ? membershipRecord : null;
   if (!customerMembership) domainError("NOT_FOUND", "Membership not found.");
   const organization = await ctx.db.get(customerMembership.organizationId);
-  if (!organization || organization.status === "suspended" || organization.status === "cancelled") domainError("NOT_FOUND", "Membership not found.");
+  if (!organization || organization.status === "suspended" || organization.status === "cancelled" || organization.status === "pending_payment") domainError("NOT_FOUND", "Membership not found.");
   const customerValue = data(customerMembership.data);
   const internalMembershipId = optionalString(customerValue.membershipId) ?? optionalString(customerValue.internalMembershipId) ?? customerMembership.publicId;
   const internalMembership = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", organization._id).eq("entityType", "membership").eq("publicId", internalMembershipId)).unique();
@@ -5367,8 +5437,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if (operation === "billing.invoices.list") {
     // A gym reads only its own platform invoices, newest first, in the
-    // same shape the platform console uses.
-    const actor = await requireActor(ctx, request);
+    // same shape the platform console uses. A gym waiting to pay, or stopped
+    // for not paying, can still read them.
+    const actor = await requireBillingActor(ctx, request);
     const rows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "platformInvoice")).collect();
     return rows
       .map((row): Data => ({ id: row.publicId, gym: actor.organization.name, ...data(row.data) }))
@@ -5382,6 +5453,10 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
 
   if ((PLATFORM_PROSPECT_QUERIES as readonly string[]).includes(operation)) {
     return await platformProspectsQuery(ctx, operation, input, request);
+  }
+
+  if ((COMMERCE_QUERIES as readonly string[]).includes(operation)) {
+    return await commerceQuery(ctx, operation, input, request);
   }
 
   if (operation === "health") {
@@ -5612,7 +5687,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const provisionedOrganizationIds = new Set(gymProjections.filter(({ view, provisioned, organizationId }) => provisioned && !booleanValue(view.isArchived) && organizationId).map(({ organizationId }) => organizationId as string));
     const overview = buildPlatformOverview({
       gyms: gymProjections.map(({ view, provisioned, organizationId }) => ({ id: stringValue(view.id), organizationId, subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned: provisioned && !booleanValue(view.isArchived) })),
-      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)) })),
+      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)), quotedPriceMinor: organization.quotedPriceMinor })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
       branches: branches.map((branch) => ({ organizationId: String(branch.organizationId), active: branch.active, status: branch.status })),
       members: memberRows.map((member) => ({ organizationId: String(member.organizationId), status: optionalString(data(member.data).status) })),
@@ -5691,7 +5766,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const rawPlan = stringValue(gym.rivetPlan);
     const effectiveStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : "suspended";
     const effectivePlan = organization ? platformPlanFromFacts(gym, organization, entitlement) ?? rawPlan : rawPlan;
-    const allowedStatuses = ["trial", "active", "overdue", "suspended", "cancelled"] as const;
+    const allowedStatuses = ["trial", "pending_payment", "active", "overdue", "suspended", "cancelled"] as const;
     const allowedPlans = ["Basic", "Starter", "Growth", "Pro", "Enterprise"] as const;
     if (!allowedStatuses.includes(effectiveStatus as (typeof allowedStatuses)[number]) || !allowedPlans.includes(effectivePlan as (typeof allowedPlans)[number])) {
       domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription projection.", { correlationId: admin.correlationId });
@@ -5846,7 +5921,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       // with the ledger it summarizes.
       const configuredPrice = configuredPlan ? data(configuredPlan).priceMinor : undefined;
       if (typeof configuredPrice === "number" && Number.isSafeInteger(configuredPrice) && configuredPrice >= 0) {
-        recurringAmountMinor = termPriceMinor(configuredPrice + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan)), billingInterval(organization.billingInterval));
+        recurringAmountMinor = termPriceMinor(gymMonthlyPriceMinor(effectivePlan, configuredPrice, organization.quotedPriceMinor) + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan)), billingInterval(organization.billingInterval));
       }
       invoices = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
         .map((row) => ({ id: row.publicId, organizationId: String(row.organizationId), ...data(row.data) }));
@@ -5876,7 +5951,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
       activity = targetActivity.map((event) => ({ id: event.publicId, action: event.action, summary: event.summary, actorName: event.actorName, occurredAt: utcIso(event.occurredAt) }));
     }
 
-    const status = effectiveStatus as "trial" | "active" | "overdue" | "suspended" | "cancelled";
+    const status = effectiveStatus as "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled";
     const plan = effectivePlan as "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
     const logoUrl = organization ? await platformGymLogoUrl(ctx, organization, gym) : undefined;
     return buildPlatformGymDetail({
@@ -8478,6 +8553,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return await platformProspectsMutation(ctx, operation, input, request);
   }
 
+  if ((COMMERCE_MUTATIONS as readonly string[]).includes(operation)) {
+    return await commerceMutation(ctx, operation, input, request);
+  }
+
   if (operation === "platform.marketingMigration.apply") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     requireReason(input.reason, admin.correlationId);
@@ -8922,6 +9001,10 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPlan && !plans.includes(requestedPlan as (typeof plans)[number])) domainError("VALIDATION_ERROR", "Subscription plan is invalid.", { correlationId: request.correlationId });
     if (requestedBillingInterval !== undefined && requestedBillingInterval !== "monthly" && requestedBillingInterval !== "annual") domainError("VALIDATION_ERROR", "Billing cadence is invalid.", { correlationId: request.correlationId });
     if (input.isPublic !== undefined && typeof input.isPublic !== "boolean") domainError("VALIDATION_ERROR", "Public listing must be a boolean.", { correlationId: request.correlationId });
+    const requestedQuote = input.quotedPriceMinor === undefined ? undefined : validQuotedPriceMinor(input.quotedPriceMinor);
+    if (input.quotedPriceMinor !== undefined && requestedQuote === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the quoted monthly price in dinars.", { fieldErrors: { quotedPriceMinor: ["Invalid"] }, correlationId: request.correlationId });
+    }
     // Trial, subscription-start, and cancellation timestamps remain
     // server-owned. The current paid period boundary is the one lifecycle
     // value an admin may select for a material membership change.
@@ -8934,7 +9017,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (requestedPeriodEndsAtInput !== undefined && requestedPeriodEndsAt === undefined) {
       domainError("VALIDATION_ERROR", "The membership end date must be a valid calendar date.", { correlationId: admin.correlationId });
     }
-    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && input.addOns === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
+    if (!requestedStatus && !requestedPlan && requestedBillingInterval === undefined && requestedQuote === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined && input.addOns === undefined && lifecycleInputs.every((value) => value === undefined)) domainError("VALIDATION_ERROR", "Choose a status, plan, billing cadence, listing, or lifecycle change.", { correlationId: request.correlationId });
     const record = await ctx.db.query("domainRecords").withIndex("by_entity_type_public_id", (q) => q.eq("entityType", "marketplaceGym").eq("publicId", gymId)).unique();
     if (!record) domainError("NOT_FOUND", "Gym not found.", { correlationId: request.correlationId });
     const current = data(record.data);
@@ -8949,7 +9032,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const entitlementBefore = organization
       ? await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique()
       : null;
-    const hasTenantMutation = input.addOns !== undefined || Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
+    const hasTenantMutation = input.addOns !== undefined || Boolean(requestedStatus || requestedPlan || requestedBillingInterval !== undefined || requestedQuote !== undefined || requestedPeriodEndsAtInput !== undefined || lifecycleInputs.some((value) => value !== undefined));
     if (!organization) {
       // Directory-only and mismatched rows stay in the platform snapshot for
       // cleanup, but cannot claim a tenant lifecycle/plan update succeeded.
@@ -8970,6 +9053,100 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         after: platformSubscriptionSnapshot(hidden, null, null),
       });
       return marketplaceView(platformMarketplaceProjection(hidden, null), true);
+    }
+    const addOnPlan = requestedPlan ?? organization.subscriptionPlan;
+    if (requestedPlan && !isCurrentPlan(requestedPlan) && requestedPlan !== organization.subscriptionPlan) domainError("VALIDATION_ERROR", "Choose Basic or Pro for a new subscription plan.", { correlationId: admin.correlationId });
+    let nextAddOns: SubscriptionAddOns;
+    try {
+      nextAddOns = validateAddOns(input.addOns ?? (addOnPlan === organization.subscriptionPlan ? organization.subscriptionAddOns : undefined), addOnPlan);
+    } catch (error) {
+      domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Invalid add-ons.", { correlationId: admin.correlationId });
+    }
+    const previousAddOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
+    const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
+    if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) {
+      domainError("CONFLICT", "Subscription add-ons changed. Reload the gym and review the new invoice before saving.", { correlationId: admin.correlationId });
+    }
+    if (addOnsChanged && ((requestedStatus ?? organization.status) !== "active" && organization.status !== "pending_payment" || requestedPeriodEndsAtInput !== undefined)) {
+      domainError("VALIDATION_ERROR", "Add-on changes require an active billed term with its automatic end date.", { correlationId: admin.correlationId });
+    }
+    if (addOnsChanged || (requestedPlan && requestedPlan !== organization.subscriptionPlan)) {
+      await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, addOnPlan), nextAddOns), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
+    }
+    if (addOnsChanged) {
+      const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+      if (invoices.some(row => !["paid", "void"].includes(stringValue(data(row.data).status)) && data(data(row.data).paymentClaim).status === "submitted")) domainError("CONFLICT", "Confirm or return the submitted payment before changing add-ons.", { correlationId: admin.correlationId });
+    }
+    // A gym still waiting for its first payment has no paid term to change.
+    // RIVET corrects the plan, billing or Enterprise quote it was set up
+    // with, and the first invoice is issued again for the corrected plan.
+    if (organization.status === "pending_payment" && requestedStatus === undefined && requestedPeriodEndsAtInput === undefined && requestedPublic === undefined) {
+      const nextPlan = requestedPlan ?? organization.subscriptionPlan;
+      const modulePlan = workspacePlan(nextPlan);
+      if (!nextPlan || !modulePlan) domainError("CONFIGURATION_ERROR", "This gym does not have a complete platform subscription plan.", { correlationId: admin.correlationId });
+      if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) {
+        domainError("VALIDATION_ERROR", "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] }, correlationId: admin.correlationId });
+      }
+      const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization.quotedPriceMinor) : undefined;
+      if (isQuotedPlan(nextPlan) && nextQuote === undefined) {
+        domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] }, correlationId: admin.correlationId });
+      }
+      const interval = requestedBillingInterval ?? billingInterval(organization.billingInterval);
+      if (nextPlan === organization.subscriptionPlan && interval === billingInterval(organization.billingInterval) && nextQuote === organization.quotedPriceMinor && !addOnsChanged) {
+        domainError("VALIDATION_ERROR", "Change the plan, the billing or the price first.", { correlationId: admin.correlationId });
+      }
+      const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+      const firstInvoices = invoiceRows.filter((row) => booleanValue(data(row.data).firstPayment) && stringValue(data(row.data).status) !== "void");
+      if (firstInvoices.some((row) => stringValue(data(row.data).status) === "paid")) {
+        domainError("CONFLICT", "This gym's first payment is already recorded.", { correlationId: admin.correlationId });
+      }
+      // Details the gym already sent belong to the invoice it paid against;
+      // RIVET answers them before the invoice changes under the gym.
+      if (firstInvoices.some((row) => stringValue(data(data(row.data).paymentClaim).status) === "submitted")) {
+        domainError("CONFLICT", "The gym has sent its payment details. Confirm them or send them back before you change the plan.", { correlationId: admin.correlationId });
+      }
+      const applicationId = optionalString(current.applicationId);
+      const application = applicationId ? await ctx.db.query("gymApplications").withIndex("by_public_id", (q) => q.eq("publicId", applicationId)).unique() : null;
+      if (!application) domainError("CONFIGURATION_ERROR", "This gym's application could not be found, so its first invoice cannot be issued again.", { correlationId: admin.correlationId });
+      const catalog = await platformPlans(ctx);
+      // The fee a gym set up on this plan today would pay (Enterprise folds it into the quote).
+      const onboardingFeeMinor = Math.max(0, numberValue(catalog.find((candidate) => stringValue(candidate.name) === nextPlan)?.onboardingFeeMinor));
+      const nowMs = Date.now();
+      const now = new Date(nowMs).toISOString();
+      for (const row of firstInvoices) {
+        const invoice = data(row.data);
+        await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
+        await insertPlatformAudit(ctx, admin, {
+          action: "invoice.void",
+          entityType: "platform_invoice",
+          entityPublicId: row.publicId,
+          entityLabel: row.publicId,
+          summary: "Voided a first-payment invoice replaced by a plan correction",
+          reason,
+          before: { status: stringValue(invoice.status) },
+          after: { status: "void" },
+        });
+      }
+      await ctx.db.patch(organization._id, { subscriptionPlan: modulePlan, subscriptionAddOns: nextAddOns, ...(addOnsChanged ? { addOnsRevision: (organization.addOnsRevision ?? 0) + 1, addOnsEffectiveAt: Date.now() } : {}), billingInterval: interval, quotedPriceMinor: nextQuote, onboardingFeeMinor, subscriptionStatusReason: reason, updatedAt: nowMs });
+      const correctedOrganization = await ctx.db.get(organization._id);
+      if (!correctedOrganization) domainError("NOT_FOUND", "The linked organization no longer exists.", { correlationId: admin.correlationId });
+      const correctedEntitlement = await syncPlanEntitlement(ctx, organization._id, entitlementBefore, modulePlan, catalog, { planChanged: nextPlan !== organization.subscriptionPlan, previousModulePlan: workspacePlan(organization.subscriptionPlan) });
+      const corrected = { ...current, rivetPlan: modulePlan, billingInterval: interval, subscriptionStatusReason: reason };
+      await ctx.db.patch(record._id, { data: corrected, updatedAt: nowMs });
+      await createFirstInvoice(ctx, admin, { organization: correctedOrganization, application, listingPublicId: gymId, now: nowMs });
+      const reissued = (await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect())
+        .find((row) => booleanValue(data(row.data).firstPayment) && stringValue(data(row.data).status) !== "void");
+      await insertPlatformAudit(ctx, admin, {
+        action: "gym.subscription.update",
+        entityType: "platform_gym",
+        entityPublicId: gymId,
+        entityLabel: stringValue(current.name, gymId),
+        summary: `Corrected the plan before the first payment${reissued ? ` and issued ${reissued.publicId}` : ""}`,
+        reason,
+        before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
+        after: { ...platformSubscriptionSnapshot(corrected, correctedOrganization, correctedEntitlement), onboardingFeeMinor, ...(reissued ? { firstInvoice: { invoiceId: reissued.publicId, amountMinor: numberValue(data(reissued.data).amountMinor) } } : {}) },
+      });
+      return marketplaceView(platformMarketplaceProjection(corrected, correctedOrganization, correctedEntitlement), true);
     }
     const organizationStatus = organization ? platformSubscriptionStatusForOrganization(organization.status) : undefined;
     const previousSubscriptionStatus = organizationStatus ?? optionalString(current.subscriptionStatus);
@@ -8994,23 +9171,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     }
     if (requestedPlan && !isCurrentPlan(requestedPlan) && requestedPlan !== organization?.subscriptionPlan) domainError("VALIDATION_ERROR", "Choose Basic or Pro for a new subscription plan.", { correlationId: admin.correlationId });
     const nextPlan = rawPlan as (typeof plans)[number];
-    let nextAddOns: SubscriptionAddOns;
-    try {
-      nextAddOns = validateAddOns(input.addOns ?? (nextPlan === organization.subscriptionPlan ? organization.subscriptionAddOns : undefined), nextPlan);
-    } catch (error) {
-      domainError("VALIDATION_ERROR", error instanceof Error ? error.message : "Invalid add-ons.", { correlationId: admin.correlationId });
+    // Enterprise is billed at the gym's own quote. Moving a gym onto it needs
+    // one, and a quote means nothing on any other plan.
+    if (requestedQuote !== undefined && !isQuotedPlan(nextPlan)) {
+      domainError("VALIDATION_ERROR", "Only an Enterprise gym has a quoted price.", { fieldErrors: { quotedPriceMinor: ["Enterprise only"] }, correlationId: admin.correlationId });
     }
-    const previousAddOns = validateAddOns(organization.subscriptionAddOns, organization.subscriptionPlan);
-    const addOnsChanged = JSON.stringify(nextAddOns) !== JSON.stringify(previousAddOns);
-    if (input.addOns !== undefined && input.expectedAddOnsRevision !== (organization.addOnsRevision ?? 0)) {
-      domainError("CONFLICT", "Subscription add-ons changed. Reload the gym and review the new invoice before saving.", { correlationId: admin.correlationId });
+    const nextQuote = isQuotedPlan(nextPlan) ? requestedQuote ?? validQuotedPriceMinor(organization?.quotedPriceMinor) : undefined;
+    if (requestedPlan !== undefined && isQuotedPlan(nextPlan) && !isQuotedPlan(organization?.subscriptionPlan) && nextQuote === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", { fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] }, correlationId: admin.correlationId });
     }
-    if (addOnsChanged && (nextStatus !== "active" || requestedPeriodEndsAtInput !== undefined)) {
-      domainError("VALIDATION_ERROR", "Add-on changes require an active billed term with its automatic end date.", { correlationId: admin.correlationId });
-    }
-    if (addOnsChanged || (requestedPlan && requestedPlan !== organization.subscriptionPlan)) {
-      await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, nextPlan), nextAddOns), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
-    }
+    const quoteChanged = requestedQuote !== undefined && requestedQuote !== organization?.quotedPriceMinor;
     // Once a row is linked, organization lifecycle timestamps are authoritative.
     // Never promote stale directory dates into the tenant on an unrelated save.
     const storedTrialEndsAt = organization?.trialEndsAt;
@@ -9021,7 +9191,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const interval = requestedBillingInterval === undefined ? existingInterval : requestedBillingInterval;
     const materialMembershipChange = addOnsChanged || (requestedStatus !== undefined && requestedStatus !== previousSubscriptionStatus)
       || (requestedPlan !== undefined && requestedPlan !== organization?.subscriptionPlan)
-      || (requestedBillingInterval !== undefined && interval !== existingInterval);
+      || (requestedBillingInterval !== undefined && interval !== existingInterval)
+      || quoteChanged;
     const storedPeriodEndsAt = storedCurrentPeriodEndsAt === undefined ? undefined : validSubscriptionTimestamp(new Date(storedCurrentPeriodEndsAt).toISOString());
     const periodBoundaryChanged = requestedPeriodEndsAt !== undefined && !sameCalendarDate(requestedPeriodEndsAt, storedPeriodEndsAt);
     if (nextStatus === "trial" && requestedPeriodEndsAtInput !== undefined) {
@@ -9035,7 +9206,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
     const catalog = await platformPlans(ctx);
     const monthlyCatalogPrice = (name: string | undefined) => numberValue(catalog.find((candidate) => stringValue(candidate.name) === name)?.priceMinor);
-    const outgoingMonthlyPrice = monthlyCatalogPrice(organization?.subscriptionPlan) + addOnMonthlyPrice(previousAddOns);
+    // What a month costs before and after: an Enterprise gym's own quote.
+    const outgoingMonthlyPrice = gymMonthlyPriceMinor(organization?.subscriptionPlan, monthlyCatalogPrice(organization?.subscriptionPlan), organization?.quotedPriceMinor) + addOnMonthlyPrice(previousAddOns);
+    const incomingMonthlyPrice = gymMonthlyPriceMinor(nextPlan, monthlyCatalogPrice(nextPlan), nextQuote) + addOnMonthlyPrice(nextAddOns);
     const priorInvoices = startsNewPaidTerm && organization
       ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
       : [];
@@ -9045,7 +9218,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       ? termChange({
           now: nowMs,
           interval,
-          monthlyPriceMinor: monthlyCatalogPrice(nextPlan) + addOnMonthlyPrice(nextAddOns),
+          monthlyPriceMinor: incomingMonthlyPrice,
           // Only a paid, running term is worth anything back. An overdue term
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
@@ -9109,6 +9282,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         subscriptionAddOns: nextAddOns,
         ...(addOnsChanged ? { addOnsRevision: (organization.addOnsRevision ?? 0) + 1, addOnsEffectiveAt: nowMs } : {}),
         billingInterval: interval,
+        quotedPriceMinor: nextQuote,
         ...(nextTrialEndsAt !== undefined ? { trialEndsAt: nextTrialEndsAt } : { trialEndsAt: undefined }),
         ...(nextSubscriptionStartedAt !== undefined ? { subscriptionStartedAt: nextSubscriptionStartedAt } : {}),
         ...(nextCurrentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: nextCurrentPeriodEndsAt } : { currentPeriodEndsAt: undefined }),
@@ -9180,7 +9354,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             after: { status: "void" },
           });
         }
-        const catalogPrice = monthlyCatalogPrice(modulePlan) + addOnMonthlyPrice(nextAddOns);
+        const catalogPrice = incomingMonthlyPrice;
         if (!Number.isSafeInteger(catalogPrice) || catalogPrice <= 0) {
           domainError("CONFIGURATION_ERROR", "The plan catalog has no valid price for this plan, so the term invoice cannot be issued.", { correlationId: admin.correlationId });
         }
@@ -9241,7 +9415,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             recipientReference: publicUserId(billedRecipient.user),
             recipientEmail: billedRecipient.user.email,
             dedupeKey: `subscription-change-invoice:${invoiceId}`,
-            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone })] : undefined,
+            attachments: issued ? [platformInvoiceAttachment(invoiceId, data(issued.data), invoiceCustomer(billedRecipient.organization, billedRecipient.user), { locale: notice.language, timeZone: billedRecipient.organization.timezone, paymentDetails: (await commercialSettings(ctx)).paymentDetails })] : undefined,
           });
         }
       }
@@ -9330,6 +9504,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (![priceMinor, onboardingFeeMinor, operationalEmails].every((value) => Number.isSafeInteger(value) && value >= 0) || ![branches, staff, members].every((value) => Number.isSafeInteger(value) && (name === "Pro" ? value === -1 : value >= 1))) {
       domainError("VALIDATION_ERROR", "Plan limits and price must be valid positive integers.", { correlationId: admin.correlationId });
     }
+    if (name === "Basic" && (branches !== 1 || staff !== 5 || members !== 300 || operationalEmails !== 900)) domainError("VALIDATION_ERROR", "Basic base allowances are fixed. Use the capped per-gym add-ons for more capacity.", { correlationId: admin.correlationId });
     const modulePlan = workspacePlan(name);
     if (!modulePlan) domainError("VALIDATION_ERROR", "Plan name is invalid.", { correlationId: admin.correlationId });
     const defaultEntitledModules = entitledModulesForPlan(modulePlan);
@@ -9365,23 +9540,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     // without waiting for a later subscription mutation.
     const assignedOrganizations = (await ctx.db.query("organizations").collect()).filter((organization) => organization.subscriptionPlan === modulePlan);
     for (const organization of assignedOrganizations) {
+      const tenantEntitledModules = [...new Set([...entitledModules, ...addOnModules(modulePlan, organization.subscriptionAddOns)])];
       const entitlement = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
       const previousEntitled = entitlement?.entitledModules ?? entitledModulesForPlan(modulePlan);
       const entitlementUpdatedAt = Date.now();
       if (entitlement) {
-        await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
+        await ctx.db.patch(entitlement._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules: tenantEntitledModules, source: "subscription_plan", updatedAt: entitlementUpdatedAt });
       } else {
-        await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
+        await ctx.db.insert("organizationEntitlements", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, subscriptionPlan: modulePlan, entitledModules: tenantEntitledModules, source: "subscription_plan", createdAt: entitlementUpdatedAt, updatedAt: entitlementUpdatedAt });
       }
       const preferences = await ctx.db.query("workspaceModulePreferences").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
       if (preferences) {
-        const newlyEntitled = entitledModules.filter((module) => !previousEntitled.includes(module));
-        const candidate = [...preferences.enabledModules.filter((module) => entitledModules.includes(module)), ...newlyEntitled];
+        const newlyEntitled = tenantEntitledModules.filter((module) => !previousEntitled.includes(module));
+        const candidate = [...preferences.enabledModules.filter((module) => tenantEntitledModules.includes(module)), ...newlyEntitled];
         let enabledModules: WorkspaceModuleKey[];
         try {
-          enabledModules = validateWorkspaceModuleSelection(candidate, entitledModules);
+          enabledModules = validateWorkspaceModuleSelection(candidate, tenantEntitledModules);
         } catch {
-          enabledModules = defaultWorkspacePreferences(entitledModules);
+          enabledModules = defaultWorkspacePreferences(tenantEntitledModules);
         }
         if (JSON.stringify(enabledModules) !== JSON.stringify(preferences.enabledModules)) {
           await ctx.db.patch(preferences._id, { catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedAt: entitlementUpdatedAt });
@@ -9519,7 +9695,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!reference) domainError("VALIDATION_ERROR", "A manual payment reference is required.", { correlationId: admin.correlationId, fieldErrors: { reference: ["Required"] } });
       const paidTimestamp = input.paidAt === undefined ? Date.now() : validTimestamp(stringValue(input.paidAt));
       if (paidTimestamp === undefined) domainError("VALIDATION_ERROR", "Payment date is invalid.", { correlationId: admin.correlationId });
-      updated = { ...current, status: "paid", paidAt: new Date(paidTimestamp).toISOString(), paymentReference: reference, updatedAt: now };
+      const claim = data(current.paymentClaim);
+      updated = {
+        ...current,
+        status: "paid",
+        paidAt: new Date(paidTimestamp).toISOString(),
+        paymentReference: reference,
+        // Details the gym sent from its payment page are now confirmed.
+        ...(claim.status === "submitted" ? { paymentClaim: { ...claim, status: "confirmed", confirmedAt: now } } : {}),
+        updatedAt: now,
+      };
       action = "invoice.manual_payment";
       summary = "Recorded an offline payment against platform invoice";
     } else {
@@ -9542,12 +9727,27 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const periodEndTimestamp = validTimestamp(stringValue(current.periodEnd));
       if (listing && organization && listing.organizationId === organization._id && organization.status !== "cancelled" && periodEndTimestamp !== undefined) {
         const billing = billingInterval(current.billingInterval ?? organization.billingInterval);
-        const startedAt = organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
+        // An upgrade the gym asked for from its subscription page takes effect
+        // when RIVET confirms its payment, and its new term starts then.
+        const upgradeTo = workspacePlan(data(current.planChange).to);
+        if (upgradeTo) await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, upgradeTo)), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
+        // A gym's first payment opens its workspace, so its first paid term
+        // starts now rather than on the day the invoice was raised.
+        const firstTermStart = organization.status === "pending_payment" || upgradeTo ? Date.now() : undefined;
+        const firstTermEnd = firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
+        if (firstTermStart !== undefined && firstTermEnd !== undefined) {
+          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd) };
+          await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
+        }
+        // An upgrade starts a new term but not a new subscription.
+        const startedAt = (organization.status === "pending_payment" ? firstTermStart : undefined) ?? organization.subscriptionStartedAt ?? validTimestamp(stringValue(current.periodStart)) ?? Date.now();
         // Paying a late or superseded invoice must never shorten a term the
         // gym has already paid past, so the boundary only ever moves forward.
-        const nextBoundary = Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
+        const nextBoundary = firstTermEnd ?? Math.max(periodEndTimestamp, organization.currentPeriodEndsAt ?? 0);
+        const previousPlan = workspacePlan(organization.subscriptionPlan);
         await ctx.db.patch(organization._id, {
           status: "active",
+          ...(upgradeTo ? { subscriptionPlan: upgradeTo, subscriptionAddOns: validateAddOns(undefined, upgradeTo), addOnsRevision: (organization.addOnsRevision ?? 0) + 1, addOnsEffectiveAt: Date.now() } : {}),
           billingInterval: billing,
           subscriptionStartedAt: startedAt,
           trialEndsAt: undefined,
@@ -9559,6 +9759,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.patch(listing._id, {
           data: {
             ...listingData,
+            ...(upgradeTo ? { rivetPlan: upgradeTo } : {}),
             subscriptionStatus: "active",
             billingInterval: billing,
             isPublic: true,
@@ -9571,7 +9772,31 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           },
           updatedAt: Date.now(),
         });
+        if (upgradeTo) {
+          const entitlementBefore = await ctx.db.query("organizationEntitlements").withIndex("by_organization", (q) => q.eq("organizationId", organization._id)).unique();
+          await syncPlanEntitlement(ctx, organization._id, entitlementBefore, upgradeTo, await platformPlans(ctx), { planChanged: true, previousModulePlan: previousPlan });
+          // The new term replaces the one a waiting renewal invoice was for.
+          const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
+          for (const row of invoiceRows) {
+            const invoice = data(row.data);
+            if (row.publicId === invoiceId || !optionalString(invoice.cycleKey) || !["draft", "open", "past_due", "failed"].includes(stringValue(invoice.status))) continue;
+            await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: Date.now() });
+            await insertPlatformAudit(ctx, admin, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Voided a subscription invoice replaced by a plan upgrade", reason, before: { status: invoice.status }, after: { status: "void" } });
+          }
+          await insertPlatformAudit(ctx, admin, {
+            action: "gym.plan.upgrade",
+            entityType: "platform_gym",
+            entityPublicId: listing.publicId,
+            entityLabel: organization.name,
+            summary: `Upgraded ${organization.name} to ${upgradeTo} after confirming ${invoiceId}`,
+            reason,
+            before: { plan: previousPlan, currentPeriodEndsAt: organization.currentPeriodEndsAt },
+            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary },
+          });
+        }
       }
+      // The support request that tracks this payment follows it.
+      await settlePaymentRequest(ctx, updated, now);
     }
     await insertPlatformAudit(ctx, admin, {
       action,
@@ -9595,8 +9820,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         recipientReference: publicUserId(recipient.user),
         recipientEmail: recipient.user.email,
         dedupeKey: `${operation}:${invoiceId}:${now}`,
-        // The invoice travels with the notice, as the paperwork it is, in the same language.
-        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone })],
+        // The invoice travels with the notice, as the paperwork it is, in the
+        // same language, with where to pay as set in the console.
+        attachments: [platformInvoiceAttachment(invoiceId, updated, invoiceCustomer(recipient.organization, recipient.user), { locale: notice.language, timeZone: recipient.organization.timezone, paymentDetails: (await commercialSettings(ctx)).paymentDetails })],
       });
       if (recipient && operation === "platform.invoice.past_due") {
         await notifyOrganizationRoles(ctx, {

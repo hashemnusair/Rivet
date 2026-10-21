@@ -7,7 +7,8 @@ import { domainError, publicBranchId, publicOrganizationId, publicUserId, requir
 import { notifyPlatformAdmins } from "./notificationDelivery";
 import { defaultWorkspacePreferences, entitledModulesForPlan, validateWorkspaceModuleSelection, WORKSPACE_MODULE_CATALOG_VERSION } from "./workspaceModules";
 import { seedAccountingMetadata } from "./accounting";
-import { COMMERCIAL_TERMS_VERSION, findPlan, isCurrentPlan } from "./planCatalogue";
+import { COMMERCIAL_TERMS_VERSION, findPlan, isCurrentPlan, isQuotedPlan, validQuotedPriceMinor } from "./planCatalogue";
+import { createFirstInvoice } from "./platformCommerce";
 
 const provisionArgs = {
   applicationId: v.string(),
@@ -41,17 +42,8 @@ const provisioningLeaseArgs = {
   leaseId: v.string(),
 };
 
-function marketplaceSubscriptionStatus(status: Doc<"organizations">["status"]): "trial" | "active" | "overdue" | "suspended" | "cancelled" {
+function marketplaceSubscriptionStatus(status: Doc<"organizations">["status"]): "trial" | "pending_payment" | "active" | "overdue" | "suspended" | "cancelled" {
   return status === "past_due" ? "overdue" : status;
-}
-
-function addCalendarMonth(timestamp: number): number {
-  const source = new Date(timestamp);
-  const day = source.getUTCDate();
-  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + 1, 1, source.getUTCHours(), source.getUTCMinutes(), source.getUTCSeconds(), source.getUTCMilliseconds()));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
-  return target.getTime();
 }
 
 /**
@@ -443,7 +435,8 @@ async function upsertMarketplace(ctx: MutationCtx, organizationId: Id<"organizat
     targetOrganizationId: input.organizationPublicId,
     // A retry must preserve a platform operator's explicit private/public
     // choice. Only a brand-new listing defaults to public discovery.
-    isPublic: typeof existingData.isPublic === "boolean" ? existingData.isPublic : true,
+    // A gym that has not paid yet is not listed; confirming its first payment publishes it.
+    isPublic: typeof existingData.isPublic === "boolean" ? existingData.isPublic : organization.status !== "pending_payment",
     branches: Array.isArray(existingData.branches) && existingData.branches.length > 0 ? existingData.branches : defaultBranches,
     applicationId: input.applicationId,
     trialEndsAt: organization.trialEndsAt !== undefined ? new Date(organization.trialEndsAt).toISOString() : undefined,
@@ -485,17 +478,21 @@ export const createWorkspace = internalMutation({
       const storedPlan = catalogRows.map(row => row.data as Record<string, unknown>).find(row => row.name === application.plan && (!isCurrentPlan(row.name) || row.commercialTermsVersion === COMMERCIAL_TERMS_VERSION));
       const setupFee = storedPlan?.onboardingFeeMinor ?? findPlan(application.plan)?.onboardingFeeMinor ?? 0;
       if (typeof setupFee !== "number" || !Number.isSafeInteger(setupFee) || setupFee < 0) domainError("CONFIGURATION_ERROR", "The plan onboarding fee is invalid.", { correlationId: args.correlationId });
+      // An Enterprise gym is billed the price RIVET quoted when it approved
+      // the application, never the catalogue's placeholder.
+      const quotedPriceMinor = isQuotedPlan(application.plan) ? validQuotedPriceMinor(application.quotedPriceMinor) : undefined;
       const organizationId = await ctx.db.insert("organizations", {
         publicId: ids.organizationPublicId,
         name: application.gymName,
         slug: ids.organizationSlug,
-        status: "trial",
+        // Pay first: the owner is invited now, but the workspace opens only
+        // once RIVET confirms the first payment, which starts the paid term.
+        status: "pending_payment",
         subscriptionPlan: application.plan,
         billingInterval: requestedBillingInterval,
         onboardingFeeMinor: setupFee,
+        ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}),
         commercialTermsVersion: COMMERCIAL_TERMS_VERSION,
-        subscriptionStartedAt: now,
-        trialEndsAt: addCalendarMonth(now),
         clerkOrganizationId: args.clerkOrganizationId,
         timezone: "Asia/Amman",
         currency: "JOD",
@@ -624,6 +621,9 @@ export const createWorkspace = internalMutation({
     else await ctx.db.insert("workspaceModulePreferences", { organizationId: organization._id, catalogVersion: WORKSPACE_MODULE_CATALOG_VERSION, enabledModules, updatedByUserId: user._id, createdAt: now, updatedAt: now });
     await upsertSettings(ctx, organization._id, now);
     await upsertMarketplace(ctx, organization._id, { applicationId: application.publicId, marketplacePublicId: ids.marketplacePublicId, organizationPublicId: ids.organizationPublicId, gymName: application.gymName, plan, billingInterval, branchPublicId: publicBranchId(branch), branchName: branch.name, address: application.gymAddress ?? "", now, organization });
+    if (organization.status === "pending_payment") {
+      await createFirstInvoice(ctx, admin, { organization, application, listingPublicId: ids.marketplacePublicId, now });
+    }
 
     await ctx.db.patch(application._id, { provisioningCheckpoint: "workspace_ready", provisioningOutcome: "partial", provisioningLastCorrelationId: args.correlationId, provisionedBranchId: publicBranchId(branch), updatedAt: now });
 

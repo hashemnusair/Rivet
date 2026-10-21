@@ -33,9 +33,11 @@ test.describe("staged provisioning", () => {
       const application = platform.getByRole("button").filter({ hasText: gymName }).first();
       await expect(application).toBeVisible();
       await application.click();
+      await platform.getByRole("tab", { name: "Decision" }).click();
       await platform.getByRole("button", { name: "Approve application", exact: true }).click();
-      await expect(platform.getByText("Application approved", { exact: false })).toBeVisible();
+      await expect(platform.getByText("Application approved", { exact: false }).first()).toBeVisible();
 
+      await platform.getByRole("tab", { name: "Workspace" }).click();
       await platform.getByRole("button", { name: "Provision gym workspace", exact: true }).click();
       await expect(platform.getByText("Workspace provisioned", { exact: false })).toBeVisible();
 
@@ -71,14 +73,19 @@ async function suspendGymFromBilling(page: import("@playwright/test").Page, gymN
     await page.goto("/platform/billing", { waitUntil: "domcontentloaded" });
     const row = page.locator('section[aria-labelledby="gym-subscriptions-heading"]').getByRole("row", { name: new RegExp(gymName) });
     await expect(row).toBeVisible();
-    const suspend = row.getByRole("button", { name: "Suspend", exact: true });
+    // Suspend and reactivate live in the row's More menu.
+    await row.getByRole("button", { name: /^More actions for / }).click();
+    const suspend = page.getByRole("menuitem", { name: "Suspend", exact: true });
     if (await suspend.count()) {
       await suspend.click();
       const dialog = page.getByRole("dialog", { name: /Suspend .*\?/ });
       await dialog.getByLabel("Reason for this change").fill("Disposable isolated staging workspace cleanup");
       await dialog.getByRole("button", { name: "Suspend gym", exact: true }).click();
+      await expect(dialog).toBeHidden();
+      await row.getByRole("button", { name: /^More actions for / }).click();
     }
-    await expect(row.getByRole("button", { name: /Reactivate & bill/ })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Reactivate & bill/ })).toBeVisible();
+    await page.keyboard.press("Escape");
     return true;
   } catch {
     return false;

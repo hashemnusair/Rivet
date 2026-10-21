@@ -63,6 +63,13 @@ describe("pricing and entitlement catalog", () => {
     expect(screen.getByText("Unlimited members")).toBeInTheDocument();
   });
 
+  it("shows only the two sold plans, with no Enterprise editor", () => {
+    renderPage();
+    expect(screen.getByRole("region", { name: "Basic plan" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Pro plan" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Enterprise plan" })).not.toBeInTheDocument();
+  });
+
   it("requires an audit reason and updates the shared catalog", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -79,7 +86,7 @@ describe("pricing and entitlement catalog", () => {
     await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", priceMinor: 80_000 })]));
   });
 
-  it("keeps an Arabic amount and Persian limit drafts exact while the operator changes language", async () => {
+  it("keeps an Arabic amount exact and the Basic allowances fixed while changing language", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Edit Basic plan" }));
@@ -88,22 +95,22 @@ describe("pricing and entitlement catalog", () => {
     const staff = screen.getByRole("textbox", { name: "Staff seats" });
     const members = screen.getByRole("textbox", { name: "Member capacity" });
     fireEvent.change(price, { target: { value: "٨٠٫٠٠١" } });
-    fireEvent.change(branches, { target: { value: "٢" } });
-    fireEvent.change(staff, { target: { value: "٨" } });
-    fireEvent.change(members, { target: { value: "٥٠٠" } });
+    expect(branches).toBeDisabled();
+    expect(staff).toBeDisabled();
+    expect(members).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: "Reason for this change" }), "Arabic input review.");
 
     fireEvent.click(screen.getByTestId("locale-switch"));
 
     expect(screen.getByRole("textbox", { name: "السعر الشهري (د.أ)" })).toHaveValue("٨٠٫٠٠١");
-    expect(screen.getByRole("textbox", { name: "عدد الفروع" })).toHaveValue("٢");
-    expect(screen.getByRole("textbox", { name: "مقاعد فريق العمل" })).toHaveValue("٨");
-    expect(screen.getByRole("textbox", { name: "سعة الأعضاء" })).toHaveValue("٥٠٠");
+    expect(screen.getByRole("textbox", { name: "عدد الفروع" })).toHaveValue("1");
+    expect(screen.getByRole("textbox", { name: "مقاعد فريق العمل" })).toHaveValue("5");
+    expect(screen.getByRole("textbox", { name: "سعة الأعضاء" })).toHaveValue("300");
     expect(screen.getByRole("textbox", { name: "سبب التغيير" })).toHaveValue("Arabic input review.");
 
     await user.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", priceMinor: 80_001, branches: 2, staff: 8, members: 500 })]));
+    await expect(api.listPublicSaasPlans()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Basic", priceMinor: 80_001, branches: 1, staff: 5, members: 300 })]));
   });
 
   it("edits canonical workspace capabilities and persists the selected module keys", async () => {

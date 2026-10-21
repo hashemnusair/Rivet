@@ -122,7 +122,8 @@ const CONSOLE_RECORD_ROUTES: Route[] = [
   { path: "/platform/gyms", slug: "platform-gyms", ready: h1("Gym organizations"), shoot: true },
   { path: "/platform/gyms/forge-fitness", slug: "platform-gym", ready: h1("Forge Fitness Club"), shoot: true },
   { path: "/platform/gyms/pulse-lab", slug: "platform-gym-unprovisioned", ready: (page) => page.getByText("Cleanup-only record") },
-  { path: "/platform/applications", slug: "platform-applications", ready: (page) => page.getByRole("heading", { level: 2, name: "Northline Strength" }), shoot: true },
+  // Below 1024px the list comes first and an application opens on a tap.
+  { path: "/platform/applications", slug: "platform-applications", ready: (page) => page.getByRole("button", { name: /Northline Strength/ }), shoot: true },
 ];
 
 const CONSOLE_LEDGER_ROUTES: Route[] = [
@@ -242,7 +243,7 @@ test("platform search reaches a gym record by keyboard and billing opens on that
   await search.press("Enter");
   await expect(page).toHaveURL(/\/platform\/gyms\/forge-fitness$/);
   await expect(page.getByRole("heading", { level: 1, name: "Forge Fitness Club" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?bill=forge-fitness");
+  await expect(page.getByRole("link", { name: "Manage in Billing" })).toHaveAttribute("href", "/platform/billing?gym=forge-fitness");
 
   // Reason-gated listing and archive controls stay disabled until a reason is typed.
   await page.getByRole("tab", { name: "Settings" }).click();
@@ -260,12 +261,11 @@ test("platform search reaches a gym record by keyboard and billing opens on that
   await expect(archive).toBeHidden();
 
   await page.getByRole("link", { name: /Manage subscription/ }).click();
-  await expect(page).toHaveURL(/\/platform\/billing\?bill=forge-fitness$/);
-  const wizard = page.getByRole("dialog", { name: "Bill a gym" });
-  await expect(wizard.getByText(/Forge Fitness Club is currently active on Pro/)).toBeVisible();
-  await wizard.getByRole("button", { name: "Cancel" }).click();
-  await expect(wizard).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Gym subscriptions" })).toBeVisible();
+  await expect(page).toHaveURL(/\/platform\/billing\?gym=forge-fitness$/);
+  // Billing opens on that gym's invoices; gyms change their own plan, so there is no wizard.
+  await expect(page.getByText("Invoices for Forge Fitness Club")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Gyms", exact: true })).toBeVisible();
 });
 
 test("a support case can be answered and resolved from its deep link", async ({ page }) => {

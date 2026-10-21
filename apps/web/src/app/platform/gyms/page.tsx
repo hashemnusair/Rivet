@@ -25,7 +25,7 @@ type GymFilter = "all" | MarketplaceGym["subscriptionStatus"];
 
 const PLATFORM_SNAPSHOT_KEY = ["platform", "snapshot"] as const;
 const EMPTY_GYMS: MarketplaceGym[] = [];
-const STATUS_FILTERS: GymFilter[] = ["active", "all", "trial", "overdue", "suspended", "cancelled"];
+const STATUS_FILTERS: GymFilter[] = ["active", "all", "pending_payment", "trial", "overdue", "suspended", "cancelled"];
 const DEFAULT_FILTER: GymFilter = "active";
 
 function parseFilter(value: string | null): GymFilter {
@@ -37,6 +37,7 @@ function filterLabel(value: GymFilter, t: TFunction): string {
     case "active": return t("platformFinance.gyms.activeFilter");
     case "all": return t("platformFinance.gyms.allFilter");
     case "trial": return t("platformFinance.gyms.trialFilter");
+    case "pending_payment": return t("platformFinance.gyms.pendingPaymentFilter");
     case "overdue": return t("platformFinance.gyms.pastDueFilter");
     case "suspended": return t("platformFinance.gyms.suspendedFilter");
     case "cancelled": return t("platformFinance.gyms.cancelledFilter");
@@ -86,7 +87,7 @@ export default function PlatformGymsPage() {
     () => STATUS_FILTERS.reduce<Record<GymFilter, number>>((counts, item) => {
       counts[item] = item === "all" ? directory.length : directory.filter((gym) => gym.subscriptionStatus === item).length;
       return counts;
-    }, { all: 0, active: 0, trial: 0, overdue: 0, suspended: 0, cancelled: 0 }),
+    }, { all: 0, active: 0, pending_payment: 0, trial: 0, overdue: 0, suspended: 0, cancelled: 0 }),
     [directory],
   );
   const hasFilters = Boolean(normalizedQuery) || filter !== DEFAULT_FILTER;

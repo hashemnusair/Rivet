@@ -44,6 +44,7 @@ import {
   type BillingInterval,
 } from "@/lib/public/pricing";
 import { formatPublicJod, localizedPublicPlanFeatures, publicDestinationCopy } from "@/components/public/public-plan-copy";
+import { WebsiteOfferPanel } from "@/components/public/website-offer";
 
 export default function LandingPage() {
   const { t, locale, isolateLtr } = useLocale();
@@ -238,12 +239,12 @@ export default function LandingPage() {
                 description={t("publicCompletion.landing.pricing.description", { percent: f.number(ANNUAL_DISCOUNT_PERCENT) })}
               />
             </div>
+            <WebsiteOfferPanel className="mt-10" />
             {experienceStatus === "error" && saasPlans.length === 0 ? (
               <div className="mt-8">
                 <ExperienceDataState status={experienceStatus} error={experienceError} onRetry={retryExperience} emptyTitle={t("publicCompletion.landing.pricing.launchTitle")} emptyDescription={t("publicCompletion.landing.pricing.launchDescription")} />
               </div>
             ) : null}
-            <p className="mt-6 text-[15px] font-semibold text-ink">{t("publicCompletion.landing.pricing.websiteOffer")}</p>
             <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="text-[13.5px] font-semibold tracking-[-0.01em]">{t("publicCompletion.landing.pricing.billing")}</p>

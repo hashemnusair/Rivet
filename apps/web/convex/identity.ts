@@ -1,8 +1,15 @@
 import { query } from "./_generated/server";
 import { toFrontendRole } from "./permissions";
-import { membershipInvitationAccepted } from "./security";
+import { billingOnlyOrganization, membershipInvitationAccepted, WORKSPACE_STATUSES } from "./security";
 
-const ROUTABLE_ORGANIZATION_STATUSES: readonly string[] = ["trial", "active", "past_due"];
+const ROUTABLE_ORGANIZATION_STATUSES: readonly string[] = WORKSPACE_STATUSES;
+
+/** A gym whose owner can only pay: waiting for its first payment, or stopped for an unpaid invoice. */
+type BillingAccess = {
+  organizationId: string;
+  organizationName: string;
+  status: "pending_payment" | "suspended";
+};
 
 type IdentityMembership = {
   organizationId: string;
@@ -69,6 +76,7 @@ export const current = query({
     if (!user.publicId) return null;
 
     const memberships: IdentityMembership[] = [];
+    const billingAccess: BillingAccess[] = [];
     let gymAccessUnavailable = false;
     let invitationClaimEligible = false;
     for (const row of rows) {
@@ -89,7 +97,14 @@ export const current = query({
       // remain in storage for history and billing, but must disappear from
       // the identity projection so the client cannot advertise a dead route.
       if (!organization || !organization.publicId || !ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status)) {
-        gymAccessUnavailable = true;
+        // The owner of a gym that has not paid, or was stopped for not
+        // paying, is routed to the payment page and nowhere else. Other staff
+        // still learn only that the gym is unavailable.
+        if (organization?.publicId && row.role === "owner" && billingOnlyOrganization(organization)) {
+          billingAccess.push({ organizationId: organization.publicId, organizationName: organization.name, status: organization.status as BillingAccess["status"] });
+        } else {
+          gymAccessUnavailable = true;
+        }
         continue;
       }
 
@@ -129,6 +144,7 @@ export const current = query({
       // callers must never select memberships by array order.
       organizationSelectionRequired: memberships.length > 1,
       memberships,
+      ...(billingAccess.length > 0 ? { billingAccess } : {}),
     };
   },
 });

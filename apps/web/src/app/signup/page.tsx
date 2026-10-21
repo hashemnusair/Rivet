@@ -9,7 +9,7 @@ import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
-import type { PlatformSaasPlan, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
+import type { PlatformSaasPlan, PromoDiscount, PromoUnavailableReason, SubmitGymApplicationResult } from "@/lib/api/GymOSApi";
 import { getApi } from "@/lib/api/client";
 import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useExperience } from "@/lib/providers/experience-provider";
@@ -24,6 +24,7 @@ import {
   type PublicPricingPlanName,
 } from "@/lib/public/pricing";
 import { localizedPublicPlanFeatures, formatPublicJod } from "@/components/public/public-plan-copy";
+import { FirstPaymentOptions } from "./first-payment-options";
 import { latinDigits } from "@/lib/utils/text";
 import { cn } from "@/lib/utils/cn";
 
@@ -61,6 +62,9 @@ export default function GymApplicationPage() {
   const [contactNumber, setContactNumber] = useState("");
   const [plan, setPlan] = useState<PublicPricingPlanName>("Basic");
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
+  const [websiteRequested, setWebsiteRequested] = useState(false);
+  const [promo, setPromo] = useState<PromoDiscount>();
+  const [promoError, setPromoError] = useState<PromoUnavailableReason>();
   const [errors, setErrors] = useState<FormErrors>({});
   const [formError, setFormError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -114,10 +118,19 @@ export default function GymApplicationPage() {
         language: locale,
         idempotencyKey: applicationRequestKeyRef.current ?? (applicationRequestKeyRef.current = crypto.randomUUID()),
         ...(typeof website === "string" && website.trim() ? { website: website.trim() } : {}),
+        ...(websiteRequested ? { websiteRequested: true } : {}),
+        ...(promo ? { promoCode: promo.code } : {}),
       });
       applicationRequestKeyRef.current = undefined;
       setResult(submitted);
     } catch (error) {
+      // A code can stop working between checking it and sending the form.
+      const promoReason = isApiError(error) ? error.sourceFieldErrors?.promoCode?.[0] : undefined;
+      if (promoReason) {
+        setPromo(undefined);
+        setPromoError(promoReason as PromoUnavailableReason);
+        document.getElementById("application-promo")?.focus();
+      }
       setFormError(isApiError(error) ? localizeApiError(error, locale).message : t("publicCompletion.signup.validation.submitFailed"));
     } finally {
       setSubmitting(false);
@@ -244,6 +257,27 @@ export default function GymApplicationPage() {
                     })}
                   </div>
                   <p className="mt-3 text-[12px] leading-relaxed text-ink-3">{t("publicCompletion.landing.pricing.activeMemberAllowanceNote")}</p>
+                </FormSection>
+
+                <FormSection title={t("commerce.offer.sectionTitle")} note={t("commerce.offer.sectionNote")}>
+                  {(() => {
+                    const selectedPlan = plans.find((item) => item.name === plan) ?? plans[0];
+                    return selectedPlan ? (
+                      <FirstPaymentOptions
+                        plan={selectedPlan}
+                        interval={billingInterval}
+                        websiteRequested={websiteRequested}
+                        onWebsiteChange={setWebsiteRequested}
+                        promo={promo}
+                        onPromoChange={(next) => {
+                          setPromo(next);
+                          setPromoError(undefined);
+                        }}
+                        promoError={promoError}
+                        disabled={!hydrated}
+                      />
+                    ) : null;
+                  })()}
                 </FormSection>
 
                 <div className={cn(ROW, "mt-10 border-t border-line pt-8 lg:mt-12 lg:pt-10")}>

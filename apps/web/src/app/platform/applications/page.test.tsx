@@ -147,6 +147,7 @@ describe("PlatformApplicationsPage", () => {
     render(<PlatformApplicationsPage />);
     await screen.findByRole("heading", { name: "Northline Strength" });
 
+    await user.click(screen.getByRole("tab", { name: "Decision" }));
     await user.click(screen.getByRole("button", { name: "Reject application" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Add a reason before rejecting");
     expect(state.review).not.toHaveBeenCalled();
@@ -164,11 +165,35 @@ describe("PlatformApplicationsPage", () => {
     await user.clear(screen.getByRole("textbox", { name: "Review notes" }));
     await user.type(screen.getByRole("textbox", { name: "Review notes" }), "Verified owner and location");
     await user.click(screen.getByRole("button", { name: "Approve application" }));
-    await waitFor(() => expect(screen.getByText("Ready to provision", { selector: "strong" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Application approved", { selector: "strong" })).toBeInTheDocument());
 
+    // The workspace step gets its own tab once the gym is approved.
+    await user.click(screen.getByRole("tab", { name: "Workspace" }));
+    expect(screen.getByText("Ready to provision", { selector: "strong" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Provision gym workspace" }));
     await waitFor(() => expect(screen.getByText("Workspace provisioned", { selector: "strong" })).toBeInTheDocument());
     expect(state.provision).toHaveBeenCalledWith({ applicationId: pending.id });
+  });
+
+  it("approves an Enterprise application only with the monthly price RIVET quoted", async () => {
+    const user = userEvent.setup();
+    const pending = application({ plan: "Enterprise" });
+    state.rows = [pending];
+    state.review.mockImplementation(async ({ quotedPriceMinor }: { quotedPriceMinor?: number }) => application({ plan: "Enterprise", status: "approved", quotedPriceMinor, reviewedBy: "RIVET Admin", reviewedAt: "2026-08-20T10:00:00.000Z" }));
+
+    render(<PlatformApplicationsPage />);
+    await screen.findByRole("heading", { name: "Northline Strength" });
+    await user.click(screen.getByRole("tab", { name: "Decision" }));
+    await user.click(screen.getByRole("button", { name: "Approve application" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter the monthly price you quoted this gym.");
+    expect(state.review).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole("textbox", { name: /Quoted price a month/ }), "425.5");
+    await user.click(screen.getByRole("button", { name: "Approve application" }));
+    await waitFor(() => expect(screen.getByText("Application approved", { selector: "strong" })).toBeInTheDocument());
+    expect(state.review).toHaveBeenCalledWith({ applicationId: pending.id, decision: "approved", quotedPriceMinor: 425_500 });
+    await user.click(screen.getByRole("tab", { name: "Applicant" }));
+    expect(screen.getByText("JOD 425.500 a month")).toBeInTheDocument();
   });
 
   it("keeps an Arabic rejection draft across a locale switch and retry", async () => {
@@ -182,6 +207,7 @@ describe("PlatformApplicationsPage", () => {
 
     render(<LocaleProvider initialLocale="en"><><LocaleSwitch /><PlatformApplicationsPage /></></LocaleProvider>);
     await screen.findByRole("heading", { name: "Northline Strength" });
+    await user.click(screen.getByRole("tab", { name: "Decision" }));
     const notes = screen.getByRole("textbox", { name: "Review notes" });
     await user.type(notes, note);
     await user.click(screen.getByRole("button", { name: "Use Arabic" }));
@@ -197,6 +223,36 @@ describe("PlatformApplicationsPage", () => {
     await waitFor(() => expect(screen.getByText("تم رفض الطلب", { selector: "strong" })).toBeInTheDocument());
     expect(state.review).toHaveBeenNthCalledWith(2, { applicationId: pending.id, decision: "rejected", note });
     expect(screen.getByText(note)).toBeInTheDocument();
+  });
+
+  it("splits an application into tabs and opens on the one that needs doing", async () => {
+    const user = userEvent.setup();
+    const pending = application();
+    const waiting = application({ id: "app-2", gymName: "Mosaic Women's Fitness", status: "approved" });
+    state.rows = [pending, waiting];
+
+    render(<PlatformApplicationsPage />);
+    await screen.findByRole("heading", { name: "Northline Strength" });
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Applicant", "Decision"]);
+    expect(screen.getByRole("tab", { name: "Applicant" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("karim@northline.example")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Review notes", hidden: true })).not.toBeVisible();
+
+    // An approved gym without its workspace opens straight on that step.
+    await user.click(screen.getByRole("button", { name: /Mosaic Women's Fitness/ }));
+    expect(await screen.findByRole("heading", { name: "Mosaic Women's Fitness" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Applicant", "Decision", "Workspace"]);
+    expect(screen.getByRole("tab", { name: "Workspace" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Provision gym workspace" })).toBeVisible();
+    expect(window.location.search).toBe("?application=app-2");
+
+    // A tab someone picks stays picked, and is kept in the address.
+    await user.click(screen.getByRole("tab", { name: "Decision" }));
+    expect(window.location.search).toBe("?application=app-2&tab=decision");
+    await user.click(screen.getByRole("button", { name: /Northline Strength/ }));
+    expect(await screen.findByRole("heading", { name: "Northline Strength" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Decision" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("textbox", { name: "Review notes" })).toBeVisible();
   });
 
   it("lets an operator refresh an in-progress provisioning state to a terminal result", async () => {

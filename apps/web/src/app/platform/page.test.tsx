@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlatformSnapshot } from "@/lib/api/GymOSApi";
 import PlatformOverviewPage from "./page";
@@ -30,7 +30,7 @@ function snapshot(): PlatformSnapshot {
     applications: [],
     auditEvents: [],
     overview: {
-      gymCounts: { trial: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 },
+      gymCounts: { trial: 0, pending_payment: 0, active: 1, past_due: 0, suspended: 0, cancelled: 0 },
       branchCount: 2,
       memberCount: 0,
       activeStaffCount: 0,
@@ -73,5 +73,50 @@ describe("PlatformOverviewPage", () => {
     expect(screen.queryByText("No persisted application, billing, provisioning, or support issues need attention.")).not.toBeInTheDocument();
     const gymLinks = screen.getAllByRole("link").filter((link) => link.getAttribute("href")?.startsWith("/platform/gyms/") === true);
     expect(gymLinks.map((link) => link.getAttribute("href"))).toEqual(["/platform/gyms/tenant-live"]);
+  });
+
+  it("lists operator activity with plain labels, short references and who and when", () => {
+    state.snapshot = {
+      ...snapshot(),
+      auditEvents: [
+        { id: "a1", action: "gym.provisioning.workspace_created", summary: "Created Pro workspace for Test Gym", actorName: "Hashem Nusair", occurredAt: "2026-09-27T16:35:00.000Z" },
+        { id: "a2", action: "gym_application.under_review", summary: "Moved to review gym application for Test Gym", actorName: "Hashem Nusair", occurredAt: "2026-09-27T16:34:00.000Z" },
+        { id: "a3", action: "gym.subscription.update", summary: "Updated gym subscription controls and issued INV-c234d937-c2c4-48f3-a0d9-6f1afd8f1121 for the new term", actorName: "Hashem Nusair", occurredAt: "2026-09-27T17:18:00.000Z" },
+      ],
+    };
+    render(<PlatformOverviewPage />);
+
+    const list = screen.getByRole("list", { name: "Recent activity" });
+    const text = (list.textContent ?? "").replace(/[\u2066-\u2069]/g, "");
+    expect(screen.getByText("What the RIVET team changed, newest first.")).toBeInTheDocument();
+    expect(text).toContain("Gym workspace created");
+    expect(text).toContain("Application moved to review");
+    expect(text).toContain("issued INV-C234D937 for the new term");
+    expect(text).not.toMatch(/gym\.provisioning|gym_application|GYM\.|c2c4-48f3/);
+    expect(text).toContain("Hashem Nusair · ");
+  });
+
+  it("shows operator activity 10 at a time, and 5 or 20 when chosen", () => {
+    state.snapshot = {
+      ...snapshot(),
+      auditEvents: Array.from({ length: 23 }, (_, index) => ({ id: `e${index + 1}`, action: "prospect.updated", summary: `Updated prospect number ${index + 1}`, actorName: "Hashem Nusair", occurredAt: "2026-09-27T16:35:00.000Z" })),
+    };
+    render(<PlatformOverviewPage />);
+    const rows = () => within(screen.getByRole("list", { name: "Recent activity" })).getAllByRole("listitem");
+
+    expect(rows()).toHaveLength(10);
+    expect(screen.getByText("Showing 1 to 10 of 23")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(rows()).toHaveLength(3);
+    expect(rows()[0]).toHaveTextContent("Updated prospect number 21");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Per page" }), { target: { value: "5" } });
+    expect(rows()).toHaveLength(5);
+    expect(screen.getByText("Showing 1 to 5 of 23")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Per page" }), { target: { value: "20" } });
+    expect(rows()).toHaveLength(20);
   });
 });

@@ -7,6 +7,9 @@ import { notifyPlatformAdmins } from "./notificationDelivery";
 import { applicantReceivedEmail, applicantReviewEmail, applicationInternalEmail } from "./gymApplicationEmail";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 import { enforcePublicRateLimit, privacyFingerprint } from "./publicAbuse";
+import { checkPromo } from "./platformCommerce";
+import { normalizePromoCode } from "./firstPayment";
+import { isQuotedPlan, validQuotedPriceMinor } from "./planCatalogue";
 
 const billingInterval = v.union(v.literal("monthly"), v.literal("annual"));
 const notificationStatus = v.union(v.literal("pending"), v.literal("sent"), v.literal("failed"), v.literal("not_configured"));
@@ -24,6 +27,9 @@ const applicationArgs = {
   website: v.optional(v.string()),
   /** The language the applicant applied in; their own copies follow it. */
   language: v.optional(v.union(v.literal("en"), v.literal("ar"))),
+  /** Launch offers. (`website` above is the bot trap; this is the real add-on.) */
+  websiteRequested: v.optional(v.boolean()),
+  promoCode: v.optional(v.string()),
 };
 
 const applicationResult = v.object({
@@ -44,6 +50,8 @@ type ApplicationInput = {
   billingInterval?: "monthly" | "annual";
   idempotencyKey?: string;
   website?: string;
+  websiteRequested?: boolean;
+  promoCode?: string;
 };
 
 type ApplicationResult = {
@@ -82,6 +90,18 @@ function cleanEmail(value: string): string {
   const email = value.trim().toLowerCase();
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("INVALID_EMAIL");
   return email;
+}
+
+/**
+ * The inbox an address delivers to, for throttling only. Most providers ignore
+ * a "+tag" in the local part, and Gmail also ignores dots, so
+ * "a.b+1@gmail.com" and "ab@gmail.com" reach the same person.
+ */
+function throttleInbox(email: string): string {
+  const at = email.lastIndexOf("@");
+  const domain = email.slice(at + 1) === "googlemail.com" ? "gmail.com" : email.slice(at + 1);
+  const local = email.slice(0, at).split("+")[0] ?? "";
+  return `${domain === "gmail.com" ? local.replaceAll(".", "") : local}@${domain}`;
 }
 
 function cleanPhone(value: string): string {
@@ -171,9 +191,12 @@ export const create = internalMutation({
         await Promise.all(existingRequests.map((row) => ctx.db.delete(row._id)));
       }
     }
+    // Keyed on the inbox alone: the applicant's copy goes to this address, so
+    // a new phone number on each request must not open a fresh window and let
+    // one script mail the same person again and again.
     await enforcePublicRateLimit(ctx, {
       scope: "gym_application",
-      fingerprint: await privacyFingerprint({ email: values.email, contactNumber: values.canonicalContactNumber }),
+      fingerprint: await privacyFingerprint({ inbox: throttleInbox(values.email) }),
       maxRequests: 5,
       windowMs: 60 * 60 * 1000,
     });
@@ -195,6 +218,13 @@ export const create = internalMutation({
     }
 
     const now = Date.now();
+    // A code is checked when the gym applies, so a mistyped one is caught on
+    // the form. It is checked again, and priced, when the gym is set up.
+    const promoCode = normalizePromoCode(args.promoCode);
+    if (promoCode) {
+      const promo = await checkPromo(ctx, promoCode, values.plan, now);
+      if (!promo.valid) domainError("VALIDATION_ERROR", "This promo code cannot be used.", { fieldErrors: { promoCode: [promo.reason ?? "not_found"] } });
+    }
     const publicId = crypto.randomUUID();
     const applicationDocumentId = await ctx.db.insert("gymApplications", {
       publicId,
@@ -207,6 +237,8 @@ export const create = internalMutation({
       plan: values.plan,
       billingInterval: values.billingInterval,
       ...(args.language ? { language: args.language } : {}),
+      ...(args.websiteRequested ? { websiteRequested: true } : {}),
+      ...(promoCode ? { promoCode } : {}),
       status: "pending",
       notificationStatus: "pending",
       submittedAt: now,
@@ -256,6 +288,8 @@ const reviewArgs = {
   applicationId: v.string(),
   decision: reviewDecision,
   note: v.optional(v.string()),
+  /** Approving an Enterprise application records its quoted monthly price. */
+  quotedPriceMinor: v.optional(v.number()),
   correlationId: v.string(),
 };
 
@@ -293,6 +327,18 @@ export const reviewRecord = internalMutation({
       });
     }
 
+    // Enterprise is sold by quote, so approving one fixes the price the gym
+    // will be billed. Other plans use the published catalogue.
+    const quotedPriceMinor = args.decision === "approved" && isQuotedPlan(application.plan)
+      ? validQuotedPriceMinor(args.quotedPriceMinor ?? application.quotedPriceMinor)
+      : undefined;
+    if (args.decision === "approved" && isQuotedPlan(application.plan) && quotedPriceMinor === undefined) {
+      domainError("VALIDATION_ERROR", "Enter the monthly price you quoted this Enterprise gym.", {
+        correlationId: args.correlationId,
+        fieldErrors: { quotedPriceMinor: ["Required for Enterprise"] },
+      });
+    }
+
     const now = Date.now();
     const reviewNotificationStatus = args.decision === "under_review" ? "not_configured" : "pending";
     const nextReviewNotes = note ?? application.reviewNotes;
@@ -303,6 +349,7 @@ export const reviewRecord = internalMutation({
       reviewedAt: args.decision === "under_review" ? undefined : now,
       reviewedBy: admin.user.fullName,
       reviewNotes: nextReviewNotes,
+      ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}),
       // Rejecting a provisioning dead end clears the failure so the operator
       // queue and overview stop flagging an application that can never ship.
       ...(provisioningDeadEnd ? {
@@ -326,11 +373,12 @@ export const reviewRecord = internalMutation({
       summary: `${args.decision === "under_review" ? "Moved to review" : args.decision === "approved" ? "Approved" : "Rejected"} gym application for ${application.gymName}`,
       reason: note,
       before: { status: application.status },
-      after: { status: args.decision, plan: application.plan },
+      after: { status: args.decision, plan: application.plan, ...(quotedPriceMinor !== undefined ? { quotedPriceMinor } : {}) },
       correlationId: args.correlationId,
       occurredAt: now,
     });
 
+    const recordedQuote = quotedPriceMinor ?? application.quotedPriceMinor;
     return {
       applicationDocumentId: application._id,
       applicantLanguage: application.language,
@@ -341,6 +389,7 @@ export const reviewRecord = internalMutation({
       email: application.email,
       plan: application.plan,
       billingInterval: application.billingInterval ?? "monthly",
+      ...(recordedQuote !== undefined ? { quotedPriceMinor: recordedQuote } : {}),
       status: args.decision,
       reviewNotificationStatus,
       reviewNotificationError: undefined,
@@ -395,7 +444,7 @@ export const submit = action({
     if (created.duplicate && created.notificationStatus === "sent") return { applicationId: created.applicationId, status: created.status, notificationStatus: created.notificationStatus, submittedAt: new Date(created.submittedAt).toISOString(), duplicate: true };
 
     const recipients = recipientList(process.env.RIVET_APPLICATION_RECIPIENTS);
-    const values = inputValues(args);
+    const values = { ...inputValues(args), websiteRequested: args.websiteRequested === true, promoCode: normalizePromoCode(args.promoCode) || undefined };
     const internalCopy = applicationInternalEmail(values, process.env.RIVET_SITE_URL);
     const applicantLanguage = args.language ?? "en";
     const applicantCopy = applicantReceivedEmail(values, applicantLanguage);
@@ -450,6 +499,7 @@ export const review = action({
       email: string;
       plan: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
       billingInterval: "monthly" | "annual";
+      quotedPriceMinor?: number;
       status: "under_review" | "approved" | "rejected";
       reviewNotificationStatus: "pending" | "sent" | "failed" | "not_configured";
       reviewNotificationError?: string;

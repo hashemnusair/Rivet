@@ -111,13 +111,26 @@ describe("PlatformShell sign out", () => {
   });
 });
 
+describe("PlatformShell account", () => {
+  it("opens the administrator's own account page from their name", () => {
+    render(<PlatformShell><div>Platform content</div></PlatformShell>);
+
+    const account = screen.getByRole("link", { name: "Your account" });
+    expect(account).toHaveAttribute("href", "/platform/account");
+    expect(account).toHaveTextContent("RIVET Admin");
+    expect(account).not.toHaveAttribute("aria-current");
+    // Signing out stays one click away beside it.
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  });
+});
+
 describe("PlatformShell navigation", () => {
   it("prepares a console screen only when the administrator reaches for its link", () => {
     render(<PlatformShell><div>Platform content</div></PlatformShell>);
 
     const sidebar = screen.getByRole("navigation", { name: "Platform navigation" }).closest("aside")!;
     const links = within(sidebar).getAllByRole("link");
-    expect(links).toHaveLength(11);
+    expect(links).toHaveLength(12);
     for (const link of links) expect(link).toHaveAttribute("data-prefetch", "false");
 
     const nav = within(sidebar).getByRole("navigation", { name: "Platform navigation" });
@@ -130,8 +143,9 @@ describe("PlatformShell navigation", () => {
     fireEvent.focus(support);
     expect(support).toHaveAttribute("data-prefetch", "true");
 
-    const workspace = within(sidebar).getByRole("link", { name: "Gym workspace" });
-    fireEvent.touchStart(workspace);
-    expect(workspace).toHaveAttribute("data-prefetch", "true");
+    const landing = within(sidebar).getByRole("link", { name: "Landing page" });
+    expect(landing).toHaveAttribute("href", "/?view=landing");
+    fireEvent.touchStart(landing);
+    expect(landing).toHaveAttribute("data-prefetch", "true");
   });
 });

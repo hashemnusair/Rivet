@@ -43,6 +43,7 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
       dueDate: "تاريخ الاستحقاق",
     },
     period: "من {start} إلى {end}",
+    rivetMessage: "رسالتنا: {message}",
     application: {
       receivedSubject: "تم استلام طلب تسجيل النادي في RIVET",
       receivedHeading: "تم استلام الطلب",
@@ -65,6 +66,9 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
         contactNumber: "رقم التواصل",
         plan: "الباقة المختارة",
         planValue: "{plan} (فوترة {interval})",
+        website: "موقع إلكتروني مخصص",
+        websiteRequested: "تم طلبه",
+        promoCode: "رمز الخصم",
       },
       text: { gym: "النادي", address: "العنوان", owner: "مالك النادي", email: "البريد الإلكتروني", contact: "رقم التواصل", plan: "الباقة" },
       interval: { monthly: "شهرية", annual: "سنوية" },
@@ -127,13 +131,13 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
       },
       platform_invoice_issued: {
         subject: "تم إصدار فاتورة RIVET",
-        body: "تم إصدار فاتورة منصة RIVET للنادي. يرجى تسجيل الدخول إلى RIVET لعرض المبلغ وفترة الفوترة وتاريخ الاستحقاق.",
-        action: "عرض الفاتورة",
+        body: "تم إصدار فاتورة RIVET لناديك. يرجى دفعها عبر كليك أو حوالة بنكية قبل تاريخ الاستحقاق الموضّح أدناه، ثم إرسال بيانات الدفع إلينا من صفحة الدفع.",
+        action: "دفع الفاتورة",
       },
       platform_invoice_reminder: {
-        subject: "فاتورة RIVET جاهزة",
-        body: "تم إصدار فاتورة منصة RIVET التالية. يرجى تسجيل الدخول لمراجعة المبلغ وفترة الفوترة وتاريخ الاستحقاق. يستحق الدفع في التاريخ الموضّح.",
-        action: "عرض الفاتورة",
+        subject: "ينتهي اشتراكك في RIVET قريبًا",
+        body: "تنتهي مدة اشتراكك المدفوعة في RIVET قريبًا، وفاتورة التجديد لم تُدفع بعد. يرجى دفعها قبل تاريخ الاستحقاق الموضّح أدناه ليبقى الوصول متاحًا لفريق عملك. إذا كنت قد دفعت بالفعل، يرجى إرسال بيانات الدفع إلينا من صفحة الدفع.",
+        action: "الدفع الآن",
       },
       platform_invoice_paid: {
         subject: "تم تسجيل فاتورة RIVET كمدفوعة",
@@ -144,6 +148,11 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
         subject: "تجاوزت فاتورة RIVET موعد الدفع",
         body: "تم تحديد فاتورة المنصة على أنها تجاوزت موعد الدفع. يرجى تسجيل الدخول إلى RIVET لمراجعة الفاتورة المعتمدة والتواصل مع الدعم عند الحاجة.",
         action: "عرض الفاتورة",
+      },
+      platform_payment_returned: {
+        subject: "لم نتمكن من مطابقة دفعتك إلى RIVET",
+        body: "لم نتمكن من مطابقة بيانات الدفع التي أرسلتها لهذه الفاتورة. يرجى قراءة رسالتنا، ثم إرسال البيانات الجديدة من صفحة الدفع.",
+        action: "إرسال البيانات الجديدة",
       },
       platform_subscription_suspended: {
         subject: "تم تعليق اشتراك RIVET",
@@ -185,6 +194,7 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
 
   notifications: {
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
+    paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",
     provisioningFailed: "تعذّر تجهيز النادي",
     agreementSigned: "وقّع {gym} اتفاقية الاشتراك",

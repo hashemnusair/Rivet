@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Page } from "@/lib/domain/types";
 import { DataPagination } from "./chrome";
@@ -26,6 +26,19 @@ describe("DataPagination", () => {
     rerender(<DataPagination page={page({ page: 3, totalItems: 0, totalPages: 0 })} onPage={onPage} />);
     expect(onPage).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("offers a per-page choice only when the screen asks for one", () => {
+    const onPageSize = vi.fn();
+    const { rerender } = render(<DataPagination page={page({ page: 1, pageSize: 10, totalItems: 25, totalPages: 3 })} onPage={vi.fn()} />);
+    expect(screen.queryByRole("combobox", { name: "Per page" })).not.toBeInTheDocument();
+
+    rerender(<DataPagination page={page({ page: 1, pageSize: 10, totalItems: 25, totalPages: 3 })} onPage={vi.fn()} pageSizes={[5, 10, 20]} onPageSize={onPageSize} />);
+    const choice = screen.getByRole("combobox", { name: "Per page" });
+    expect(choice).toHaveValue("10");
+    expect([...choice.querySelectorAll("option")].map((option) => option.textContent)).toEqual(["5", "10", "20"]);
+    fireEvent.change(choice, { target: { value: "5" } });
+    expect(onPageSize).toHaveBeenCalledWith(5);
   });
 
   it("never prints a range that starts after it ends while the page corrects itself", () => {

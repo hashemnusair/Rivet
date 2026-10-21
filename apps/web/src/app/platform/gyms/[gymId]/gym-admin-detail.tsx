@@ -14,7 +14,9 @@ import { SubscriptionStatusBadge, subscriptionStatusLabel } from "@/components/p
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { qk } from "@/lib/api/keys";
-import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymDetail, PlatformGymMember, PlatformGymStaff } from "@/lib/api/GymOSApi";
+import type { ArchivePlatformGymInput, BillingInterval, PlatformData, PlatformGymActivity, PlatformGymDetail, PlatformGymMember, PlatformGymStaff } from "@/lib/api/GymOSApi";
+import { ACTIVITY_PAGE_SIZES, useClientPage } from "@/lib/hooks/use-client-page";
+import { DataPagination } from "@/components/shared/chrome";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +25,9 @@ import { Input, Textarea } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/states";
 import { Skeleton } from "@/components/ui/misc";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ContextLabel, TechnicalLabel } from "@/components/ui/typography";
+import { ActivityLog, ActivityRow } from "@/components/shared/activity-log";
+import { activityActionLabel } from "@/lib/i18n/activity-log";
+import { ContextLabel } from "@/components/ui/typography";
 import { membershipStatusLabel, roleLabel } from "@/lib/i18n/labels";
 import { searchKey } from "@/lib/utils/text";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
@@ -152,7 +156,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <div className="flex flex-wrap gap-2">
             {marketplaceProfileAvailable ? <Button asChild variant="secondary"><Link href={`/customer/gyms/${detail.id}`}>{t("platformFinance.detail.publicPage")} <ExternalLink /></Link></Button> : <Button variant="secondary" disabled title={t("platformFinance.detail.hiddenFromDiscovery")}>{t("platformFinance.detail.publicPage")} <ExternalLink /></Button>}
             {organizationAvailable
-              ? <Button asChild><Link href={`/platform/billing?bill=${detail.id}`}><Receipt />{t("platformFinance.detail.manageSubscription")}</Link></Button>
+              ? <Button asChild><Link href={`/platform/billing?gym=${detail.id}`}><Receipt />{t("platformFinance.detail.manageSubscription")}</Link></Button>
               : <Button disabled title={t("platformFinance.detail.provisioningRequired")}><Receipt />{t("platformFinance.detail.manageSubscription")}</Button>}
           </div>
         </div>
@@ -230,7 +234,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           </div>
 
           <PlatformPanel className="min-w-0 overflow-hidden" aria-labelledby="subscription-facts-title">
-            <PlatformPanelHeader id="subscription-facts-title" title={t("platformFinance.detail.subscriptionFacts")} actions={<Link href={`/platform/billing?bill=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">{t("platformFinance.detail.manageInBilling")}</Link>} />
+            <PlatformPanelHeader id="subscription-facts-title" title={t("platformFinance.detail.subscriptionFacts")} actions={<Link href={`/platform/billing?gym=${detail.id}`} className="text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">{t("platformFinance.detail.manageInBilling")}</Link>} />
             <dl className="grid gap-px bg-line sm:grid-cols-2 xl:grid-cols-4">
               <Fact label={t("renewFlow.adjust.planChange.rowPlan")}><FieldValue field={detail.subscription.plan} /></Fact>
               <Fact label={t("common.label.status")}><FieldValue field={detail.subscription.status} render={subscriptionStatusLabel} /></Fact>
@@ -300,14 +304,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
           <PlatformPanel aria-labelledby="timeline-title">
             <PlatformPanelHeader id="timeline-title" title={t("platformFinance.detail.timeline")} description={t("platformFinance.detail.timelineDescription")} />
             {detail.activity.state === "available" && detail.activity.value.length > 0 ? (
-              <div className="divide-y divide-line">
-                {detail.activity.value.map((event) => (
-                  <div key={event.id} className="grid gap-1 px-4 py-3 sm:grid-cols-[150px_1fr] sm:gap-4 sm:px-5">
-                    <span className="text-[12.5px] text-ink-3">{f.dateTime(event.occurredAt)}</span>
-                    <div className="min-w-0"><p className="text-[13.5px] font-medium">{event.summary}</p><p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-ink-3"><TechnicalLabel as="span">{event.action}</TechnicalLabel><span>{event.actorName}</span></p></div>
-                  </div>
-                ))}
-              </div>
+              <GymActivity events={detail.activity.value} />
             ) : <UnavailableBlock field={detail.activity} empty={t("platformFinance.detail.noTimeline")} />}
           </PlatformPanel>
 
@@ -356,6 +353,22 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
         </DialogContent>
       </Dialog>
     </PlatformPage>
+  );
+}
+
+/** What the RIVET team changed for this gym, a page at a time. */
+function GymActivity({ events }: { events: PlatformGymActivity[] }) {
+  const { t, locale } = useLocale();
+  const { page, setPage, setPageSize } = useClientPage(events);
+  return (
+    <>
+      <ActivityLog aria-labelledby="timeline-title">
+        {page.items.map((event) => (
+          <ActivityRow key={event.id} title={activityActionLabel(t, event.action, locale)} description={event.summary} actor={event.actorName} occurredAt={event.occurredAt} />
+        ))}
+      </ActivityLog>
+      <DataPagination page={page} onPage={setPage} pageSizes={ACTIVITY_PAGE_SIZES} onPageSize={setPageSize} className="border-t border-line px-4 py-3 sm:px-5" />
+    </>
   );
 }
 
