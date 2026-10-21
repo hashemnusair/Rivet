@@ -111,9 +111,22 @@ quotes and RIVET's own plan changes" is the full description.
   clean. Mock browser at 1024px: Pricing shows "Custom quote"; Forge moved to
   Enterprise at JOD 380 gets a JOD 380 invoice and the row shows the quote;
   the dialog in Arabic RTL has no overflow.
-- **Not done:** Convex changes take effect only after `pnpm convex:deploy`.
-  Gyms already on Enterprise in Production (if any) keep paying the catalogue
-  price until RIVET enters a quote with Change plan. A gym still waiting for
+- **Released 21 October 2026:** pushed to `main` as `59300faa` (Elias asked
+  to ship). Convex: the guarded wrapper (`safe-convex-cli.mjs deploy`, what
+  `pnpm convex:deploy` runs, with `CONVEX_DEPLOY_KEY=''`) dry run selected
+  Production `descriptive-meerkat-589`, no index deletions, schema validation
+  passed; the deploy finished at 10:31 UTC. Afterwards `health:check` returned
+  `ok` (`1792578716827`), `public.catalog` was unchanged, and an anonymous
+  `gymApplications.review` call carrying `quotedPriceMinor` passed argument
+  validation and was refused `UNAUTHENTICATED` (new code live, nothing
+  written). Vercel Production deployed the same commit (GitHub deployment
+  `7223793471`, 10:33 UTC) and all 11 jobs passed in
+  [CI 39585121459](https://github.com/hashemnusair/Rivet/actions/runs/39585121459).
+  No fresh backup export was taken: the schema change adds two optional
+  fields and rewrites no data. Not checked with a signed-in administrator in
+  Production.
+- **Not done:** gyms already on Enterprise in Production (if any) keep paying
+  the catalogue price until RIVET enters a quote with Change plan. A gym still waiting for
   its first payment cannot be re-priced from the console
   (`platform.gym.update` does not accept `pending_payment`), so a mistyped
   quote at approval has no fix in the UI yet.
