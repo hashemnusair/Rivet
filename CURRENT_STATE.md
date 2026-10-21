@@ -36,8 +36,10 @@ dependencies, counting rules and the exact billing policy.
 **Verification:** full regression suite passed 2,316 tests in 361 files with two
 opt-in benchmarks skipped. The 14 repository safety checks, production build,
 web/Convex type checks, lint and Arabic lock pass. Eight targeted browser flows
-and twelve responsive public/console journeys pass. Release CI and deployment
-results will be recorded after the remaining release gates finish.
+and twelve responsive public/console journeys pass. All 11 [release CI jobs](https://github.com/hashemnusair/Rivet/actions/runs/39674533792)
+passed on runtime `8babeeb9`, including all six Linux browser shards. Browser
+captures are in `docs/ui-evidence/pricing-2026-10-21/`. Deployment is in progress;
+exact production results are recorded in the release entry below when complete.
 
 **Preflight:** the guarded production dry run targets `descriptive-meerkat-589`,
 passes schema validation and deletes no indexes. Fresh full export (including
