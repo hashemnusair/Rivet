@@ -1,5 +1,32 @@
 # 12 — System Maps and Release Runbook
 
+## Git deployment hold — 24 October 2026
+
+Hashem authorized a source merge and later AI branch publication, with **no
+deployment**. `rivet-web` remains linked to GitHub `hashemnusair/Rivet`, root
+`apps/web`, production branch `main`. To enforce that boundary:
+
+- `apps/web/vercel.json` sets `git.deploymentEnabled: false` for all branches.
+- The Vercel project Ignored Build Step is `exit 0` (previously unset), also
+  protecting older branches that lack this configuration. An ignored attempt
+  may appear as CANCELED; it must not build or replace the live release.
+- GitHub CI builds/tests source but contains no deployment step. Keep the hold
+  for all AI worktree pushes and PRs; do not copy production environment links.
+
+Official behavior: [Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration)
+and [Ignored Build Step](https://vercel.com/docs/project-configuration/project-settings#ignored-build-step).
+Inspection found that earlier source pushes did automatically create Previews,
+including `2cb1519e`; prior direct-action handoffs did not establish otherwise.
+The production deployment before this hold is `dpl_8RnoByETV17fHPsda81oHAhHiPtv`.
+
+For a later **explicitly authorized** release, verify current provider settings,
+source/target and credentials, release the billing backend before the frontend,
+then complete the isolated real-identity acceptance matrix below. Decide whether
+to retain manual releases or restore Git deployment; resetting the Ignored Build
+Step to its prior unset value and changing `git.deploymentEnabled` are deliberate
+release-policy changes, never incidental AI implementation work. The hold does
+not prevent manual CLI/API deployment, which remains unauthorized for this task.
+
 ## Export workspace-selection follow-up — 24 October 2026 (unreleased)
 
 Source fix `440600ff` removes the loading dead end when an owner with several

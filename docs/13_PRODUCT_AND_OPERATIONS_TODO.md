@@ -1,5 +1,16 @@
 # RIVET product, engineering, and operations backlog
 
+## Source merge and deployment hold — 24 October 2026
+
+- [x] Verify billing/export source `2cb1519e`: all 11 CI jobs passed. Preserve
+  its small commits and main's AI planning documentation in the source merge.
+- [x] Prevent Git publication from releasing software: disable automatic Git
+  deployments in `apps/web/vercel.json` and set the Vercel Ignored Build Step to
+  `exit 0`. Keep this hold during separate AI implementation; docs/12 records
+  ownership, prior settings, and the later explicitly authorized release path.
+- [ ] Complete the already listed credentialed acceptance/release work only
+  when separately authorized. A source merge does not complete those gates.
+
 ## Export workspace-selection follow-up — 24 October 2026
 
 - [x] Fix cancelled-gym exports remaining on the loading screen when two active

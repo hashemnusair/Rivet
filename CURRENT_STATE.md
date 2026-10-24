@@ -1,5 +1,28 @@
 # GymOS / RIVET current implementation state
 
+## Source-only merge preparation — 24 October 2026
+
+The billing/export branch at `2cb1519e` passed all 11 jobs in
+[CI run 40105544815](https://github.com/hashemnusair/Rivet/actions/runs/40105544815).
+Hashem authorized merging the verified fixes into main while keeping deployment
+separate. The only subsequent change is the documented deployment hold below.
+
+Inspection found Vercel still connected to main and automatically creating
+Preview deployments for earlier branch pushes, including `2cb1519e`. Prior
+statements that no deployment was performed describe the agents' direct actions;
+they did not account for this Git integration and must not be read as evidence
+that no automatic Preview existed. Production was still deployment
+`dpl_8RnoByETV17fHPsda81oHAhHiPtv` before this merge preparation.
+
+Before further publication, the `rivet-web` project's Ignored Build Step was
+set to `exit 0`, and `apps/web/vercel.json` now sets `git.deploymentEnabled` to
+`false`. Git pushes, PRs, and the main merge must stay source-only. This hold
+does not alter the current live deployment; keep it in place for the separate
+AI workstream. Releasing or lifting the hold requires a later explicit request
+and the backend-first acceptance procedure in docs/12. CLI/API deployment is
+not authorized by a source merge. Final main SHA/CI evidence belongs in the
+merge handoff; no AI implementation or credentialed acceptance is claimed.
+
 ## Export access during workspace selection — 24 October 2026 (unreleased)
 
 Fix `440600ff` lets an owner with two active gyms and a cancelled gym open the
