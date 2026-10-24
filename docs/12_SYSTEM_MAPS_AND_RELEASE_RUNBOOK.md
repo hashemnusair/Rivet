@@ -1,5 +1,17 @@
 # 12 — System Maps and Release Runbook
 
+## Audit correctness release checks — 24 October 2026 (unreleased)
+
+Source publication does not release these fixes. Keep subscription reconciliation
+and provider delivery in their existing disabled/paused states. In isolated tests,
+create a renewal, submit its payment and advance to due +21 days: preview must
+count an operator review rather than suspension; reruns must deduplicate review
+notifications/audits. Return the payment and verify the same original due date
+controls suspension. Repeated claims must not restart a payment clock. Deploy
+backend functions through the guarded workflow only in a separately authorized
+release; no environment or provider change is required by this correction.
+
+
 ## Pending release batch — reconciled 17 October 2026
 
 PRs #19 and #20 are merged; reviewed application source `00786778` has the

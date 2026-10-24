@@ -400,6 +400,13 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
   if (Object.keys(fieldErrors).length > 0) {
     domainError("VALIDATION_ERROR", "Check the payment details and try again.", { fieldErrors, correlationId: actor.correlationId });
   }
+  const before = record(invoice.paymentClaim);
+  if (before.status === "submitted") {
+    if (before.method !== method || before.reference !== reference || before.payerName !== payerName || before.paidOn !== paidOn || text(before.note, 500) !== note) {
+      domainError("CONFLICT", "Confirm or return the submitted payment before changing its details.", { correlationId: actor.correlationId });
+    }
+    return await checkoutView(ctx, actor);
+  }
   const now = Date.now();
   const claim = {
     status: "submitted",
@@ -412,7 +419,6 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     submittedAt: iso(now),
     submittedBy: { id: publicUserId(actor.user), name: actor.user.fullName },
   };
-  const before = record(invoice.paymentClaim);
   await ctx.db.patch(row._id, { data: { ...invoice, paymentClaim: claim, updatedAt: iso(now) }, updatedAt: now });
   await platformAudit(ctx, actor, {
     action: "invoice.payment_submitted",

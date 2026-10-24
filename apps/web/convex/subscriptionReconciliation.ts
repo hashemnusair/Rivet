@@ -1,3 +1,6 @@
+import { submittedPayment } from "./subscriptionInvoiceProtection";
+import { notifyPlatformAdmins } from "./notificationDelivery";
+import { systemMessage } from "../src/lib/i18n/system-messages";
 import { addOnMonthlyPrice, validateAddOns, subscriptionInvoiceLines } from "./subscriptionAddOns";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
@@ -38,6 +41,7 @@ type ReconciliationDecision = {
   shouldCreate: boolean;
   shouldMarkPastDue: boolean;
   shouldSuspend: boolean;
+  shouldReview: boolean;
 };
 
 async function reconciliationDecision(
@@ -71,12 +75,14 @@ async function reconciliationDecision(
     : Date.parse(String(invoice.dueAt ?? "")) || boundary;
   const shouldMarkPastDue = !shouldCreate && now >= dueAt && (currentStatus === "draft" || currentStatus === "open");
   const effectiveStatus = shouldMarkPastDue ? "past_due" : currentStatus;
-  const shouldSuspend = Boolean(invoiceRow)
+  const enforcementDue = Boolean(invoiceRow)
     && now >= dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS
     && !["paid", "void"].includes(String(effectiveStatus))
     && organization.status !== "suspended"
     && organization.status !== "cancelled";
-  return { boundary, cycleKey, invoiceRow, dueAt, shouldCreate, shouldMarkPastDue, shouldSuspend };
+  const shouldReview = enforcementDue && submittedPayment(invoice ?? {});
+  const shouldSuspend = enforcementDue && !shouldReview;
+  return { boundary, cycleKey, invoiceRow, dueAt, shouldCreate, shouldMarkPastDue, shouldSuspend, shouldReview };
 }
 
 type SystemAuditInput = {
@@ -87,7 +93,7 @@ type SystemAuditInput = {
   summary: string;
   reason: string;
   cycleKey: string;
-  phase: "invoice_created" | "past_due" | "suspended";
+  phase: "invoice_created" | "past_due" | "suspended" | "payment_review";
   before: Record<string, unknown>;
   after: Record<string, unknown>;
   occurredAt: number;
@@ -309,6 +315,27 @@ async function reconcileOrganization(ctx: MutationCtx, organization: Doc<"organi
   const latest = await ctx.db.get(invoiceRow._id);
   const latestData = latest && latest.data && typeof latest.data === "object" && !Array.isArray(latest.data) ? latest.data as Record<string, unknown> : invoice;
   if (["paid", "void"].includes(String(latestData.status)) || organization.status === "suspended" || organization.status === "cancelled") return { invoiceCreated, markedPastDue, suspended: false };
+  if (submittedPayment(latestData)) {
+    // Keep the original due/past-due clocks. A returned claim is enforceable
+    // on the next run; submitting again never manufactures a new grace period.
+    await notifyPlatformAdmins(ctx, {
+      kind: "platform_payment_submitted",
+      title: "Gym payment to confirm",
+      titleMessage: systemMessage("communicationCompletion.notifications.paymentToConfirm"),
+      body: `${organization.name} · ${invoiceRow.publicId}`,
+      bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: organization.name, b: invoiceRow.publicId }),
+      href: `/platform/billing?invoice=${invoiceRow.publicId}`,
+      dedupeKey: `subscription-payment-review:${cycleKey}`,
+    });
+    await recordSystemAudit(ctx, {
+      action: "subscription.payment_review_required", entityType: "platform_invoice", entityPublicId: invoiceRow.publicId, entityLabel: invoiceRow.publicId,
+      summary: "Automatic suspension withheld: submitted payment requires operator review.",
+      reason: "Confirm or return the existing payment claim; the original due date and enforcement clock remain unchanged.",
+      cycleKey, phase: "payment_review", before: { invoiceStatus: latestData.status, dueAt: iso(dueAt) },
+      after: { reviewRequired: true, dueAt: iso(dueAt) }, occurredAt: now,
+    });
+    return { invoiceCreated, markedPastDue, suspended: false };
+  }
   const updatedAt = Date.now();
   const previousOrganizationStatus = organization.status;
   const previousSubscriptionStatus = listingData.subscriptionStatus;
@@ -382,6 +409,7 @@ export const preview = internalQuery({
     invoicesToCreate: v.number(),
     invoicesToMarkPastDue: v.number(),
     organizationsToSuspend: v.number(),
+    paymentReviewsRequired: v.number(),
     earliestBoundary: v.optional(v.number()),
     latestBoundary: v.optional(v.number()),
   }),
@@ -392,6 +420,7 @@ export const preview = internalQuery({
     let invoicesToCreate = 0;
     let invoicesToMarkPastDue = 0;
     let organizationsToSuspend = 0;
+    let paymentReviewsRequired = 0;
     let earliestBoundary: number | undefined;
     let latestBoundary: number | undefined;
     for (const organization of organizations) {
@@ -401,6 +430,7 @@ export const preview = internalQuery({
       if (decision.shouldCreate) invoicesToCreate += 1;
       if (decision.shouldMarkPastDue) invoicesToMarkPastDue += 1;
       if (decision.shouldSuspend) organizationsToSuspend += 1;
+      if (decision.shouldReview) paymentReviewsRequired += 1;
       earliestBoundary = earliestBoundary === undefined ? decision.boundary : Math.min(earliestBoundary, decision.boundary);
       latestBoundary = latestBoundary === undefined ? decision.boundary : Math.max(latestBoundary, decision.boundary);
     }
@@ -411,6 +441,7 @@ export const preview = internalQuery({
       invoicesToCreate,
       invoicesToMarkPastDue,
       organizationsToSuspend,
+      paymentReviewsRequired,
       ...(earliestBoundary === undefined ? {} : { earliestBoundary }),
       ...(latestBoundary === undefined ? {} : { latestBoundary }),
     };

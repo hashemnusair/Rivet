@@ -29,6 +29,15 @@ No deployment, provider configuration, live financial write or automation activa
   outcomes will be recorded with the final gates. Adjacent platform/public
   capacity displays already handle the sentinel.
 
+- Reconciliation now withholds automatic suspension at/after the existing
+  threshold for submitted claims and creates one immutable review audit plus a
+  deduplicated platform billing notification. Preview counts review separately.
+  Original due/past-due history stays intact; returning a claim restores ordinary
+  enforcement immediately against that clock. Same-detail submission retries
+  preserve the original claim; changed details require return first. Four new
+  real/mock regressions pass (three fail on old code), and 23 focused existing/new
+  commerce/reconciliation checks pass. Reconciliation remains default-off.
+
 Final gates, browser evidence and remaining audit corrections will be recorded
 here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
 

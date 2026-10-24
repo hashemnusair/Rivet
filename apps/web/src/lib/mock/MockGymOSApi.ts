@@ -2491,6 +2491,10 @@ export class MockGymOSApi implements GymOSApi {
       markedPastDue = 1;
     }
     if (now < dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS || ["paid", "void"].includes(invoice.status)) return { processed: 1, invoicesCreated, markedPastDue, suspended: 0 };
+    if (submittedPayment(invoice)) {
+      if (!this.platformAuditEvents.some(event => event.action === "subscription.payment_review_required" && event.entityPublicId === invoice.id)) this.recordPlatformAudit({ action: "subscription.payment_review_required", entityType: "platform_invoice", entityPublicId: invoice.id, entityLabel: invoice.id, summary: "Automatic suspension withheld: submitted payment requires operator review.", reason: "Original due date and enforcement clock retained." });
+      return { processed: 1, invoicesCreated, markedPastDue, suspended: 0 };
+    }
     organization.status = "suspended";
     organization.subscriptionStatusReason = `Subscription invoice ${invoice.id} remained unpaid ${SUSPENSION_AFTER_DUE_DAYS} days past its due date, after written notice.`;
     gym.subscriptionStatus = "suspended";
@@ -2887,6 +2891,11 @@ export class MockGymOSApi implements GymOSApi {
       if (input.payerName.trim().length < 2) fieldErrors.payerName = ["Required"];
       if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paidOn) || input.paidOn > todayISODate()) fieldErrors.paidOn = ["Invalid"];
       if (Object.keys(fieldErrors).length > 0) throw ApiError.of(ERR.VALIDATION, "Check the payment details and try again.", { fieldErrors });
+      const prior = invoice.paymentClaim;
+      if (prior?.status === "submitted") {
+        if (prior.method !== input.method || prior.reference !== input.reference.trim() || prior.payerName !== input.payerName.trim() || prior.paidOn !== input.paidOn || (prior.note ?? "") !== (input.note?.trim() ?? "")) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before changing its details.");
+        return this.checkoutView();
+      }
       const user = this.actor();
       invoice.paymentClaim = {
         status: "submitted",
