@@ -7,14 +7,14 @@ import type { RivetIdentity } from "@/lib/auth/rivet-identity";
 import { BillingCheckoutPage } from "@/features/billing/billing-checkout";
 import AppLayout from "../layout";
 import ExportCenterClient from "./export-center.client";
-const route = vi.hoisted(() => ({ pathname: "/exports", search: "", replace: vi.fn() }));
+const route = vi.hoisted(() => ({ pathname: "/exports", search: "", push: vi.fn(), replace: vi.fn() }));
 const identity = vi.hoisted(() => ({ value: { status: "ready", platformAdmin: false, gymAccessUnavailable: true, memberships: [], exportAccess: [{ organizationId: "", organizationName: "Cancelled Gym", expiresAt: "2099-01-01T00:00:00Z" }] } as RivetIdentity }));
 vi.mock("@/lib/auth/rivet-identity", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/auth/rivet-identity")>(), useRivetIdentity: () => identity.value }));
 vi.mock("@/lib/providers/experience-provider", () => ({ useExperience: () => ({ customerSignedIn: false, platformAdminSignedIn: false }) }));
-vi.mock("next/navigation", () => ({ usePathname: () => route.pathname, useSearchParams: () => new URLSearchParams(route.search), useRouter: () => ({ push: vi.fn(), replace: route.replace }) }));
+vi.mock("next/navigation", () => ({ usePathname: () => route.pathname, useSearchParams: () => new URLSearchParams(route.search), useRouter: () => ({ push: route.push, replace: route.replace }) }));
 vi.mock("@clerk/nextjs", () => ({ useAuth: () => ({ isLoaded: true, isSignedIn: true }), useClerk: () => ({ signOut: vi.fn() }) }));
 vi.mock("@/lib/exports/download", () => ({ downloadTextFile: vi.fn() }));
-beforeEach(() => { route.pathname = "/exports"; route.search = ""; route.replace.mockClear(); identity.value.billingAccess = undefined; });
+beforeEach(() => { route.pathname = "/exports"; route.search = ""; route.push.mockClear(); route.replace.mockClear(); identity.value.billingAccess = undefined; });
 afterEach(() => { resetApiForTests(); vi.restoreAllMocks(); });
 it("renders the real exports page for a cancelled owner without workspace navigation or agreement/billing gates", async () => {
   const result = await renderWithApp(<AppLayout><ExportCenterClient /></AppLayout>, { prepare: async api => {
@@ -102,4 +102,68 @@ it("scopes Support links to the selected gym while retaining the authorized dash
     expect(screen.queryByRole("link", { name: "See it in Support" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute("href", "/dashboard");
   } finally { identity.value.memberships = []; }
+});
+
+it.each(["", "organizationId=closed-org"])("opens cancelled exports while two active gyms await workspace selection: %s", async search => {
+  const original = identity.value;
+  identity.value = {
+    ...original,
+    organizationSelectionRequired: true,
+    memberships: ["active-a", "active-b"].map(id => ({ organizationId: id, organizationName: id, organizationSlug: id, role: "owner", branches: [] })),
+    exportAccess: [{ organizationId: "closed-org", organizationName: "Closed Gym", expiresAt: "2099-01-01T00:00:00Z" }],
+  };
+  route.search = search;
+  const list = vi.fn().mockResolvedValue([]);
+  const request = vi.fn().mockResolvedValue({ id: "closed-export", kind: "members", status: "completed", rowCount: 1, fileName: "members.csv", content: "name\nExported member", createdAt: "2026-10-24T12:00:00Z" });
+  try {
+    await renderWithApp(<AppLayout><ExportCenterClient /></AppLayout>, { prepare: async api => {
+      vi.spyOn(api, "listExportJobs").mockImplementation(list);
+      vi.spyOn(api, "requestExport").mockImplementation(request);
+    } });
+    expect(await screen.findByText(/Closed Gym ·/)).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-curtain")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Primary navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(route.replace).not.toHaveBeenCalled();
+    expect(list).toHaveBeenCalledWith("closed-org");
+    await userEvent.setup().click(screen.getAllByRole("button", { name: "Download CSV" })[0]!);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ kind: "members", organizationId: "closed-org" }));
+  } finally { identity.value = original; }
+});
+
+it("does not offer a stale active session when several cancelled gyms need selection", async () => {
+  const original = identity.value;
+  identity.value = {
+    ...original,
+    organizationSelectionRequired: true,
+    memberships: ["active-a", "active-b"].map(id => ({ organizationId: id, organizationName: id, organizationSlug: id, role: "owner", branches: [] })),
+    exportAccess: ["closed-a", "closed-b"].map(id => ({ organizationId: id, organizationName: id, expiresAt: "2099-01-01T00:00:00Z" })),
+  };
+  const list = vi.fn().mockResolvedValue([]);
+  try {
+    await renderWithApp(<AppLayout><ExportCenterClient /></AppLayout>, { prepare: async api => { vi.spyOn(api, "listExportJobs").mockImplementation(list); } });
+    const chooser = await screen.findByRole("combobox", { name: "Choose a gym" });
+    expect(chooser).toHaveValue("");
+    expect(screen.getAllByRole("option").map(option => option.getAttribute("value"))).toEqual(["", "closed-a", "closed-b"]);
+    expect(list).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button", { name: "Download CSV" }).every(button => button.hasAttribute("disabled"))).toBe(true);
+    await userEvent.setup().selectOptions(chooser, "closed-b");
+    expect(route.push).toHaveBeenCalledWith("/exports?organizationId=closed-b");
+    expect(route.replace).not.toHaveBeenCalled();
+  } finally { identity.value = original; }
+});
+
+it("retains workspace selection when cancelled-export access is absent", async () => {
+  const original = identity.value;
+  identity.value = {
+    ...original,
+    organizationSelectionRequired: true,
+    memberships: ["active-a", "active-b"].map(id => ({ organizationId: id, organizationName: id, organizationSlug: id, role: "owner", branches: [] })),
+    exportAccess: [],
+  };
+  try {
+    await renderWithApp(<AppLayout><ExportCenterClient /></AppLayout>);
+    expect(route.replace).toHaveBeenCalledWith("/login?reason=organization-selection");
+    expect(screen.queryByRole("button", { name: "Download CSV" })).not.toBeInTheDocument();
+  } finally { identity.value = original; }
 });

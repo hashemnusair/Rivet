@@ -114,7 +114,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // The curtain is the second child either way, so React keeps it across the
   // change and it lifts off the shell it was covering instead of vanishing.
   const curtain = <WorkspaceCurtain ready={workspaceReady} label={t("palette.layout.loadingGym")} />;
-  if (exportRouteAllowed && exportOnly) return <TerminationExportFrame>{children}</TerminationExportFrame>;
+  // Termination exports do not require choosing an unrelated active workspace.
+  if (exportRouteAllowed && (exportOnly || !workspaceDestinationAllowed)) return <TerminationExportFrame>{children}</TerminationExportFrame>;
   if (!workspaceReady) return <>{null}{curtain}</>;
 
   return (

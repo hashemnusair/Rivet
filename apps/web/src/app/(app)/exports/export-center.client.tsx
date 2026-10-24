@@ -19,7 +19,7 @@ import { qk } from "@/lib/api/keys";
 import type { ExportJob, ExportKind } from "@/lib/domain/qol";
 import { downloadTextFile } from "@/lib/exports/download";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { exportBranchScopePresentation, exportFailurePresentation, exportJobPresentation } from "./export-job-presentation";
 
@@ -62,7 +62,7 @@ export default function ExportCenterClient() {
   const { session } = useApp();
   const identity = useRivetIdentity();
   const terminatedGyms = identity.exportAccess ?? [];
-  const terminatedOnly = Boolean(terminatedGyms.length && !identity.memberships.length);
+  const terminatedOnly = Boolean(terminatedGyms.length && destinationFor(identity).area !== "gym");
   const gyms = terminatedGyms.length && session && !terminatedOnly
     ? [{ organizationId: session.organization.id, organizationName: session.organization.name }, ...terminatedGyms]
     : terminatedGyms;
