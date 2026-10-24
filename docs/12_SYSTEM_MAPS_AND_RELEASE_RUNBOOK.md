@@ -1,5 +1,36 @@
 # 12 — System Maps and Release Runbook
 
+## Planned AI execution ownership — 24 October 2026, no runtime released
+
+[Docs/23](23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) specifies the requested
+AI-native expansion. This is a future release contract, not a change to today's
+deployment topology. Convex remains the business-data and authorization owner;
+Clerk authenticates users; UI access remains through `GymOSApi`. AI-0 must name
+the model-call runtime and durable checkpoint owner, especially if an external
+agent runtime is selected. Only authorized domain commands commit business state.
+
+Before enabling a capability, record its exact source/model/prompt/tool versions,
+environment and selected tenants, preparation/write mode, allowed grants,
+processing/retention policy, budgets, owner, and evaluation evidence. Verify
+revocation, source-change invalidation, duplicate-event handling, crash after a
+commit, cancellation with in-flight effects, and a model outage with ordinary
+workflows still available. Live provider evidence is separate from mock CI.
+
+Stop controls must prevent new runs and pending writes while making already
+committed effects visible. Preserve audit/history and specify compensation only
+for supported domain actions. Prove recovery before increasing standing authority.
+Use the existing guarded Convex deployment and secret-safe diagnostics procedure;
+no provider activation or production write is performed by this planning change.
+Manual WhatsApp and existing Resend delivery gates remain unchanged. Release
+evidence belongs here and in CURRENT_STATE; work status stays in docs/13.
+
+AI implementation must use a separate feature worktree and an isolated test
+backend/identity environment. Verify every connected target before preview tests;
+a preview frontend can otherwise still point to production. Docs/23 records
+future endpoint configuration and secret placement by model-call runtime. This
+docs-only publication to main does not authorize merging or activating the AI
+implementation itself.
+
 ## Pending release batch — reconciled 17 October 2026
 
 PRs #19 and #20 are merged; reviewed application source `00786778` has the

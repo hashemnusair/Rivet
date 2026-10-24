@@ -1,5 +1,33 @@
 # RIVET product, engineering, and operations backlog
 
+## AI-native expansion — requested direction, 24 October 2026
+
+Implementation is planned, not shipped. Hashem requested quiet intelligence
+throughout the existing UI and delegable desk tasks that agents actually complete.
+[Docs/23](23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) defines the concrete,
+non-exhaustive implementation contract. Track status here and evidence in
+CURRENT_STATE; the plan is not a parallel TODO file. These milestones do not
+replace the separate release/acceptance work or reopen retired Jev/WhatsApp gates.
+
+- [ ] **AI-0 — Inventory and baseline.** Map existing role-scoped desk tasks,
+  missing tools, additional QOL opportunities, and conflicting automations;
+  record baseline/evaluation cases, runtime choice, data policy, and pilot budgets.
+- [ ] **AI-1 — Shared foundation and useful member context.** Implement typed
+  tools, scoped context, grants, durable run state, limits, mock parity, and an
+  evidence-linked brief beside the existing contact workflow.
+- [ ] **AI-2 — Renewal loop and executable delegation.** Join Today, member
+  history, prepared messages, note extraction, follow-ups, and stop conditions;
+  ship a batch that saves and verifies authorized tasks without duplicates.
+- [ ] **AI-3 — Persistent desk work.** Support resume, steering, cancellation,
+  takeover, and standing instructions; prove follow-up preparation, scoped
+  reports/exports, and shift handovers with real persisted outcomes.
+- [ ] **AI-4 — Broader workflow coverage.** Extend into money investigation,
+  operations, imports, classes/PT, search, and more. Record newly discovered QOL
+  improvements and outstanding capability gaps with acceptance examples.
+- [ ] **AI-5 — Pilot and measured autonomy.** Complete bilingual/role/recovery
+  evaluations, selected-tenant rollout, live evidence, spend controls, and
+  operational ownership; expand authority from measured results.
+
 ## Current priorities — reconciled 17 October 2026
 
 This is the single canonical backlog. The list below supersedes older unchecked
@@ -104,7 +132,8 @@ that the completed performance changes are already deployed to Convex.
 The dated sections and BUG/TODO IDs below are retained for traceability. Their
 status describes their own checkpoint unless explicitly reconciled later.
 Do not add up their unchecked boxes or use old provider/Arabic requirements as
-current launch gates. The six open work items above own current priorities.
+current launch gates. The release and acceptance items above own current release
+priorities; AI-0 through AI-5 own the newly requested AI expansion.
 
 ## Historical release index — 3 September 2026
 
