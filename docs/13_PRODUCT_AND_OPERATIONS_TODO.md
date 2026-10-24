@@ -254,7 +254,9 @@ rows) is partly done: the selected-member panel shows the brief headline.
 
 Exit: work survives navigation and worker restart; revocation stops pending writes;
 scheduled runs stay within grants; each job produces verified saved records or protected
-artifacts; uncertainty and partial results are truthful. **Status: not started.**
+artifacts; uncertainty and partial results are truthful. **Status: in progress —
+local implementation and tests only (AI-3.1–AI-3.3, AI-3.5, AI-3.6); no staging or live
+evidence.**
 
 - [x] **AI-3.1 Inspect and resume.** *(Leases with fencing, recovery cron, crash-after-commit test; run kept in the page URL.)* Run state, steps and receipts persist; navigating
   back shows the same run; leases with fencing; recovery cron resumes expired leases.
@@ -267,10 +269,10 @@ artifacts; uncertainty and partial results are truthful. **Status: not started.*
 - [ ] **AI-3.4 Consequence review.** Grouped proposals bound to exact records, amounts,
   terms, source revisions and expiry; material change invalidates; the agent cannot
   approve its own proposal; existing approvals/reasons stay.
-- [ ] **AI-3.5 Job: scoped management report/export.** Report built from existing
+- [x] **AI-3.5 Job: scoped management report/export.** *(Implemented locally with real Convex functions: money totals rechecked against the full payment ledger, coverage gaps named, financial-access recheck and 30-day expiry on every read, optional payments download through the existing export job; isolated staging pending.)* Report built from existing
   report services with verified totals and coverage, saved as a protected artifact
   with access recheck and expiry; exports through existing export jobs.
-- [ ] **AI-3.6 Job: next-shift handover.** Assemble unresolved checklist items, open
+- [x] **AI-3.6 Job: next-shift handover.** *(Implemented locally: unreadable sources shown as gaps, one "read the handover" task per person and day, nothing marked done; isolated staging pending.)* Assemble unresolved checklist items, open
   repair/maintenance work and open follow-ups for the branch; save the handover and
   assign permitted tasks; cannot certify physical work.
 - [ ] **AI-3.7 Completion and exception reporting.** Useful completions, failures and
@@ -350,6 +352,19 @@ Recorded as found during implementation; each entry names its subitem and eviden
   domain's existing definition. Found by inspecting the rendered run panel.
 - **Known limitation (AI-2.4):** task titles are stored in English, like other
   system-created tasks, so Arabic readers see an English title on prepared calls.
+- **Fixed (AI-3.5):** the export mutation path built its request without the
+  delegation principal, so a delegated export would have run as an ordinary signed-in
+  request; both export paths now use `deriveRequest` (`convex/domain.ts`, `2514b311`).
+- **Fixed (AI-3.5):** the report playbook did not list `export.request`, so asking for
+  the payments download was refused; the tool is now in the playbook's grant.
+- **Pre-existing inconsistency (reports):** the renewal forecast report and the renewal
+  follow-up list count "renewed" differently (any later term versus a linked successor
+  term). Not changed here; the assistant uses the list's definition and the report
+  cites the forecast as it is.
+- **Constraint found (settings):** the desktop settings rail is full at 1280×900 and
+  existing browser tests pin its height and keyboard order, so any new section row
+  overflows it. Assistance lives under Roles & access with no row of its own
+  (`dd0fe056`); the next new settings section needs a deliberate rail design decision.
 - No milestone is complete. Current status per subitem is above; evidence and
   remaining work are in CURRENT_STATE.
 
