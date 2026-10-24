@@ -15,6 +15,8 @@ import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import { MockProspectStore } from "./prospects";
+import { MockAiEngine } from "./ai";
+import type * as AI from "@/lib/ai/contracts";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
   AuditQuery,
@@ -842,6 +844,7 @@ export class MockGymOSApi implements GymOSApi {
   private pinnedWorkspaceItems: import("@/lib/domain/qol").PinnedWorkspaceItem[] = [];
 
   private previewExports?: MockGymOSApi;
+  private ai!: MockAiEngine;
 
   constructor(db?: MockDb, private readonly previewFixtures = true) {
     this.db = db ?? buildSeed();
@@ -881,6 +884,36 @@ export class MockGymOSApi implements GymOSApi {
     this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     this.seedOperationalNotifications();
+    this.ai = this.createAiEngine();
+  }
+
+  private createAiEngine(): MockAiEngine {
+    return new MockAiEngine({
+      db: this.db,
+      today: () => this.today(),
+      timezone: () => this.db.organization.timezone || TZ,
+      actor: () => ({ id: this.actor().id, name: this.actor().name }),
+      role: () => currentRole(this.db),
+      permissions: () => permissionsFor(this.db, currentRole(this.db)),
+      branchVisible: (branchId) => this.branchIsVisible(branchId),
+      activeBranchId: () => this.db.session.activeBranchId,
+      entitledModules: () => this.workspaceAccess().modules.filter((module) => module.entitled && module.enabled).map((module) => module.key),
+      memberFollowUpContext: (memberId) => this.memberFollowUpContextSync(memberId),
+      renewalQueue: (query) => this.renewalQueueItemsSync(query),
+      snoozedUntil: (memberId) => this.retentionStates.find((state) => state.memberId === memberId)?.snoozedUntil,
+      classSessions: () => this.classSessions.map((session) => ({ branchId: session.branchId, startMinute: session.startMinute })),
+      createTask: (input) => {
+        const member = input.memberId ? this.db.members.find((item) => item.id === input.memberId) : undefined;
+        const owner = this.db.users.find((user) => user.id === input.ownerId);
+        if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Task owner not found.");
+        const task: T.Task = { ...input, id: mockUuid(), organizationId: this.db.organization.id, ownerName: owner.name, subjectName: member?.fullName ?? "—", status: "open", createdById: this.actor().id, createdAt: nowISO() };
+        this.db.tasks.push(task);
+        if (member) this.activity({ memberId: member.id, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: task.title }), actorId: this.actor().id, actorName: this.actor().name, meta: { delegationRunId: input.origin.runId, delegationGrantId: input.origin.grantId, delegationTool: "task.create_followup" } });
+        return task;
+      },
+      audit: (input) => { this.audit({ category: "ai", action: input.action, entityType: "ai", entityId: input.entityId, entityLabel: input.entityLabel, summary: input.summary }); },
+      stepDelayMs: () => (this.behavior.latencyMs === 0 ? 0 : 220),
+    });
   }
 
   /**
@@ -4258,6 +4291,38 @@ export class MockGymOSApi implements GymOSApi {
     return { ...this.behavior };
   }
 
+  // ---------------------------------------------------------------------------
+  // RIVET assistance (explicit preview simulation; see ./ai.ts)
+  // ---------------------------------------------------------------------------
+
+  getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
+  updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
+  getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
+  extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
+  interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
+  interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }
+  startAiRun(input: AI.StartAiRunInput): Promise<AI.AiRunView> { return this.respond(() => this.ai.startRun(input)); }
+  getAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.getRun(runId)); }
+  async subscribeAiRun(runId: string, onValue: (run: AI.AiRunView) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.ai.subscribeRun(runId, onValue, onError); }
+  listAiRuns(query: { playbook?: AI.AiPlaybookKey; branchId?: T.UUID; limit?: number }): Promise<AI.AiRunView[]> { return this.respond(() => this.ai.listRuns(query)); }
+  cancelAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.cancelRun(runId)); }
+  reviseAiRun(input: { runId: string; text: string; revision: AI.AiRunRevision }): Promise<AI.AiRunView> { return this.respond(() => this.ai.reviseRun(input)); }
+  takeOverAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.takeOverRun(runId)); }
+  retryAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.retryRun(runId)); }
+  listStandingInstructions(): Promise<AI.AiStandingInstructionView[]> { return this.respond(() => this.ai.listStanding()); }
+  previewStandingInstruction(input: { playbook: AI.AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: T.UUID }): Promise<AI.AiStandingPreview> { return this.respond(() => this.ai.previewStanding(input)); }
+  createStandingInstruction(input: AI.CreateStandingInstructionInput & { previewDigest: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.createStanding(input)); }
+  updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.updateStanding(input)); }
+  listAiProposals(_query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => []); }
+  decideAiProposal(_input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => { throw ApiError.of(ERR.NOT_FOUND, "Record not found."); }); }
+  getAiArtifact(_artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => { throw ApiError.of(ERR.NOT_FOUND, "Record not found."); }); }
+  listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.respond(() => this.ai.listMemories(memberId)); }
+  recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }
+  revokeMemberMemory(memoryId: string): Promise<void> { return this.respond(() => this.ai.revokeMemory(memoryId)); }
+  recordAiFeedback(input: AI.AiFeedbackInput): Promise<void> { return this.respond(() => this.ai.recordFeedback(input)); }
+  /** Preview seam for tests: start due standing slots, as the server's cron does. */
+  dispatchDueStandingInstructions(now?: number): number { return this.ai.dispatchDueStanding(now); }
+
   resetDemo(): Promise<void> {
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
@@ -4295,6 +4360,8 @@ export class MockGymOSApi implements GymOSApi {
     this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
+    this.ai?.dispose();
+    this.ai = this.createAiEngine();
     this.seedOperationalNotifications();
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     this.membershipSaleIdempotency.clear();
@@ -6868,6 +6935,7 @@ export class MockGymOSApi implements GymOSApi {
       createdAt: nowISO(),
     };
     this.db.memberships.push(record);
+    if (args.operation !== "plan_change") this.ai?.closeObsoleteRenewalWork(record.memberId, record.id);
 
     const totalMinor = priceMinor - discountMinor;
     const charge: T.Charge = {
@@ -8202,7 +8270,11 @@ export class MockGymOSApi implements GymOSApi {
 
 
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> {
-    return this.respond(() => {
+    return this.respond(() => paginate(this.maybeEmpty(this.renewalQueueItemsSync(query)), query));
+  }
+
+  private renewalQueueItemsSync(query: Pick<RenewalQueueQuery, "branchId" | "bucket" | "days" | "fromDate" | "toDate">): T.RenewalQueueItem[] {
+    {
       this.require("crm.read");
       const branchId = this.branchScopedBranchId(query.branchId);
       const today = this.today();
@@ -8242,8 +8314,8 @@ export class MockGymOSApi implements GymOSApi {
         });
       }
       items.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
-      return paginate(this.maybeEmpty(items), query);
-    });
+      return items;
+    }
   }
 
   // -------------------------------------------------------------------------

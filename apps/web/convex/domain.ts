@@ -69,11 +69,11 @@ import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, e
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
-import { buildMemberFollowUpContext, eligibleReminderTemplates, followUpHandoffDraft, renderReminderForMember, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
 import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
-import { mentionsEveningClasses, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
-import { evaluateRenewalCandidate, usualTimeOfDay, type RenewalCandidateFacts } from "../src/lib/ai/renewal-batch";
+import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
+import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1290,7 +1290,7 @@ async function insertTimeline(ctx: MutationCtx, actor: ActorContext, value: Data
     actorId: optionalString(value.actorId) ?? publicUserId(actor.user),
     actorName: optionalString(value.actorName) ?? actor.user.fullName,
     // Delegated work names the accountable person and the run that acted for them.
-    ...(actor.delegation ? { meta: { ...data(value.meta), delegation: { runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId, tool: actor.delegation.tool } } } : {}),
+    ...(actor.delegation ? { meta: { ...data(value.meta), delegationRunId: actor.delegation.runPublicId, delegationGrantId: actor.delegation.grantPublicId, delegationTool: actor.delegation.tool } } : {}),
   };
   return await insertRecord(ctx, actor, "timeline", event, {
     branchId: optionalString(event.branchId) ?? optionalString(event.homeBranchId),
@@ -1692,17 +1692,12 @@ export async function memberBriefFacts(ctx: ReadContext, actor: ActorContext, me
   };
 }
 
-export interface RenewalMemberFacts extends RenewalCandidateFacts {
-  draft: { language: "en" | "ar"; text: string };
-  homeBranchId?: string;
-  eveningClassesAvailable: boolean;
-}
-
 /**
  * Current facts for one member's renewal follow-up, loaded inside the write
  * transaction so a renewal, contact, freeze, opt-out or new task recorded a
  * moment ago changes the decision. `membershipId` is the term the batch planned
- * around; a successor for it means the member renewed.
+ * around; a successor for it means the member renewed. The composition is
+ * shared with the preview adapter (`composeRenewalFacts`).
  */
 export async function renewalFactsForMember(ctx: ReadContext, actor: ActorContext, memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null> {
   let context: MemberFollowUpContext;
@@ -1715,48 +1710,27 @@ export async function renewalFactsForMember(ctx: ReadContext, actor: ActorContex
   }
   const member = data(memberRecord.data);
   const today = tenantToday(actor);
-  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data));
-  const planned = memberships.find((term) => term.id === membershipId) ?? memberships.find((term) => term.id === context.renewal.membershipId);
-  if (!planned) return null;
-  const renewed = memberships.some((term) => optionalString(term.previousMembershipId) === planned.id) || memberships.some((term) => term.id !== planned.id && !optionalString(term.cancelledAt) && stringValue(term.startDate) > stringValue(planned.startDate) && stringValue(term.endDate) > stringValue(planned.endDate));
-  const freeze = data(planned.activeFreeze);
-  const frozenToday = Boolean(optionalString(freeze.startDate) && stringValue(freeze.startDate) <= today && (!optionalString(freeze.endDate) || stringValue(freeze.endDate) >= today) && stringValue(freeze.status, "active") !== "ended");
+  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data)).map((term) => {
+    const freeze = data(term.activeFreeze);
+    return { id: stringValue(term.id), startDate: stringValue(term.startDate), endDate: stringValue(term.endDate), previousMembershipId: optionalString(term.previousMembershipId), cancelledAt: optionalString(term.cancelledAt), ...(term.activeFreeze ? { activeFreeze: { status: optionalString(freeze.status), startDate: optionalString(freeze.startDate), endDate: optionalString(freeze.endDate) } } : {}) };
+  });
   const retention = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "retentionState").eq("publicId", `retention:${memberId}`)).unique();
-  const memories = (await ctx.db.query("aiMemories").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectType", "member").eq("subjectId", memberId)).take(50)).filter((row) => row.status === "active" && (!row.effectiveUntil || row.effectiveUntil >= today));
-  const travel = memories.find((row) => row.topic === "travel");
-  const contactTime = memories.find((row) => row.topic === "contact_time");
+  const memories = (await ctx.db.query("aiMemories").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectType", "member").eq("subjectId", memberId)).take(50)).map((row) => ({ topic: row.topic, status: row.status, effectiveUntil: row.effectiveUntil, text: row.text }));
   const { localHours } = await memberCheckInSummary(ctx, actor, memberId, optionalString(member.homeBranchId), today);
-  const openFollowUp = context.relatedWork.find((task) => task.status === "open" && (task.type === "follow_up" || task.type === "renewal_call"));
   const classOptions = await eveningClassOptions(ctx, actor, optionalString(member.homeBranchId));
-  const template = eligibleReminderTemplates(context)[0];
-  const draft = template
-    ? { language: context.preferredLanguage, text: renderReminderForMember(template, context, actor.organization.name) }
-    : followUpHandoffDraft({ fullName: context.memberName, preferredLanguage: member.preferredLanguage }, actor.organization.name, actor.organization.defaultLanguage);
-  const mentionsEvening = context.evidence.some((item) => mentionsEveningClasses(`${item.title} ${item.excerpt ?? ""}`));
-  return {
-    memberId,
-    memberName: context.memberName,
-    memberStatus: stringValue(member.status, "active"),
-    membershipId: stringValue(planned.id),
-    membershipEndDate: stringValue(planned.endDate),
-    renewed,
-    ...(context.phone ? { phone: context.phone } : {}),
-    noContact: context.renewal.journeyStopReason === "member_requested_no_contact" || memories.some((row) => row.topic === "no_contact"),
-    messagesOptedOut: context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut,
-    frozenToday,
-    ...(retention && optionalString(data(retention.data).snoozedUntil) ? { snoozedUntil: stringValue(data(retention.data).snoozedUntil) } : {}),
-    ...(travel?.effectiveUntil ? { travellingUntil: travel.effectiveUntil } : {}),
-    ...(context.lastContact ? { lastContactAt: context.lastContact.at } : {}),
-    ...(openFollowUp ? { openFollowUp: { id: openFollowUp.id, type: openFollowUp.type, ownerId: openFollowUp.ownerId, dueAt: openFollowUp.dueAt, title: openFollowUp.title } } : {}),
-    ...(usualTimeOfDay(localHours) ? { usualTimeOfDay: usualTimeOfDay(localHours) } : {}),
-    ...(contactTime && ["morning", "afternoon", "evening"].includes(contactTime.text) ? { preferredContactTime: contactTime.text as "morning" | "afternoon" | "evening" } : {}),
-    ...(optionalString(member.assignedSalespersonId) ? { assignedSalespersonId: stringValue(member.assignedSalespersonId) } : {}),
-    preferredLanguage: context.preferredLanguage,
-    mentionsEveningClasses: mentionsEvening,
-    draft: { language: draft.language, text: draft.text },
-    ...(optionalString(member.homeBranchId) ? { homeBranchId: stringValue(member.homeBranchId) } : {}),
-    eveningClassesAvailable: (classOptions?.eveningNext7Days ?? 0) > 0,
-  };
+  return composeRenewalFacts({
+    context,
+    member: { status: optionalString(member.status), preferredLanguage: optionalString(member.preferredLanguage), assignedSalespersonId: optionalString(member.assignedSalespersonId), homeBranchId: optionalString(member.homeBranchId) },
+    memberships,
+    plannedMembershipId: membershipId,
+    snoozedUntil: retention ? optionalString(data(retention.data).snoozedUntil) : undefined,
+    memories,
+    localVisitHours: localHours,
+    eveningClassesNext7Days: classOptions?.eveningNext7Days ?? 0,
+    gymName: actor.organization.name,
+    gymDefaultLanguage: actor.organization.defaultLanguage,
+    today,
+  });
 }
 
 /** Active, accepted staff of the actor's gym, for owner/transfer choices. */

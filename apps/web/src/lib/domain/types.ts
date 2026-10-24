@@ -2292,6 +2292,9 @@ export interface Task {
   /** An explicit, accepted link to an existing open task about the same person; never inferred. */
   relatedTaskId?: UUID;
   relatedTaskTitle?: string;
+  /** Set by the server only when delegated work created the task; clients cannot claim it. */
+  origin?: { kind: "ai_run"; runId: string; grantId: string };
+  aiContext?: { purpose: string; membershipId?: string; topic?: string };
 }
 
 export interface CreateTaskInput {
@@ -3255,7 +3258,8 @@ export type AuditCategory =
   | "operations"
   | "accounting"
   | "users"
-  | "settings";
+  | "settings"
+  | "ai";
 
 export interface AuditEvent {
   id: UUID;

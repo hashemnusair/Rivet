@@ -1542,6 +1542,34 @@ export interface GymOSApi {
   listPendingApprovals(): Promise<import("@/lib/domain/types").AuditEvent[]>;
   reviewApproval(auditEventId: UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<void>;
 
+  // RIVET assistance and delegated work (docs/23). Convex authorizes every
+  // call; the mock simulates the same states with explicit fixtures.
+  getAiSettings(): Promise<import("@/lib/ai/contracts").AiSettingsView>;
+  updateAiSettings(input: import("@/lib/ai/contracts").UpdateAiSettingsInput): Promise<import("@/lib/ai/contracts").AiSettingsView>;
+  getMemberBrief(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemberBriefResult>;
+  extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
+  interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
+  interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;
+  startAiRun(input: import("@/lib/ai/contracts").StartAiRunInput): Promise<import("@/lib/ai/contracts").AiRunView>;
+  getAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  subscribeAiRun(runId: string, onValue: (run: import("@/lib/ai/contracts").AiRunView) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  listAiRuns(query: { playbook?: import("@/lib/ai/contracts").AiPlaybookKey; branchId?: UUID; limit?: number }): Promise<import("@/lib/ai/contracts").AiRunView[]>;
+  cancelAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  reviseAiRun(input: { runId: string; text: string; revision: import("@/lib/ai/contracts").AiRunRevision }): Promise<import("@/lib/ai/contracts").AiRunView>;
+  takeOverAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  retryAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  listStandingInstructions(): Promise<import("@/lib/ai/contracts").AiStandingInstructionView[]>;
+  previewStandingInstruction(input: { playbook: import("@/lib/ai/contracts").AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiStandingPreview>;
+  createStandingInstruction(input: import("@/lib/ai/contracts").CreateStandingInstructionInput & { previewDigest: string }): Promise<import("@/lib/ai/contracts").AiStandingInstructionView>;
+  updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: UUID; reason?: string }): Promise<import("@/lib/ai/contracts").AiStandingInstructionView>;
+  listAiProposals(query: { runId?: string }): Promise<import("@/lib/ai/contracts").AiProposalView[]>;
+  decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<import("@/lib/ai/contracts").AiProposalView>;
+  getAiArtifact(artifactId: string): Promise<import("@/lib/ai/contracts").AiArtifactView>;
+  listMemberMemories(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemoryView[]>;
+  recordMemberMemory(input: { memberId: UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<import("@/lib/ai/contracts").AiMemoryView>;
+  revokeMemberMemory(memoryId: string): Promise<void>;
+  recordAiFeedback(input: import("@/lib/ai/contracts").AiFeedbackInput): Promise<void>;
+
   // Demo utilities
   resetDemo(): Promise<void>;
 

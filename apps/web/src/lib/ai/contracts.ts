@@ -202,6 +202,28 @@ export interface AiNoteExtraction {
   promptVersion: string;
 }
 
+export interface MemberFilterInterpretation {
+  status?: "active" | "inactive";
+  membership?: "active" | "expiring" | "expired" | "frozen" | "none";
+  expiringWithinDays?: number;
+  notVisitedForDays?: number;
+  owes?: boolean;
+  branchId?: string;
+  search?: string;
+  /** Parts of the request RIVET could not turn into a filter; shown to the person. */
+  unrecognised: string[];
+}
+
+export type AiPrepareResult<T> = ({ ok: true } & T) | { ok: false; reason: AiErrorCategory };
+export type AiExtractNoteResult = AiPrepareResult<{ kind: "extract_note"; extraction: AiNoteExtraction }>;
+export type AiInterpretRevisionResult = AiPrepareResult<{ kind: "interpret_revision"; revision: AiRunRevision }>;
+export type AiInterpretFiltersResult = AiPrepareResult<{ kind: "interpret_filters"; filters: MemberFilterInterpretation }>;
+
+export interface AiStandingPreview {
+  subjects: Array<{ id: string; name: string; decision: string; reason?: string }>;
+  digest: string;
+}
+
 export interface AiRunCounts {
   considered: number;
   prepared: number;

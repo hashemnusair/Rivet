@@ -197,9 +197,9 @@ describe("Prepare follow-ups saves and verifies real tasks", () => {
     expect((await tasksOf(t, "m-rami")).map((task) => task.id)).toEqual(["task-rami-existing"]);
     expect(await tasksOf(t, "m-lina")).toEqual([]);
 
-    const timeline = await t.withIdentity({ subject: "clerk-ai-sales" }).query(api.domain.query, op("members.timeline", { memberId: "m-omar", pageSize: 20 }, { activeBranchId: MAIN })) as { items: Array<{ type: string; actorName?: string; meta?: { delegation?: { runId: string } } }> };
-    expect(timeline.items.find((event) => event.type === "task_created")).toMatchObject({ actorName: "Sales", meta: { delegation: { runId: run.id } } });
-    expect(timeline.items.some((event) => event.type === "call_attempt" && event.meta?.delegation)).toBe(false);
+    const timeline = await t.withIdentity({ subject: "clerk-ai-sales" }).query(api.domain.query, op("members.timeline", { memberId: "m-omar", pageSize: 20 }, { activeBranchId: MAIN })) as { items: Array<{ type: string; actorName?: string; meta?: { delegationRunId?: string } }> };
+    expect(timeline.items.find((event) => event.type === "task_created")).toMatchObject({ actorName: "Sales", meta: { delegationRunId: run.id, delegationTool: "task.create_followup" } });
+    expect(timeline.items.some((event) => event.type === "call_attempt" && event.meta?.delegationRunId)).toBe(false);
   });
 
   it("returns the same run for a repeated start and never stacks a second task on the same renewal", async () => {

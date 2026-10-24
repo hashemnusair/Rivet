@@ -2,7 +2,7 @@ import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { publicOrganizationId, publicUserId, type ActorContext, type RequestArgs } from "./security";
 import { adapterConfig, monthKey, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
-import type { RenewalMemberFacts } from "./domain";
+import type { RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
 import { evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle } from "../src/lib/ai/renewal-batch";
 import { modelTaskBlocked, runFixtureTask, type DraftFollowUpTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import type { AiErrorCategory, AiExclusionReason, AiRunExclusion, AiRunResultRef, AiRunRevision, AiRunStatus } from "../src/lib/ai/contracts";

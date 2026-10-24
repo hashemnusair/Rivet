@@ -38,6 +38,7 @@ const CATEGORY_LABELS: Record<AuditCategory, TKey> = {
   users: "staffTools.audit.category.users",
   settings: "staffTools.audit.category.settings",
   legal: "staffTools.audit.category.legal",
+  ai: "staffTools.audit.category.ai",
 };
 
 const ROLE_LABELS: Record<string, TKey> = {

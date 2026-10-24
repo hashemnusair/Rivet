@@ -1,5 +1,7 @@
 import { z } from "zod";
-import type { AiAdapterMode, AiErrorCategory, AiNoteExtraction, AiRunRevision, AiSourceKind } from "./contracts";
+import type { AiAdapterMode, AiErrorCategory, AiNoteExtraction, AiRunRevision, AiSourceKind, MemberFilterInterpretation } from "./contracts";
+
+export type { MemberFilterInterpretation } from "./contracts";
 import { extractNoteDeterministic, normalizeModelNoteOutput, NOTE_EXTRACTION_PROMPT_VERSION } from "./note-extraction";
 import { normalizeNoteText } from "./relative-dates";
 
@@ -130,18 +132,6 @@ export function taskContainsMemberData(task: ModelTask): boolean {
     case "interpret_revision": return task.candidates.some((candidate) => candidate.kind === "member");
     case "interpret_filters": return false;
   }
-}
-
-export interface MemberFilterInterpretation {
-  status?: "active" | "inactive";
-  membership?: "active" | "expiring" | "expired" | "frozen" | "none";
-  expiringWithinDays?: number;
-  notVisitedForDays?: number;
-  owes?: boolean;
-  branchId?: string;
-  search?: string;
-  /** Parts of the request RIVET could not turn into a filter; shown to the person. */
-  unrecognised: string[];
 }
 
 export type ModelTaskOutput =

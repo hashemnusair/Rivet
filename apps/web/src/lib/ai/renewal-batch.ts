@@ -1,4 +1,6 @@
+import { eligibleReminderTemplates, followUpHandoffDraft, renderReminderForMember, type MemberFollowUpContext } from "../../../convex/followupAssist";
 import { addDays, diffDays } from "../utils/dates";
+import { mentionsEveningClasses } from "./member-brief";
 import type { AiExclusionReason, AiRunRevision } from "./contracts";
 import { TIME_OF_DAY_CLOCK, type TimeOfDay } from "./relative-dates";
 
@@ -108,4 +110,71 @@ export function usualTimeOfDay(localHours: readonly number[]): TimeOfDay | undef
   if (!top || top[1] === 0) return undefined;
   // A tie is not a pattern.
   return second && second[1] === top[1] ? undefined : top[0];
+}
+
+// ---------------------------------------------------------------------------
+// Composition shared by the Convex loader and the preview adapter
+// ---------------------------------------------------------------------------
+
+export interface RenewalFactsSources {
+  context: MemberFollowUpContext;
+  member: { status?: string; preferredLanguage?: string; assignedSalespersonId?: string; homeBranchId?: string };
+  memberships: ReadonlyArray<{ id: string; startDate: string; endDate: string; previousMembershipId?: string; cancelledAt?: string; activeFreeze?: { status?: string; startDate?: string; endDate?: string } }>;
+  plannedMembershipId?: string;
+  snoozedUntil?: string;
+  memories: ReadonlyArray<{ topic: string; status: string; effectiveUntil?: string; text: string }>;
+  localVisitHours: readonly number[];
+  eveningClassesNext7Days: number;
+  gymName: string;
+  gymDefaultLanguage?: string;
+  today: string;
+}
+
+export interface RenewalMemberFacts extends RenewalCandidateFacts {
+  draft: { language: "en" | "ar"; text: string };
+  homeBranchId?: string;
+  eveningClassesAvailable: boolean;
+}
+
+export function composeRenewalFacts(sources: RenewalFactsSources): RenewalMemberFacts | null {
+  const { context, member, today } = sources;
+  const planned = sources.memberships.find((term) => term.id === sources.plannedMembershipId) ?? sources.memberships.find((term) => term.id === context.renewal.membershipId);
+  if (!planned) return null;
+  const renewed = sources.memberships.some((term) => term.previousMembershipId === planned.id)
+    || sources.memberships.some((term) => term.id !== planned.id && !term.cancelledAt && term.startDate > planned.startDate && term.endDate > planned.endDate);
+  const freeze = planned.activeFreeze ?? {};
+  const frozenToday = Boolean(freeze.startDate && freeze.startDate <= today && (!freeze.endDate || freeze.endDate >= today) && (freeze.status ?? "active") !== "ended");
+  const memories = sources.memories.filter((row) => row.status === "active" && (!row.effectiveUntil || row.effectiveUntil >= today));
+  const travel = memories.find((row) => row.topic === "travel");
+  const contactTime = memories.find((row) => row.topic === "contact_time");
+  const openFollowUp = context.relatedWork.find((task) => task.status === "open" && (task.type === "follow_up" || task.type === "renewal_call"));
+  const template = eligibleReminderTemplates(context)[0];
+  const draft = template
+    ? { language: context.preferredLanguage, text: renderReminderForMember(template, context, sources.gymName) }
+    : followUpHandoffDraft({ fullName: context.memberName, preferredLanguage: member.preferredLanguage }, sources.gymName, sources.gymDefaultLanguage);
+  const usual = usualTimeOfDay(sources.localVisitHours);
+  return {
+    memberId: context.memberId,
+    memberName: context.memberName,
+    memberStatus: member.status ?? "active",
+    membershipId: planned.id,
+    membershipEndDate: planned.endDate,
+    renewed,
+    ...(context.phone ? { phone: context.phone } : {}),
+    noContact: context.renewal.journeyStopReason === "member_requested_no_contact" || memories.some((row) => row.topic === "no_contact"),
+    messagesOptedOut: context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut,
+    frozenToday,
+    ...(sources.snoozedUntil ? { snoozedUntil: sources.snoozedUntil } : {}),
+    ...(travel?.effectiveUntil ? { travellingUntil: travel.effectiveUntil } : {}),
+    ...(context.lastContact ? { lastContactAt: context.lastContact.at } : {}),
+    ...(openFollowUp ? { openFollowUp: { id: openFollowUp.id, type: openFollowUp.type, ownerId: openFollowUp.ownerId, dueAt: openFollowUp.dueAt, title: openFollowUp.title } } : {}),
+    ...(usual ? { usualTimeOfDay: usual } : {}),
+    ...(contactTime && (contactTime.text === "morning" || contactTime.text === "afternoon" || contactTime.text === "evening") ? { preferredContactTime: contactTime.text } : {}),
+    ...(member.assignedSalespersonId ? { assignedSalespersonId: member.assignedSalespersonId } : {}),
+    preferredLanguage: context.preferredLanguage,
+    mentionsEveningClasses: context.evidence.some((item) => mentionsEveningClasses(`${item.title} ${item.excerpt ?? ""}`)),
+    draft: { language: draft.language, text: draft.text },
+    ...(member.homeBranchId ? { homeBranchId: member.homeBranchId } : {}),
+    eveningClassesAvailable: sources.eveningClassesNext7Days > 0,
+  };
 }

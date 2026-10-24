@@ -35,6 +35,7 @@ export const staffTools = {
       users: "Staff and access",
       settings: "Settings",
       legal: "Legal",
+      ai: "Prepared work",
     },
     role: {
       owner: "Owner",
