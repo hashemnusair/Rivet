@@ -41,15 +41,18 @@ Implemented locally, deterministic evidence only, no UI yet:
   and second-batch dedupe, crash-after-commit resume, lease fencing, cancel with
   committed effects reported, revocation mid-run, tenant off mid-run, renewal stop,
   revision without redoing work, takeover, grant narrowing. `tenantPurge.test.ts` passes.
-- **Known defect:** `nextSlot` in `convex/ai.ts` returns the wrong standing slot
-  (Sunday instead of the next matching weekday); the standing test is skipped with a
-  note. Fix first.
+- **Correction:** the "known defect" recorded at `6d4c9efa` was a test error, not a
+  code defect: 22 October 2026 is a Thursday, so `nextSlot` correctly chose Sunday 25
+  October for a Sunday–Thursday 09:00 schedule. The test fixture labels and
+  expectations were corrected and the standing test re-enabled (`ai.delegation.test.ts`
+  22/22). The full suite then exposed missing Activity-log labels for the new AI
+  audit actions; English/Arabic labels were added.
 - **Not yet run:** full `pnpm test`, lint, build, Playwright, codegen in CI. Generated
   bindings were produced with a worktree-local anonymous Convex backend
   (`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen` from `apps/web`,
   selector kept in ignored `apps/web/.env.ai-local-backend.local`; no hosted target).
 
-**Next steps (in order):** fix `nextSlot` and re-enable the test; run full gates; add
+**Next steps (in order):** add
 `GymOSApi` methods + Convex/Mock adapters + parity tests; `aiActions.prepare` public
 action for note extraction/filters/revision; UI (brief + "Fill from note" in
 `features/crm/contact-work-panel.tsx`, "Prepare follow-ups" + run panel in

@@ -329,9 +329,11 @@ controls, cost headroom, incident ownership and a repeatable improvement process
 
 Recorded as found during implementation; each entry names its subitem and evidence.
 
-- **Defect (AI-3.3):** `nextSlot` in `apps/web/convex/ai.ts` computes the wrong next
-  standing-instruction slot; `convex/ai.delegation.test.ts` standing test skipped until
-  fixed. Found 24 Oct 2026 on `codex/ai-native-rivet`.
+- **Withdrawn (AI-3.3):** the standing-slot "defect" noted at `6d4c9efa` was a test
+  fixture error (22 October 2026 is a Thursday); the code was correct and the test is
+  re-enabled.
+- **Guard found (AI-2.6):** every new audit action needs an Activity-log label
+  (`src/lib/i18n/activity-log.test.ts`); English/Arabic labels added for all AI actions.
 - Status at checkpoint 2: AI-1.1–AI-1.5 and AI-2.4/AI-2.5/AI-2.6 backend implemented
   locally with deterministic tests (see CURRENT_STATE); AI-1.6–AI-1.9 client/UI work,
   AI-2.1–AI-2.3 UI and all acceptance remain open. No milestone is complete.

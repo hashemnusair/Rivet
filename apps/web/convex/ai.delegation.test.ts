@@ -10,7 +10,7 @@ import { LEASE_MS } from "./aiPolicy";
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
 
-// Wednesday 22 October 2026, 11:30 in Amman.
+// Thursday 22 October 2026, 11:30 in Amman.
 const NOW = new Date("2026-10-22T08:30:00.000Z");
 const ORG = "ai-org";
 const MAIN = "ai-main";
@@ -403,9 +403,7 @@ describe("delegated principals can only narrow authority", () => {
 });
 
 describe("standing instructions", () => {
-  // KNOWN DEFECT (recorded in docs/13 "Discovered improvements and defects"): convex/ai.ts nextSlot
-  // returns Sunday 25 October instead of Thursday 23 October for this schedule. Fix nextSlot, then re-enable.
-  it.skip("needs the current preview, starts one run per slot, and stops when the owner loses access", async () => {
+  it("needs the current preview, starts one run per slot, and stops when the owner loses access", async () => {
     const t = convexTest(schema, modules);
     const ids = await seed(t, { aiMode: "execute" });
     const sales = t.withIdentity({ subject: "clerk-ai-sales" });
@@ -415,16 +413,16 @@ describe("standing instructions", () => {
     await expect(sales.mutation(api.domain.mutate, op("ai.standing.create", { ...input, previewDigest: "stale" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
     const standing = await sales.mutation(api.domain.mutate, op("ai.standing.create", { ...input, previewDigest: preview.digest }, { activeBranchId: MAIN })) as { id: string; nextRunAt: string; status: string };
     expect(standing.status).toBe("active");
-    // Next slot: Thursday 23 October at 09:00 in Amman.
-    expect(standing.nextRunAt).toBe("2026-10-23T06:00:00.000Z");
-    vi.setSystemTime(new Date("2026-10-23T06:01:00.000Z"));
+    // Today's 09:00 has passed and Friday/Saturday are not scheduled: next is Sunday 25 October, 09:00 in Amman.
+    expect(standing.nextRunAt).toBe("2026-10-25T06:00:00.000Z");
+    vi.setSystemTime(new Date("2026-10-25T06:01:00.000Z"));
     expect(await t.mutation(internal.aiRuns.dispatchStanding, {})).toBe(1);
     expect(await t.mutation(internal.aiRuns.dispatchStanding, {})).toBe(0);
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     const runs = await sales.query(api.domain.query, op("ai.runs.list", { playbook: "renewal_followups" }, { activeBranchId: MAIN })) as Array<{ trigger: string; status: string; standingInstructionId?: string }>;
     expect(runs).toEqual([expect.objectContaining({ trigger: "schedule", status: "completed", standingInstructionId: standing.id })]);
     await t.run(async (ctx) => { await ctx.db.patch(ids.salesMembership, { active: false }); });
-    vi.setSystemTime(new Date("2026-10-25T06:01:00.000Z"));
+    vi.setSystemTime(new Date("2026-10-26T06:01:00.000Z"));
     expect(await t.mutation(internal.aiRuns.dispatchStanding, {})).toBe(0);
     const listed = await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.standing.list")) as Array<{ id: string }>;
     expect(listed.find((item) => item.id === standing.id)).toBeUndefined();
