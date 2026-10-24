@@ -926,10 +926,10 @@ export class MockGymOSApi implements GymOSApi {
     return [...this.provisionedTenants.values()].find((tenant) => tenant.listingId === gym.id);
   }
 
-  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean; quotedPriceMinor?: number }> {
+  private provisionedOrganizationsForOverview(): Array<{ id: string; status: T.Organization["status"]; subscriptionPlan?: T.Organization["subscriptionPlan"]; billingInterval?: "monthly" | "annual"; provisioned: boolean; quotedPriceMinor?: number; subscriptionAddOns?: T.Organization["subscriptionAddOns"] }> {
     return [
-      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt, quotedPriceMinor: this.db.organization.quotedPriceMinor },
-      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt, quotedPriceMinor: organization.quotedPriceMinor })),
+      { id: this.db.organization.id, status: this.db.organization.status, subscriptionPlan: this.db.organization.subscriptionPlan, billingInterval: this.db.organization.billingInterval ?? "monthly", provisioned: !this.db.organization.archivedAt, subscriptionAddOns: this.db.organization.subscriptionAddOns, quotedPriceMinor: this.db.organization.quotedPriceMinor },
+      ...[...this.provisionedTenants.values()].map(({ organization }) => ({ id: organization.id, status: organization.status, subscriptionPlan: organization.subscriptionPlan, billingInterval: organization.billingInterval ?? "monthly", provisioned: !organization.archivedAt, subscriptionAddOns: organization.subscriptionAddOns, quotedPriceMinor: organization.quotedPriceMinor })),
     ];
   }
 

@@ -17,6 +17,11 @@ No deployment, provider configuration, live financial write or automation activa
   organization, entitlements, invoices, audit and notification state unchanged.
   Existing commerce/add-on coverage also passed (31 tests including 8 new).
 
+- Purchased Basic add-ons now contribute to platform MRR in real and mock
+  snapshots. Annual base plus add-ons receives the existing 5% discount;
+  onboarding/website invoices do not enter recurring revenue. All 9 focused
+  overview/public-boundary/mock tests pass; all 4 new regressions fail on old code.
+
 Final gates, browser evidence and remaining audit corrections will be recorded
 here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
 

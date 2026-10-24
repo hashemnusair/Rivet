@@ -9,7 +9,8 @@ not production acceptance. Existing audit evidence remains historical.
 - Implemented and regression-tested: submitted payment claims block every
   subscription invoice replacement and explicit void; unaffected edits remain
   available. Upgrade-confirmation replacement is covered too.
-- In progress: delayed-upgrade credit/service dates, purchased-add-on MRR,
+- Implemented and regression-tested: purchased Basic add-ons in monthly/annual MRR.
+- In progress: delayed-upgrade credit/service dates,
   cancelled-owner export window, unlimited upgrade labels, submitted-payment
   reconciliation review. Final verification belongs in CURRENT_STATE.md.
 - Deferred unchanged: production renewal activation, provider/inbox acceptance,
