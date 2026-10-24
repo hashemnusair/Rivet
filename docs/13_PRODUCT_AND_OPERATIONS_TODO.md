@@ -1,5 +1,34 @@
 # RIVET product, engineering, and operations backlog
 
+## Review follow-up — 24 October 2026, source verified and unreleased
+
+- [x] Replace the unusable submitted-claim edit action with an owner correction
+  request in the existing operator Support workflow. Initial, renewal, suspended
+  and upgrade coverage preserves submitted amounts/history/clocks; return enables
+  corrected resubmission. Backend authorization and retries are regression-tested.
+- [x] Keep cancelled-gym exports and another gym's restricted billing independently
+  reachable, with named organization scope and deliberate multi-gym selection.
+  Pending-payment/suspended companions, stale-session denial and exact expiry
+  remain covered through real Convex identity/query/mutation tests and the client.
+- [x] Remediate the four requested Next.js/Zod advisories using patched compatible
+  runtime/peer packages and a committed lockfile. Production audit is clean;
+  package/peer/transitive versions are verified. No exception/threshold change.
+- [x] Complete local gates and 21 built-preview browser journeys; see the latest
+  CURRENT_STATE checkpoint and `docs/ui-evidence/review-followup-2026-10-24/`.
+- [ ] Complete separately authorized backend-first release and real Clerk
+  multi-gym/operator-return/inbox acceptance. Source push and CI do not close
+  deployment or production acceptance.
+- [ ] Triage inherited development-toolchain advisories in a separate scoped
+  remediation: the extra full audit reports 16 dev-only findings (2 critical,
+  5 high, 8 moderate, 1 low) in Vitest/mocker, Tinypool, Vite and brace-expansion.
+  Critical Tinypool advisories are GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr.
+  All 16 also occur in reviewed `9db78ef5`; exactly the four requested production
+  advisories were removed (20 → 16), with none introduced. This pass follows the
+  instruction against unrelated upgrades and does not suppress these findings.
+
+Production renewals, Resend/provider/inbox setup, legal/commercial reconciliation,
+restore/incident ownership and broader new features remain deferred unchanged.
+
 ## 24 October audit correctness pass — source implementation, unreleased
 
 All six confirmed findings at `3ed7d3d2` are implemented and regression-tested on

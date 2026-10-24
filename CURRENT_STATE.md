@@ -1,5 +1,104 @@
 # GymOS / RIVET current implementation state
 
+## Review follow-up — verified source, 24 October 2026
+
+Continues `codex/audit-billing-export-corrections` from reviewed `9db78ef5`.
+The original seven commits are preserved. This is implemented/tested source,
+not a deployment or production acceptance receipt. Concurrent AI planning edits,
+untracked audit/output work and frozen `FRONTEND_HANDOFF.md` are preserved.
+
+- **Submitted-payment corrections:** the old editable “Change the details” flow
+  contradicted submitted-claim immutability. Checkout now explains the restriction
+  and offers **Request a correction**. The owner supplies a reason into the
+  existing invoice support conversation; first-payment and suspended owners use
+  this narrow checkout operation without gaining workspace/support permissions.
+  The operator sees it, returns the claim, and the owner edits/resubmits before
+  confirmation. Submitted reference/amount, invoice due/notice dates and historical
+  audits stay intact. One request per submission is deduplicated; distinct
+  submission IDs also distinguish return/resubmission in the same millisecond.
+  Returned upgrades retain the existing quote-validity rules in docs/14.
+- **Mixed owner destinations:** billing remains the default landing. Independent,
+  organization-named links let an owner open a cancelled gym's exports alongside
+  another pending-payment or suspended gym's billing. Several/invalid choices
+  never silently bind the first gym. Per-request billing/export scope leaves the
+  operational session unchanged. Removing export capability redirects the tab;
+  restricted identities cannot render the normal workspace shell using stale
+  session state. The original owner/archive/branch/tenant, exact 30-day cutoff and
+  independent 24-hour export expiry guards are unchanged.
+- **Dependencies:** Next.js, eslint-config-next and @next/eslint-plugin-next now
+  resolve to **16.4.2**, with **sharp 0.35.5**; Zod resolves to **4.6.7** throughout
+  the graph, including the resolver and ESLint paths. These remove
+  GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r and
+  GHSA-mrhx-c7xc-m3w5. The two required Zod numeric-form type adaptations preserve
+  validation/coercion behavior. No audit suppression, threshold, dependency
+  override or unrelated package upgrade was added.
+
+**Regression evidence:** the new functional regressions fail 10 cases against
+`9db78ef5` (six controls still pass). Current public Convex tests exercise actual
+identity and mutation/query boundaries for initial/renewal/upgrade payments,
+operator return/resubmission/confirmation, authorization, repeated rejections and
+unchanged persistent state. Mock/API/component coverage adds suspended payment,
+same-clock submissions, explicit selection, revoked access and English/Arabic
+presentation. Existing date/branch/archive/file-expiry regressions still pass.
+The bounded-collection security regression traverses three elements on old Zod
+3.25.76 but none on patched Zod; resolver output/errors remain covered.
+
+**Final local gates:** `pnpm test` passes **2,393 Vitest tests in 380 files**, with
+only the two existing opt-in benchmarks skipped, plus all **14 repository safety
+tests**. Frozen installation, web and Convex typechecks, lint/secret-output audit,
+plain production build, approved Preview build, Arabic decision lock and patch
+checks pass. Generated Convex function signatures/schema are unchanged; the exact
+pushed-head CI codegen gate is the generated-file receipt. Local verification
+used Node 24.10.0 / pnpm 11.20.0; CI uses Node 22.
+
+All **21 selected built-preview Playwright journeys** pass: eight new bilingual
+phone/desktop correction/navigation cases plus the 13 adjacent owner upgrade,
+platform add-on and export cases. Tested console/runtime errors and horizontal
+overflow are absent. Eight captures are in
+`docs/ui-evidence/review-followup-2026-10-24/`. A real Arabic phone-header overflow
+was fixed by wrapping controls. Initial failures also caught the missing bilingual
+audit label, an Arabic test selector and the new search-parameter Suspense boundary
+in the plain build; final checks pass without relaxed assertions/tolerances.
+Disk was checked before heavy verification (18 GiB available initially, at least
+27 GiB at final gates); no ENOSPC occurred and no unrelated files were deleted.
+
+**Audit limit:** `pnpm audit --prod` reports **no known vulnerabilities**. An extra
+`pnpm audit` including development tooling still reports **16 inherited findings**
+(2 critical, 5 high, 8 moderate, 1 low), all marked dev-only in Vitest/mocker,
+Tinypool, Vite and brace-expansion. The same lockfile audit at `9db78ef5` reports
+20; exactly the four requested advisories disappear and none are introduced.
+This separate toolchain remediation remains open in docs/13 under the instruction
+to avoid unrelated upgrades. CI's production audit threshold is unchanged.
+
+**Release/acceptance:** backend billing scope/correction operation and additive
+invoice JSON (`submissionId`, `paymentCorrection`) must precede the matching web
+bundle; no schema/index migration, backfill or provider change is needed. Frontend
+release must use the patched manifest and frozen lockfile together. Real Clerk
+multi-gym acceptance and operator-return email/inbox delivery remain credentialed
+isolated acceptance, not proven by mock browser captures. No deployment, merge,
+production job activation, provider configuration, live payment/email/tenant
+mutation or signed-document rewrite was performed. Broader deferred work stays
+unchanged. The final GitHub SHA/remote match and exact-head CI result belong to the
+review handoff; pushing source is not proof of a production release.
+
+**Commands:** `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `pnpm audit --prod`,
+`python3 docs/arabic/verify-lock.py`, `git diff --check`. Browser verification:
+
+```sh
+NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 \
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright \
+RIVET_DESIGN_PREVIEW=1 pnpm build
+PLAYWRIGHT_PORT=3217 PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_WORKERS=4 \
+pnpm --filter web exec playwright test e2e/payment-correction.spec.ts \
+e2e/mixed-owner-access.spec.ts e2e/owner-upgrade-capacities.spec.ts \
+e2e/termination-exports.spec.ts e2e/subscription-add-ons.spec.ts \
+e2e/platform-subscription-entitlements.spec.ts e2e/exports.spec.ts
+```
+
+Read this checkpoint, docs/12, docs/14, `payment-correction.test.ts`,
+`mixed-owner-access.test.ts` and the checkout/routing components first.
+
 ## Audit correctness pass — verified source, 24 October 2026
 
 Implemented source on `codex/audit-billing-export-corrections`, based on audit/main

@@ -26,6 +26,33 @@ and audit history; identical retries create no extra request. Returned upgrades
 retain existing quote-validity checks. No live transfer or email is needed for
 local tests. Real Clerk/inbox acceptance remains a separately credentialed gate.
 
+## Dependency and verification receipt — review follow-up, 24 October 2026
+
+Use the patched manifest and lockfile together: Next.js/lint peers 16.4.2,
+sharp 0.35.5 and Zod 4.6.7 throughout the resolved graph. The official advisories
+set patched floors of [Next.js 16.4.1](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+(also [cache RCE](https://github.com/advisories/GHSA-673q-mjm6-r5xr) and
+[Server Actions DoS](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)) and
+[Zod 4.6.6](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+No threshold/suppression/override change was used. Check resolved transitive
+versions, not just package declarations.
+
+Final local receipt: 2,393 unit/component tests plus 14 repository safety checks,
+both typechecks, zero-warning lint/secret audit, plain production build,
+Arabic lock, frozen installation and diff check pass. All 21 selected journeys
+pass against the optimized approved mock Preview bundle; exact commands and
+captures are in the latest CURRENT_STATE checkpoint. The plain build matters:
+`/billing` needs its localized Suspense fallback around search-parameter reads.
+Never infer static-production validity solely from the dynamic design preview.
+Generated API/schema signatures did not change; require the normal exact-head
+CI generated-file check before release. No local Convex/Vercel deploy was run.
+
+`pnpm audit --prod` is clean. The optional full `pnpm audit` remains nonzero for
+16 dev-only toolchain findings also present in reviewed `9db78ef5` (20 before
+removing the four requested advisories). None were introduced. Keep that separate
+remediation visible in docs/13; do not disable or suppress the existing CI gate.
+Real multi-gym Clerk and inbox acceptance still require isolated credentials.
+
 ## Termination exports — 24 October 2026 (unreleased)
 
 Release backend authorization/identity before the frontend export routing. No
