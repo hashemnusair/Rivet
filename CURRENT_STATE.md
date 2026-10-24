@@ -1,5 +1,39 @@
 # GymOS / RIVET current implementation state
 
+## Export access during workspace selection — 24 October 2026 (unreleased)
+
+Fix `440600ff` lets an owner with two active gyms and a cancelled gym open the
+cancelled gym's exports without first entering an active workspace. The permitted
+export route uses the restricted frame while organization selection is pending.
+The export chooser also excludes a stale operational session in this state;
+one cancelled gym is explicitly scoped automatically, and several require a
+choice. Without export access the normal workspace-selection redirect remains.
+Backend owner/tenant/branch/deadline checks are unchanged.
+
+Three new UI regressions fail on `8d7d20a1` and pass with the fix: direct scoped
+navigation, the sole-gym default, and multiple cancelled-gym selection. A fourth
+checks denial without the export capability. The focused UI/auth/public-backend
+suite passes 48 tests. Full `pnpm test` passes 2,402 tests plus 14 safety checks,
+with only the two existing opt-in benchmarks skipped. Web/Convex typechecks,
+lint, plain production build, approved mock Preview build, production dependency
+audit, and the Arabic lock pass. All nine built-preview export/mixed-access
+Playwright journeys pass, including English/Arabic at phone/desktop widths.
+The run used `PLAYWRIGHT_PORT=3223 PLAYWRIGHT_SERVER_MODE=start
+PLAYWRIGHT_WORKERS=2 pnpm --filter web exec playwright test
+e2e/mixed-owner-access.spec.ts e2e/termination-exports.spec.ts e2e/exports.spec.ts`.
+The exact pushed-head CI receipt belongs in the final agent handoff.
+
+Merge `72f22e0b` brings docs-only main `8b75353f` into this branch. The shared
+older AI planning draft was reconciled with main's expanded isolation guidance;
+AI sections occur once and all billing/export handoff notes remain. Main's
+docs/23 plan is unchanged. The original shared draft is retained in the named
+local stash `Preserve shared AI planning draft before merging main 8b75353f`.
+Existing untracked audit/output files remain outside these commits.
+
+No deployment, main-branch update, AI implementation, provider change or live
+tenant mutation occurred. Future AI work stays in its separate worktree; this
+branch's source fixes and deployment acceptance remain distinct milestones.
+
 ## AI-native product direction — planning only, 24 October 2026
 
 Hashem requested quiet AI integrated throughout the existing UI and broad

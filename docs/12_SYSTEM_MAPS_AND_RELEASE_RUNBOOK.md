@@ -1,5 +1,21 @@
 # 12 — System Maps and Release Runbook
 
+## Export workspace-selection follow-up — 24 October 2026 (unreleased)
+
+Source fix `440600ff` removes the loading dead end when an owner with several
+active gyms opens a cancelled gym's permitted exports. The restricted export
+frame and chooser do not depend on choosing an active workspace or use its stale
+session. Existing server authorization, 30-day cancellation window and 24-hour
+file expiry remain authoritative. No additional backend/schema/provider change
+is required by this UI fix; the earlier billing/export batch still requires its
+backend-first release order and credentialed acceptance. Include two active gyms
+plus one/several cancelled gyms in that acceptance matrix.
+
+Main's docs-only AI plan `8b75353f` is integrated by merge `72f22e0b`, without
+runtime changes or duplicate planning sections. The AI implementation remains
+separate, isolated work. CURRENT_STATE records this fix's verification; neither
+this merge nor the branch push is deployment evidence.
+
 ## Planned AI execution ownership — 24 October 2026, no runtime released
 
 [Docs/23](23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) specifies the requested

@@ -1,5 +1,16 @@
 # RIVET product, engineering, and operations backlog
 
+## Export workspace-selection follow-up — 24 October 2026
+
+- [x] Fix cancelled-gym exports remaining on the loading screen when two active
+  gyms require workspace selection (`440600ff`). Preserve explicit export scope,
+  avoid a stale operational session, and keep normal selection/denial without
+  export access. Three regressions fail before the fix; four new UI cases and
+  the 48-test focused suite pass. Full verification is in CURRENT_STATE.
+- Main's docs-only plan `8b75353f` is merged without duplicate AI entries or loss
+  of billing notes (`72f22e0b`). AI implementation and all unrelated release/
+  acceptance work remain pending; no deployment is claimed.
+
 ## AI-native expansion — requested direction, 24 October 2026
 
 Implementation is planned, not shipped. Hashem requested quiet intelligence
