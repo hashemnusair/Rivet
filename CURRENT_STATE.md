@@ -1,5 +1,31 @@
 # GymOS / RIVET current implementation state
 
+## AI-native product direction — planning only, 24 October 2026
+
+Hashem requested quiet AI integrated throughout the existing UI and broad
+delegation of desk work to agents. The concrete, deliberately extensible
+[implementation plan](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) covers
+small QOL improvements, shared context, typed business tools, durable execution,
+scoped authority, recurring work, bilingual evaluations, and rollout. The first
+vertical slice joins Today, member context, contact notes, renewal follow-up,
+and an executable batch that saves and verifies real internal tasks.
+
+This is a documentation-only planning change. No AI runtime, provider, new
+permission, external-message channel, production activation, or deployment is
+claimed. Jev stays retired; manual WhatsApp and current email gates remain.
+Implementation agents may discover more useful improvements within the plan's
+scope and record them in the canonical backlog; Basic/Pro AI packaging, model
+selection, processing terms, and concrete pilot budgets are still undecided.
+
+Read docs/23, the `AI-0` through `AI-5` entries in docs/13, docs/09, and docs/12
+before implementation. Concurrent audit fixes and existing release work remain
+independent; no bug-fix runtime changes are included in this planning publication.
+Implementation must use a separate feature branch/worktree and isolated test
+backend. Docs/23 specifies the proposed server-only endpoint configuration and
+the local-server versus Convex location for a future testing key.
+`FRONTEND_HANDOFF.md` remains frozen. Documentation links and
+whitespace are checked for this change; application tests are not applicable.
+
 ## Review follow-up — verified source, 24 October 2026
 
 Continues `codex/audit-billing-export-corrections` from reviewed `9db78ef5`.

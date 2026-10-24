@@ -1,5 +1,35 @@
 # 09 — Decisions and Open Questions
 
+## AI-native product direction — 24 October 2026
+
+Hashem requested an implementation plan for quiet AI embedded in the existing
+product, plus agents capable of completing delegable desk work. This authorizes
+the product direction described in [docs/23](23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md),
+including discovery of more useful QOL improvements within existing workflows.
+Its milestone sequence and technical contracts are implementation proposals;
+this entry does not claim runtime implementation or production activation.
+
+Preserve Next.js/Convex/Clerk/Vercel, `GymOSApi`, current domain approvals and
+tenant/branch authorization, the approved UI, Arabic evidence, and the frozen
+frontend handoff. AI may prepare work and execute within explicit one-off or
+standing grants, with existing sensitive-action requirements enforced. Delegation
+must avoid redundant approvals while keeping exact consequential changes
+reviewable. Jev remains retired; automated WhatsApp/SMS is not reintroduced.
+
+AI-0 must record the runtime/checkpoint-ownership decision, provider/model
+evaluation, data processing/retention, pilot limits, and accountable owners.
+Commercial AI allowances and Basic/Pro packaging remain undecided. Local
+contracts, fixtures, and workflow implementation can progress while external
+provider or commercial decisions remain open. The canonical backlog owns
+AI-0 through AI-5; CURRENT_STATE owns actual implementation/release evidence.
+
+Hashem additionally requires a separate feature branch and worktree for AI
+implementation, preserving the shared bug-fix checkout and polished product.
+Test backend/identity/provider state must also be isolated. Production activation
+and merging the implementation to main require a later explicit instruction.
+Hashem will supply a free testing endpoint; docs/23 specifies proposed server-only
+configuration names and where he can enter the key without committing it.
+
 ## Decisions already made
 
 - Working title is GymOS.
