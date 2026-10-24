@@ -22,6 +22,13 @@ No deployment, provider configuration, live financial write or automation activa
   onboarding/website invoices do not enter recurring revenue. All 9 focused
   overview/public-boundary/mock tests pass; all 4 new regressions fail on old code.
 
+- Owner Pro upgrade cards now render the existing localized Unlimited wording
+  for all three sentinel capacities. Finite values and radio accessible names
+  remain intact. Both English/Arabic component regressions fail on old code and
+  pass with the fix. Actual desktop/phone dialog journeys are added; browser
+  outcomes will be recorded with the final gates. Adjacent platform/public
+  capacity displays already handle the sentinel.
+
 Final gates, browser evidence and remaining audit corrections will be recorded
 here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
 

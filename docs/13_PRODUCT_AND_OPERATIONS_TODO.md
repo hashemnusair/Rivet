@@ -10,8 +10,9 @@ not production acceptance. Existing audit evidence remains historical.
   subscription invoice replacement and explicit void; unaffected edits remain
   available. Upgrade-confirmation replacement is covered too.
 - Implemented and regression-tested: purchased Basic add-ons in monthly/annual MRR.
+- Implemented and component-tested: localized Unlimited upgrade card labels.
 - In progress: delayed-upgrade credit/service dates,
-  cancelled-owner export window, unlimited upgrade labels, submitted-payment
+  cancelled-owner export window, submitted-payment
   reconciliation review. Final verification belongs in CURRENT_STATE.md.
 - Deferred unchanged: production renewal activation, provider/inbox acceptance,
   legal/commercial reconciliation, restore/incident ownership and new features.

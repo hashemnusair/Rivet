@@ -13,7 +13,7 @@ import { qk } from "@/lib/api/keys";
 import { useApiMutation } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
-import { findPlan, termPriceMinor } from "../../../convex/planCatalogue";
+import { findPlan, termPriceMinor, UNLIMITED } from "../../../convex/planCatalogue";
 
 /**
  * A gym moves itself up to a bigger plan. It sees what it pays today (the new
@@ -85,11 +85,12 @@ function PlanCard({ option, price }: { option: PlanChangeOption; price: string }
   const { t, isolateLtr } = useLocale();
   const f = useFormat();
   const limits = findPlan(option.plan);
+  const capacity = (value: number) => value === UNLIMITED ? t("platformFinance.detail.unlimitedCapacity") : f.number(value);
   return (
     <RadioCard value={option.plan} className="flex items-start justify-between gap-3 px-3.5 py-3">
       <span className="min-w-0">
         <span className="block text-[14px] font-semibold"><bdi>{option.plan}</bdi></span>
-        {limits ? <span className="mt-0.5 block text-[12.5px] text-ink-3">{t("commerce.plans.limits", { branches: f.number(limits.branches), staff: f.number(limits.staff), members: f.number(limits.members) })}</span> : null}
+        {limits ? <span className="mt-0.5 block text-[12.5px] text-ink-3">{t("commerce.plans.limits", { branches: capacity(limits.branches), staff: capacity(limits.staff), members: capacity(limits.members) })}</span> : null}
       </span>
       <span className="shrink-0 text-[13px] font-medium tabular">{isolateLtr(price)}</span>
     </RadioCard>
