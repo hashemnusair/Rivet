@@ -126,6 +126,7 @@ function PaySummary({ option, annual, after }: { option: PlanChangeOption; annua
         </div>
       </dl>
       <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">{after}</p>
+      {option.creditMinor > 0 ? <p className="mt-2 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.creditTiming")}</p> : null}
     </div>
   );
 }

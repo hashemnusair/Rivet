@@ -429,6 +429,10 @@ export interface PlatformBillingInvoice {
   paymentClaim?: PaymentClaim;
   /** An upgrade the gym asked for itself; the plan changes when RIVET confirms the payment. */
   planChange?: { from?: PlatformSaasPlan["name"]; to: PlatformSaasPlan["name"] };
+  /** Immutable quote funding; old-plan usage is settled only on activation. */
+  quoteValidUntil?: string;
+  creditBasis?: import("../../../convex/subscriptionTerm").OutgoingTerm;
+  upgradeActivation?: import("../../../convex/subscriptionTerm").UpgradeActivation;
   /** The support request that follows this payment, for a gym that can open its workspace. */
   supportCaseId?: string;
 }

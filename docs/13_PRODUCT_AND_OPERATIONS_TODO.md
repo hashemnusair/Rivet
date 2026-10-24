@@ -12,8 +12,8 @@ not production acceptance. Existing audit evidence remains historical.
 - Implemented and regression-tested: purchased Basic add-ons in monthly/annual MRR.
 - Implemented and component-tested: localized Unlimited upgrade card labels.
 - Implemented and regression-tested: submitted-payment reconciliation review with unchanged enforcement clocks.
-- In progress: delayed-upgrade credit/service dates,
-  cancelled-owner export window. Final verification belongs in CURRENT_STATE.md.
+- Implemented and regression-tested: delayed-upgrade quote validity and funded service dates (billing decision in docs/14).
+- In progress: cancelled-owner export window. Final verification belongs in CURRENT_STATE.md.
 - Deferred unchanged: production renewal activation, provider/inbox acceptance,
   legal/commercial reconciliation, restore/incident ownership and new features.
 

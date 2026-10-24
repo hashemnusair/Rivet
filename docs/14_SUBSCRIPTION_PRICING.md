@@ -102,6 +102,39 @@ Basic's base allowances are fixed in the global editor and backend. Only its
 bounded per-gym packs can expand them. Global base prices/capability definitions
 remain audited operator settings, not tenant-controlled purchase parameters.
 
+## Owner upgrade quotes and delayed confirmation — correction, 24 October 2026
+
+The old plan remains usable until confirmation. Upgrade credit is therefore an
+estimate of unused funded time, not a permanent discount that can fund a full
+term months later. Quotes show their validity deadline. An expired or repriced
+unsubmitted quote must be refreshed and reviewed before transferring/submitting;
+refresh voids the old quote and issues a new invoice, preserving history. Returned
+claims follow the same rule. Submitted claims cannot be repriced, overwritten,
+voided or replaced until the operator confirms or returns them.
+
+Confirmation starts new service then; operator review never backdates it. Cash
+paid, excluding any one-time onboarding fee, buys its full proportional share of
+one new calendar term from that instant. The still-unused value of the outgoing
+paid term funds the remaining share, capped by the quoted credit. Old-plan time
+used while the quote/payment waits cannot also fund later service. If all that
+credit has elapsed, only the transfer-funded share starts at confirmation; if
+none was consumed, the complete term starts then. This preserves paid value
+without silently collecting more money or granting duplicate funded time.
+
+For example, a new monthly Basic package worth JD158 requesting Pro immediately
+has a JD41 transfer quote. If Basic remains usable through its entire old term
+before confirmation, JD41 buys 41/199 of the new Pro calendar term, starting at
+confirmation; the JD158 already bought Basic service. No days purchased by that
+JD41 are lost to review delay. If the gym waits until Basic expires before paying,
+it refreshes the quote to JD199 and gets a full Pro term from confirmation.
+Annual prices use the same existing 5% saving. Onboarding and website fees never
+become time credit. Source invoice dates and funded amounts are stored with new
+quotes; activation prorates remaining source value by exact elapsed milliseconds,
+rounds money to minor units and duration up to a millisecond. Original invoice
+amount/credit stay intact beside an auditable activation calculation. Later term
+changes credit that actual funded service value. No refunds, new commercial
+policy, or rewrites of historical signed agreements are introduced.
+
 ## Enforcement and compatibility
 
 `apps/web/convex/planCatalogue.ts` is canonical; its public mirror is held to it by

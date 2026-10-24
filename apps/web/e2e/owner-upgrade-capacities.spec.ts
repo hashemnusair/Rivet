@@ -7,7 +7,7 @@ for (const locale of ["en", "ar"] as const) for (const width of [390, 1440]) {
     await context.addCookies([{ name: "rivet_locale", value: locale, url: baseURL! }]);
     await page.addInitScript(() => { sessionStorage.setItem("rivet.demo.plan", "Basic"); sessionStorage.setItem("rivet.demo.persona", "owner"); });
     await page.setViewportSize({ width, height: 1000 });
-    await page.goto("/settings/subscription");
+    await page.goto("/settings?section=subscription");
     await page.getByRole("button", { name: locale === "en" ? "Change plan" : "تغيير الباقة", exact: true }).click();
     const dialog = page.getByRole("dialog");
     const pro = dialog.getByRole("radio", { name: /Pro/ });

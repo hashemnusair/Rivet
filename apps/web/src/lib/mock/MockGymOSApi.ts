@@ -104,7 +104,7 @@ import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpR
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "../../../convex/planCatalogue";
 import { DEFAULT_WEBSITE_PLACES, DEFAULT_WEBSITE_PRICE_MINOR, firstPaymentQuote, normalizePromoCode, paymentNoteReference, PROMO_TARGETS, validPromoCodeShape, type PromoCheck } from "../../../convex/firstPayment";
-import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue } from "../../../convex/subscriptionTerm";
+import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWAL_REMINDER_DAYS, SUSPENSION_AFTER_DUE_DAYS, termChange, termEnd, fundedSubscriptionValue, upgradeActivation } from "../../../convex/subscriptionTerm";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
@@ -2738,7 +2738,7 @@ export class MockGymOSApi implements GymOSApi {
     const end = Date.parse(org.currentPeriodEndsAt ?? "");
     const funded = Number.isFinite(end) ? this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end) : undefined;
     const value = funded ? fundedSubscriptionValue(funded) : undefined;
-    const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, price(org.subscriptionPlan), org.quotedPriceMinor), amountMinor: value, interval } : undefined;
+    const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, periodStartsAt: funded?.periodStart ? Date.parse(funded.periodStart) : undefined, monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, price(org.subscriptionPlan), org.quotedPriceMinor), amountMinor: value, interval } : undefined;
     const now = Date.now();
     return (["Basic", "Pro"] as const)
       .filter((plan) => rank(plan) > rank(org.subscriptionPlan) && price(plan) > 0)
@@ -2781,13 +2781,17 @@ export class MockGymOSApi implements GymOSApi {
       const pending = this.pendingPlanChange();
       if (pending) {
         if (pending.paymentClaim?.status === "submitted") throw ApiError.of(ERR.CONFLICT, "RIVET is checking your payment for the last plan change. Wait until it is confirmed.");
-        if (pending.planChange?.to === input.plan) return this.checkoutView();
+        if (pending.planChange?.to === input.plan && pending.amountMinor === option.amountMinor && (pending.creditMinor ?? 0) === option.creditMinor && Date.parse(pending.quoteValidUntil ?? "9999-01-01") > Date.now()) return this.checkoutView();
         pending.status = "void";
         pending.voidedAt = nowISO();
       }
       const org = this.db.organization;
       const now = Date.now();
       const interval = org.billingInterval ?? "monthly";
+      const end = Date.parse(org.currentPeriodEndsAt ?? "");
+      const funded = this.platformInvoices.find(invoice => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end);
+      const value = funded ? fundedSubscriptionValue(funded) : undefined;
+      const creditBasis = value === undefined ? undefined : { periodEndsAt: end, periodStartsAt: funded?.periodStart ? Date.parse(funded.periodStart) : undefined, amountMinor: value, monthlyPriceMinor: 0, interval };
       const id = `INV-${mockUuid()}`;
       this.platformInvoices.unshift({
         id,
@@ -2798,6 +2802,8 @@ export class MockGymOSApi implements GymOSApi {
         subtotalMinor: option.subtotalMinor,
         ...(option.creditMinor > 0 ? { creditMinor: option.creditMinor, creditDays: option.creditDays } : {}),
         planChange: { from: org.subscriptionPlan, to: input.plan },
+        ...(creditBasis ? { creditBasis } : {}),
+        quoteValidUntil: new Date(creditBasis && option.creditDays > 0 ? Math.min(now + PAYMENT_TERM_DAYS * DAY_MS, creditBasis.periodEndsAt - (option.creditDays - 1) * DAY_MS) : now + PAYMENT_TERM_DAYS * DAY_MS).toISOString(),
         currency: "JOD",
         date: new Date(now).toISOString(),
         issuedAt: new Date(now).toISOString(),
@@ -2895,6 +2901,10 @@ export class MockGymOSApi implements GymOSApi {
       if (prior?.status === "submitted") {
         if (prior.method !== input.method || prior.reference !== input.reference.trim() || prior.payerName !== input.payerName.trim() || prior.paidOn !== input.paidOn || (prior.note ?? "") !== (input.note?.trim() ?? "")) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before changing its details.");
         return this.checkoutView();
+      }
+      if (invoice.planChange) {
+        const option = this.planChangeOptions().find(option => option.plan === invoice.planChange!.to);
+        if (!option || Date.parse(invoice.quoteValidUntil ?? "9999-01-01") <= Date.now() || invoice.amountMinor !== option.amountMinor || (invoice.creditMinor ?? 0) !== option.creditMinor) throw ApiError.of(ERR.CONFLICT, "This upgrade quote has changed. Refresh the upgrade quote and review the amount before sending payment details.");
       }
       const user = this.actor();
       invoice.paymentClaim = {
@@ -3940,6 +3950,16 @@ export class MockGymOSApi implements GymOSApi {
       const gym = invoice.gymId ? this.platformGyms.find((item) => item.id === invoice.gymId) : undefined;
       if (gym && this.isProvisionedGym(gym) && this.db.organization.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be reactivated by recording a subscription payment.");
       if (invoice.planChange?.to && this.platformInvoices.some(other => other.id !== invoice.id && other.gymId === invoice.gymId && replaceableSubscriptionInvoice(other) && submittedPayment(other))) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before replacing its subscription invoice.");
+      let activation: ReturnType<typeof upgradeActivation> | undefined;
+      if (invoice.planChange && gym && this.isProvisionedGym(gym)) {
+        const org = this.db.organization;
+        if (invoice.planChange.from !== org.subscriptionPlan || (invoice.creditBasis && invoice.creditBasis.periodEndsAt !== Date.parse(org.currentPeriodEndsAt ?? ""))) throw ApiError.of(ERR.CONFLICT, "The paid term changed after this quote. Return the payment and review the upgrade first.");
+        const end = Date.parse(org.currentPeriodEndsAt ?? "");
+        const source = this.platformInvoices.find(other => other.gymId === gym.id && other.status !== "void" && Date.parse(other.periodEnd ?? "") === end);
+        const value = source ? fundedSubscriptionValue(source) : undefined;
+        const outgoing = invoice.creditBasis ?? (value === undefined ? undefined : { periodEndsAt: end, periodStartsAt: source?.periodStart ? Date.parse(source.periodStart) : undefined, amountMinor: value, monthlyPriceMinor: 0, interval: org.billingInterval ?? "monthly" });
+        activation = upgradeActivation({ now: Date.now(), interval: invoice.billingInterval ?? "monthly", amountMinor: invoice.amountMinor ?? 0, subtotalMinor: invoice.subtotalMinor ?? (invoice.amountMinor ?? 0) + (invoice.creditMinor ?? 0), onboardingFeeMinor: invoice.onboardingFeeMinor ?? 0, creditMinor: invoice.creditMinor ?? 0, outgoing });
+      }
       invoice.status = "paid";
       invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();
       invoice.paymentReference = input.reference.trim();
@@ -3963,7 +3983,8 @@ export class MockGymOSApi implements GymOSApi {
         if (upgradeTo) {
           const start = Date.now();
           invoice.periodStart = new Date(start).toISOString();
-          invoice.periodEnd = new Date(termEnd(start, invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly")).toISOString();
+          invoice.periodEnd = activation?.periodEnd ?? new Date(termEnd(start, invoice.billingInterval ?? this.db.organization.billingInterval ?? "monthly")).toISOString();
+          invoice.upgradeActivation = activation;
           this.db.organization.subscriptionPlan = upgradeTo;
           this.db.organization.subscriptionAddOns = validateAddOns(undefined, upgradeTo);
           this.db.organization.addOnsRevision = (this.db.organization.addOnsRevision ?? 0) + 1;

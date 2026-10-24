@@ -173,6 +173,7 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
                   <p className="mt-1 text-ink-2">{t("commerce.checkout.rejected.body", { reason: claim.rejectionReason ?? "" })}</p>
                 </div>
               ) : null}
+              {upgradeTo ? <RefreshUpgradeQuote plan={upgradeTo} /> : null}
               <PaymentInstructions checkout={checkout} />
               <ClaimForm checkout={checkout} />
             </>
@@ -182,14 +183,29 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
         <aside aria-labelledby="invoice-title" className="rounded-lg border border-line bg-surface p-5 lg:sticky lg:top-6">
           <h2 id="invoice-title" className="text-[15px] font-semibold">{t("commerce.checkout.invoiceTitle", { id: isolateLtr(paymentNoteReference(invoice.id)) })}</h2>
           <p className="mt-1 text-[12.5px] text-ink-3">{t("commerce.checkout.due", { date: f.date(invoice.dueAt) })}</p>
+          {upgradeTo && invoice.quoteValidUntil && claim?.status !== "submitted" ? <p className="mt-1 text-[12.5px] text-ink-3">{t("commerce.checkout.quoteValidUntil", { date: f.dateTime(invoice.quoteValidUntil) })}</p> : null}
           <InvoiceLines invoice={invoice} plan={upgradeTo ?? gym.plan} className="mt-4" />
           {invoice.firstPayment ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.firstTerm", { cadence })}</p> : null}
           {upgradeTo ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.upgradeTerm", { plan: isolate(upgradeTo) })}</p> : null}
+          {upgradeTo && (invoice.creditMinor ?? 0) > 0 ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.creditTiming")}</p> : null}
           {checkout.accessEndsAt ? <p className="mt-4 text-[12.5px] leading-relaxed text-warning-deep">{t("commerce.checkout.accessEnds", { date: f.date(checkout.accessEndsAt) })}</p> : null}
         </aside>
       </div>
     </div>
   );
+}
+
+function RefreshUpgradeQuote({ plan }: { plan: NonNullable<NonNullable<BillingCheckout["invoice"]>["planChange"]>["to"] }) {
+  const { t } = useLocale();
+  const client = useQueryClient();
+  const refresh = useApiMutation((api) => api.requestPlanChange({ plan }), {
+    onSuccess: async checkout => {
+      client.setQueryData(qk.billingCheckout, checkout);
+      await client.invalidateQueries({ queryKey: qk.billingPlans });
+      await client.invalidateQueries({ queryKey: qk.myPlatformInvoices });
+    },
+  });
+  return <Button variant="secondary" onClick={() => refresh.mutate(undefined)} loading={refresh.isPending}>{t("commerce.checkout.refreshUpgrade")}</Button>;
 }
 
 function StepHeading({ number, children }: { number: number; children: React.ReactNode }) {

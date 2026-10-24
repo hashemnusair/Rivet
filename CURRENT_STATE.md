@@ -38,6 +38,26 @@ No deployment, provider configuration, live financial write or automation activa
   real/mock regressions pass (three fail on old code), and 23 focused existing/new
   commerce/reconciliation checks pass. Reconciliation remains default-off.
 
+- Delayed owner upgrades now refresh expired/unsubmitted quotes into a new
+  invoice before accepting a transfer claim; old invoices/claims/audits remain.
+  Same-plan retries reuse a current quote and same-detail claim retries preserve
+  the original submission. Submitted amounts and original quoted credit are
+  immutable. Confirmation stores an `upgradeActivation` settlement alongside
+  them: actual remaining old-plan value plus cash (excluding onboarding) funds
+  new service from confirmation, capped at one calendar term. Old-plan service
+  used while available consumes only the credit-funded portion; review never
+  backdates or consumes the portion bought by the transfer. This is the explicit
+  billing-date decision: a discounted transfer does not promise a full later term
+  after its old credit has been used. Settlement uses stored source dates and
+  millisecond proration, rounded to minor units; resulting duration rounds up to
+  a millisecond. Future credits use the actual funded value and stored start.
+  Legacy open upgrades derive funding from their existing paid term; changed
+  source plan/boundary fails closed for operator review. Signed documents and
+  historical invoice amounts are unchanged. Optional data lives in existing
+  invoice JSON; no migration/index/env change. Backend must precede frontend.
+  All 10 public/mock regressions fail on old code. The 16 focused date/mock/UI
+  checks and 41 commerce/term/protection checks pass. Final gates follow.
+
 Final gates, browser evidence and remaining audit corrections will be recorded
 here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
 

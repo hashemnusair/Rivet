@@ -1,5 +1,19 @@
 # 12 — System Maps and Release Runbook
 
+## Delayed-upgrade release verification — 24 October 2026 (unreleased)
+
+Release Convex before the matching checkout UI. No migration/index or provider
+configuration is required; new optional invoice JSON preserves old readers and
+historical amounts. In isolated staging check monthly/annual Basic with paid
+add-ons: request, expire/refresh, submit, return/resubmit and confirm after the
+old term ends. Verify original transfer amount is fixed, new service starts at
+confirmation, and only cash plus still-unused credit funds its duration. Verify
+`upgradeActivation` and the upgrade audit agree with the organization boundary;
+old paid invoices and signed documents must be unchanged. Changing the source
+paid boundary after a quote must reject confirmation without side effects. Do
+not infer release from a Git push or enable production renewals for this check.
+See docs/14 for the explicit value-preserving billing-date decision.
+
 ## Audit correctness release checks — 24 October 2026 (unreleased)
 
 Source publication does not release these fixes. Keep subscription reconciliation

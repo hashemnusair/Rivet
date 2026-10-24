@@ -65,7 +65,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, validQuotedPriceMinor, termPriceMinor } from "./planCatalogue";
 import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -9223,7 +9223,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
           ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingValue !== undefined
-            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingInterval } }
+            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, periodStartsAt: validTimestamp(stringValue(fundedTerm?.periodStart)), monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingInterval } }
             : {}),
         })
       : undefined;
@@ -9716,12 +9716,16 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       summary = "Voided platform invoice";
     }
 
+    let activation: Awaited<ReturnType<typeof prepareUpgradeActivation>> | undefined;
     if (operation === "platform.invoice.payment" && workspacePlan(data(current.planChange).to)) {
       const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", record.organizationId).eq("entityType", "platformInvoice")).collect();
       if (invoices.some(row => row._id !== record._id && replaceableSubscriptionInvoice(data(row.data)) && submittedPayment(data(row.data)))) {
         domainError("CONFLICT", "Confirm or return the submitted payment before replacing its subscription invoice.", { correlationId: admin.correlationId });
       }
+      const organization = await ctx.db.get(record.organizationId);
+      if (organization) activation = await prepareUpgradeActivation(ctx, organization, current, Date.now());
     }
+
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
     if (operation === "platform.invoice.payment") {
       const gymId = stringValue(current.gymId);
@@ -9740,9 +9744,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         // A gym's first payment opens its workspace, so its first paid term
         // starts now rather than on the day the invoice was raised.
         const firstTermStart = organization.status === "pending_payment" || upgradeTo ? Date.now() : undefined;
-        const firstTermEnd = firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
+        const firstTermEnd = activation ? Date.parse(activation.periodEnd) : firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
         if (firstTermStart !== undefined && firstTermEnd !== undefined) {
-          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd) };
+          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd), ...(activation ? { upgradeActivation: activation } : {}) };
           await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
         }
         // An upgrade starts a new term but not a new subscription.
@@ -9797,7 +9801,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             summary: `Upgraded ${organization.name} to ${upgradeTo} after confirming ${invoiceId}`,
             reason,
             before: { plan: previousPlan, currentPeriodEndsAt: organization.currentPeriodEndsAt },
-            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary },
+            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary, upgradeActivation: activation },
           });
         }
       }

@@ -4,7 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireBillingActor, requirePlatformAdmin, requireReason, type ActorContext, type RequestArgs } from "./security";
 import { gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
-import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, fundedSubscriptionValue, termChange, termEnd, type BillingInterval, type OutgoingTerm } from "./subscriptionTerm";
+import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, fundedSubscriptionValue, upgradeActivation, termChange, termEnd, type BillingInterval, type OutgoingTerm } from "./subscriptionTerm";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import {
   DEFAULT_WEBSITE_PLACES,
@@ -407,6 +407,10 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     }
     return await checkoutView(ctx, actor);
   }
+  if (isPlanChange(invoice)) {
+    const option = (await planChangeOptions(ctx, actor.organization, Date.now())).find(option => option.plan === record(invoice.planChange).to);
+    if (!option || (timestamp(invoice.quoteValidUntil) ?? Infinity) <= Date.now() || invoice.amountMinor !== option.amountMinor || (invoice.creditMinor ?? 0) !== option.creditMinor) domainError("CONFLICT", "This upgrade quote has changed. Refresh the upgrade quote and review the amount before sending payment details.", { correlationId: actor.correlationId });
+  }
   const now = Date.now();
   const claim = {
     status: "submitted",
@@ -540,7 +544,25 @@ function outgoingTerm(organization: Doc<"organizations">, rows: Doc<"domainRecor
     .filter((invoice) => invoice.status !== "void" && timestamp(invoice.periodEnd) === periodEndsAt)
     .sort((left, right) => text(right.createdAt).localeCompare(text(left.createdAt)))[0];
   const amountMinor = funded ? fundedSubscriptionValue(funded) : undefined;
-  return amountMinor === undefined ? undefined : { periodEndsAt, monthlyPriceMinor, amountMinor, interval };
+  return amountMinor === undefined ? undefined : { periodEndsAt, periodStartsAt: timestamp(funded?.periodStart), monthlyPriceMinor, amountMinor, interval };
+}
+
+/** Read-only preflight, including legacy open quotes issued before credit snapshots. */
+export async function prepareUpgradeActivation(ctx: ReadContext, organization: Doc<"organizations">, invoice: Data, now: number) {
+  const change = record(invoice.planChange);
+  if (change.from !== organization.subscriptionPlan) domainError("CONFLICT", "The subscription changed after this quote. Return the payment and review the upgrade first.");
+  const interval: BillingInterval = invoice.billingInterval === "annual" ? "annual" : "monthly";
+  const basis = record(invoice.creditBasis);
+  const rows = await organizationInvoices(ctx, organization._id);
+  const outgoing = typeof basis.periodEndsAt === "number"
+    ? basis as unknown as OutgoingTerm
+    : outgoingTerm(organization, rows, 0, organization.billingInterval === "annual" ? "annual" : "monthly");
+  if (typeof basis.periodEndsAt === "number" && basis.periodEndsAt !== organization.currentPeriodEndsAt) domainError("CONFLICT", "The paid term changed after this quote. Return the payment and review the upgrade first.");
+  try {
+    return upgradeActivation({ now, interval, amountMinor: Number(invoice.amountMinor), subtotalMinor: Number(invoice.subtotalMinor ?? Number(invoice.amountMinor) + Number(invoice.creditMinor ?? 0)), onboardingFeeMinor: Number(invoice.onboardingFeeMinor ?? 0), creditMinor: Number(invoice.creditMinor ?? 0), outgoing });
+  } catch {
+    domainError("CONFIGURATION_ERROR", "This upgrade invoice has invalid funding. Review it before confirming payment.");
+  }
 }
 
 /** What each bigger plan costs this gym today, using the same term change as RIVET's own plan changes. */
@@ -604,12 +626,15 @@ async function requestPlanChange(ctx: MutationCtx, input: Data, request: Request
     if (record(pendingInvoice.paymentClaim).status === "submitted") {
       domainError("CONFLICT", "RIVET is checking your payment for the last plan change. Wait until it is confirmed.", { correlationId: actor.correlationId });
     }
-    if (record(pendingInvoice.planChange).to === target) return await checkoutView(ctx, actor);
+    if (record(pendingInvoice.planChange).to === target && pendingInvoice.amountMinor === option.amountMinor && (pendingInvoice.creditMinor ?? 0) === option.creditMinor && (timestamp(pendingInvoice.quoteValidUntil) ?? Infinity) > now) return await checkoutView(ctx, actor);
     await ctx.db.patch(pending._id, { data: { ...pendingInvoice, status: "void", voidedAt: iso(now), updatedAt: iso(now) }, updatedAt: now });
+    await updatePaymentRequest(ctx, pendingInvoice, { state: "cancelled" }, "resolved");
+    await platformAudit(ctx, actor, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: pending.publicId, entityLabel: pending.publicId, summary: "Replaced an unsubmitted upgrade quote", before: { status: pendingInvoice.status, amountMinor: pendingInvoice.amountMinor }, after: { status: "void" } });
   }
   const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";
   const from = planName(organization.subscriptionPlan);
+  const creditBasis = outgoingTerm(organization, rows, from ? await gymPlanPriceMinor(ctx, organization, from) : 0, interval);
   const invoiceId = `INV-${crypto.randomUUID()}`;
   const invoice: Data = {
     id: invoiceId,
@@ -621,13 +646,15 @@ async function requestPlanChange(ctx: MutationCtx, input: Data, request: Request
     ...(option.onboardingFeeMinor > 0 ? { onboardingFeeMinor: option.onboardingFeeMinor } : {}),
     ...(option.creditMinor > 0 ? { creditMinor: option.creditMinor, creditDays: option.creditDays } : {}),
     planChange: { from, to: target },
+    ...(creditBasis ? { creditBasis } : {}),
+    quoteValidUntil: iso(creditBasis && option.creditDays > 0 ? Math.min(now + PAYMENT_TERM_DAYS * DAY_MS, creditBasis.periodEndsAt - (option.creditDays - 1) * DAY_MS) : now + PAYMENT_TERM_DAYS * DAY_MS),
     addOns: EMPTY_ADD_ONS,
     lines: subscriptionInvoiceLines(option.monthlyPriceMinor, EMPTY_ADD_ONS, interval),
     currency: "JOD",
     date: iso(now),
     issuedAt: iso(now),
     dueAt: iso(now + PAYMENT_TERM_DAYS * DAY_MS),
-    // Provisional: the new term starts when RIVET confirms the payment.
+    // Provisional dates; confirmation values only still-unused credit.
     periodStart: iso(now),
     periodEnd: iso(termEnd(now, interval)),
     cycleKey: `upgrade:${publicOrganizationId(organization)}:${now}`,
