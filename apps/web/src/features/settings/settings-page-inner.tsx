@@ -45,6 +45,12 @@ interface SettingsEntry {
   keywords: string;
   /** The permission the section's own mutations require on the server. */
   permission?: string;
+  /**
+   * A section that lives under another rail row instead of adding its own, so
+   * the rail keeps its fixed height. Search, the phone picker and the parent
+   * section still reach it, and the parent row stays highlighted while open.
+   */
+  parent?: string;
   component: ComponentType;
 }
 
@@ -77,6 +83,7 @@ function settingsGroups(t: TFunction): SettingsGroup[] { return [
     entries: [
       { id: "users", label: t("settingsCore.text078"), keywords: t("settingsCore.text209"), permission: "users.manage", component: UsersSection },
       { id: "roles", label: t("settingsCore.text185"), keywords: t("settingsCore.text210"), permission: "users.manage", component: RolesSection },
+      { id: "assistance", label: t("aiWork.settings.title"), keywords: t("aiWork.settings.keywords"), permission: "settings.manage", parent: "roles", component: AssistanceSettingsSection },
     ],
   },
   {
@@ -99,7 +106,6 @@ function settingsGroups(t: TFunction): SettingsGroup[] { return [
       { id: "operations", label: t("settingsCore.text191"), keywords: t("settingsCore.text215"), permission: "settings.manage", component: OperationalRulesSection },
       { id: "hours", label: t("settingsCore.text192"), keywords: t("settingsCore.text216"), permission: "settings.manage", component: HoursAndTrialsSection },
       { id: "checklists", label: t("settingsCore.text193"), keywords: t("settingsCore.text217"), permission: "operations.manage", component: ChecklistsSection },
-      { id: "assistance", label: t("aiWork.settings.title"), keywords: t("aiWork.settings.keywords"), permission: "settings.manage", component: AssistanceSettingsSection },
     ],
   },
 ]; }
@@ -179,7 +185,7 @@ export function SettingsPageInner() {
   };
 
   const navButton = (entry: SettingsEntry) => {
-    const isActive = entry.id === active.id;
+    const isActive = entry.id === active.id || (!filtered && entry.id === active.parent);
     return (
       <button
         key={entry.id}
@@ -264,7 +270,7 @@ export function SettingsPageInner() {
                 visibleGroups.map((group) => (
                   <div key={group.label}>
                     <ContextLabel className="mb-0.5 px-3">{group.label}</ContextLabel>
-                    <div className="space-y-0.5">{group.entries.map(navButton)}</div>
+                    <div className="space-y-0.5">{group.entries.filter((entry) => !entry.parent).map(navButton)}</div>
                   </div>
                 ))
               )}

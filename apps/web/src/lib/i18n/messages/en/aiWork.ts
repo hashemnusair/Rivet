@@ -199,6 +199,9 @@ export const aiWork = {
     title: "Assistance",
     description: "What RIVET may prepare or do for your team.",
     keywords: "assistance rivet prepared work follow-ups repeating automatic tasks",
+    linkDescription: "RIVET works with the access of the person who asks it. Choose what it may prepare or save for your team.",
+    linkCurrent: "Now: {mode}",
+    linkAction: "Open assistance settings",
     modeLabel: "Assistance for your gym",
     mode: { off: "Off", prepare: "Prepare only", execute: "Prepare and save work" },
     modeHint: {

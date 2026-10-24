@@ -201,6 +201,9 @@ export const aiWork: typeof En = {
     title: "المساعدة",
     description: "ما يمكن لـ RIVET تجهيزه أو تنفيذه لفريق العمل.",
     keywords: "المساعدة RIVET الأعمال المُعدّة المتابعات الأعمال المتكررة",
+    linkDescription: "يعمل RIVET بصلاحيات الشخص الذي يطلب منه. اختر ما يمكنه تجهيزه أو حفظه لفريقك.",
+    linkCurrent: "الآن: {mode}",
+    linkAction: "فتح إعدادات المساعدة",
     modeLabel: "المساعدة في ناديك",
     mode: { off: "متوقفة", prepare: "تجهيز فقط", execute: "تجهيز العمل وحفظه" },
     modeHint: {
