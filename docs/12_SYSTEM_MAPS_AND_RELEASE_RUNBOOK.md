@@ -1,5 +1,19 @@
 # 12 — System Maps and Release Runbook
 
+## Termination exports — 24 October 2026 (unreleased)
+
+Release backend authorization/identity before the frontend export routing. No
+schema migration, index, retention job, provider setting or automation activation
+is required. A cancelled owner must sign in directly to `/exports` with an export
+frame and the existing seven datasets, without workspace or billing access.
+Check a normal active owner too. In isolated fixtures verify owner versus staff,
+selected branches, foreign tenants, multiple-gym selection, archived organizations,
+missing/future cancellation timestamps, the exact 30-day cutoff and the independent
+24-hour file expiry. A repeat cancelled-status save must retain the original
+termination timestamp. Backend guards recheck the deadline on every create/read;
+a previously open tab cannot extend it. Keep production deletion/renewal jobs off.
+
+
 ## Delayed-upgrade release verification — 24 October 2026 (unreleased)
 
 Release Convex before the matching checkout UI. No migration/index or provider

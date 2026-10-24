@@ -126,3 +126,7 @@ describe("invitation bootstrap recovery", () => {
     expect(isInvitationBootstrapError(new Error("FORBIDDEN"))).toBe(false);
   });
 });
+
+it("routes a cancelled owner to exports without advertising gym or billing membership", () => {
+  expect(destinationFor({ ...baseIdentity, gymAccessUnavailable: true, exportAccess: [{ organizationId: "closed", organizationName: "Closed Gym", expiresAt: "2026-11-10T12:00:00Z" }] })).toEqual({ area: "exports", href: "/exports" });
+});

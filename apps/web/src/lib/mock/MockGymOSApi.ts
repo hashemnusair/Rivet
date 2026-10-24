@@ -1,3 +1,4 @@
+import { terminationExportDeadline } from "@/lib/domain/export-access";
 import { replaceableSubscriptionInvoice, submittedPayment } from "../../../convex/subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines } from "../../../convex/subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "@/lib/exports/copy";
@@ -2721,6 +2722,8 @@ export class MockGymOSApi implements GymOSApi {
     const storage = previewBehaviorStorage();
     let plan: string | null = null;
     try { plan = storage?.getItem("rivet.demo.plan") ?? null; } catch { plan = null; }
+    const cancelledAt = storage?.getItem("rivet.demo.cancelledAt");
+    if (cancelledAt) { this.db.organization.status = "cancelled"; this.db.organization.cancelledAt = cancelledAt; }
     if (plan === "Basic" || plan === "Starter" || plan === "Growth" || plan === "Pro" || plan === "Enterprise") this.db.organization.subscriptionPlan = plan;
   }
 
@@ -3604,7 +3607,7 @@ export class MockGymOSApi implements GymOSApi {
       if ((materialMembershipChange || periodBoundaryChanged) && selectedPeriodEndsAt !== undefined && Number.isFinite(storedSubscriptionStartedAt) && selectedPeriodEndsAt < storedSubscriptionStartedAt!) throw ApiError.of(ERR.VALIDATION, "The membership end date must be on or after the subscription start date.");
       if ((materialMembershipChange || periodBoundaryChanged) && nextStatus === "active" && selectedPeriodEndsAt !== undefined && selectedPeriodEndsAt <= nowTimestamp) throw ApiError.of(ERR.VALIDATION, "An active subscription must end in the future.");
       const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
-      const nextCancelledAt = nextStatus === "cancelled" ? nowTimestamp : undefined;
+      const nextCancelledAt = nextStatus === "cancelled" ? currentStatus !== "cancelled" ? nowTimestamp : organization.cancelledAt ? Date.parse(organization.cancelledAt) : undefined : undefined;
       if (nextStatus === "trial" && nextTrialEndsAt === undefined) throw ApiError.of(ERR.CONFIGURATION, "A trial cannot start until its onboarding date is established.");
 
       const previousStatus = gym.subscriptionStatus;
@@ -5093,7 +5096,7 @@ export class MockGymOSApi implements GymOSApi {
           plan: org.subscriptionPlan,
           addOns: org.subscriptionAddOns,
           effectivePlan: org.subscriptionPlan ? applyAddOns({ ...findPlan(org.subscriptionPlan)!, priceMinor: this.platformPlans.find(item => item.name === org.subscriptionPlan)?.priceMinor ?? findPlan(org.subscriptionPlan)!.priceMinor }, org.subscriptionAddOns) : undefined,
-          status: org.status,
+          status: org.status, cancelledAt: org.cancelledAt,
           billingInterval: org.billingInterval ?? "monthly",
           currentPeriodEndsAt: org.currentPeriodEndsAt,
           trialEndsAt: org.trialEndsAt,
@@ -10339,8 +10342,21 @@ export class MockGymOSApi implements GymOSApi {
     return this.subscribeOnce(() => this.listOperationalEmailDeliveries(query), onValue, onError);
   }
 
+  private requireExportAccess(organizationId?: string): void {
+    const org = this.db.organization;
+    if (organizationId && organizationId !== org.id) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this gym.");
+    const cancelledAt = org.cancelledAt ? Date.parse(org.cancelledAt) : undefined;
+    if (org.archivedAt || (!["trial", "active", "past_due"].includes(org.status) && !(currentRole(this.db) === "owner" && terminationExportDeadline({ ...org, cancelledAt }) !== undefined))) throw ApiError.of(ERR.FORBIDDEN, "This gym is not available.");
+  }
+
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> {
     return this.respond(() => {
+      this.requireExportAccess(input.organizationId);
+      const permission: Partial<Record<import("@/lib/domain/qol").ExportKind, Permission>> = { members: "members.read", leads: "crm.read", payments: "reports.financial.read", membership_liabilities: "reports.financial.read", personal_training: "pt.reports.read", operations: "operations.manage", audit: "audit.read" };
+      const required = permission[input.kind];
+      if (!required) throw ApiError.of(ERR.VALIDATION, "Choose a supported export dataset.");
+      this.require(required);
+      if (typeof input.filters?.branchId === "string" && (!this.db.branches.some(branch => branch.id === input.filters!.branchId && branch.status === "active") || !this.branchIsVisible(input.filters.branchId))) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
       const locale = exportLocale(input.locale);
       const copy = makeExportCopy(locale);
       const now = nowISO();
@@ -10424,8 +10440,8 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  listExportJobs(): Promise<import("@/lib/domain/qol").ExportJob[]> {
-    return this.respond(() => this.exportJobs.map((job) => ({ ...job })));
+  listExportJobs(organizationId?: string): Promise<import("@/lib/domain/qol").ExportJob[]> {
+    return this.respond(() => { this.requireExportAccess(organizationId); return this.exportJobs.map((job) => ({ ...job, content: Date.parse(job.expiresAt ?? "") > Date.now() ? job.content : undefined })); });
   }
 
   requestMemberPersonalDataExport(idempotencyKey: string, locale: "en" | "ar" = "en"): Promise<import("@/lib/domain/qol").ExportJob> {

@@ -1,3 +1,4 @@
+import { requireExportActor } from "./security";
 import { replaceableSubscriptionInvoice, submittedPayment } from "./subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines, type SubscriptionAddOns } from "./subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
@@ -6001,7 +6002,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     });
   }
 
-  const actor = await requireActor(ctx, request);
+  const actor = operation === "exports.list" || operation === "exports.request"
+    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
@@ -9246,7 +9249,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       domainError("VALIDATION_ERROR", "An active subscription must end in the future.", { correlationId: admin.correlationId });
     }
     const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
-    const nextCancelledAt = nextStatus === "cancelled" ? nowMs : undefined;
+    const nextCancelledAt = nextStatus === "cancelled" ? statusTransitioned ? nowMs : organization.cancelledAt : undefined;
     if (nextStatus === "trial" && nextTrialEndsAt === undefined) {
       domainError("CONFIGURATION_ERROR", "A trial cannot start until its onboarding date is established.", { correlationId: admin.correlationId });
     }
@@ -9262,7 +9265,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       trialEndsAt: nextTrialEndsAt !== undefined ? new Date(nextTrialEndsAt).toISOString() : undefined,
       subscriptionStartedAt: nextSubscriptionStartedAt !== undefined ? new Date(nextSubscriptionStartedAt).toISOString() : undefined,
       currentPeriodEndsAt: nextCurrentPeriodEndsAt !== undefined ? new Date(nextCurrentPeriodEndsAt).toISOString() : undefined,
-      ...(nextStatus === "cancelled" ? { cancelledAt: new Date(nextCancelledAt!).toISOString() } : { cancelledAt: undefined }),
+      ...(nextStatus === "cancelled" ? { cancelledAt: nextCancelledAt !== undefined && Number.isFinite(nextCancelledAt) ? new Date(nextCancelledAt).toISOString() : undefined } : { cancelledAt: undefined }),
       subscriptionStatusReason: reason,
       billingInterval: interval,
       ...(nextStatus === "active" || nextStatus === "trial" ? { lastActiveAt: now } : {}),
@@ -9951,7 +9954,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return await supportCaseView(ctx, refreshed);
   }
 
-  const actor = await requireActor(ctx, request);
+  const actor = operation === "exports.list" || operation === "exports.request"
+    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {

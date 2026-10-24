@@ -82,6 +82,7 @@ export interface RivetIdentity {
    * Gyms this person owns that may only pay: waiting for a first payment, or
    * stopped for an unpaid invoice. They open the payment page, nothing else.
    */
+  exportAccess?: Array<{ organizationId: string; organizationName: string; expiresAt: string }>;
   billingAccess?: Array<{ organizationId: string; organizationName: string; status: "pending_payment" | "suspended" }>;
 }
 
@@ -251,6 +252,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
         branches: m.branches,
       })),
       ...(result.billingAccess?.length ? { billingAccess: result.billingAccess } : {}),
+      ...(result.exportAccess?.length ? { exportAccess: result.exportAccess } : {}),
     };
   }
 
@@ -269,7 +271,7 @@ export function useRivetIdentity() {
   return useContext(IdentityContext);
 }
 
-export type Destination = { area: "platform" | "gym" | "billing" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
+export type Destination = { area: "platform" | "gym" | "billing" | "exports" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
 
 /**
  * Where this person belongs. Platform administration outranks gym staff, which
@@ -294,6 +296,8 @@ export function destinationFor(identity: RivetIdentity): Destination {
 
   // An owner whose gym is waiting for payment, or stopped for one, can pay.
   if (identity.billingAccess?.length) return { area: "billing", href: "/billing" };
+
+  if (identity.exportAccess?.length) return { area: "exports", href: "/exports" };
 
   if (identity.gymAccessUnavailable) return { area: "unavailable", href: "/login" };
 

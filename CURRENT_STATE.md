@@ -58,6 +58,18 @@ No deployment, provider configuration, live financial write or automation activa
   All 10 public/mock regressions fail on old code. The 16 focused date/mock/UI
   checks and 41 commerce/term/protection checks pass. Final gates follow.
 
+- Cancelled owners retain only `/exports` creation/history/retrieval during
+  `[cancelledAt, cancelledAt + 30 days)`. At the exact deadline, missing/invalid/
+  future timestamps, archived gyms and non-owners are denied. Identity advertises
+  an export destination, not workspace/billing membership. A minimal export frame
+  has no workspace navigation or agreement gate. Existing seven datasets remain
+  available with tenant/branch permissions, row safeguards, immutable export
+  audits, idempotency and 24-hour content expiry. Multiple gyms require explicit
+  scoped selection; existing operational sessions are not rebound. Repeated
+  cancellation saves retain the original timestamp. No deletion/retention or
+  legal-copy policy is changed. 63 focused backend/auth/mock/UI tests pass;
+  seven new regressions fail on old code. Browser outcomes follow with final gates.
+
 Final gates, browser evidence and remaining audit corrections will be recorded
 here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
 

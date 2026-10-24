@@ -1,3 +1,4 @@
+import { terminationExportDeadline } from "../src/lib/domain/export-access";
 import { legacyErrorDescriptor, fieldErrorDescriptors, type ErrorMessageDescriptor } from "../src/lib/i18n/error-messages";
 import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -194,7 +195,7 @@ async function firstActiveMembership(ctx: ReadCtx, userId: Id<"users">, options:
   for (const row of rows) {
     if (!row.active || !membershipInvitationAccepted(row as MaybeMembership)) continue;
     const organization = await ctx.db.get(row.organizationId);
-    if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)))) continue;
+    if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)) || (options.exports && row.role === "owner" && terminationExportDeadline(organization) !== undefined))) continue;
     routable.push({ row, organization });
   }
   if (routable.length > 1) {
@@ -258,11 +259,19 @@ export function billingOnlyOrganization(organization: { status: string; archived
 export type ActorOptions = {
   /** Also admit a gym that may only pay: the payment page and its invoices. */
   billing?: boolean;
+  /** Narrowly admit cancelled owners only to export operations. */
+  exports?: boolean;
 };
 
 /** The actor for the payment page: any gym that may still pay RIVET. */
 export async function requireBillingActor(ctx: ReadCtx, args: RequestArgs = {}): Promise<ActorContext> {
   return await requireActor(ctx, args, { billing: true });
+}
+
+export async function requireExportActor(ctx: ReadCtx, args: RequestArgs = {}): Promise<ActorContext> {
+  const actor = await requireActor(ctx, args, { exports: true });
+  if (actor.organization.archivedAt !== undefined) domainError("FORBIDDEN", "This gym is not available.");
+  return actor;
 }
 
 export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options: ActorOptions = {}): Promise<ActorContext> {
@@ -287,7 +296,7 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options
   }
 
   const organization = (await ctx.db.get(membership.organizationId)) as MaybeOrganization;
-  if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)))) {
+  if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)) || (options.exports && membership.role === "owner" && terminationExportDeadline(organization) !== undefined))) {
     domainError("FORBIDDEN", "This gym is not available.");
   }
 
@@ -321,7 +330,9 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options
     domainError("FORBIDDEN", "You do not have access to this branch.");
   }
 
-  if (!requestedBranchId && branchScope === "selected" && branchIds.length > 1) {
+  // Exports read all assigned branches without opening an operational session.
+  // Their row/filter guards still enforce branchIds; no writes gain this option.
+  if (!requestedBranchId && branchScope === "selected" && branchIds.length > 1 && !options.exports) {
     domainError("ORGANIZATION_SELECTION_REQUIRED", "Select a branch before continuing.", {
       details: { branchCount: branchIds.length },
     });

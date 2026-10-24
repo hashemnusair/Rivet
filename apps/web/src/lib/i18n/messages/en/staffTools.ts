@@ -338,6 +338,8 @@ export const staffTools = {
     status: { open: "Open", waiting: "Waiting", resolved: "Solved" },
   },
   exports: {
+    terminationAccess: "This gym is cancelled. Owner data exports remain available during the 30-day export window. Workspace and billing access remain closed.",
+    chooseGym: "Choose a gym",
     section: "Your data",
     description: "Download the records you are allowed to see as a CSV file.",
     privacyNote: "You only get records you are allowed to see. Each file can be downloaded for 24 hours.",

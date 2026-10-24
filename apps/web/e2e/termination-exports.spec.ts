@@ -1,0 +1,27 @@
+import { readFile } from "node:fs/promises";
+import { expect, test } from "@playwright/test";
+for (const width of [390, 1440]) test(`cancelled owner reaches only the export flow at ${width}px`, async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+  await page.addInitScript(() => { sessionStorage.setItem("rivet.demo.persona", "owner"); sessionStorage.setItem("rivet.demo.cancelledAt", new Date().toISOString()); });
+  await page.setViewportSize({ width, height: 1000 });
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/exports$/);
+  await expect(page.getByRole("status").filter({ hasText: "30-day export window" })).toBeVisible();
+  await expect(page.locator('aside[aria-label="Primary navigation"]')).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Download CSV", exact: true })).toHaveCount(7);
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download CSV", exact: true }).first().click();
+  const download = await pending;
+  expect(await readFile((await download.path())!, "utf8")).toContain("Member directory");
+  const historyDownload = page.getByRole("region", { name: "Recent downloads", exact: true }).getByRole("button", { name: "Download CSV", exact: true });
+  await expect(historyDownload).toBeEnabled();
+  const retrieved = page.waitForEvent("download");
+  await historyDownload.click();
+  expect(await readFile((await (await retrieved).path())!, "utf8")).toContain("Member directory");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath(`termination-exports-${width}.png`), fullPage: true });
+  expect(errors).toEqual([]);
+});

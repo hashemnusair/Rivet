@@ -185,6 +185,8 @@ export interface ExportJob {
 }
 
 export interface ExportRequestInput {
+  /** Explicit tenant selection for owners with termination export access. */
+  organizationId?: string;
   /** Presentation only; never changes member communication preferences. */
   locale?: "en" | "ar";
   kind: ExportKind;
