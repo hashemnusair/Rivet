@@ -112,13 +112,13 @@ function BillingHeader({ gymName, fullAccess }: { gymName?: string; fullAccess: 
   };
   return (
     <header className="border-b border-line bg-surface">
-      <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:flex-nowrap sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/brand/rivet-lockup-488.png" width={110} height={28} alt={t("common.brand.name")} className="dark:hidden" />
           <Image src="/brand/rivet-lockup-rev-488.png" width={110} height={28} alt={t("common.brand.name")} className="hidden dark:block" />
           {gymName ? <span className="truncate border-s border-line ps-3 text-[13px] font-medium text-ink-2" dir="auto">{gymName}</span> : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2">
           <LanguageButton />
           {fullAccess ? (
             <Button asChild variant="ghost" size="sm">
@@ -286,7 +286,7 @@ function PaymentInstructions({ checkout }: { checkout: BillingCheckout }) {
 
 type FormErrors = Partial<Record<"method" | "reference" | "payerName" | "paidOn", string>>;
 
-function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: () => void }) {
+function ClaimForm({ checkout }: { checkout: BillingCheckout }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const invoice = checkout.invoice!;
@@ -301,9 +301,9 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
   const mutation = useApiMutation((api, input: SubmitPlatformPaymentInput) => api.submitPlatformPayment(input), {
     successMessage: t("commerce.checkout.sentToast"),
     onSuccess: (next) => {
-      queryClient.setQueryData(qk.billingCheckout, next);
+      queryClient.setQueryData(next.gym.id ? [...qk.billingCheckout, next.gym.id] : qk.billingCheckout, next);
+      void queryClient.invalidateQueries({ queryKey: qk.billingCheckout });
       void queryClient.invalidateQueries({ queryKey: qk.myPlatformInvoices });
-      onDone?.();
     },
     onError: (error) => {
       if (!isApiError(error) || !error.sourceFieldErrors) return;
@@ -321,7 +321,7 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
     if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn) || paidOn > today) next.paidOn = t("commerce.checkout.errors.paidOn");
     setErrors(next);
     if (Object.keys(next).length > 0 || !method) return;
-    mutation.mutate({ invoiceId: invoice.id, method, reference: reference.trim(), payerName: payerName.trim(), paidOn, ...(note.trim() ? { note: note.trim() } : {}) });
+    mutation.mutate({ organizationId: checkout.gym.id, invoiceId: invoice.id, method, reference: reference.trim(), payerName: payerName.trim(), paidOn, ...(note.trim() ? { note: note.trim() } : {}) });
   };
 
   return (
@@ -369,10 +369,13 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
 function ClaimSent({ checkout, outcome, fullAccess }: { checkout: BillingCheckout; outcome: PaymentOutcome; fullAccess: boolean }) {
   const { t, isolateLtr } = useLocale();
   const f = useFormat();
-  const [editing, setEditing] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [reason, setReason] = useState("");
+  const client = useQueryClient();
+  const correction = useApiMutation((api) => api.requestPaymentCorrection({ invoiceId: checkout.invoice!.id, reason, organizationId: checkout.gym.id }), { onSuccess: async next => { client.setQueryData(checkout.gym.id ? [...qk.billingCheckout, checkout.gym.id] : qk.billingCheckout, next); await client.invalidateQueries({ queryKey: qk.billingCheckout }); } });
   const claim = checkout.invoice!.paymentClaim!;
   const supportCaseId = checkout.invoice?.supportCaseId;
-  if (editing && checkout.canPay) return <ClaimForm checkout={checkout} onDone={() => setEditing(false)} />;
+  const requested = (checkout.invoice!.paymentCorrection?.claimSubmissionId ?? checkout.invoice!.paymentCorrection?.claimSubmittedAt) === (claim.submissionId ?? claim.submittedAt);
   return (
     <section role="status" className="rounded-lg border border-line bg-surface p-5 sm:p-6">
       <h2 className="text-[17px] font-semibold tracking-tight">{t("commerce.checkout.submitted.title")}</h2>
@@ -385,9 +388,14 @@ function ClaimSent({ checkout, outcome, fullAccess }: { checkout: BillingCheckou
         })}
       </p>
       <PaymentProgress className="mt-5" state="sent" outcome={outcome} />
+      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">{t(requested ? "commerce.checkout.submitted.correctionSent" : "commerce.checkout.submitted.correctionHelp")}</p>
+      {requesting && !requested ? <form className="mt-4 grid gap-3" onSubmit={event => { event.preventDefault(); if (reason.trim()) correction.mutate(undefined); }}>
+        <Field label={t("commerce.checkout.submitted.correctionReason")} required><Textarea value={reason} onChange={event => setReason(event.target.value)} maxLength={500} required dir="auto" /></Field>
+        <Button type="submit" loading={correction.isPending} disabled={!reason.trim()}>{t("commerce.checkout.submitted.correctionSubmit")}</Button>
+      </form> : null}
       <div className="mt-5 flex flex-wrap gap-2">
         {supportCaseId && fullAccess ? <Button asChild variant="secondary" size="sm"><Link href={`/support?case=${encodeURIComponent(supportCaseId)}`}>{t("commerce.plans.seeRequest")}</Link></Button> : null}
-        {checkout.canPay ? <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>{t("commerce.checkout.submitted.edit")}</Button> : null}
+        {checkout.canRequestCorrection && !requested ? <Button variant="ghost" size="sm" onClick={() => setRequesting(true)}>{t("commerce.checkout.submitted.correction")}</Button> : null}
       </div>
     </section>
   );

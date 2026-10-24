@@ -228,6 +228,7 @@ export const activityLog: typeof EnglishActivityLog = {
     invoiceVoid: "إلغاء الفاتورة",
     invoiceManualPayment: "تسجيل دفعة",
     invoiceMarkPastDue: "تسجيل تجاوز موعد الدفع",
+    invoicePaymentCorrectionRequested: "طلب تصحيح بيانات الدفعة",
     invoicePaymentSubmitted: "إبلاغ النادي عن الدفع",
     invoicePaymentRejected: "إعادة تفاصيل الدفعة إلى النادي",
     invoiceFirstPaymentCreated: "إنشاء الفاتورة الأولى",

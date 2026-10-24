@@ -70,7 +70,11 @@ export const commerce = {
     submitted: {
       title: "We are checking your payment",
       body: "You sent {amount} by {method} on {date}. Reference: {reference}. We will email you when it is confirmed.",
-      edit: "Change the details",
+      correction: "Request a correction",
+        correctionHelp: "Made a mistake? Ask RIVET to return the submitted details. You can correct and send them again after the operator returns them. Do not transfer the payment again.",
+        correctionSent: "Your correction request is with RIVET. The submitted payment is unchanged. When the operator returns it, correct the details here and send them again. Do not transfer the payment again.",
+        correctionReason: "What needs correcting?",
+        correctionSubmit: "Send correction request",
     },
     rejected: {
       title: "We could not match your payment",

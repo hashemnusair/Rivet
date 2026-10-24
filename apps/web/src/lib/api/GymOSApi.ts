@@ -427,6 +427,8 @@ export interface PlatformBillingInvoice {
   promoNotApplied?: { code: string; reason: PromoUnavailableReason };
   /** Payment details the gym sent from its payment page. */
   paymentClaim?: PaymentClaim;
+  /** Owner asked the operator to return this immutable submitted claim. */
+  paymentCorrection?: { claimSubmittedAt: string; claimSubmissionId?: string; requestedAt: string; reason: string };
   /** An upgrade the gym asked for itself; the plan changes when RIVET confirms the payment. */
   planChange?: { from?: PlatformSaasPlan["name"]; to: PlatformSaasPlan["name"] };
   /** Immutable quote funding; old-plan usage is settled only on activation. */
@@ -440,6 +442,7 @@ export interface PlatformBillingInvoice {
 export type PlatformPaymentMethod = "cliq" | "bank_transfer";
 
 export interface PaymentClaim {
+  submissionId?: string;
   status: "submitted" | "rejected" | "confirmed";
   method: PlatformPaymentMethod;
   reference: string;
@@ -469,6 +472,7 @@ export interface PlatformPaymentDetails {
 /** The payment page: the gym, the invoice to pay next and how to pay it. */
 export interface BillingCheckout {
   gym: {
+    id?: string;
     name: string;
     status: "trial" | "pending_payment" | "active" | "past_due" | "suspended" | "cancelled";
     plan?: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
@@ -480,6 +484,7 @@ export interface BillingCheckout {
   paymentDetails: PlatformPaymentDetails;
   /** Only the owner (or someone who manages settings) sends payment details. */
   canPay: boolean;
+  canRequestCorrection?: boolean;
   /** When a paying gym's access stops if this invoice stays unpaid. */
   accessEndsAt?: string;
 }
@@ -513,6 +518,7 @@ export interface BillingPlans {
 }
 
 export interface SubmitPlatformPaymentInput {
+  organizationId?: string;
   invoiceId: string;
   method: PlatformPaymentMethod;
   reference: string;
@@ -1170,8 +1176,9 @@ export interface GymOSApi {
   createPromoCode(input: CreatePromoCodeInput): Promise<PlatformCommerceView>;
   setPromoCodeActive(input: { promoId: string; active: boolean; reason: string }): Promise<PlatformCommerceView>;
   rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice>;
-  getBillingCheckout(): Promise<BillingCheckout>;
+  getBillingCheckout(organizationId?: string): Promise<BillingCheckout>;
   submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout>;
+  requestPaymentCorrection(input: { invoiceId: string; reason: string; organizationId?: string }): Promise<BillingCheckout>;
   getBillingPlans(): Promise<BillingPlans>;
   /** Asks to move up to a bigger plan; returns the payment page for the new invoice. */
   requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout>;

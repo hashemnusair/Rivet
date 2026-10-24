@@ -451,8 +451,9 @@ export class ConvexGymOSApi implements GymOSApi {
   createPromoCode(input: CreatePromoCodeInput): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.promo.create", input); }
   setPromoCodeActive(input: { promoId: string; active: boolean; reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.promo.set_active", input); }
   rejectPlatformInvoicePayment(input: { invoiceId: string; reason: string }): Promise<PlatformBillingInvoice> { return this.mutatePlatform("platform.invoice.payment_reject", input); }
-  getBillingCheckout(): Promise<BillingCheckout> { return this.query("billing.checkout"); }
+  getBillingCheckout(organizationId?: string): Promise<BillingCheckout> { return this.query("billing.checkout", { organizationId }); }
   submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout> { return this.mutate("billing.payment.submit", input); }
+  requestPaymentCorrection(input: { invoiceId: string; reason: string; organizationId?: string }): Promise<BillingCheckout> { return this.mutate("billing.payment.correction_request", input); }
   getBillingPlans(): Promise<BillingPlans> { return this.query("billing.plans"); }
   requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout> { return this.mutate("billing.plan_change.request", input); }
   cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans> { return this.mutate("billing.plan_change.cancel", input); }

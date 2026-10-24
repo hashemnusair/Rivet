@@ -53,6 +53,7 @@ export const COMMERCE_MUTATIONS = [
   "platform.promo.set_active",
   "platform.invoice.payment_reject",
   "billing.payment.submit",
+  "billing.payment.correction_request",
   "billing.plan_change.request",
   "billing.plan_change.cancel",
 ] as const;
@@ -361,6 +362,7 @@ async function checkoutView(ctx: ReadContext, actor: ActorContext): Promise<Data
   const dueAt = row && !isPlanChange(record(row.data)) ? timestamp(record(row.data).dueAt) : undefined;
   return {
     gym: {
+      id: publicOrganizationId(organization),
       name: organization.name,
       status: organization.status,
       plan: organization.subscriptionPlan,
@@ -371,6 +373,7 @@ async function checkoutView(ctx: ReadContext, actor: ActorContext): Promise<Data
     ...(row ? { invoice: invoiceView(row, organization.name) } : {}),
     paymentDetails,
     canPay: canPay(actor),
+    canRequestCorrection: actor.role === "owner",
     // A gym that has never paid has nothing to lose; a paying gym is told
     // the day its access stops if this invoice stays unpaid.
     ...(dueAt !== undefined && organization.status !== "pending_payment" && organization.status !== "suspended" ? { accessEndsAt: iso(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS) } : {}),
@@ -415,6 +418,7 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
   const now = Date.now();
   const claim = {
     status: "submitted",
+    submissionId: crypto.randomUUID(),
     method,
     reference,
     payerName,
@@ -444,6 +448,33 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     dedupeKey: `payment-claim:${row.publicId}:${claim.submittedAt}`,
   });
   await openPaymentRequest(ctx, actor, row, claim);
+  return await checkoutView(ctx, actor);
+}
+
+/** A narrow billing-only path into the existing operator support conversation. */
+async function requestPaymentCorrection(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const actor = await requireBillingActor(ctx, request);
+  if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can request a payment correction.");
+  const row = (await organizationInvoices(ctx, actor.organization._id)).find(row => row.publicId === text(input.invoiceId, 80));
+  if (!row) domainError("NOT_FOUND", "Invoice not found.");
+  const invoice = record(row.data);
+  const claim = record(invoice.paymentClaim);
+  if (!UNPAID_STATUSES.includes(text(invoice.status)) || claim.status !== "submitted") domainError("CONFLICT", "There is no submitted payment to correct.");
+  const reason = text(input.reason, 500);
+  if (!reason) domainError("VALIDATION_ERROR", "Explain what needs correcting.", { fieldErrors: { reason: ["Required"] } });
+  // One immutable request per submitted claim. Retries cannot create new clocks or messages.
+  if ((record(invoice.paymentCorrection).claimSubmissionId ?? record(invoice.paymentCorrection).claimSubmittedAt) === (claim.submissionId ?? claim.submittedAt)) return await checkoutView(ctx, actor);
+  const now = Date.now();
+  const correction = { claimSubmittedAt: claim.submittedAt, ...(typeof claim.submissionId === "string" ? { claimSubmissionId: claim.submissionId } : {}), requestedAt: iso(now), reason };
+  await openPaymentRequest(ctx, actor, row, claim, true);
+  const current = record((await ctx.db.get(row._id))?.data);
+  const caseRow = await supportCaseRow(ctx, text(current.supportCaseId));
+  if (!caseRow) domainError("CONFLICT", "The payment support request is unavailable.");
+  const messageId = `SUP-MSG-${crypto.randomUUID()}`;
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "supportMessage", publicId: messageId, createdAt: now, updatedAt: now, data: { id: messageId, caseId: caseRow.publicId, authorType: "gym", authorId: publicUserId(actor.user), authorName: actor.user.fullName, body: reason, createdAt: iso(now) } });
+  await ctx.db.patch(row._id, { data: { ...current, paymentCorrection: correction }, updatedAt: now });
+  await platformAudit(ctx, actor, { action: "invoice.payment_correction_requested", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Owner requested return of submitted payment details", reason, after: { ...correction, supportCaseId: caseRow.publicId } });
+  await notifyPlatformAdmins(ctx, { kind: "support_gym_reply", title: "New gym reply on support case", body: `${actor.organization.name}: ${reason}`, titleMessage: systemMessage("communicationCompletion.notifications.supportGymReply"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: actor.organization.name, b: reason }), href: `/platform/support?case=${encodeURIComponent(caseRow.publicId)}`, dedupeKey: `payment-correction:${row.publicId}:${claim.submissionId ?? claim.submittedAt}` });
   return await checkoutView(ctx, actor);
 }
 
@@ -722,10 +753,10 @@ async function supportCaseRow(ctx: ReadContext, caseId: string): Promise<Doc<"do
  * A gym that can open its workspace follows a payment it sent in Support:
  * one request per invoice, opened when the details are first sent and moved
  * along as RIVET returns or confirms them. A gym still waiting for its first
- * payment has only the payment page, which already shows where things are.
+ * payment uses the narrow checkout correction request to reach the same queue.
  */
-async function openPaymentRequest(ctx: MutationCtx, actor: ActorContext, row: Doc<"domainRecords">, claim: Data): Promise<void> {
-  if (actor.organization.status !== "active" && actor.organization.status !== "past_due") return;
+async function openPaymentRequest(ctx: MutationCtx, actor: ActorContext, row: Doc<"domainRecords">, claim: Data, correction = false): Promise<void> {
+  if (!correction && actor.organization.status !== "active" && actor.organization.status !== "past_due") return;
   // Read the invoice again: the caller has just written the payment details to it.
   const invoice = record((await ctx.db.get(row._id))?.data);
   const nowIso = text(claim.submittedAt) || iso(Date.now());
@@ -1006,7 +1037,8 @@ async function setPromoActive(ctx: MutationCtx, input: Data, request: RequestArg
 
 // ---------------------------------------------------------------- Dispatch
 
-export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: undefined } : requestArgs;
   if (operation === "public.websiteOffer") return await websiteOfferView(ctx);
   if (operation === "public.promo.check") {
     const plan = planName(input.plan) ?? "Starter";
@@ -1022,13 +1054,15 @@ export async function commerceQuery(ctx: QueryCtx, operation: string, input: Dat
   domainError("NOT_FOUND", "Unknown operation.");
 }
 
-export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: undefined } : requestArgs;
   if (operation === "platform.commerce.website_offer.update") return await updateWebsiteOffer(ctx, input, request);
   if (operation === "platform.commerce.payment_details.update") return await updatePaymentDetails(ctx, input, request);
   if (operation === "platform.promo.create") return await createPromo(ctx, input, request);
   if (operation === "platform.promo.set_active") return await setPromoActive(ctx, input, request);
   if (operation === "platform.invoice.payment_reject") return await rejectPayment(ctx, input, request);
   if (operation === "billing.payment.submit") return await submitPayment(ctx, input, request);
+  if (operation === "billing.payment.correction_request") return await requestPaymentCorrection(ctx, input, request);
   if (operation === "billing.plan_change.request") return await requestPlanChange(ctx, input, request);
   if (operation === "billing.plan_change.cancel") return await cancelPlanChange(ctx, input, request);
   domainError("NOT_FOUND", "Unknown operation.");

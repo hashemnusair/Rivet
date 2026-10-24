@@ -228,6 +228,7 @@ export const activityLog = {
     invoiceVoid: "Invoice cancelled",
     invoiceManualPayment: "Payment recorded",
     invoiceMarkPastDue: "Invoice marked past due",
+    invoicePaymentCorrectionRequested: "Payment correction requested",
     invoicePaymentSubmitted: "Gym says it paid",
     invoicePaymentRejected: "Payment sent back to the gym",
     invoiceFirstPaymentCreated: "First invoice created",

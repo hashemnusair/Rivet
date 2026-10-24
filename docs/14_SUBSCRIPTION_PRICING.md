@@ -112,6 +112,15 @@ refresh voids the old quote and issues a new invoice, preserving history. Return
 claims follow the same rule. Submitted claims cannot be repriced, overwritten,
 voided or replaced until the operator confirms or returns them.
 
+A submitted-payment mistake is corrected through **Request a correction** on
+checkout. This opens/reuses the invoice’s operator support request, including
+for first-payment and suspended owners without workspace access. The transfer
+claim, amount and due dates remain unchanged. The operator returns the claim,
+then the owner corrects and resubmits it; they must not transfer the money again.
+Returned upgrade claims still require a current quote. Correction requests do not
+restart enforcement clocks. Each submission has a distinct identity for retry
+deduplication, even if a return/resubmission occurs in the same millisecond.
+
 Confirmation starts new service then; operator review never backdates it. Cash
 paid, excluding any one-time onboarding fee, buys its full proportional share of
 one new calendar term from that instant. The still-unused value of the outgoing

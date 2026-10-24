@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import type { PlatformBillingInvoice } from "@/lib/api/GymOSApi";
 import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { BillingCheckoutContent } from "./billing-checkout";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }));
@@ -120,4 +121,31 @@ describe("the gym's payment page", () => {
     await renderPage("owner");
     await waitFor(() => expect(screen.getByText("Nothing to pay right now")).toBeInTheDocument());
   });
+});
+
+it.each(["en", "ar"] as const)("%s submitted claims use support correction, then returned details can be resubmitted", async locale => {
+  const user = userEvent.setup();
+  const result = await renderWithApp(<LocaleProvider initialLocale={locale}><Deferred><BillingCheckoutContent fullAccess={false} /></Deferred></LocaleProvider>);
+  await withInvoice(result.api);
+  const payment = { invoiceId: "INV-first", method: "cliq" as const, reference: "WRONG-1", payerName: "Owner", paidOn: "2026-10-01" };
+  await result.api.submitPlatformPayment(payment);
+  await user.click(screen.getByRole("button", { name: "Show page" }));
+  const before = (await result.api.getBillingCheckout()).invoice!;
+  expect(screen.queryByRole("button", { name: "Change the details" })).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: locale === "en" ? "Request a correction" : "طلب تصحيح البيانات" }));
+  expect(screen.queryByLabelText(/Reference number/)).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(locale === "en" ? /What needs correcting/ : /ما البيانات التي تحتاج إلى تصحيح/), "Please return the incorrect reference.");
+  await user.click(screen.getByRole("button", { name: locale === "en" ? "Send correction request" : "إرسال طلب التصحيح" }));
+  expect(await screen.findByText(locale === "en" ? /Your correction request is with RIVET/ : /وصل طلب التصحيح إلى RIVET/)).toBeInTheDocument();
+  const requested = (await result.api.getBillingCheckout()).invoice!;
+  expect(requested.paymentClaim).toEqual(before.paymentClaim);
+  const retry = await result.api.requestPaymentCorrection({ invoiceId: before.id, reason: "Same request retry" });
+  expect(retry.invoice).toEqual(requested);
+  // Remount the actual query after the operator returns it, as after a reload.
+  result.unmount();
+  await result.api.rejectPlatformInvoicePayment({ invoiceId: before.id, reason: "Returned for correction" });
+  const corrected = await result.api.submitPlatformPayment({ ...payment, reference: "CORRECT-2" });
+  expect(corrected.invoice?.paymentClaim).toMatchObject({ reference: "CORRECT-2", amountMinor: before.amountMinor });
+  await result.api.recordPlatformInvoicePayment({ invoiceId: before.id, reference: "CORRECT-2", reason: "Matched transfer" });
+  expect((await result.api.getPlatformSnapshot()).invoices.find(invoice => invoice.id === before.id)).toMatchObject({ status: "paid", paymentClaim: { reference: "CORRECT-2" } });
 });

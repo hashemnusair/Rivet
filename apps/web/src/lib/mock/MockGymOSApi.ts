@@ -2705,16 +2705,25 @@ export class MockGymOSApi implements GymOSApi {
     const role = currentRole(this.db);
     const dueAt = unpaid?.dueAt && !unpaid.planChange ? Date.parse(unpaid.dueAt) : Number.NaN;
     return {
-      gym: { name: org.name, status: org.status, plan: org.subscriptionPlan, billingInterval: org.billingInterval ?? "monthly", currentPeriodEndsAt: org.currentPeriodEndsAt, timezone: org.timezone },
+      gym: { id: org.id, name: org.name, status: org.status, plan: org.subscriptionPlan, billingInterval: org.billingInterval ?? "monthly", currentPeriodEndsAt: org.currentPeriodEndsAt, timezone: org.timezone },
       ...(unpaid ? { invoice: { ...unpaid, ...(unpaid.paymentClaim ? { paymentClaim: { ...unpaid.paymentClaim } } : {}) } } : {}),
       paymentDetails: { ...this.commerce.paymentDetails },
       canPay: role === "owner" || permissionsFor(this.db, role).includes("settings.manage"),
+      canRequestCorrection: role === "owner",
       ...(Number.isFinite(dueAt) && org.status !== "pending_payment" && org.status !== "suspended" ? { accessEndsAt: new Date(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS).toISOString() } : {}),
     };
   }
 
-  getBillingCheckout(): Promise<BillingCheckout> {
-    return this.respond(() => this.checkoutView());
+  private requireBillingAccess(organizationId?: string): void {
+    const org = this.db.organization;
+    if ((organizationId && organizationId !== org.id) || org.archivedAt || !["trial", "active", "past_due", "pending_payment", "suspended"].includes(org.status)) throw ApiError.of(ERR.FORBIDDEN, "This gym is not available.");
+  }
+
+  getBillingCheckout(organizationId?: string): Promise<BillingCheckout> {
+    return this.respond(() => {
+      this.requireBillingAccess(organizationId);
+      return this.checkoutView();
+    });
   }
 
   /** Browser previews can start the demo gym on a smaller plan, to try an upgrade. */
@@ -2842,10 +2851,10 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   /** Parity with Convex: a gym that can open its workspace follows a payment it sent in Support. */
-  private openPaymentRequest(invoice: PlatformBillingInvoice): void {
+  private openPaymentRequest(invoice: PlatformBillingInvoice, correction = false): void {
     const org = this.db.organization;
     const claim = invoice.paymentClaim;
-    if (!claim || (org.status !== "active" && org.status !== "past_due")) return;
+    if (!claim || (!correction && org.status !== "active" && org.status !== "past_due")) return;
     const sent = { state: "sent" as const, method: claim.method, reference: claim.reference, amountMinor: claim.amountMinor, sentAt: claim.submittedAt, returnedAt: undefined, returnReason: undefined };
     const existing = invoice.supportCaseId ? this.platformSupportCases.find((item) => item.id === invoice.supportCaseId) : undefined;
     if (existing?.billing) {
@@ -2892,8 +2901,31 @@ export class MockGymOSApi implements GymOSApi {
     supportCase.updatedAt = now;
   }
 
+  requestPaymentCorrection(input: { invoiceId: string; reason: string; organizationId?: string }): Promise<BillingCheckout> {
+    return this.respond(() => {
+      this.requireBillingAccess(input.organizationId);
+      if (currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can request a payment correction.");
+      const invoice = this.platformInvoices.find(item => item.id === input.invoiceId && item.gymId === PROVISIONED_MOCK_GYM_ID);
+      if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
+      const claim = invoice.paymentClaim;
+      if (!claim || claim.status !== "submitted" || !["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.CONFLICT, "There is no submitted payment to correct.");
+      const reason = input.reason.trim().slice(0, 500);
+      if (!reason) throw ApiError.of(ERR.VALIDATION, "Explain what needs correcting.");
+      if ((invoice.paymentCorrection?.claimSubmissionId ?? invoice.paymentCorrection?.claimSubmittedAt) === (claim.submissionId ?? claim.submittedAt)) return this.checkoutView();
+      this.openPaymentRequest(invoice, true);
+      const supportCase = this.platformSupportCases.find(item => item.id === invoice.supportCaseId)!;
+      const actor = this.actor();
+      const correction = { claimSubmittedAt: claim.submittedAt, claimSubmissionId: claim.submissionId, requestedAt: nowISO(), reason };
+      (supportCase.messages ??= []).push({ id: `SUP-MSG-${mockUuid()}`, caseId: supportCase.id, authorType: "gym", authorId: actor.id, authorName: actor.name, body: reason, createdAt: correction.requestedAt });
+      invoice.paymentCorrection = correction;
+      this.recordPlatformAudit({ action: "invoice.payment_correction_requested", entityType: "platform_invoice", entityPublicId: invoice.id, entityLabel: invoice.id, summary: "Owner requested return of submitted payment details", reason, after: { ...correction, supportCaseId: supportCase.id } });
+      return this.checkoutView();
+    });
+  }
+
   submitPlatformPayment(input: SubmitPlatformPaymentInput): Promise<BillingCheckout> {
     return this.respond(() => {
+      this.requireBillingAccess(input.organizationId);
       const view = this.checkoutView();
       if (!view.canPay) throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can send payment details.");
       const invoice = this.platformInvoices.find((item) => item.id === input.invoiceId && item.gymId === PROVISIONED_MOCK_GYM_ID);
@@ -2917,6 +2949,7 @@ export class MockGymOSApi implements GymOSApi {
       const user = this.actor();
       invoice.paymentClaim = {
         status: "submitted",
+        submissionId: mockUuid(),
         method: input.method,
         reference: input.reference.trim(),
         payerName: input.payerName.trim(),
@@ -2926,6 +2959,7 @@ export class MockGymOSApi implements GymOSApi {
         submittedAt: nowISO(),
         submittedBy: { id: user.id, name: user.name },
       };
+      this.recordPlatformAudit({ action: "invoice.payment_submitted", entityType: "platform_invoice", entityPublicId: invoice.id, entityLabel: invoice.id, summary: "Gym sent payment details", reason: "Gym submitted payment details", before: prior ? { ...prior } : undefined, after: { ...invoice.paymentClaim } });
       this.openPaymentRequest(invoice);
       return this.checkoutView();
     });
