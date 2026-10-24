@@ -1,3 +1,4 @@
+import { restrictedAccessPreview, PREVIEW_EXPORT_ORG } from "./restricted-access-preview";
 import { terminationExportDeadline } from "@/lib/domain/export-access";
 import { replaceableSubscriptionInvoice, submittedPayment } from "../../../convex/subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines } from "../../../convex/subscriptionAddOns";
@@ -840,7 +841,9 @@ export class MockGymOSApi implements GymOSApi {
   private recentWorkspaceItems: import("@/lib/domain/qol").RecentWorkspaceItem[] = [];
   private pinnedWorkspaceItems: import("@/lib/domain/qol").PinnedWorkspaceItem[] = [];
 
-  constructor(db?: MockDb) {
+  private previewExports?: MockGymOSApi;
+
+  constructor(db?: MockDb, private readonly previewFixtures = true) {
     this.db = db ?? buildSeed();
     this.accountingAccounts = MOCK_ACCOUNT_DEFINITIONS.map((definition) => mockAccount(this.db.organization.id, definition));
     this.gymApplications = INITIAL_GYM_APPLICATIONS.map((application) => ({ ...application }));
@@ -857,6 +860,7 @@ export class MockGymOSApi implements GymOSApi {
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.seedRestrictedPreviewInvoice();
     this.commerce = mockCommerceSettings();
     this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
@@ -2728,11 +2732,14 @@ export class MockGymOSApi implements GymOSApi {
 
   /** Browser previews can start the demo gym on a smaller plan, to try an upgrade. */
   private applyPreviewPlan(): void {
+    if (!this.previewFixtures) return;
     const storage = previewBehaviorStorage();
     let plan: string | null = null;
     try { plan = storage?.getItem("rivet.demo.plan") ?? null; } catch { plan = null; }
     const cancelledAt = storage?.getItem("rivet.demo.cancelledAt");
-    if (cancelledAt) { this.db.organization.status = "cancelled"; this.db.organization.cancelledAt = cancelledAt; }
+    const mixed = restrictedAccessPreview();
+    if (mixed) { this.db.organization.status = mixed.status; this.db.organization.cancelledAt = undefined; }
+    else if (cancelledAt) { this.db.organization.status = "cancelled"; this.db.organization.cancelledAt = cancelledAt; }
     if (plan === "Basic" || plan === "Starter" || plan === "Growth" || plan === "Pro" || plan === "Enterprise") this.db.organization.subscriptionPlan = plan;
   }
 
@@ -4282,6 +4289,7 @@ export class MockGymOSApi implements GymOSApi {
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.seedRestrictedPreviewInvoice();
     this.commerce = mockCommerceSettings();
     this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
@@ -10389,7 +10397,45 @@ export class MockGymOSApi implements GymOSApi {
     if (org.archivedAt || (!["trial", "active", "past_due"].includes(org.status) && !(currentRole(this.db) === "owner" && terminationExportDeadline({ ...org, cancelledAt }) !== undefined))) throw ApiError.of(ERR.FORBIDDEN, "This gym is not available.");
   }
 
+  /** Explicit preview-only invoice so both restricted flows have real mock data. */
+  private seedRestrictedPreviewInvoice(): void {
+    const fixture = this.previewFixtures && restrictedAccessPreview();
+    if (!fixture) return;
+    this.db.organization.subscriptionPlan = "Basic";
+    this.db.organization.billingInterval = "monthly";
+    const first = fixture.status === "pending_payment";
+    const now = Date.now();
+    const amountMinor = first ? 124_000 : 49_000;
+    this.platformInvoices.unshift({
+      id: "INV-PREVIEW-BILLING", gymId: PROVISIONED_MOCK_GYM_ID, gym: this.db.organization.name,
+      status: "open", currency: "JOD", amount: `JOD ${(amountMinor / 1000).toFixed(3)}`, amountMinor,
+      subtotalMinor: 49_000, ...(first ? { firstPayment: true, onboardingFeeMinor: 75_000 } : {}),
+      date: new Date(now).toISOString(), dueAt: new Date(now + (first ? 14 : -22) * DAY_MS).toISOString(),
+      periodStart: new Date(now).toISOString(), periodEnd: new Date(termEnd(now, "monthly")).toISOString(),
+      cycleKey: "subscription:restricted-preview", billingInterval: "monthly",
+    });
+  }
+
+  /** Separate seeded tenant and export history, never the billing gym's data. */
+  private previewExportTenant(organizationId?: string): MockGymOSApi | undefined {
+    const fixture = this.previewFixtures && restrictedAccessPreview();
+    if (!fixture || organizationId !== PREVIEW_EXPORT_ORG) return undefined;
+    if (currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "This gym is not available.");
+    if (!this.previewExports) {
+      const db = buildSeed();
+      db.organization.id = PREVIEW_EXPORT_ORG;
+      db.organization.name = "Cancelled Preview Gym";
+      db.organization.status = "cancelled";
+      db.organization.cancelledAt = fixture.cancelledAt;
+      this.previewExports = new MockGymOSApi(db, false);
+      this.previewExports.setBehavior({ latencyMs: 0 });
+    }
+    return this.previewExports;
+  }
+
   requestExport(input: import("@/lib/domain/qol").ExportRequestInput): Promise<import("@/lib/domain/qol").ExportJob> {
+    const preview = this.previewExportTenant(input.organizationId);
+    if (preview) return preview.requestExport(input);
     return this.respond(() => {
       this.requireExportAccess(input.organizationId);
       const permission: Partial<Record<import("@/lib/domain/qol").ExportKind, Permission>> = { members: "members.read", leads: "crm.read", payments: "reports.financial.read", membership_liabilities: "reports.financial.read", personal_training: "pt.reports.read", operations: "operations.manage", audit: "audit.read" };
@@ -10481,6 +10527,8 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   listExportJobs(organizationId?: string): Promise<import("@/lib/domain/qol").ExportJob[]> {
+    const preview = this.previewExportTenant(organizationId);
+    if (preview) return preview.listExportJobs(organizationId);
     return this.respond(() => { this.requireExportAccess(organizationId); return this.exportJobs.map((job) => ({ ...job, content: Date.parse(job.expiresAt ?? "") > Date.now() ? job.content : undefined })); });
   }
 

@@ -4,6 +4,11 @@ import type { commerce as EnCommerce } from "../en/commerce";
 /** How a gym pays RIVET, and the launch offers on its first payment. Wording follows docs/arabic/STANDARD.md and DECISIONS.md. */
 export const commerce: typeof EnCommerce = {
   checkout: {
+    exportDeadline: "تحميل البيانات متاح حتى {date}",
+    permittedDestinations: "الأندية المتاحة لحسابك",
+    billingFor: "الفواتير والدفعات · {gym}",
+    exportsFor: "تحميل البيانات · {gym}",
+    chooseBillingGym: "اختر النادي لدفع فاتورته",
     title: {
       pending: "ادفع لفتح مساحة عملك",
       renewal: "ادفع فاتورة RIVET",

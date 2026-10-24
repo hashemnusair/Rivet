@@ -1,7 +1,8 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { createTranslator } from "@/lib/i18n/core";
 import { getRequestLocale } from "@/lib/i18n/server";
-import { BillingCheckoutPage } from "@/features/billing/billing-checkout";
+import { BillingCheckoutPage, CheckoutLoading } from "@/features/billing/billing-checkout";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = createTranslator(await getRequestLocale());
@@ -9,5 +10,5 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function BillingPage() {
-  return <BillingCheckoutPage />;
+  return <Suspense fallback={<CheckoutLoading />}><BillingCheckoutPage /></Suspense>;
 }

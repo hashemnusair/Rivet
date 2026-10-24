@@ -6,7 +6,8 @@ import { useFormat } from "@/lib/i18n/format";
 
 import { Download, FileSpreadsheet, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { DateTimeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
@@ -57,6 +58,7 @@ export default function ExportCenterClient() {
   const { locale } = useLocale();
   const format = useFormat();
   const params = useSearchParams();
+  const router = useRouter();
   const { session } = useApp();
   const identity = useRivetIdentity();
   const terminatedGyms = identity.exportAccess ?? [];
@@ -64,10 +66,12 @@ export default function ExportCenterClient() {
   const gyms = terminatedGyms.length && session && !terminatedOnly
     ? [{ organizationId: session.organization.id, organizationName: session.organization.name }, ...terminatedGyms]
     : terminatedGyms;
-  const [selectedGym, setSelectedGym] = useState(terminatedOnly && gyms.length === 1 ? gyms[0]!.organizationId : "");
-  const organizationId = selectedGym || (terminatedOnly && gyms.length === 1 ? gyms[0]!.organizationId : undefined);
+  const requestedGym = params.get("organizationId");
+  const candidate = requestedGym || (terminatedOnly && gyms.length === 1 ? gyms[0]!.organizationId : "");
+  const organizationId = gyms.find(gym => gym.organizationId === candidate)?.organizationId;
   const exportOnly = terminatedOnly || terminatedGyms.some(gym => gym.organizationId === organizationId) || session?.organization.subscription?.status === "cancelled";
-  const selectionRequired = terminatedOnly && gyms.length > 1 && !selectedGym;
+  const selectionRequired = Boolean((terminatedOnly || requestedGym) && !organizationId);
+  const selected = terminatedGyms.find(gym => gym.organizationId === organizationId);
   const { can } = usePermissions();
   const invalidate = useInvalidate();
   const jobs = useApiQuery([...qk.exports, organizationId], (api) => api.listExportJobs(organizationId), { enabled: !selectionRequired });
@@ -89,7 +93,8 @@ export default function ExportCenterClient() {
 
   return <div className="space-y-5">
     {exportOnly ? <p role="status" className="text-[13px] text-ink-2">{t("staffTools.exports.terminationAccess")}</p> : null}
-    {gyms.length > 1 ? <label className="block text-[13px]">{t("staffTools.exports.chooseGym")}<select className="ms-2 rounded-md border border-line p-2" value={selectedGym} onChange={event => setSelectedGym(event.target.value)}><option value="">{t("staffTools.exports.chooseGym")}</option>{gyms.map(gym => <option key={gym.organizationId} value={gym.organizationId}>{gym.organizationName}</option>)}</select></label> : null}
+    {selected ? <p className="text-[14px] font-medium" dir="auto">{selected.organizationName} · {t("commerce.checkout.exportDeadline", { date: format.dateTime(selected.expiresAt) })}</p> : null}
+    {gyms.length > 1 || selectionRequired ? <label className="block text-[13px]">{t("staffTools.exports.chooseGym")}<select className="ms-2 rounded-md border border-line p-2" value={organizationId ?? ""} onChange={event => { const next = new URLSearchParams(params.toString()); next.set("organizationId", event.target.value); router.push(`/exports?${next.toString()}`); }}><option value="">{t("staffTools.exports.chooseGym")}</option>{gyms.map(gym => <option key={gym.organizationId} value={gym.organizationId}>{gym.organizationName}</option>)}</select></label> : null}
     <PageHeader sectionLabel={t("staffTools.exports.section")} title={t("nav.item.downloads")} description={t("staffTools.exports.description")} />
     <section className="rounded-lg border border-line bg-sunken/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-deep" aria-hidden /><p className="text-[12px] leading-5 text-ink-2">{t("staffTools.exports.privacyNote")}</p></div></section>
     {Object.keys(filters).length ? <p className="text-[12px] text-ink-3">{t("staffTools.exports.filtersApplied")}: {Object.entries(filters).map(([key, value]) => {

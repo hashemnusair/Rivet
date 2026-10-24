@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Copy, LogOut } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { RestrictedAccessNav } from "./restricted-access-nav";
 import { useEffect, useState } from "react";
 import { InvoiceLines } from "@/features/billing/invoice-lines";
 import { PaymentProgress, type PaymentOutcome } from "@/features/billing/payment-progress";
@@ -45,11 +47,12 @@ function localToday(timeZone: string): string {
  */
 export function BillingCheckoutPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const identity = useRivetIdentity();
   const { signedIn, sessionLoading } = useApp();
   const destination = identity.status === "ready" ? destinationFor(identity) : undefined;
   // Previews and tests run on seeded personas instead of a real account.
-  const demo = DEMO_AUTH_BYPASS || identity.status === "demo";
+  const demo = identity.status === "demo";
   const allowed = demo ? signedIn : destination?.area === "billing" || destination?.area === "gym";
   const fullAccess = demo ? signedIn : destination?.area === "gym";
 
@@ -62,19 +65,25 @@ export function BillingCheckoutPage() {
     else if (destination && destination.area !== "billing" && destination.area !== "gym") router.replace(destination.href);
   }, [demo, destination, identity.status, router, sessionLoading, signedIn]);
 
-  const query = useApiQuery(qk.billingCheckout, (api) => api.getBillingCheckout(), { enabled: allowed });
+  const params = useSearchParams();
+  const gyms = [...identity.memberships, ...(identity.billingAccess ?? [])];
+  const requestedGym = params.get("organizationId");
+  const organizationId = gyms.find(gym => gym.organizationId === requestedGym)?.organizationId ?? (!requestedGym && gyms.length === 1 ? gyms[0]!.organizationId : undefined);
+  const selectionRequired = Boolean((gyms.length || requestedGym) && !organizationId);
+  const query = useApiQuery(organizationId ? [...qk.billingCheckout, organizationId] : qk.billingCheckout, (api) => api.getBillingCheckout(organizationId), { enabled: allowed && !selectionRequired });
 
   return (
     <div className="min-h-screen bg-paper text-ink">
       <BillingHeader gymName={query.data?.gym.name} fullAccess={fullAccess} />
+      <RestrictedAccessNav />
       <main className="mx-auto w-full max-w-5xl px-4 pb-20 pt-8 sm:px-6 lg:pt-12">
-        {allowed ? <BillingCheckoutContent fullAccess={fullAccess} /> : <CheckoutLoading />}
+        {allowed && selectionRequired ? <div className="grid gap-3"><h1>{t("commerce.checkout.chooseBillingGym")}</h1>{gyms.map(gym => <Link className="underline" key={gym.organizationId} href={`/billing?organizationId=${encodeURIComponent(gym.organizationId)}`}>{gym.organizationName}</Link>)}</div> : allowed ? <BillingCheckoutContent key={organizationId} organizationId={organizationId} fullAccess={fullAccess} /> : <CheckoutLoading />}
       </main>
     </div>
   );
 }
 
-function CheckoutLoading() {
+export function CheckoutLoading() {
   const { t } = useLocale();
   return (
     <div role="status" aria-label={t("commerce.checkout.loading")} className="grid gap-4">
@@ -86,8 +95,8 @@ function CheckoutLoading() {
 }
 
 /** The payment page's content for a signed-in gym: the invoice and how to pay it. */
-export function BillingCheckoutContent({ fullAccess }: { fullAccess: boolean }) {
-  const query = useApiQuery(qk.billingCheckout, (api) => api.getBillingCheckout());
+export function BillingCheckoutContent({ fullAccess, organizationId }: { fullAccess: boolean; organizationId?: string }) {
+  const query = useApiQuery(organizationId ? [...qk.billingCheckout, organizationId] : qk.billingCheckout, (api) => api.getBillingCheckout(organizationId));
   if (query.isLoading) return <CheckoutLoading />;
   if (query.isError || !query.data) return <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />;
   return <Checkout checkout={query.data} fullAccess={fullAccess} />;

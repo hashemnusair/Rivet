@@ -3,6 +3,11 @@ import { plural } from "../../dictionary";
 /** How a gym pays RIVET, and the launch offers on its first payment. */
 export const commerce = {
   checkout: {
+    exportDeadline: "Export access until {date}",
+    permittedDestinations: "Your available gym access",
+    billingFor: "Billing · {gym}",
+    exportsFor: "Exports · {gym}",
+    chooseBillingGym: "Choose the gym whose invoice you want to pay",
     title: {
       pending: "Pay to open your workspace",
       renewal: "Pay your RIVET invoice",

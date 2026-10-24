@@ -1,5 +1,31 @@
 # 12 — System Maps and Release Runbook
 
+## Mixed owner access — review follow-up, 24 October 2026 (unreleased)
+
+Billing remains the default destination for an owner with a payment-restricted
+gym. A cancelled gym’s export capability is independent: `/exports` must remain
+reachable from scoped links on both restricted pages. Links name the organization;
+several gyms require a deliberate selection. Billing query/payment scope travels
+per request and must not rebind the operational session. Cancelled gyms never
+receive workspace membership or billing permission from this navigation.
+
+Release the additive billing/correction backend before the matching frontend.
+There is no schema/index migration, backfill, provider change or job activation.
+In isolated acceptance use one real owner with a cancelled gym plus (separately)
+a pending-payment and a suspended gym. Navigate billing → cancelled exports →
+billing, create/retrieve a CSV, and verify the displayed organization and original
+30-day deadline each time. Also test multiple choices, foreign IDs, staff,
+archived gyms, the exact deadline and independent 24-hour file expiry. Verify an
+active gym retains its normal workspace and exports.
+
+For submitted mistakes, checkout’s correction request opens/reuses the existing
+operator support case, including first-payment owners without workspace access.
+Verify the operator sees the request, returns it with a reason, and the owner
+corrects/resubmits before confirmation. Compare original amount, due/notice dates
+and audit history; identical retries create no extra request. Returned upgrades
+retain existing quote-validity checks. No live transfer or email is needed for
+local tests. Real Clerk/inbox acceptance remains a separately credentialed gate.
+
 ## Termination exports — 24 October 2026 (unreleased)
 
 Release backend authorization/identity before the frontend export routing. No

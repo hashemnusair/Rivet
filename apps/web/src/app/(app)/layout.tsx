@@ -49,7 +49,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const subscription = session?.organization.subscription;
   const previewExportOnly = DEMO_AUTH_BYPASS && session?.roles[0] === "owner" && subscription && terminationExportDeadline({ status: subscription.status, cancelledAt: subscription.cancelledAt ? Date.parse(subscription.cancelledAt) : undefined }) !== undefined;
-  const exportOnly = identityDestination?.area === "exports" || previewExportOnly;
+  const exportOnly = Boolean((identity.exportAccess?.length && !identity.memberships.length) || previewExportOnly);
+  const exportRouteAllowed = pathname === "/exports" && Boolean(identity.exportAccess?.length || previewExportOnly);
   const gymRole = identityDestination?.area === "gym" ? identityDestination.role : undefined;
   const binding = useRef(false);
   const identityName = identity.fullName || identity.email || "RIVET user";
@@ -62,7 +63,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       session.user.name === identityName &&
       session.user.email === identityEmail,
   );
-  const workspaceReady = Boolean(identityReady && !sessionLoading && !identityStillResolving && identitySignedIn && signedIn && !exportOnly);
+  const workspaceDestinationAllowed = identity.status === "demo" || identityDestination?.area === "gym";
+  const workspaceReady = Boolean(workspaceDestinationAllowed && identityReady && !sessionLoading && !identityStillResolving && identitySignedIn && signedIn && !exportOnly);
 
   useDampedRootOverscroll(scrollShellRef, workspaceReady);
 
@@ -101,17 +103,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // A valid account that opened the wrong protected area should go directly
     // to its real destination. Routing through /login caused the visible
     // dashboard → login → platform flash reported in production.
-    if (exportOnly) {
+    if (exportRouteAllowed) return;
+    if (exportOnly && identityDestination?.area !== "billing") {
       if (pathname !== "/exports") router.replace("/exports");
       return;
     }
     if (identityDestination && identityDestination.area !== "gym") router.replace(identityDestination.href);
-  }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, previewMemberSignedIn, previewPlatformAdminSignedIn, sessionLoading, router, exportOnly, pathname]);
+  }, [identityDestination, identityReady, identitySignedIn, identityStillResolving, identity.status, previewMemberSignedIn, previewPlatformAdminSignedIn, sessionLoading, router, exportOnly, exportRouteAllowed, pathname]);
 
   // The curtain is the second child either way, so React keeps it across the
   // change and it lifts off the shell it was covering instead of vanishing.
   const curtain = <WorkspaceCurtain ready={workspaceReady} label={t("palette.layout.loadingGym")} />;
-  if (exportOnly && pathname === "/exports") return <TerminationExportFrame>{children}</TerminationExportFrame>;
+  if (exportRouteAllowed && exportOnly) return <TerminationExportFrame>{children}</TerminationExportFrame>;
   if (!workspaceReady) return <>{null}{curtain}</>;
 
   return (
