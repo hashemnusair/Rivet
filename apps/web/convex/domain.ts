@@ -1,3 +1,4 @@
+import { replaceableSubscriptionInvoice, submittedPayment } from "./subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines, type SubscriptionAddOns } from "./subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
 import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
@@ -9073,10 +9074,6 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (addOnsChanged || (requestedPlan && requestedPlan !== organization.subscriptionPlan)) {
       await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, addOnPlan), nextAddOns), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
     }
-    if (addOnsChanged) {
-      const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
-      if (invoices.some(row => !["paid", "void"].includes(stringValue(data(row.data).status)) && data(data(row.data).paymentClaim).status === "submitted")) domainError("CONFLICT", "Confirm or return the submitted payment before changing add-ons.", { correlationId: admin.correlationId });
-    }
     // A gym still waiting for its first payment has no paid term to change.
     // RIVET corrects the plan, billing or Enterprise quote it was set up
     // with, and the first invoice is issued again for the corrected plan.
@@ -9212,6 +9209,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const priorInvoices = startsNewPaidTerm && organization
       ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
       : [];
+    if (priorInvoices.some(row => replaceableSubscriptionInvoice(data(row.data)) && submittedPayment(data(row.data)))) {
+      domainError("CONFLICT", "Confirm or return the submitted payment before replacing its subscription invoice.", { correlationId: admin.correlationId });
+    }
     const fundedTerm = priorInvoices.map(row => data(row.data)).filter(invoice => invoice.status !== "void" && Date.parse(stringValue(invoice.periodEnd)) === storedPeriodEndsAt).sort((a, b) => Date.parse(stringValue(b.createdAt)) - Date.parse(stringValue(a.createdAt)))[0];
     const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
     const change = startsNewPaidTerm
@@ -9340,8 +9340,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         for (const row of invoiceRows) {
           const invoice = data(row.data);
           const invoiceStatus = stringValue(invoice.status);
-          const key = optionalString(invoice.cycleKey);
-          if (!key || !["draft", "open", "past_due", "failed"].includes(invoiceStatus)) continue;
+          if (!replaceableSubscriptionInvoice(invoice)) continue;
           await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
           await insertPlatformAudit(ctx, admin, {
             action: "invoice.void",
@@ -9711,11 +9710,18 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (status === "paid" || status === "void") domainError("VALIDATION_ERROR", "Paid or void invoices cannot be voided.", { correlationId: admin.correlationId });
       requireReason(input.reason, admin.correlationId);
       reason = input.reason.trim();
+      if (submittedPayment(current)) domainError("CONFLICT", "Confirm or return the submitted payment before voiding its invoice.", { correlationId: admin.correlationId });
       updated = { ...current, status: "void", voidedAt: now, updatedAt: now };
       action = "invoice.void";
       summary = "Voided platform invoice";
     }
 
+    if (operation === "platform.invoice.payment" && workspacePlan(data(current.planChange).to)) {
+      const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", record.organizationId).eq("entityType", "platformInvoice")).collect();
+      if (invoices.some(row => row._id !== record._id && replaceableSubscriptionInvoice(data(row.data)) && submittedPayment(data(row.data)))) {
+        domainError("CONFLICT", "Confirm or return the submitted payment before replacing its subscription invoice.", { correlationId: admin.correlationId });
+      }
+    }
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
     if (operation === "platform.invoice.payment") {
       const gymId = stringValue(current.gymId);
@@ -9779,7 +9785,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
           for (const row of invoiceRows) {
             const invoice = data(row.data);
-            if (row.publicId === invoiceId || !optionalString(invoice.cycleKey) || !["draft", "open", "past_due", "failed"].includes(stringValue(invoice.status))) continue;
+            if (row.publicId === invoiceId || !replaceableSubscriptionInvoice(invoice)) continue;
             await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: Date.now() });
             await insertPlatformAudit(ctx, admin, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Voided a subscription invoice replaced by a plan upgrade", reason, before: { status: invoice.status }, after: { status: "void" } });
           }

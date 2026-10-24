@@ -1,5 +1,25 @@
 # GymOS / RIVET current implementation state
 
+## Audit corrections — in implementation, 24 October 2026
+
+Source-only work on `codex/audit-billing-export-corrections`, based on audit/main
+`3ed7d3d2`. Existing untracked `docs/audits/` and `outputs/` are preserved.
+No deployment, provider configuration, live financial write or automation activation.
+
+- Submitted-payment protection now follows the invoices actually replaced by an
+  active subscription change (plan, cadence, Enterprise quote, add-ons or
+  reactivation), not just an add-on flag. Upgrade confirmation and explicit voids
+  enforce the same requirement to confirm or return the claim first. Listing,
+  unchanged subscription and boundary-only changes do not replace an invoice and
+  remain available. Unrelated manual invoices do not block term replacement.
+- Regression evidence for this fix: 9 new public-boundary/mock tests pass; the
+  original implementation fails 6 of them. Repeated rejected mutations compare
+  organization, entitlements, invoices, audit and notification state unchanged.
+  Existing commerce/add-on coverage also passed (31 tests including 8 new).
+
+Final gates, browser evidence and remaining audit corrections will be recorded
+here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
+
 ## Current checkpoint — Basic/Pro and paid add-ons, 21 October 2026
 
 **Released to production.** The complete pricing/add-on implementation

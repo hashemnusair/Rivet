@@ -1,3 +1,4 @@
+import { replaceableSubscriptionInvoice, submittedPayment } from "../../../convex/subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines } from "../../../convex/subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "@/lib/exports/copy";
 import { describeStatementText, statementWarningMessages } from "../domain/statement-messages";
@@ -3559,6 +3560,7 @@ export class MockGymOSApi implements GymOSApi {
       // subscription starts a new server-derived paid term today, rolls the
       // unused paid days forward, and issues the term invoice below.
       const startsNewPaidTerm = materialMembershipChange && nextStatus === "active";
+      if (startsNewPaidTerm && this.platformInvoices.some(invoice => invoice.gymId === gym.id && replaceableSubscriptionInvoice(invoice) && submittedPayment(invoice))) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before replacing its subscription invoice.");
       const outgoingMonthlyPrice = gymMonthlyPriceMinor(currentPlan, this.platformPlans.find((item) => item.name === currentPlan)?.priceMinor ?? 0, organization.quotedPriceMinor) + addOnMonthlyPrice(previousAddOns);
       const incomingMonthlyPrice = gymMonthlyPriceMinor(nextPlan, this.platformPlans.find((item) => item.name === nextPlan)?.priceMinor ?? 0, nextQuote) + addOnMonthlyPrice(nextAddOns);
       const fundedTerm = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === storedCurrentPeriodEndsAt);
@@ -3928,6 +3930,7 @@ export class MockGymOSApi implements GymOSApi {
       if (!["open", "past_due", "failed"].includes(invoice.status)) throw ApiError.of(ERR.VALIDATION, "Only an outstanding invoice can be marked paid.");
       const gym = invoice.gymId ? this.platformGyms.find((item) => item.id === invoice.gymId) : undefined;
       if (gym && this.isProvisionedGym(gym) && this.db.organization.archivedAt) throw ApiError.of(ERR.CONFLICT, "Archived gyms cannot be reactivated by recording a subscription payment.");
+      if (invoice.planChange?.to && this.platformInvoices.some(other => other.id !== invoice.id && other.gymId === invoice.gymId && replaceableSubscriptionInvoice(other) && submittedPayment(other))) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before replacing its subscription invoice.");
       invoice.status = "paid";
       invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();
       invoice.paymentReference = input.reference.trim();
@@ -4002,6 +4005,7 @@ export class MockGymOSApi implements GymOSApi {
       const invoice = this.platformInvoices.find((item) => item.id === invoiceId);
       if (!invoice) throw ApiError.of(ERR.NOT_FOUND, "Invoice not found.");
       if (invoice.status === "paid" || invoice.status === "void") throw ApiError.of(ERR.VALIDATION, "Paid or void invoices cannot be voided.");
+      if (submittedPayment(invoice)) throw ApiError.of(ERR.CONFLICT, "Confirm or return the submitted payment before voiding its invoice.");
       invoice.status = "void";
       invoice.voidedAt = nowISO();
       return { ...invoice };

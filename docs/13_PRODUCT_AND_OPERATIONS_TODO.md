@@ -1,5 +1,21 @@
 # RIVET product, engineering, and operations backlog
 
+## 24 October audit correctness pass — source implementation, unreleased
+
+Six confirmed findings at `3ed7d3d2` are being corrected on
+`codex/audit-billing-export-corrections`. This entry records implementation,
+not production acceptance. Existing audit evidence remains historical.
+
+- Implemented and regression-tested: submitted payment claims block every
+  subscription invoice replacement and explicit void; unaffected edits remain
+  available. Upgrade-confirmation replacement is covered too.
+- In progress: delayed-upgrade credit/service dates, purchased-add-on MRR,
+  cancelled-owner export window, unlimited upgrade labels, submitted-payment
+  reconciliation review. Final verification belongs in CURRENT_STATE.md.
+- Deferred unchanged: production renewal activation, provider/inbox acceptance,
+  legal/commercial reconciliation, restore/incident ownership and new features.
+
+
 ## Current priorities — reconciled 17 October 2026
 
 This is the single canonical backlog. The list below supersedes older unchecked
