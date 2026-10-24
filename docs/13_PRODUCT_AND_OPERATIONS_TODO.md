@@ -255,8 +255,7 @@ rows) is partly done: the selected-member panel shows the brief headline.
 Exit: work survives navigation and worker restart; revocation stops pending writes;
 scheduled runs stay within grants; each job produces verified saved records or protected
 artifacts; uncertainty and partial results are truthful. **Status: in progress —
-local implementation and tests only (AI-3.1–AI-3.3, AI-3.5, AI-3.6); no staging or live
-evidence.**
+local implementation and tests only (AI-3.1–AI-3.6); no staging or live evidence.**
 
 - [x] **AI-3.1 Inspect and resume.** *(Leases with fencing, recovery cron, crash-after-commit test; run kept in the page URL.)* Run state, steps and receipts persist; navigating
   back shows the same run; leases with fencing; recovery cron resumes expired leases.
@@ -266,7 +265,7 @@ evidence.**
 - [x] **AI-3.3 Standing instructions.** *(Preview digest required, one run per slot, owner-loss revocation; UI in Settings → Assistance.)* Visible owner, scope, schedule, permitted
   actions, limits, pause/revoke/transfer; initial-effect preview before enabling;
   scheduled runs deduplicated per slot and stopped by lost authority.
-- [ ] **AI-3.4 Consequence review.** Grouped proposals bound to exact records, amounts,
+- [x] **AI-3.4 Consequence review.** *(Implemented locally for the first consequential capability, the cash-difference approval: changeset bound to record versions with 24-hour expiry; approval rechecks versions and re-derives the changeset from current records; delegated work refused; the existing variance review runs as the approver with its reason. Proposals are grouped per run; there is no "approve all" yet. Isolated staging pending.)* Grouped proposals bound to exact records, amounts,
   terms, source revisions and expiry; material change invalidates; the agent cannot
   approve its own proposal; existing approvals/reasons stay.
 - [x] **AI-3.5 Job: scoped management report/export.** *(Implemented locally with real Convex functions: money totals rechecked against the full payment ledger, coverage gaps named, financial-access recheck and 30-day expiry on every read, optional payments download through the existing export job; isolated staging pending.)* Report built from existing
@@ -285,7 +284,7 @@ Each slice needs its real tool path, existing-UI integration, approval behavior,
 fallback, evaluations, accessibility/localization and outcome measure. **Status: not
 started.**
 
-- [ ] **AI-4.1 Payment and cash-difference investigation** (cash shifts): candidate
+- [x] **AI-4.1 Payment and cash-difference investigation** (cash shifts): *(Implemented locally: exact-amount matches only, voided movements included, expected cash rechecked, "nothing matches" stated plainly; entry point on Shifts & cash; isolated staging pending.)* candidate
   transactions and unresolved difference; human supplies physical count; posting and
   approval unchanged.
 - [ ] **AI-4.2 Sales preparation** (leads): due-lead queue, approved-plan comparison,
@@ -361,6 +360,16 @@ Recorded as found during implementation; each entry names its subitem and eviden
   follow-up list count "renewed" differently (any later term versus a linked successor
   term). Not changed here; the assistant uses the list's definition and the report
   cites the forecast as it is.
+- **Fixed (AI-3.4):** an expired proposal was marked expired and then the mutation
+  threw, so the write was rolled back; the view already derives "expired" from the
+  expiry, so the handler now only refuses. Approval previously returned the raw
+  proposal record to the client instead of executing it.
+- **Fixed (UI):** report and checklist headers kept an empty actions wrapper while
+  assistance was off, shifting the 390px collections report past the Linux visual
+  threshold in CI (`433e7d75`); entry points now add no wrapper unless they show.
+- **Preview data note (AI-4.1):** seeded preview payments are not linked to closed
+  shifts, so the seeded drawers show "nothing recorded matches"; the approval path is
+  covered with synthetic drawers in Convex, preview-adapter and component tests.
 - **Constraint found (settings):** the desktop settings rail is full at 1280×900 and
   existing browser tests pin its height and keyboard order, so any new section row
   overflows it. Assistance lives under Roles & access with no row of its own
