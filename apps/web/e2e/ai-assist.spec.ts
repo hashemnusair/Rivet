@@ -96,6 +96,30 @@ test.describe("RIVET assistance", () => {
     await expect(dialog.getByTestId("contact-notes")).toHaveValue("No answer, try again tomorrow evening");
   });
 
+  test("prepares a report with checked totals and a shift handover in their own pages", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    await page.goto("/reports");
+    await page.getByTestId("prepare-report").click();
+    await page.getByTestId("prepare-report-start").click();
+    const report = page.getByTestId("ai-run-panel");
+    await expect(report).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
+    const artifact = report.getByTestId("ai-artifact");
+    await expect(artifact).toHaveAttribute("data-kind", "management_report");
+    await expect(artifact.getByTestId("ai-artifact-verification")).toHaveText("Totals checked against the payments list.");
+    await expect(artifact.getByTestId("ai-artifact-section-money")).toContainText("Collected:");
+
+    await page.goto("/checklists");
+    await page.getByTestId("prepare-handover").click();
+    await page.getByTestId("prepare-handover-start").click();
+    const handover = page.getByTestId("ai-run-panel");
+    await expect(handover).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
+    await expect(handover.getByTestId("ai-artifact")).toHaveAttribute("data-kind", "shift_handover");
+    await expect(handover.getByTestId("ai-artifact")).toContainText("Handover for");
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));

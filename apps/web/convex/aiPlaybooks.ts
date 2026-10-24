@@ -7,6 +7,7 @@ import { evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle } from 
 import { modelTaskBlocked, runFixtureTask, type DraftFollowUpTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import type { AiErrorCategory, AiExclusionReason, AiRunExclusion, AiRunResultRef, AiRunRevision, AiRunStatus } from "../src/lib/ai/contracts";
 import { addDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
+import { composeHandover, composeManagementReport, ledgerTotals } from "../src/lib/ai/jobs";
 import type { AdvanceResult } from "./aiRuns";
 
 /**
@@ -189,10 +190,187 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
   return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
 }
 
+
+// ---------------------------------------------------------------------------
+// Shared helpers for report-style jobs
+// ---------------------------------------------------------------------------
+
+/** Read one source; a missing permission or feature becomes a gap instead of failing the job. */
+async function optionalSource<T>(read: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> {
+  try {
+    return { ok: true, value: await read() };
+  } catch {
+    return { ok: false };
+  }
+}
+
+async function saveArtifact(ctx: MutationCtx, run: AiRunDoc, input: { kind: Doc<"aiArtifacts">["kind"]; title: string; branchPublicId?: string; content: unknown; requiredPermissions: string[]; createdByUserId: Doc<"aiArtifacts">["createdByUserId"]; sourceDigest: string }): Promise<string> {
+  const operation = `ai.artifact.${input.kind}`;
+  const key = `${run.publicId}`;
+  const prior = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", run.organizationId).eq("operation", operation).eq("key", key)).unique();
+  if (prior) return text(record(prior.result).artifactId);
+  const branch = input.branchPublicId ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", input.branchPublicId)).unique() : null;
+  const now = Date.now();
+  const artifactId = `artifact-${crypto.randomUUID()}`;
+  await ctx.db.insert("aiArtifacts", { organizationId: run.organizationId, publicId: artifactId, kind: input.kind, runPublicId: run.publicId, ...(branch ? { branchId: branch._id } : {}), title: input.title, content: input.content, requiredPermissions: input.requiredPermissions, createdByUserId: input.createdByUserId, sourceDigest: input.sourceDigest, createdAt: now, expiresAt: now + 30 * 86_400_000 });
+  // Read back before reporting success.
+  const saved = await ctx.db.query("aiArtifacts").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", artifactId)).unique();
+  if (!saved || saved.runPublicId !== run.publicId) throw new Error("Saved artifact did not match what was requested.");
+  await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation, key, requestHash: run.publicId, result: { artifactId }, createdAt: now, expiresAt: now + 31 * 86_400_000 });
+  return artifactId;
+}
+
+// ---------------------------------------------------------------------------
+// Management report (AI-3.5)
+// ---------------------------------------------------------------------------
+
+async function managementReportStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
+  const { run, actor } = env;
+  const params = run.params as { from: string; to: string; includeExport?: boolean };
+  const currency = actor.organization.currency;
+  const now = Date.now();
+  if (run.stage === "aiWork.stage.starting" || run.stage === "aiWork.stage.queued") {
+    const blocked = (await env.toolBlocked("report.figures")) ?? (await env.toolBlocked("artifact.save_report"));
+    if (blocked) {
+      await env.finish("failed", blocked);
+      return { done: true };
+    }
+    const request = env.toolRequest("report.figures", 0);
+    const range = { from: params.from, to: params.to, ...(run.branchPublicId ? { branchId: run.branchPublicId } : {}) };
+    const collections = await optionalSource(async () => record(await env.executeQuery("analytics.collections", range, request)));
+    const renewals = await optionalSource(async () => record(await env.executeQuery("analytics.renewal_forecast", run.branchPublicId ? { branchId: run.branchPublicId } : {}, request)));
+    const crm = await optionalSource(async () => record(await env.executeQuery("analytics.crm_funnel", range, request)));
+    // Read the payment ledger in full (bounded) so the totals can be cross-checked.
+    let ledger: Data[] | undefined = [];
+    for (let page = 1; page <= 10 && ledger; page += 1) {
+      const result = await optionalSource(async () => record(await env.executeQuery("transactions.list", { ...range, page, pageSize: 100 }, request)));
+      if (!result.ok) { ledger = undefined; break; }
+      ledger.push(...(Array.isArray(result.value.items) ? result.value.items : []).map(record));
+      if (page >= Number(result.value.totalPages ?? 1)) break;
+      if (page === 10) ledger = undefined;
+    }
+    const composed = composeManagementReport({ ...(collections.ok ? { collections: collections.value } : {}), ...(renewals.ok ? { renewals: renewals.value } : {}), ...(crm.ok ? { crm: crm.value } : {}), ...(ledger ? { ledger } : {}) }, params, currency);
+    const verified = composed.verification.verified;
+    const totals = ledger ? ledgerTotals(ledger) : { collectedMinor: -1, refundedMinor: -1 };
+    const artifactId = await saveArtifact(ctx, run, {
+      kind: "management_report",
+      title: "aiWork.report.title",
+      branchPublicId: run.branchPublicId,
+      content: composed,
+      requiredPermissions: ["reports.financial.read"],
+      createdByUserId: run.ownerUserId,
+      sourceDigest: `${params.from}:${params.to}:${totals.collectedMinor}:${totals.refundedMinor}`,
+    });
+    const ref = resultRef("artifact", artifactId, "aiWork.report.title", { href: `/reports?run=${run.publicId}` });
+    await recordStep(ctx, run, { seq: 1, tool: "artifact.save_report", status: "verified", resultRef: ref });
+    await ctx.db.patch(run._id, { stage: params.includeExport ? "aiWork.stage.savingReport" : "aiWork.stage.done", artifactPublicId: artifactId, resultRefs: [...run.resultRefs, ref], budget: { ...run.budget, writes: run.budget.writes + 1 }, updatedAt: now });
+    if (!params.includeExport) {
+      await env.finish(verified ? "completed" : "partially_completed", verified ? undefined : "source_changed");
+      return { done: true };
+    }
+    return { done: false };
+  }
+  // Optional protected download through the existing export job and its expiry.
+  const blocked = await env.toolBlocked("export.request");
+  if (blocked) {
+    await env.finish("partially_completed", blocked);
+    return { done: true };
+  }
+  const exported = record(await env.executeMutation("exports.request", { kind: "payments", filters: { from: params.from, to: params.to, ...(run.branchPublicId ? { branchId: run.branchPublicId } : {}) }, idempotencyKey: `ai-export-${run.publicId}`, locale: "en" }, env.toolRequest("export.request", 2)));
+  const exportId = text(exported.id);
+  const ref = resultRef("export", exportId, "aiWork.report.export", { href: "/exports" });
+  await recordStep(ctx, run, { seq: 2, tool: "export.request", status: exportId ? "verified" : "failed", ...(exportId ? { resultRef: ref } : { reason: "internal" }) });
+  await ctx.db.patch(run._id, { resultRefs: exportId ? [...run.resultRefs, ref] : run.resultRefs, budget: { ...run.budget, writes: run.budget.writes + 1 }, updatedAt: now });
+  const artifact = run.artifactPublicId ? await ctx.db.query("aiArtifacts").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", run.artifactPublicId!)).unique() : null;
+  const verified = Boolean(record(record(artifact?.content).verification).verified);
+  await env.finish(exportId && verified ? "completed" : "partially_completed", exportId ? (verified ? undefined : "source_changed") : "internal");
+  return { done: true };
+}
+
+// ---------------------------------------------------------------------------
+// Shift handover (AI-3.6)
+// ---------------------------------------------------------------------------
+
+async function shiftHandoverStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
+  const { run, actor } = env;
+  const params = run.params as { date?: string; assigneeId?: string };
+  const timezone = actor.organization.timezone || "Asia/Amman";
+  const date = params.date ?? todayISODate(timezone);
+  const branchId = run.branchPublicId;
+  const now = Date.now();
+  if (!branchId) {
+    await env.finish("failed", "validation");
+    return { done: true };
+  }
+  if (run.stage === "aiWork.stage.starting" || run.stage === "aiWork.stage.queued") {
+    const blocked = (await env.toolBlocked("handover.gather")) ?? (await env.toolBlocked("artifact.save_handover"));
+    if (blocked) {
+      await env.finish("failed", blocked);
+      return { done: true };
+    }
+    const request = env.toolRequest("handover.gather", 0);
+    const checklist = await optionalSource(async () => record(await env.executeQuery("checklists.day", { branchId, date }, request)));
+    const facility = await optionalSource(async () => ((await env.executeQuery("operations.facility_tasks.list", { branchId }, request)) as unknown[]).map(record));
+    const issues = await optionalSource(async () => ((await env.executeQuery("operations.equipment_issues.list", { branchId }, request)) as unknown[]).map(record));
+    const followUps = await optionalSource(async () => {
+      const page = record(await env.executeQuery("tasks.list", { status: "open", dueBefore: new Date(now + 86_400_000).toISOString(), pageSize: 100 }, request));
+      return (Array.isArray(page.items) ? page.items : []).map(record);
+    });
+    const shift = await optionalSource(async () => (await env.executeQuery("shifts.current", { branchId }, request)) as Data | null);
+    const composed = composeHandover({ ...(checklist.ok ? { checklist: checklist.value } : {}), ...(facility.ok ? { facilityTasks: facility.value } : {}), ...(issues.ok ? { equipmentIssues: issues.value } : {}), ...(followUps.ok ? { followUps: followUps.value } : {}), ...(shift.ok ? { shift: shift.value } : {}) }, { date, branchId });
+    const artifactId = await saveArtifact(ctx, run, {
+      kind: "shift_handover",
+      title: "aiWork.handover.title",
+      branchPublicId: branchId,
+      content: composed,
+      requiredPermissions: ["members.read"],
+      createdByUserId: run.ownerUserId,
+      sourceDigest: `${branchId}:${date}`,
+    });
+    const ref = resultRef("artifact", artifactId, "aiWork.handover.title", { href: `/checklists?run=${run.publicId}` });
+    await recordStep(ctx, run, { seq: 1, tool: "artifact.save_handover", status: "verified", resultRef: ref });
+    await ctx.db.patch(run._id, { stage: params.assigneeId ? "aiWork.stage.assigning" : "aiWork.stage.done", artifactPublicId: artifactId, resultRefs: [...run.resultRefs, ref], budget: { ...run.budget, writes: run.budget.writes + 1 }, updatedAt: now });
+    if (!params.assigneeId) {
+      await env.finish("completed");
+      return { done: true };
+    }
+    return { done: false };
+  }
+  // Assign the handover to the next person as a real task, once per branch, date and person.
+  const blocked = await env.toolBlocked("task.assign_handover");
+  if (blocked) {
+    await env.finish("partially_completed", blocked);
+    return { done: true };
+  }
+  const operationKey = `handover:${branchId}:${date}:${params.assigneeId}`;
+  const prior = await priorTaskState(ctx, run, "ai.task.assign_handover", operationKey);
+  let ref: AiRunResultRef;
+  if (prior) {
+    ref = resultRef("task", prior.taskId, prior.title, { href: "/crm/queues" });
+    await recordStep(ctx, run, { seq: 2, tool: "task.assign_handover", operationKey, status: "verified", reason: "has_open_followup", resultRef: ref });
+  } else {
+    const title = `Read the handover for ${date}`;
+    const created = record(await env.executeMutation("tasks.create", { type: "general", title, ownerId: params.assigneeId, dueAt: new Date(now + 2 * 3_600_000).toISOString(), priority: "normal", aiContext: { purpose: "handover" } }, env.toolRequest("task.assign_handover", 2)));
+    const taskId = text(created.id);
+    const persisted = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", run.organizationId).eq("entityType", "task").eq("publicId", taskId)).unique();
+    if (!persisted || record(persisted.data).ownerId !== params.assigneeId || record(record(persisted.data).origin).runId !== run.publicId) throw new Error("Saved handover task did not match what was requested.");
+    await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.task.assign_handover", key: operationKey, requestHash: run.publicId, result: { taskId }, createdAt: now, expiresAt: now + 30 * 86_400_000 });
+    ref = resultRef("task", taskId, title, { href: "/crm/queues" });
+    await recordStep(ctx, run, { seq: 2, tool: "task.assign_handover", operationKey, status: "verified", resultRef: ref });
+  }
+  await ctx.db.patch(run._id, { resultRefs: [...run.resultRefs, ref], counts: { ...run.counts, created: run.counts.created + (prior ? 0 : 1), linked: run.counts.linked + (prior ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + (prior ? 0 : 1) }, updatedAt: now });
+  await env.finish("completed");
+  return { done: true };
+}
+
 export async function runPlaybookStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
   switch (env.run.playbook) {
     case "renewal_followups":
       return await renewalFollowupsStep(ctx, env);
+    case "management_report":
+      return await managementReportStep(ctx, env);
+    case "shift_handover":
+      return await shiftHandoverStep(ctx, env);
     default:
       await env.finish("failed", "validation");
       return { done: true };

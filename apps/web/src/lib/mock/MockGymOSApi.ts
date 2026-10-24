@@ -913,6 +913,37 @@ export class MockGymOSApi implements GymOSApi {
       },
       audit: (input) => { this.audit({ category: "ai", action: input.action, entityType: "ai", entityId: input.entityId, entityLabel: input.entityLabel, summary: input.summary }); },
       stepDelayMs: () => (this.behavior.latencyMs === 0 ? 0 : 220),
+      reportInputs: async (range) => {
+        const attempt = async <R,>(read: () => Promise<R>): Promise<R | undefined> => { try { return await read(); } catch { return undefined; } };
+        const collections = await attempt(() => this.getCollectionsReport(range));
+        const renewals = await attempt(() => this.getRenewalForecastReport(range.branchId ? { branchId: range.branchId } : {}));
+        const crm = await attempt(() => this.getCrmFunnelReport(range));
+        let ledger: Array<Record<string, unknown>> | undefined = [];
+        for (let page = 1; page <= 10 && ledger; page += 1) {
+          const result = await attempt(() => this.listTransactions({ from: range.from, to: range.to, ...(range.branchId ? { branchId: range.branchId } : {}), page, pageSize: 100 }));
+          if (!result) { ledger = undefined; break; }
+          ledger.push(...(result.items as unknown as Array<Record<string, unknown>>));
+          if (page >= result.totalPages) break;
+          if (page === 10) ledger = undefined;
+        }
+        return { ...(collections ? { collections: collections as unknown as Record<string, unknown> } : {}), ...(renewals ? { renewals: renewals as unknown as Record<string, unknown> } : {}), ...(crm ? { crm: crm as unknown as Record<string, unknown> } : {}), ...(ledger ? { ledger } : {}) };
+      },
+      handoverInputs: async (branchId, date) => {
+        const attempt = async <R,>(read: () => Promise<R>): Promise<R | undefined> => { try { return await read(); } catch { return undefined; } };
+        const checklist = await attempt(() => this.getChecklistDay({ branchId, date }));
+        const facility = await attempt(() => this.listFacilityTasks({ branchId }));
+        const issues = await attempt(() => this.listEquipmentIssues({ branchId }));
+        const followUps = await attempt(() => this.listTasks({ status: "open", dueBefore: new Date(Date.now() + 86_400_000).toISOString(), pageSize: 100 }));
+        const shift = await attempt(() => this.getCurrentShiftTotals(branchId));
+        return {
+          ...(checklist ? { checklist: checklist as unknown as Record<string, unknown> } : {}),
+          ...(facility ? { facilityTasks: facility as unknown as Array<Record<string, unknown>> } : {}),
+          ...(issues ? { equipmentIssues: issues as unknown as Array<Record<string, unknown>> } : {}),
+          ...(followUps ? { followUps: followUps.items as unknown as Array<Record<string, unknown>> } : {}),
+          ...(shift !== undefined ? { shift: shift as unknown as Record<string, unknown> | null } : {}),
+        };
+      },
+      requestExport: async (input) => await this.requestExport({ kind: input.kind, filters: input.filters, idempotencyKey: input.idempotencyKey, locale: "en" }),
     });
   }
 
@@ -4315,7 +4346,7 @@ export class MockGymOSApi implements GymOSApi {
   updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.updateStanding(input)); }
   listAiProposals(_query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => []); }
   decideAiProposal(_input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => { throw ApiError.of(ERR.NOT_FOUND, "Record not found."); }); }
-  getAiArtifact(_artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => { throw ApiError.of(ERR.NOT_FOUND, "Record not found."); }); }
+  getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => this.ai.getArtifact(artifactId)); }
   listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.respond(() => this.ai.listMemories(memberId)); }
   recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }
   revokeMemberMemory(memoryId: string): Promise<void> { return this.respond(() => this.ai.revokeMemory(memoryId)); }

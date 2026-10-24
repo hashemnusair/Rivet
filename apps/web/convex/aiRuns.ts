@@ -190,7 +190,7 @@ async function resolveAuthority(ctx: MutationCtx, run: AiRunDoc, grant: AiGrantD
   if (grant.expiresAt && grant.expiresAt < Date.now() && grant.kind === "one_off") return { blocked: "grant_expired" };
   const organization = await ctx.db.get(run.organizationId);
   if (!organization) return { blocked: "authority_revoked" };
-  const allowedPermissions = [...new Set(grant.tools.flatMap((key) => TOOLS[key]?.permissions ?? []))];
+  const allowedPermissions = [...new Set(grant.tools.flatMap((key) => [...(TOOLS[key]?.permissions ?? []), ...(TOOLS[key]?.optionalPermissions ?? [])]))];
   const principal: DelegationPrincipal = { userId: grant.ownerUserId, organizationId: run.organizationId, allowedPermissions, runPublicId: run.publicId, grantPublicId: grant.publicId, tool: "playbook" };
   const request = delegatedRequest({ organizationId: publicOrganizationId(organization), ...(run.branchPublicId ? { activeBranchId: run.branchPublicId } : {}), correlationId: `ai-${run.publicId}` }, principal);
   let actor: ActorContext;
@@ -241,7 +241,7 @@ export const advance = internalMutation({
       toolRequest: (toolKey: string, seq: number) => {
         const tool = TOOLS[toolKey];
         // Each tool acts with only its own declared permissions on top of the owner's current role.
-        return delegatedRequest({ organizationId: publicOrganizationId(authority.actor.organization), ...(run.branchPublicId ? { activeBranchId: run.branchPublicId } : {}), correlationId: `ai-${run.publicId}-${seq}` }, { ...authority.principal, allowedPermissions: tool ? [...tool.permissions] : [], tool: toolKey });
+        return delegatedRequest({ organizationId: publicOrganizationId(authority.actor.organization), ...(run.branchPublicId ? { activeBranchId: run.branchPublicId } : {}), correlationId: `ai-${run.publicId}-${seq}` }, { ...authority.principal, allowedPermissions: tool ? [...tool.permissions, ...(tool.optionalPermissions ?? [])] : [], tool: toolKey });
       },
       toolBlocked: async (toolKey: string) => {
         const tool = TOOLS[toolKey];
@@ -307,7 +307,7 @@ export const dispatchStanding = internalMutation({
       const slot = grant.nextRunAt;
       const next = organization ? nextStandingSlot(grant.schedule, organization.timezone, now) : undefined;
       if (!organization) continue;
-      const allowedPermissions = [...new Set(grant.tools.flatMap((key) => TOOLS[key]?.permissions ?? []))];
+      const allowedPermissions = [...new Set(grant.tools.flatMap((key) => [...(TOOLS[key]?.permissions ?? []), ...(TOOLS[key]?.optionalPermissions ?? [])]))];
       const request = delegatedRequest({ organizationId: publicOrganizationId(organization), ...(grant.branchPublicId ? { activeBranchId: grant.branchPublicId } : {}), correlationId: `ai-standing-${grant.publicId}` }, { userId: grant.ownerUserId, organizationId: grant.organizationId, allowedPermissions, runPublicId: `slot-${slot}`, grantPublicId: grant.publicId, tool: "standing" });
       let actor: ActorContext;
       try {

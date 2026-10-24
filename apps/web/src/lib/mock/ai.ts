@@ -31,6 +31,7 @@ import {
   type AiRunStatus,
   type AiRunStepView,
   type AiRunView,
+  type AiArtifactView,
   type AiSettingsView,
   type AiStandingInstructionView,
   type AiStandingPreview,
@@ -43,6 +44,7 @@ import { buildMemberBrief, type MemberAttendance } from "@/lib/ai/member-brief";
 import { runFixtureTask } from "@/lib/ai/model";
 import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
+import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
 import type * as T from "@/lib/domain/types";
 import type { MockDb } from "./store";
@@ -75,6 +77,10 @@ export interface MockAiHost {
   audit(input: { action: string; entityId: string; entityLabel: string; summary: string }): void;
   /** Simulated time between steps; zero in tests that remove preview latency. */
   stepDelayMs?(): number;
+  /** Existing preview reads for reports; a missing piece means the actor cannot read it. */
+  reportInputs(range: { from: string; to: string; branchId?: string }): Promise<ReportInputs>;
+  handoverInputs(branchId: string, date: string): Promise<HandoverInputs>;
+  requestExport(input: { kind: "payments"; filters: Record<string, string>; idempotencyKey: string }): Promise<{ id: string }>;
 }
 
 interface MockGrant {
@@ -145,6 +151,7 @@ export class MockAiEngine {
   private readonly runs = new Map<string, MockRun>();
   private readonly runSubscribers = new Map<string, Set<{ onValue: (run: AiRunView) => void; onError?: (error: unknown) => void }>>();
   private readonly memories: Array<AiMemoryView & { createdAt: number }> = [];
+  private readonly artifacts = new Map<string, AiArtifactView & { requiredPermissions: string[] }>();
   private readonly operationKeys = new Map<string, string>();
   private readonly feedback: AiFeedbackInput[] = [];
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -419,8 +426,17 @@ export class MockAiEngine {
     }
     this.timers.set(run.id, setTimeout(() => {
       this.timers.delete(run.id);
+      void this.step(run).finally(() => {
+        this.notify(run);
+        if (!isTerminalRunStatus(run.status)) this.schedule(run);
+      });
+    }, this.stepDelayMs));
+  }
+
+  private async step(run: MockRun): Promise<void> {
       try {
-        this.advance(run);
+        if (run.playbook === "management_report" || run.playbook === "shift_handover") await this.advanceJob(run);
+        else this.advance(run);
       } catch (error) {
         // As on the server: the step's write did not happen; record it as failed and move on.
         const subject = run.planned[run.cursor];
@@ -429,12 +445,91 @@ export class MockAiEngine {
         run.counts.failed += 1;
         run.cursor += 1;
         run.updatedAt = Date.now();
-        if (!subject) this.finish(run, run.counts.created > 0 ? "partially_completed" : "failed", "internal");
+        if (!subject) this.finish(run, run.counts.created > 0 || run.results.length > 0 ? "partially_completed" : "failed", "internal");
         this.lastStepError = error;
       }
-      this.notify(run);
-      if (!isTerminalRunStatus(run.status)) this.schedule(run);
-    }, this.stepDelayMs));
+  }
+
+  /** Report and handover jobs: the same composition as the server, over preview reads. */
+  private async advanceJob(run: MockRun): Promise<void> {
+    if (isTerminalRunStatus(run.status)) return;
+    run.status = "running";
+    if (run.cancelRequested) return this.finish(run, "cancelled");
+    const grant = this.grants.get(run.grantId);
+    const definition = PLAYBOOKS[run.playbook];
+    if (!grant || grant.status !== "active") return this.finish(run, run.results.length ? "partially_completed" : "failed", "authority_revoked");
+    const blocked = playbookBlocked(definition, this.authority(definition.capability));
+    if (blocked) return this.finish(run, run.results.length ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
+    const stamp = () => new Date().toISOString();
+    if (run.playbook === "management_report") {
+      const params = run.params as { from: string; to: string; includeExport?: boolean };
+      if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {
+        const composed = composeManagementReport(await this.host.reportInputs({ from: params.from, to: params.to, ...(run.branchId ? { branchId: run.branchId } : {}) }), params, this.host.db.organization.currency);
+        const artifact = this.saveArtifact(run, "management_report", "aiWork.report.title", composed, ["reports.financial.read"]);
+        const ref: AiRunResultRef = { kind: "artifact", id: artifact.id, label: artifact.title, href: `/reports?run=${run.id}` };
+        run.steps.push({ id: mockUuid(), seq: 1, capability: "artifact.save_report", status: "verified", resultRef: ref, updatedAt: stamp() });
+        run.results.push(ref);
+        run.writes += 1;
+        run.stage = params.includeExport ? "aiWork.stage.savingReport" : "aiWork.stage.done";
+        if (!params.includeExport) this.finish(run, composed.verification.verified ? "completed" : "partially_completed", composed.verification.verified ? undefined : "source_changed");
+        return;
+      }
+      const job = await this.host.requestExport({ kind: "payments", filters: { from: params.from, to: params.to, ...(run.branchId ? { branchId: run.branchId } : {}) }, idempotencyKey: `ai-export-${run.id}` });
+      const ref: AiRunResultRef = { kind: "export", id: job.id, label: "aiWork.report.export", href: "/exports" };
+      run.steps.push({ id: mockUuid(), seq: 2, capability: "export.request", status: "verified", resultRef: ref, updatedAt: stamp() });
+      run.results.push(ref);
+      run.writes += 1;
+      const verified = [...this.artifacts.values()].find((item) => item.runId === run.id)?.verification.verified ?? false;
+      return this.finish(run, verified ? "completed" : "partially_completed", verified ? undefined : "source_changed");
+    }
+    const params = run.params as { date?: string; assigneeId?: string };
+    const branchId = run.branchId;
+    if (!branchId) return this.finish(run, "failed", "validation");
+    const date = params.date ?? this.host.today();
+    if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {
+      const composed = composeHandover(await this.host.handoverInputs(branchId, date), { date, branchId });
+      const artifact = this.saveArtifact(run, "shift_handover", "aiWork.handover.title", composed, ["members.read"]);
+      const ref: AiRunResultRef = { kind: "artifact", id: artifact.id, label: artifact.title, href: `/checklists?run=${run.id}` };
+      run.steps.push({ id: mockUuid(), seq: 1, capability: "artifact.save_handover", status: "verified", resultRef: ref, updatedAt: stamp() });
+      run.results.push(ref);
+      run.writes += 1;
+      run.stage = params.assigneeId ? "aiWork.stage.assigning" : "aiWork.stage.done";
+      if (!params.assigneeId) this.finish(run, "completed");
+      return;
+    }
+    const key = `handover:${branchId}:${date}:${params.assigneeId}`;
+    const priorId = this.operationKeys.get(key);
+    const prior = priorId ? this.host.db.tasks.find((task) => task.id === priorId && task.status === "open") : undefined;
+    if (prior) {
+      run.results.push({ kind: "task", id: prior.id, label: prior.title, href: "/crm/queues" });
+      run.counts.linked += 1;
+    } else {
+      const task = this.host.createTask({ type: "general", title: `Read the handover for ${date}`, ownerId: params.assigneeId!, dueAt: new Date(Date.now() + 2 * 3_600_000).toISOString(), priority: "normal", origin: { kind: "ai_run", runId: run.id, grantId: run.grantId }, aiContext: { purpose: "handover" } });
+      this.operationKeys.set(key, task.id);
+      run.results.push({ kind: "task", id: task.id, label: task.title, href: "/crm/queues" });
+      run.counts.created += 1;
+      run.writes += 1;
+    }
+    this.finish(run, "completed");
+  }
+
+  private saveArtifact(run: MockRun, kind: AiArtifactView["kind"], title: string, composed: ReturnType<typeof composeManagementReport>, requiredPermissions: string[]): AiArtifactView {
+    const existing = [...this.artifacts.values()].find((item) => item.runId === run.id && item.kind === kind);
+    if (existing) return existing;
+    const branch = run.branchId ? this.host.db.branches.find((item) => item.id === run.branchId) : undefined;
+    const now = Date.now();
+    const artifact = { id: `artifact-${mockUuid()}`, kind, title, titleParams: composed.titleParams, ...(branch ? { branchId: branch.id, branchName: branch.name } : {}), createdAt: new Date(now).toISOString(), expiresAt: new Date(now + 30 * 86_400_000).toISOString(), runId: run.id, sections: composed.sections, verification: composed.verification, coverage: composed.coverage, requiredPermissions };
+    this.artifacts.set(artifact.id, artifact);
+    return artifact;
+  }
+
+  getArtifact(artifactId: string): AiArtifactView {
+    const artifact = this.artifacts.get(artifactId);
+    if (!artifact || Date.parse(artifact.expiresAt) <= Date.now()) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    if (artifact.requiredPermissions.some((permission) => !this.host.permissions().includes(permission))) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this action. Ask your gym owner.");
+    if (artifact.branchId && !this.host.branchVisible(artifact.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
+    const { requiredPermissions: _required, ...view } = artifact;
+    return view;
   }
 
   private finish(run: MockRun, status: AiRunStatus, category?: AiErrorCategory): void {
@@ -478,7 +573,7 @@ export class MockAiEngine {
     if (!grant || grant.status !== "active") return this.finish(run, partial ? "partially_completed" : "failed", "authority_revoked");
     const blocked = playbookBlocked(PLAYBOOKS[run.playbook], this.authority(PLAYBOOKS[run.playbook].capability));
     if (blocked) return this.finish(run, partial ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
-    if (run.playbook !== "renewal_followups") return this.finish(run, "failed", "validation");
+    if (run.playbook !== "renewal_followups") return this.finish(run, "failed", "validation"); // other playbooks run in advanceJob or are not offered in the preview
     const params = run.params as { bucket?: "expiring" | "expired"; days?: number; owner?: "me" | "assigned" };
     const today = this.host.today();
     if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {

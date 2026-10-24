@@ -15,7 +15,9 @@ import type { TKey } from "@/lib/i18n/core";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import { useAiErrorText, useAiMessage } from "./ai-message";
+import { PLAYBOOKS } from "@/lib/ai/capabilities";
 import { isRunWorking, useAiRun } from "./use-assist";
+import { AiArtifactPanel } from "./artifact-panel";
 
 function statusVariant(status: AiRunView["status"]): "neutral" | "success" | "warning" | "danger" | "outline" {
   if (status === "completed") return "success";
@@ -95,24 +97,25 @@ export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () =>
         </div>
       </header>
       <div className="space-y-3 px-4 py-3">
-        <p className="text-[12.5px] text-ink-2" role="status" aria-live="polite" data-testid="ai-run-counts">{t("aiWork.run.counts", { created: run.counts.created, linked: run.counts.linked, skipped: run.counts.skipped })}{run.counts.failed ? <> · <span className="text-danger">{t("aiWork.run.failedCount", { count: run.counts.failed })}</span></> : null}</p>
+        {PLAYBOOKS[run.playbook]?.batch ? <p className="text-[12.5px] text-ink-2" role="status" aria-live="polite" data-testid="ai-run-counts">{t("aiWork.run.counts", { created: run.counts.created, linked: run.counts.linked, skipped: run.counts.skipped })}{run.counts.failed ? <> · <span className="text-danger">{t("aiWork.run.failedCount", { count: run.counts.failed })}</span></> : null}</p> : <p className="sr-only" role="status" aria-live="polite">{t(run.stageKey as TKey)}</p>}
         {run.cancelRequested && working ? <p className="text-[12.5px] text-ink-3">{t("aiWork.run.cancelling")}</p> : null}
         {run.errorCategory ? <p className="text-[12.5px] text-danger" data-testid="ai-run-error">{errorText(run.errorCategory)}</p> : null}
         {(run.status === "cancelled" || run.status === "partially_completed" || run.status === "failed") && run.committedEffects > 0 ? <p className="text-[12.5px] text-ink-2" data-testid="ai-run-saved-before-stop">{t("aiWork.run.savedBeforeStop", { count: run.committedEffects })}</p> : null}
         {run.takenOverByName ? <p className="text-[12.5px] text-ink-2">{t("aiWork.run.takenOverBy", { name: run.takenOverByName })}</p> : null}
-        {run.source === "fixture" ? <p className="text-[12px] text-ink-3">{t("aiWork.run.testMode")}</p> : null}
+        {run.source === "fixture" && PLAYBOOKS[run.playbook]?.usesModel ? <p className="text-[12px] text-ink-3">{t("aiWork.run.testMode")}</p> : null}
 
-        {run.results.length ? (
+        {run.results.filter((result) => result.kind === "artifact").map((result) => <AiArtifactPanel key={result.id} artifactId={result.id} />)}
+        {run.results.some((result) => result.kind !== "artifact") ? (
           <div data-testid="ai-run-results">
             <p className="context-label">{t("aiWork.run.results")}</p>
             <ul className="mt-1 space-y-1.5">
-              {run.results.map((result) => {
+              {run.results.filter((result) => result.kind !== "artifact").map((result) => {
                 const draft = drafts.find((step) => step.resultRef?.id === result.id)?.draft;
                 return (
                   <li key={`${result.kind}-${result.id}`} className="text-[12.5px]">
                     <div className="flex flex-wrap items-baseline gap-x-2">
-                      <span className="font-medium text-ink" dir="auto">{result.subjectName ?? result.label}</span>
-                      <span className="text-ink-3" dir="auto">{result.label}</span>
+                      <span className="font-medium text-ink" dir="auto">{result.kind === "export" ? t("aiWork.report.export") : result.subjectName ?? result.label}</span>
+                      {result.kind !== "export" ? <span className="text-ink-3" dir="auto">{result.label}</span> : null}
                       {result.href ? <Link href={result.href} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{t("aiWork.run.open")}</Link> : null}
                     </div>
                     {draft ? (

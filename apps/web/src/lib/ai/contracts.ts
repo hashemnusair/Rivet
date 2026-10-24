@@ -389,7 +389,9 @@ export interface AiProposalView {
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
+  /** A message key; `titleParams` fills it. */
   title: string;
+  titleParams?: Record<string, AiMessageParam>;
   branchId?: string;
   branchName?: string;
   createdAt: string;

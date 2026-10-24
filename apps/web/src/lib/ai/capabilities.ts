@@ -24,6 +24,8 @@ export interface ToolDefinition {
   sideEffect: SideEffectClass;
   /** All are required. The wrapped domain operation checks again at commit. */
   permissions: readonly string[];
+  /** Read only when the person also has them; otherwise that source becomes a visible gap. */
+  optionalPermissions?: readonly string[];
   module?: WorkspaceModule;
   domainOperation?: string;
   approval: ApprovalRule;
@@ -43,10 +45,10 @@ export const TOOLS: Record<string, ToolDefinition> = {
   "renewal.candidates": { key: "renewal.candidates", version: "1", capability: "followup_batch", sideEffect: "read", permissions: ["crm.read"], module: "revenue", domainOperation: "renewal.queue", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "task.create_followup": { key: "task.create_followup", version: "1", capability: "followup_batch", sideEffect: "internal_write", permissions: ["crm.write"], domainOperation: "tasks.create", approval: "none", idempotent: true, verification: "reread_record", compensation: "complete_task", preconditions: ["member_active", "not_renewed", "no_recent_contact", "no_open_followup", "not_frozen", "contact_allowed"] },
   "memory.record_statement": { key: "memory.record_statement", version: "1", capability: "note_extraction", sideEffect: "internal_write", permissions: ["members.write"], approval: "none", idempotent: true, verification: "reread_record", compensation: "revoke_memory", preconditions: ["subject_in_scope"] },
-  "report.figures": { key: "report.figures", version: "1", capability: "report_job", sideEffect: "read", permissions: ["reports.financial.read"], domainOperation: "analytics.*", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
+  "report.figures": { key: "report.figures", version: "1", capability: "report_job", sideEffect: "read", permissions: ["reports.financial.read"], optionalPermissions: ["crm.read"], domainOperation: "analytics.*", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "artifact.save_report": { key: "artifact.save_report", version: "1", capability: "report_job", sideEffect: "internal_write", permissions: ["reports.financial.read"], approval: "none", idempotent: true, verification: "reread_record", compensation: "expire_artifact", preconditions: ["totals_verified"] },
-  "export.request": { key: "export.request", version: "1", capability: "report_job", sideEffect: "internal_write", permissions: [], domainOperation: "exports.request", approval: "none", idempotent: true, verification: "reread_record", compensation: "none", preconditions: ["export_permission"] },
-  "handover.gather": { key: "handover.gather", version: "1", capability: "handover_job", sideEffect: "read", permissions: ["members.read"], domainOperation: "checklists.day", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
+  "export.request": { key: "export.request", version: "1", capability: "report_job", sideEffect: "internal_write", permissions: ["reports.financial.read"], domainOperation: "exports.request", approval: "none", idempotent: true, verification: "reread_record", compensation: "none", preconditions: ["export_permission"] },
+  "handover.gather": { key: "handover.gather", version: "1", capability: "handover_job", sideEffect: "read", permissions: ["members.read"], optionalPermissions: ["crm.read", "reconciliation.open_shift", "operations.manage"], domainOperation: "checklists.day", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "artifact.save_handover": { key: "artifact.save_handover", version: "1", capability: "handover_job", sideEffect: "internal_write", permissions: ["members.read"], approval: "none", idempotent: true, verification: "reread_record", compensation: "expire_artifact", preconditions: ["branch_in_scope"] },
   "task.assign_handover": { key: "task.assign_handover", version: "1", capability: "handover_job", sideEffect: "internal_write", permissions: ["crm.write"], domainOperation: "tasks.create", approval: "none", idempotent: true, verification: "reread_record", compensation: "complete_task", preconditions: ["assignee_active"] },
   "shift.investigate": { key: "shift.investigate", version: "1", capability: "cash_difference", sideEffect: "read", permissions: ["reconciliation.read"], domainOperation: "shifts.list", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
@@ -68,19 +70,23 @@ export interface PlaybookDefinition {
   startPermissions: readonly string[];
   module?: WorkspaceModule;
   writes: boolean;
+  /** Works through a list of people and reports created/linked/skipped counts. */
+  batch: boolean;
+  /** Uses model output (drafts, interpretation); otherwise everything comes from records. */
+  usesModel: boolean;
   standingAllowed: boolean;
   goalKey: string;
   limits: AiRunLimits;
 }
 
 export const PLAYBOOKS: Record<AiPlaybookKey, PlaybookDefinition> = {
-  renewal_followups: { key: "renewal_followups", version: "renewal-followups.v1", capability: "followup_batch", tools: ["renewal.candidates", "member.context", "task.create_followup"], startPermissions: ["crm.read", "crm.write"], module: "revenue", writes: true, standingAllowed: true, goalKey: "aiWork.goal.renewalFollowups", limits: DEFAULT_RUN_LIMITS },
-  management_report: { key: "management_report", version: "management-report.v1", capability: "report_job", tools: ["report.figures", "artifact.save_report"], startPermissions: ["reports.financial.read"], writes: true, standingAllowed: true, goalKey: "aiWork.goal.managementReport", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 2, maxSubjects: 10 } },
-  shift_handover: { key: "shift_handover", version: "shift-handover.v1", capability: "handover_job", tools: ["handover.gather", "artifact.save_handover", "task.assign_handover"], startPermissions: ["members.read"], writes: true, standingAllowed: true, goalKey: "aiWork.goal.shiftHandover", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 5, maxSubjects: 200 } },
-  cash_difference: { key: "cash_difference", version: "cash-difference.v1", capability: "cash_difference", tools: ["shift.investigate", "artifact.save_cash_difference"], startPermissions: ["reconciliation.read"], writes: true, standingAllowed: false, goalKey: "aiWork.goal.cashDifference", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 500 } },
-  sales_followups: { key: "sales_followups", version: "sales-followups.v1", capability: "sales_followups", tools: ["leads.due", "task.create_lead_followup"], startPermissions: ["crm.read", "crm.write"], module: "revenue", writes: true, standingAllowed: true, goalKey: "aiWork.goal.salesFollowups", limits: DEFAULT_RUN_LIMITS },
-  ops_triage: { key: "ops_triage", version: "ops-triage.v1", capability: "ops_triage", tools: ["operations.report_issue"], startPermissions: ["members.read"], module: "operations", writes: true, standingAllowed: false, goalKey: "aiWork.goal.opsTriage", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 1 } },
-  class_finder: { key: "class_finder", version: "class-finder.v1", capability: "class_finder", tools: ["classes.eligible", "class.book"], startPermissions: ["members.read"], writes: true, standingAllowed: false, goalKey: "aiWork.goal.classFinder", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 50 } },
+  renewal_followups: { key: "renewal_followups", version: "renewal-followups.v1", capability: "followup_batch", tools: ["renewal.candidates", "member.context", "task.create_followup"], startPermissions: ["crm.read", "crm.write"], module: "revenue", writes: true, batch: true, usesModel: true, standingAllowed: true, goalKey: "aiWork.goal.renewalFollowups", limits: DEFAULT_RUN_LIMITS },
+  management_report: { key: "management_report", version: "management-report.v1", capability: "report_job", tools: ["report.figures", "artifact.save_report", "export.request"], startPermissions: ["reports.financial.read"], writes: true, batch: false, usesModel: false, standingAllowed: true, goalKey: "aiWork.goal.managementReport", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 2, maxSubjects: 10 } },
+  shift_handover: { key: "shift_handover", version: "shift-handover.v1", capability: "handover_job", tools: ["handover.gather", "artifact.save_handover", "task.assign_handover"], startPermissions: ["members.read"], writes: true, batch: false, usesModel: false, standingAllowed: true, goalKey: "aiWork.goal.shiftHandover", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 5, maxSubjects: 200 } },
+  cash_difference: { key: "cash_difference", version: "cash-difference.v1", capability: "cash_difference", tools: ["shift.investigate", "artifact.save_cash_difference"], startPermissions: ["reconciliation.read"], writes: true, batch: false, usesModel: false, standingAllowed: false, goalKey: "aiWork.goal.cashDifference", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 500 } },
+  sales_followups: { key: "sales_followups", version: "sales-followups.v1", capability: "sales_followups", tools: ["leads.due", "task.create_lead_followup"], startPermissions: ["crm.read", "crm.write"], module: "revenue", writes: true, batch: true, usesModel: true, standingAllowed: true, goalKey: "aiWork.goal.salesFollowups", limits: DEFAULT_RUN_LIMITS },
+  ops_triage: { key: "ops_triage", version: "ops-triage.v1", capability: "ops_triage", tools: ["operations.report_issue"], startPermissions: ["members.read"], module: "operations", writes: true, batch: false, usesModel: true, standingAllowed: false, goalKey: "aiWork.goal.opsTriage", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 1 } },
+  class_finder: { key: "class_finder", version: "class-finder.v1", capability: "class_finder", tools: ["classes.eligible", "class.book"], startPermissions: ["members.read"], writes: true, batch: false, usesModel: false, standingAllowed: false, goalKey: "aiWork.goal.classFinder", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 50 } },
 };
 
 export const CAPABILITY_KEYS: readonly AiCapabilityKey[] = ["member_context", "note_extraction", "followup_batch", "report_job", "handover_job", "cash_difference", "sales_followups", "ops_triage", "import_assist", "class_finder", "nl_filters", "collections_prep", "member_class_finder", "platform_review"];

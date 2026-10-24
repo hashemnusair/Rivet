@@ -24,6 +24,8 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import type { ChecklistRun, ChecklistRunItem, SetChecklistItemInput, Zone } from "@/lib/domain/types";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { AiRunPanel } from "@/features/assist/run-panel";
+import { PrepareHandoverButton } from "@/features/assist/prepare-jobs";
 
 interface ProblemDialogState {
   run: ChecklistRun;
@@ -82,13 +84,17 @@ export default function ChecklistsPage() {
       <PageHeader
         title={t("nav.item.checklists")}
         description={t("staffTools.checklists.description")}
-        actions={branches.length > 1 ? (
-          <Select value={branchId ?? ""} onValueChange={chooseBranch}>
-            <SelectTrigger sizeVariant="sm" className="w-44" aria-label={t("common.label.branch")}><SelectValue /></SelectTrigger>
-            <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
-          </Select>
-        ) : <span className="text-[13px] text-ink-2">{branchName}</span>}
+        actions={<div className="flex flex-wrap items-center gap-2">
+          {branchId ? <PrepareHandoverButton branchId={branchId} onStarted={(run) => replaceQueryInPlace(router, `/checklists?branch=${encodeURIComponent(branchId)}&run=${encodeURIComponent(run.id)}`)} /> : null}
+          {branches.length > 1 ? (
+            <Select value={branchId ?? ""} onValueChange={chooseBranch}>
+              <SelectTrigger sizeVariant="sm" className="w-44" aria-label={t("common.label.branch")}><SelectValue /></SelectTrigger>
+              <SelectContent>{branches.map((branch) => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : <span className="text-[13px] text-ink-2">{branchName}</span>}
+        </div>}
       />
+      {params.get("run") ? <AiRunPanel runId={params.get("run")!} onClose={() => replaceQueryInPlace(router, branchId ? `/checklists?branch=${encodeURIComponent(branchId)}` : "/checklists")} /> : null}
 
       {!branchId ? <EmptyState icon={ClipboardCheck} title={t("staffTools.checklists.noBranchTitle")} description={t("staffTools.checklists.noBranchDescription")} /> :
         dayQuery.isLoading ? <div className="space-y-3"><Skeleton className="h-40 w-full" /><Skeleton className="h-40 w-full" /></div> :

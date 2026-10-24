@@ -98,3 +98,25 @@ describe("preview assistance", () => {
     }
   });
 });
+
+describe("preview report and handover jobs", () => {
+  it("saves a report artifact with checked totals and a handover the next person can read", async () => {
+    await enable();
+    const session = await api.getSession();
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: session.organization.timezone }).format(new Date());
+    const report = await settled((await api.startAiRun({ playbook: "management_report", params: { from: `${today.slice(0, 8)}01`, to: today, includeExport: true }, requestKey: "report-preview-1" })).id);
+    expect(report.status).toBe("completed");
+    const artifactRef = report.results.find((ref) => ref.kind === "artifact")!;
+    const artifact = await api.getAiArtifact(artifactRef.id);
+    expect(artifact.kind).toBe("management_report");
+    expect(artifact.verification.verified).toBe(true);
+    expect(report.results.some((ref) => ref.kind === "export")).toBe(true);
+    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    const handover = await settled((await api.startAiRun({ playbook: "shift_handover", branchId, params: {}, requestKey: "handover-preview-1" })).id);
+    expect(handover.status).toBe("completed");
+    const handoverArtifact = await api.getAiArtifact(handover.results[0]!.id);
+    expect(handoverArtifact.sections.map((section) => section.key)).toEqual(expect.arrayContaining(["checks", "followUps"]));
+    await api.switchDemoRole("trainer");
+    await expect(api.getAiArtifact(artifactRef.id)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+});

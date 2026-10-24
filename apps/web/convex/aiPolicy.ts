@@ -290,11 +290,12 @@ export async function artifactView(ctx: ReadCtx, actor: ActorContext, artifact: 
   if (artifact.requiredPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
   if (artifact.branchId && actor.branchScope === "selected" && !actor.branchIds.includes(artifact.branchId)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
   const branch = artifact.branchId ? await ctx.db.get(artifact.branchId) : null;
-  const content = (artifact.content ?? {}) as Pick<AiArtifactView, "sections" | "verification" | "coverage">;
+  const content = (artifact.content ?? {}) as Pick<AiArtifactView, "sections" | "verification" | "coverage" | "titleParams">;
   return {
     id: artifact.publicId,
     kind: artifact.kind,
     title: artifact.title,
+    ...(content.titleParams ? { titleParams: content.titleParams } : {}),
     ...(branch ? { branchId: publicBranchId(branch), branchName: branch.name } : {}),
     createdAt: new Date(artifact.createdAt).toISOString(),
     expiresAt: new Date(artifact.expiresAt).toISOString(),

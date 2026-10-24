@@ -10160,7 +10160,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   const actor = operation === "exports.list" || operation === "exports.request"
-    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    ? await requireExportActor(ctx, deriveRequest(request, { organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) }))
     : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
