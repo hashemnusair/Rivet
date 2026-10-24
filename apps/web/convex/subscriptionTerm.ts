@@ -145,6 +145,8 @@ export function termChange(input: TermChangeInput): TermChange {
 
 
 export interface UpgradeActivation {
+  quotedPeriodStart?: string;
+  quotedPeriodEnd?: string;
   quotedCreditMinor: number;
   appliedCreditMinor: number;
   consumedCreditMinor: number;

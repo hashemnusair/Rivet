@@ -2,9 +2,10 @@
 
 ## 24 October audit correctness pass — source implementation, unreleased
 
-Six confirmed findings at `3ed7d3d2` are being corrected on
+All six confirmed findings at `3ed7d3d2` are implemented and regression-tested on
 `codex/audit-billing-export-corrections`. This entry records implementation,
-not production acceptance. Existing audit evidence remains historical.
+not production acceptance. Final local checks and browser evidence are in the
+24 October CURRENT_STATE.md checkpoint. Existing audit evidence remains historical.
 
 - Implemented and regression-tested: submitted payment claims block every
   subscription invoice replacement and explicit void; unaffected edits remain

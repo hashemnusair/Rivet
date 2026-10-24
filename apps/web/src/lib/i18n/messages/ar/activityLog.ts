@@ -233,6 +233,7 @@ export const activityLog: typeof EnglishActivityLog = {
     invoiceFirstPaymentCreated: "إنشاء الفاتورة الأولى",
     subscriptionInvoiceCreated: "إنشاء فاتورة التجديد",
     subscriptionInvoicePastDue: "تجاوز موعد الدفع",
+    subscriptionPaymentReviewRequired: "الدفعة المقدّمة تتطلب المراجعة",
     subscriptionSuspended: "تعليق النادي",
     agreementCountersigned: "توقيع RIVET على الاتفاقية",
     agreementCountersignReplaced: "استبدال توقيع RIVET",

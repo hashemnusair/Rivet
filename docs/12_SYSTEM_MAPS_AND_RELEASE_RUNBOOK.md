@@ -23,8 +23,12 @@ add-ons: request, expire/refresh, submit, return/resubmit and confirm after the
 old term ends. Verify original transfer amount is fixed, new service starts at
 confirmation, and only cash plus still-unused credit funds its duration. Verify
 `upgradeActivation` and the upgrade audit agree with the organization boundary;
-old paid invoices and signed documents must be unchanged. Changing the source
-paid boundary after a quote must reject confirmation without side effects. Do
+old paid invoices and signed documents must be unchanged. Confirm a pending
+one-time setup fee survives quote return/refresh exactly once and never funds
+service credit. Inspect activation evidence in both invoice UI and PDF; original
+quoted periods/amounts remain auditable. Changing the source
+paid boundary or funded value after a quote must reject confirmation without side
+effects, including when another invoice is paid while its claim awaits review. Do
 not infer release from a Git push or enable production renewals for this check.
 See docs/14 for the explicit value-preserving billing-date decision.
 

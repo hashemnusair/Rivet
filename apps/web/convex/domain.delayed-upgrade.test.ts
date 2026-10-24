@@ -44,6 +44,7 @@ describe("delayed owner upgrade funding", () => {
     await gym.owner.mutation(api.domain.mutate, payment(quote.id));
     expect(await gym.state()).toEqual(submitted);
     const paid = await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: quote.id, reference: "BANK-UPGRADE", reason: "Verified transfer" })) as Invoice;
+    expect(paid.upgradeActivation).toMatchObject({ quotedPeriodStart: quote.periodStart, quotedPeriodEnd: quote.periodEnd });
     expect(paid.amountMinor).toBe(quote.amountMinor);
     expect(paid.creditMinor).toBe(quote.creditMinor);
     expect(paid.upgradeActivation?.appliedCreditMinor).toBe(0);
@@ -83,4 +84,51 @@ describe("delayed owner upgrade funding", () => {
     await expect(gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: refreshed.id, reference: "BANK-UPGRADE", reason: "Verified" }))).rejects.toMatchObject({ data: { code: "CONFLICT" } });
     expect(await gym.state()).toEqual(before);
   });
+  it("carries an unpaid one-time setup fee through fresh validation, return, refresh and final activation", async () => {
+    const gym = await auditGym({ onboardingFeeMinor: 75000 });
+    await gym.invoice("funded", { status: "paid" });
+    const quote = (await gym.owner.mutation(api.domain.mutate, op("billing.plan_change.request", { plan: "Pro" })) as { invoice: Invoice }).invoice;
+    expect(quote.onboardingFeeMinor).toBe(75000);
+    await gym.owner.mutation(api.domain.mutate, payment(quote.id));
+    await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment_reject", { invoiceId: quote.id, reason: "Correct the reference" }));
+    vi.setSystemTime(NOW + 3 * DAY_MS);
+    const refreshed = (await gym.owner.mutation(api.domain.mutate, op("billing.plan_change.request", { plan: "Pro" })) as { invoice: Invoice }).invoice;
+    expect(refreshed.id).not.toBe(quote.id);
+    expect(refreshed.onboardingFeeMinor).toBe(75000);
+    expect(refreshed.subtotalMinor).toBe(274000);
+    await gym.owner.mutation(api.domain.mutate, payment(refreshed.id));
+    vi.setSystemTime(termEnd(NOW, "monthly") + DAY_MS);
+    const paid = await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: refreshed.id, reference: "BANK-UPGRADE", reason: "Verified" })) as Invoice;
+    expect(paid.amountMinor).toBe(refreshed.amountMinor);
+    expect(paid.upgradeActivation?.fundedSubscriptionMinor).toBe(refreshed.amountMinor - 75000);
+  });
+
+  it("settles an already-submitted historical quote without a credit snapshot or amount rewrite", async () => {
+    const end = NOW + 30 * DAY_MS;
+    const gym = await auditGym({ currentPeriodEndsAt: end });
+    await gym.invoice("funded", { status: "paid", periodEnd: new Date(end).toISOString() });
+    await gym.invoice("legacy", { status: "open", amountMinor: 151581, subtotalMinor: 199000, creditMinor: 47419, createdAt: new Date(NOW + 1).toISOString(), planChange: { from: "Basic", to: "Pro" }, paymentClaim: { status: "submitted", reference: "BANK-UPGRADE", submittedAt: new Date(NOW).toISOString() } });
+    vi.setSystemTime(end + DAY_MS);
+    const paid = await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: "legacy", reference: "BANK-UPGRADE", reason: "Verified legacy transfer" })) as Invoice;
+    expect(paid).toMatchObject({ amountMinor: 151581, creditMinor: 47419, paymentClaim: { status: "confirmed" }, upgradeActivation: { quotedCreditMinor: 47419, appliedCreditMinor: 0, fundedSubscriptionMinor: 151581 } });
+    expect(Date.parse(paid.periodStart)).toBe(end + DAY_MS);
+    expect(Date.parse(paid.periodEnd)).toBeLessThan(termEnd(end + DAY_MS, "monthly"));
+  });
+
+  it("requires review if another subscription payment changes funding, and never duplicates its setup fee", async () => {
+    const gym = await auditGym({ onboardingFeeMinor: 75000 });
+    await gym.invoice("unpaid-source", { amountMinor: 124000, subtotalMinor: 124000, onboardingFeeMinor: 75000 });
+    const quote = (await gym.owner.mutation(api.domain.mutate, op("billing.plan_change.request", { plan: "Pro" })) as { invoice: Invoice }).invoice;
+    expect(quote).toMatchObject({ amountMinor: 274000, onboardingFeeMinor: 75000 });
+    await gym.owner.mutation(api.domain.mutate, payment(quote.id));
+    await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: "unpaid-source", reference: "ORIGINAL-TERM", reason: "Original invoice transfer verified" }));
+    const before = await gym.state();
+    await expect(gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment", { invoiceId: quote.id, reference: "BANK-UPGRADE", reason: "Verify upgrade" }))).rejects.toMatchObject({ data: { code: "CONFLICT" } });
+    expect(await gym.state()).toEqual(before);
+    await gym.admin.mutation(api.domain.mutate, op("platform.invoice.payment_reject", { invoiceId: quote.id, reason: "Review after original invoice was settled" }));
+    const next = (await gym.owner.mutation(api.domain.mutate, op("billing.plan_change.request", { plan: "Pro" })) as { invoice: Invoice }).invoice;
+    expect(next).toMatchObject({ amountMinor: 150000, subtotalMinor: 199000, creditMinor: 49000 });
+    expect(next.onboardingFeeMinor).toBeUndefined();
+  });
+
 });

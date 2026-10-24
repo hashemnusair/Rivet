@@ -33,6 +33,7 @@ export const commerce = {
     accessEnds: "If this stays unpaid, your gym's access stops on {date}.",
     firstTerm: "Your first {cadence} starts on the day we confirm your payment.",
     quoteValidUntil: "Quote valid until {date}. Refresh it before transferring if this time has passed.",
+    activationSummary: "Activation: {funded} funds the new service term, including {credit} of still-unused credit. {used} of the original quoted credit was used on the old plan. The original invoice and transfer amount are unchanged.",
     creditTiming: "Unused-time credit is estimated until payment. Your transfer buys service from confirmation. Old-plan time used before confirmation reduces only the part of the new term funded by that credit.",
     refreshUpgrade: "Refresh upgrade quote",
     upgradeTerm: "Your {plan} plan starts on the day we confirm your payment.",

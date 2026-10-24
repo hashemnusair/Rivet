@@ -53,6 +53,7 @@ export async function invoicePdf(invoice: PlatformBillingInvoice, customer: Invo
     promoCode: invoice.promoCode,
     creditMinor: invoice.creditMinor,
     creditDays: invoice.creditDays,
+    upgradeActivation: invoice.upgradeActivation,
     status: invoice.status === "trial" ? "draft" : invoice.status,
     paidAt: invoice.paidAt,
     paymentReference: invoice.paymentReference,

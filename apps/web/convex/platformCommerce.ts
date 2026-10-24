@@ -1,3 +1,4 @@
+import { replaceableSubscriptionInvoice } from "./subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, validateAddOns, subscriptionInvoiceLines, EMPTY_ADD_ONS } from "./subscriptionAddOns";
 import { effectivePlan } from "./planCapacity";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -541,7 +542,7 @@ function outgoingTerm(organization: Doc<"organizations">, rows: Doc<"domainRecor
   if (organization.status !== "active" || periodEndsAt === undefined) return undefined;
   const funded = rows
     .map((row) => record(row.data))
-    .filter((invoice) => invoice.status !== "void" && timestamp(invoice.periodEnd) === periodEndsAt)
+    .filter((invoice) => invoice.status !== "void" && (!isPlanChange(invoice) || invoice.status === "paid") && timestamp(invoice.periodEnd) === periodEndsAt)
     .sort((left, right) => text(right.createdAt).localeCompare(text(left.createdAt)))[0];
   const amountMinor = funded ? fundedSubscriptionValue(funded) : undefined;
   return amountMinor === undefined ? undefined : { periodEndsAt, periodStartsAt: timestamp(funded?.periodStart), monthlyPriceMinor, amountMinor, interval };
@@ -558,8 +559,12 @@ export async function prepareUpgradeActivation(ctx: ReadContext, organization: D
     ? basis as unknown as OutgoingTerm
     : outgoingTerm(organization, rows, 0, organization.billingInterval === "annual" ? "annual" : "monthly");
   if (typeof basis.periodEndsAt === "number" && basis.periodEndsAt !== organization.currentPeriodEndsAt) domainError("CONFLICT", "The paid term changed after this quote. Return the payment and review the upgrade first.");
+  if (typeof basis.periodEndsAt === "number") {
+    const currentFunding = outgoingTerm({ ...organization, status: "active" }, rows, 0, organization.billingInterval === "annual" ? "annual" : "monthly");
+    if (currentFunding?.amountMinor !== basis.amountMinor || currentFunding?.periodStartsAt !== basis.periodStartsAt) domainError("CONFLICT", "The paid funding changed after this quote. Return the payment and review the upgrade first.");
+  }
   try {
-    return upgradeActivation({ now, interval, amountMinor: Number(invoice.amountMinor), subtotalMinor: Number(invoice.subtotalMinor ?? Number(invoice.amountMinor) + Number(invoice.creditMinor ?? 0)), onboardingFeeMinor: Number(invoice.onboardingFeeMinor ?? 0), creditMinor: Number(invoice.creditMinor ?? 0), outgoing });
+    return { quotedPeriodStart: text(invoice.periodStart), quotedPeriodEnd: text(invoice.periodEnd), ...upgradeActivation({ now, interval, amountMinor: Number(invoice.amountMinor), subtotalMinor: Number(invoice.subtotalMinor ?? Number(invoice.amountMinor) + Number(invoice.creditMinor ?? 0)), onboardingFeeMinor: Number(invoice.onboardingFeeMinor ?? 0), creditMinor: Number(invoice.creditMinor ?? 0), outgoing }) };
   } catch {
     domainError("CONFIGURATION_ERROR", "This upgrade invoice has invalid funding. Review it before confirming payment.");
   }
@@ -571,7 +576,12 @@ async function planChangeOptions(ctx: ReadContext, organization: Doc<"organizati
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";
   const rows = await organizationInvoices(ctx, organization._id);
   const outgoing = outgoingTerm(organization, rows, current ? await gymPlanPriceMinor(ctx, organization, current) : 0, interval);
-  const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
+  // Carry setup from invoices this upgrade supersedes, including its own
+  // pending quote. A paid or retained manual invoice must not bill it twice.
+  const invoices = rows.map(row => record(row.data));
+  const hasRetainedSetup = invoices.some(invoice => invoice.status !== "void" && Number(invoice.onboardingFeeMinor ?? 0) > 0 && !replaceableSubscriptionInvoice(invoice));
+  const carriedSetup = Math.max(0, ...invoices.filter(replaceableSubscriptionInvoice).map(invoice => Number(invoice.onboardingFeeMinor ?? 0)));
+  const onboardingFeeMinor = hasRetainedSetup ? 0 : carriedSetup || await pendingOnboardingFee(ctx, organization);
   const options: PlanChangeOption[] = [];
   for (const plan of SELF_SERVE_PLANS) {
     if (planRank(plan) <= planRank(current)) continue;

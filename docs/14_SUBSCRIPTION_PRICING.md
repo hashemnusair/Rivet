@@ -131,7 +131,13 @@ Annual prices use the same existing 5% saving. Onboarding and website fees never
 become time credit. Source invoice dates and funded amounts are stored with new
 quotes; activation prorates remaining source value by exact elapsed milliseconds,
 rounds money to minor units and duration up to a millisecond. Original invoice
-amount/credit stay intact beside an auditable activation calculation. Later term
+amount/credit and provisional quoted periods stay intact beside an auditable
+activation calculation. Invoice UI and PDFs show the activation funding separately.
+An unpaid onboarding fee on any subscription invoice being superseded is carried
+through validation, return and refresh until settled; it never becomes subscription
+credit. A fee already paid or retained on a manual invoice is not billed twice.
+If another payment changes the source funded value while a claim waits, confirmation
+fails closed for review before any upgrade side effects. Later term
 changes credit that actual funded service value. No refunds, new commercial
 policy, or rewrites of historical signed agreements are introduced.
 

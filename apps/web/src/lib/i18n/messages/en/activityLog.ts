@@ -233,6 +233,7 @@ export const activityLog = {
     invoiceFirstPaymentCreated: "First invoice created",
     subscriptionInvoiceCreated: "Renewal invoice created",
     subscriptionInvoicePastDue: "Invoice past due",
+    subscriptionPaymentReviewRequired: "Submitted payment requires review",
     subscriptionSuspended: "Gym suspended",
     agreementCountersigned: "Agreement countersigned",
     agreementCountersignReplaced: "RIVET signature replaced",

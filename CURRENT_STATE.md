@@ -1,8 +1,8 @@
 # GymOS / RIVET current implementation state
 
-## Audit corrections — in implementation, 24 October 2026
+## Audit correctness pass — verified source, 24 October 2026
 
-Source-only work on `codex/audit-billing-export-corrections`, based on audit/main
+Implemented source on `codex/audit-billing-export-corrections`, based on audit/main
 `3ed7d3d2`. Existing untracked `docs/audits/` and `outputs/` are preserved.
 No deployment, provider configuration, live financial write or automation activation.
 
@@ -25,8 +25,8 @@ No deployment, provider configuration, live financial write or automation activa
 - Owner Pro upgrade cards now render the existing localized Unlimited wording
   for all three sentinel capacities. Finite values and radio accessible names
   remain intact. Both English/Arabic component regressions fail on old code and
-  pass with the fix. Actual desktop/phone dialog journeys are added; browser
-  outcomes will be recorded with the final gates. Adjacent platform/public
+  pass with the fix. Actual English/Arabic desktop/phone dialogs were inspected
+  at 390/1440px; no overflow or runtime errors. Adjacent platform/public
   capacity displays already handle the sentinel.
 
 - Reconciliation now withholds automatic suspension at/after the existing
@@ -52,11 +52,17 @@ No deployment, provider configuration, live financial write or automation activa
   millisecond proration, rounded to minor units; resulting duration rounds up to
   a millisecond. Future credits use the actual funded value and stored start.
   Legacy open upgrades derive funding from their existing paid term; changed
-  source plan/boundary fails closed for operator review. Signed documents and
+  source plan/boundary/funding fails closed for operator review. Signed documents and
   historical invoice amounts are unchanged. Optional data lives in existing
   invoice JSON; no migration/index/env change. Backend must precede frontend.
   All 10 public/mock regressions fail on old code. The 16 focused date/mock/UI
-  checks and 41 commerce/term/protection checks pass. Final gates follow.
+  checks and 41 commerce/term/protection checks pass. Additional regressions cover
+  legacy submitted quotes without snapshots and pending setup fees carried through
+  return/refresh; setup never becomes service credit. Settling another invoice
+  while an upgrade claim waits forces review if its paid funding changes, and
+  already-settled or retained setup fees cannot be billed again. Original quoted period dates
+  are retained in activation evidence. Paid invoice UI and server/browser PDFs
+  explain actual funding beside unchanged original figures, in both languages.
 
 - Cancelled owners retain only `/exports` creation/history/retrieval during
   `[cancelledAt, cancelledAt + 30 days)`. At the exact deadline, missing/invalid/
@@ -64,14 +70,78 @@ No deployment, provider configuration, live financial write or automation activa
   an export destination, not workspace/billing membership. A minimal export frame
   has no workspace navigation or agreement gate. Existing seven datasets remain
   available with tenant/branch permissions, row safeguards, immutable export
-  audits, idempotency and 24-hour content expiry. Multiple gyms require explicit
+  audits, idempotency and 24-hour content expiry. A selected owner can export
+  assigned branches without an operational active-branch selection; unassigned
+  branches remain denied. Multiple gyms require explicit
   scoped selection; existing operational sessions are not rebound. Repeated
   cancellation saves retain the original timestamp. No deletion/retention or
   legal-copy policy is changed. 63 focused backend/auth/mock/UI tests pass;
-  seven new regressions fail on old code. Browser outcomes follow with final gates.
+  seven new regressions fail on old code. Desktop/phone browser journeys prove
+  creation and repeated retrieval from the export frame without workspace navigation.
 
-Final gates, browser evidence and remaining audit corrections will be recorded
-here before the single final push. Read this checkpoint, docs/14 and docs/12 first.
+**Verification:** the final standalone full suite passes 2,372 Vitest tests in
+376 passing files, with two opt-in benchmarks skipped, plus all 14 repository
+safety tests. Setup-fee carry, legacy submitted quotes and changed source funding
+are included. The three setup/legacy regressions also fail on `3ed7d3d2`.
+Web and Convex typechecks, lint
+(secret-output audit), production build, Arabic lock (revision 607 / 247 agreements),
+Convex code generation and diff check pass. One intermediate typecheck raced with
+Next regenerating build types; the sequential rerun passes. The initial full-suite
+failure identified a missing bilingual review-action label and is corrected. One
+concurrent-load rerun timed out in the unchanged gym-profile test at 5 seconds;
+the complete standalone rerun passes without changing its timeout or assertions.
+
+All 13 selected Playwright journeys pass both on the local development server
+and on the built, sanctioned Preview mock bundle (four workers, 15.6 seconds): four
+English/Arabic owner dialogs at 390/1440px, two platform add-on flows, two owner
+entitlement/payment flows, three existing export downloads and two termination
+export flows. Initial new export-test failures were ambiguous/wrong selectors,
+corrected to scope the notice and actual CSV history control; repeated downloads
+are asserted. No snapshot or screenshot tolerance was changed. Development browser logs show
+existing Clerk/image-aspect warnings; the final built-preview run has no tested
+runtime/console errors. English/Arabic synthetic paid invoices were rendered to
+PNG and inspected:
+one A4 page each, legible activation evidence, no clipping. Selected captures are
+in `docs/ui-evidence/audit-2026-10-24/`.
+
+**Release/limits:** all six findings are implemented and regression-tested source,
+not deployed/accepted production behavior. Optional invoice JSON and optional
+identity export routing need no schema migration, index, backfill or provider
+configuration. Release backend authorization/billing/identity before the matching
+frontend, then complete credentialed isolated acceptance through docs/12. No
+production release, live financial write, provider setup, email delivery, renewal
+activation or production smoke was performed. Source publication and the exact
+GitHub CI result are separate receipts in the reviewing-agent handoff. Broader
+operations, restore/incident ownership, provider/inbox acceptance, legal/commercial
+reconciliation and new features remain deferred.
+
+**Commands:** `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`,
+`pnpm lint`, `pnpm build`, `git diff --check`, and
+`python3 docs/arabic/verify-lock.py`. The final browser run used:
+
+```sh
+NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 \
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright \
+RIVET_DESIGN_PREVIEW=1 pnpm build
+PLAYWRIGHT_PORT=3217 PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_WORKERS=4 \
+pnpm --filter web exec playwright test e2e/owner-upgrade-capacities.spec.ts \
+e2e/termination-exports.spec.ts e2e/subscription-add-ons.spec.ts \
+e2e/platform-subscription-entitlements.spec.ts e2e/exports.spec.ts
+```
+
+During verification, `origin/main` advanced to documentation-only `8b75353f`.
+Its application/runtime source is unchanged from `3ed7d3d2`; the audit commits
+remain based on that runtime. Preserve both dated handoff sections when this
+branch is integrated with the independent planning change. The final follow-up
+commit depends on all six fixes: it closes setup-fee/legacy quote evidence,
+localized review labels, generated bindings and the recorded verification gates.
+
+Read this checkpoint, docs/14 and docs/12 first, then `subscriptionTerm.ts`,
+`platformCommerce.ts`, `subscriptionReconciliation.ts`, `security.ts` and the new
+`domain.*` regression tests. `FRONTEND_HANDOFF.md` is byte-for-byte unchanged.
+Concurrent planning edits in shared handoff/backlog/runbook files, README/docs/09,
+the untracked docs/23 plan, and existing audit/output files are preserved outside
+this audit commit series.
 
 ## Current checkpoint — Basic/Pro and paid add-ons, 21 October 2026
 

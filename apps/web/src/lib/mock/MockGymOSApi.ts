@@ -2739,15 +2739,19 @@ export class MockGymOSApi implements GymOSApi {
     const interval = org.billingInterval ?? "monthly";
     const price = (plan: string | undefined) => this.platformPlans.find((item) => item.name === plan)?.priceMinor ?? findPlan(plan)?.priceMinor ?? 0;
     const end = Date.parse(org.currentPeriodEndsAt ?? "");
-    const funded = Number.isFinite(end) ? this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end) : undefined;
+    const funded = Number.isFinite(end) ? this.platformInvoices.find((invoice) => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && (!invoice.planChange || invoice.status === "paid") && Date.parse(invoice.periodEnd ?? "") === end) : undefined;
     const value = funded ? fundedSubscriptionValue(funded) : undefined;
     const outgoing = org.status === "active" && Number.isFinite(end) && value !== undefined ? { periodEndsAt: end, periodStartsAt: funded?.periodStart ? Date.parse(funded.periodStart) : undefined, monthlyPriceMinor: gymMonthlyPriceMinor(org.subscriptionPlan, price(org.subscriptionPlan), org.quotedPriceMinor), amountMinor: value, interval } : undefined;
     const now = Date.now();
+    const invoices = this.platformInvoices.filter(invoice => invoice.gymId === PROVISIONED_MOCK_GYM_ID);
+    const retainedSetup = invoices.some(invoice => invoice.status !== "void" && (invoice.onboardingFeeMinor ?? 0) > 0 && !replaceableSubscriptionInvoice(invoice));
+    const carriedSetup = Math.max(0, ...invoices.filter(replaceableSubscriptionInvoice).map(invoice => invoice.onboardingFeeMinor ?? 0));
+    const onboardingFeeMinor = retainedSetup ? 0 : carriedSetup || org.onboardingFeeMinor || 0;
     return (["Basic", "Pro"] as const)
       .filter((plan) => rank(plan) > rank(org.subscriptionPlan) && price(plan) > 0)
       .map((plan) => {
         const change = termChange({ now, interval, monthlyPriceMinor: price(plan), ...(outgoing ? { outgoing } : {}) });
-        return { plan, monthlyPriceMinor: price(plan), subtotalMinor: change.subtotalMinor, creditMinor: change.creditMinor, creditDays: change.creditDays, onboardingFeeMinor: 0, amountMinor: change.amountMinor };
+        return { plan, monthlyPriceMinor: price(plan), subtotalMinor: change.subtotalMinor, creditMinor: change.creditMinor, creditDays: change.creditDays, onboardingFeeMinor, amountMinor: change.amountMinor + onboardingFeeMinor };
       });
   }
 
@@ -2792,7 +2796,7 @@ export class MockGymOSApi implements GymOSApi {
       const now = Date.now();
       const interval = org.billingInterval ?? "monthly";
       const end = Date.parse(org.currentPeriodEndsAt ?? "");
-      const funded = this.platformInvoices.find(invoice => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && Date.parse(invoice.periodEnd ?? "") === end);
+      const funded = this.platformInvoices.find(invoice => invoice.gymId === PROVISIONED_MOCK_GYM_ID && invoice.status !== "void" && (!invoice.planChange || invoice.status === "paid") && Date.parse(invoice.periodEnd ?? "") === end);
       const value = funded ? fundedSubscriptionValue(funded) : undefined;
       const creditBasis = value === undefined ? undefined : { periodEndsAt: end, periodStartsAt: funded?.periodStart ? Date.parse(funded.periodStart) : undefined, amountMinor: value, monthlyPriceMinor: 0, interval };
       const id = `INV-${mockUuid()}`;
@@ -2802,7 +2806,8 @@ export class MockGymOSApi implements GymOSApi {
         gym: org.name,
         amountMinor: option.amountMinor,
         amount: `JOD ${(option.amountMinor / 1_000).toFixed(3)}`,
-        subtotalMinor: option.subtotalMinor,
+        subtotalMinor: option.subtotalMinor + option.onboardingFeeMinor,
+        ...(option.onboardingFeeMinor > 0 ? { onboardingFeeMinor: option.onboardingFeeMinor } : {}),
         ...(option.creditMinor > 0 ? { creditMinor: option.creditMinor, creditDays: option.creditDays } : {}),
         planChange: { from: org.subscriptionPlan, to: input.plan },
         ...(creditBasis ? { creditBasis } : {}),
@@ -3595,7 +3600,7 @@ export class MockGymOSApi implements GymOSApi {
             // Only a paid, running term is worth anything back; an overdue
             // term was never paid for, so its invoice is voided instead.
             ...(currentStatus === "active" && Number.isFinite(storedCurrentPeriodEndsAt) && outgoingValue !== undefined
-              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingBillingInterval } }
+              ? { outgoing: { periodEndsAt: storedCurrentPeriodEndsAt!, periodStartsAt: fundedTerm?.periodStart ? Date.parse(fundedTerm.periodStart) : undefined, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingBillingInterval } }
               : {}),
           })
         : undefined;
@@ -3958,10 +3963,11 @@ export class MockGymOSApi implements GymOSApi {
         const org = this.db.organization;
         if (invoice.planChange.from !== org.subscriptionPlan || (invoice.creditBasis && invoice.creditBasis.periodEndsAt !== Date.parse(org.currentPeriodEndsAt ?? ""))) throw ApiError.of(ERR.CONFLICT, "The paid term changed after this quote. Return the payment and review the upgrade first.");
         const end = Date.parse(org.currentPeriodEndsAt ?? "");
-        const source = this.platformInvoices.find(other => other.gymId === gym.id && other.status !== "void" && Date.parse(other.periodEnd ?? "") === end);
+        const source = this.platformInvoices.find(other => other.gymId === gym.id && other.status !== "void" && (!other.planChange || other.status === "paid") && Date.parse(other.periodEnd ?? "") === end);
         const value = source ? fundedSubscriptionValue(source) : undefined;
+        if (invoice.creditBasis && (value !== invoice.creditBasis.amountMinor || (source?.periodStart ? Date.parse(source.periodStart) : undefined) !== invoice.creditBasis.periodStartsAt)) throw ApiError.of(ERR.CONFLICT, "The paid funding changed after this quote. Return the payment and review the upgrade first.");
         const outgoing = invoice.creditBasis ?? (value === undefined ? undefined : { periodEndsAt: end, periodStartsAt: source?.periodStart ? Date.parse(source.periodStart) : undefined, amountMinor: value, monthlyPriceMinor: 0, interval: org.billingInterval ?? "monthly" });
-        activation = upgradeActivation({ now: Date.now(), interval: invoice.billingInterval ?? "monthly", amountMinor: invoice.amountMinor ?? 0, subtotalMinor: invoice.subtotalMinor ?? (invoice.amountMinor ?? 0) + (invoice.creditMinor ?? 0), onboardingFeeMinor: invoice.onboardingFeeMinor ?? 0, creditMinor: invoice.creditMinor ?? 0, outgoing });
+        activation = { quotedPeriodStart: invoice.periodStart, quotedPeriodEnd: invoice.periodEnd, ...upgradeActivation({ now: Date.now(), interval: invoice.billingInterval ?? "monthly", amountMinor: invoice.amountMinor ?? 0, subtotalMinor: invoice.subtotalMinor ?? (invoice.amountMinor ?? 0) + (invoice.creditMinor ?? 0), onboardingFeeMinor: invoice.onboardingFeeMinor ?? 0, creditMinor: invoice.creditMinor ?? 0, outgoing }) };
       }
       invoice.status = "paid";
       invoice.paidAt = input.paidAt ? new Date(input.paidAt).toISOString() : nowISO();

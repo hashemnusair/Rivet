@@ -83,6 +83,7 @@ import type * as renewalPolicy from "../renewalPolicy.js";
 import type * as security from "../security.js";
 import type * as seed from "../seed.js";
 import type * as subscriptionAddOns from "../subscriptionAddOns.js";
+import type * as subscriptionInvoiceProtection from "../subscriptionInvoiceProtection.js";
 import type * as subscriptionReconciliation from "../subscriptionReconciliation.js";
 import type * as subscriptionTerm from "../subscriptionTerm.js";
 import type * as systemMessages from "../systemMessages.js";
@@ -173,6 +174,7 @@ declare const fullApi: ApiFromModules<{
   security: typeof security;
   seed: typeof seed;
   subscriptionAddOns: typeof subscriptionAddOns;
+  subscriptionInvoiceProtection: typeof subscriptionInvoiceProtection;
   subscriptionReconciliation: typeof subscriptionReconciliation;
   subscriptionTerm: typeof subscriptionTerm;
   systemMessages: typeof systemMessages;

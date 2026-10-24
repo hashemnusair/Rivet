@@ -3,10 +3,10 @@ import { MockGymOSApi } from "./MockGymOSApi";
 import type { MockDb } from "./store";
 import type { PlatformBillingInvoice } from "@/lib/api/GymOSApi";
 import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS } from "../../../convex/subscriptionTerm";
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 it("mock routes submitted renewals to review and retains enforcement clocks on retries/returns", async () => {
   const now = Date.parse("2026-10-10T12:00:00Z");
-  vi.spyOn(Date, "now").mockReturnValue(now);
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(now);
   const api = new MockGymOSApi(); api.setBehavior({ latencyMs: 0 });
   await api.switchDemoRole("owner");
   const internal = api as unknown as { db: MockDb; platformInvoices: PlatformBillingInvoice[] };
@@ -20,7 +20,7 @@ it("mock routes submitted renewals to review and retains enforcement clocks on r
   await api.submitPlatformPayment(payment);
   const dueAt = invoice.dueAt;
   const firstSubmission = invoice.paymentClaim!.submittedAt;
-  vi.mocked(Date.now).mockReturnValue(now + 40 * DAY_MS);
+  vi.setSystemTime(now + 40 * DAY_MS);
   await api.submitPlatformPayment(payment);
   expect(invoice.paymentClaim!.submittedAt).toBe(firstSubmission);
   const threshold = now + (PAYMENT_TERM_DAYS + SUSPENSION_AFTER_DUE_DAYS) * DAY_MS;
