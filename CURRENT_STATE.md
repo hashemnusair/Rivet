@@ -30,6 +30,12 @@ untracked audit/output work and frozen `FRONTEND_HANDOFF.md` are preserved.
   still discards the previous gym’s branch. Owners assigned multiple branches can
   pay normally, and an unassigned branch rejects without state changes. This
   additional case fails on `7ae06d9e` and passes with the follow-up guard.
+  Quote refresh also carries the displayed organization through the API and
+  refreshes that organization’s checkout cache. A blocked companion cannot
+  accidentally create an upgrade in the active workspace. Support links require
+  workspace access to the selected gym; an authorized return to the account’s
+  active dashboard stays available. Focused UI/API/public-backend regressions
+  cover the request scope, fresh invoice display and unchanged state on rejection.
 - **Dependencies:** Next.js, eslint-config-next and @next/eslint-plugin-next now
   resolve to **16.4.2**, with **sharp 0.35.5**; Zod resolves to **4.6.7** throughout
   the graph, including the resolver and ESLint paths. These remove
@@ -48,7 +54,7 @@ presentation. Existing date/branch/archive/file-expiry regressions still pass.
 The bounded-collection security regression traverses three elements on old Zod
 3.25.76 but none on patched Zod; resolver output/errors remain covered.
 
-**Final local gates:** `pnpm test` passes **2,394 Vitest tests in 380 files**, with
+**Final local gates:** `pnpm test` passes **2,398 Vitest tests in 380 files**, with
 only the two existing opt-in benchmarks skipped, plus all **14 repository safety
 tests**. Frozen installation, web and Convex typechecks, lint/secret-output audit,
 plain production build, approved Preview build, Arabic decision lock and patch

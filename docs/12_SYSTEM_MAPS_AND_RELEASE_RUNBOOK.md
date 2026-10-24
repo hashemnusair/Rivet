@@ -10,7 +10,11 @@ per request and must not rebind the operational session. Retain an already
 selected branch when the explicit organization matches the workspace; discard it
 on an organization switch. Verify an active owner assigned multiple branches
 can query/submit payment in the selected branch and that unassigned branches fail
-without effects. Cancelled gyms never
+without effects. Scope every checkout mutation, including quote refresh, to the
+displayed organization and update its checkout cache. With an active workspace
+and a restricted companion, a rejected refresh must not create an invoice in the
+active gym; Support links must not point through that gym into the companion’s
+case. Keep the authorized dashboard return. Cancelled gyms never
 receive workspace membership or billing permission from this navigation.
 
 Release the additive billing/correction backend before the matching frontend.
@@ -41,7 +45,7 @@ set patched floors of [Next.js 16.4.1](https://github.com/advisories/GHSA-2464-f
 No threshold/suppression/override change was used. Check resolved transitive
 versions, not just package declarations.
 
-Final local receipt: 2,394 unit/component tests plus 14 repository safety checks,
+Final local receipt: 2,398 unit/component tests plus 14 repository safety checks,
 both typechecks, zero-warning lint/secret audit, plain production build,
 Arabic lock, frozen installation and diff check pass. All 21 selected journeys
 pass against the optimized approved mock Preview bundle; exact commands and

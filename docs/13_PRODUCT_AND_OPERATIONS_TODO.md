@@ -14,6 +14,10 @@
   multi-branch assignments; cross-organization scope discards that branch. The
   additional public query/payment regression rejects an unassigned branch without
   partial state and fails on the first pushed follow-up head `7ae06d9e`.
+  Quote refresh now targets the selected organization and updates its checkout
+  cache. UI/API and public-backend controls verify no upgrade is created in an
+  active workspace while a restricted companion’s refresh is rejected. Support
+  links remain scoped while the authorized dashboard return is preserved.
 - [x] Remediate the four requested Next.js/Zod advisories using patched compatible
   runtime/peer packages and a committed lockfile. Production audit is clean;
   package/peer/transitive versions are verified. No exception/threshold change.

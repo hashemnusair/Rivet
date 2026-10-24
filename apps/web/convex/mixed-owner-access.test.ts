@@ -53,3 +53,16 @@ it("preserves a selected operational branch when billing explicitly targets that
   await expect(gym.owner.mutation(api.domain.mutate, { ...submit, activeBranchId: "unassigned" })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
   expect(await gym.state()).toEqual(before);
 });
+it.each(["pending_payment", "suspended"] as const)("a scoped quote refresh for a %s companion cannot create an upgrade in the active workspace", async status => {
+  const gym = await auditGym();
+  await gym.t.run(async ctx => {
+    const owner = (await ctx.db.query("users").collect()).find(user => user.publicId === "owner")!;
+    const org = await ctx.db.insert("organizations", { publicId: "restricted", name: "Restricted Gym", slug: "restricted", status, subscriptionPlan: "Basic", timezone: "UTC", currency: "JOD", createdAt: NOW, updatedAt: NOW });
+    const branch = await ctx.db.insert("branches", { organizationId: org, publicId: "restricted-branch", name: "Restricted", code: "R", active: true, status: "active", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("organizationMemberships", { organizationId: org, userId: owner._id, role: "owner", branchScope: "all", branchIds: [branch], invitationStatus: "accepted", active: true, createdAt: NOW, updatedAt: NOW });
+  });
+  const before = await gym.state();
+  const refresh = { ...op("billing.plan_change.request", { organizationId: "restricted", plan: "Pro" }), organizationId: "audit-org", activeBranchId: "audit-branch" };
+  await expect(gym.owner.mutation(api.domain.mutate, refresh)).rejects.toMatchObject({ data: { code: "CONFLICT" } });
+  expect(await gym.state()).toEqual(before);
+});

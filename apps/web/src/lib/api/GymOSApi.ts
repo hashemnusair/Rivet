@@ -1181,7 +1181,7 @@ export interface GymOSApi {
   requestPaymentCorrection(input: { invoiceId: string; reason: string; organizationId?: string }): Promise<BillingCheckout>;
   getBillingPlans(): Promise<BillingPlans>;
   /** Asks to move up to a bigger plan; returns the payment page for the new invoice. */
-  requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout>;
+  requestPlanChange(input: { plan: PlatformSaasPlan["name"]; organizationId?: string }): Promise<BillingCheckout>;
   cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;

@@ -2794,8 +2794,9 @@ export class MockGymOSApi implements GymOSApi {
     return this.respond(() => this.billingPlansView());
   }
 
-  requestPlanChange(input: { plan: PlatformSaasPlan["name"] }): Promise<BillingCheckout> {
+  requestPlanChange(input: { plan: PlatformSaasPlan["name"]; organizationId?: string }): Promise<BillingCheckout> {
     return this.respond(() => {
+      this.requireBillingAccess(input.organizationId);
       const view = this.billingPlansView();
       if (view.blockedReason === "owner_only") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can change the plan.");
       if (view.blockedReason === "not_active") throw ApiError.of(ERR.CONFLICT, "Pay your open RIVET invoice before you change the plan.");

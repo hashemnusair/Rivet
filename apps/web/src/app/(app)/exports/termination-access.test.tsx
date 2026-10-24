@@ -89,3 +89,17 @@ it("redirects an export tab when identity no longer grants cancelled-gym access"
     expect(screen.queryByRole("button", { name: "Download CSV" })).not.toBeInTheDocument();
   } finally { identity.value.exportAccess = original; }
 });
+it("scopes Support links to the selected gym while retaining the authorized dashboard return", async () => {
+  identity.value.memberships = [{ organizationId: "active-workspace", organizationName: "Active Gym", organizationSlug: "active", role: "owner", branches: [] }];
+  identity.value.billingAccess = [{ organizationId: "restricted", organizationName: "Restricted Gym", status: "suspended" }];
+  route.pathname = "/billing"; route.search = "organizationId=restricted";
+  try {
+    await renderWithApp(<BillingCheckoutPage />, { prepare: async api => {
+      const base = await api.getBillingCheckout();
+      vi.spyOn(api, "getBillingCheckout").mockResolvedValue({ ...base, gym: { ...base.gym, id: "restricted", name: "Restricted Gym", status: "suspended" }, invoice: { id: "INV-other", gym: "Restricted Gym", amount: "JOD 49.000", amountMinor: 49000, status: "open", date: "2026-10-10", supportCaseId: "support-other", paymentClaim: { method: "cliq", reference: "BANK-1", payerName: "Owner", paidOn: "2026-10-10", status: "submitted", submittedAt: "2026-10-10T12:00:00Z", amountMinor: 49000 } } });
+    } });
+    expect(await screen.findByText("We are checking your payment")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "See it in Support" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute("href", "/dashboard");
+  } finally { identity.value.memberships = []; }
+});

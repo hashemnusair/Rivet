@@ -58,9 +58,9 @@ function Deferred({ children }: { children: ReactNode }) {
   return shown ? <>{children}</> : <button type="button" onClick={() => setShown(true)}>Show page</button>;
 }
 
-async function renderPage(role: "owner" | "manager", prepare?: (api: MockGymOSApi) => Promise<void>) {
+async function renderPage(role: "owner" | "manager", prepare?: (api: MockGymOSApi) => Promise<void>, organizationId?: string) {
   const user = userEvent.setup();
-  const result = await renderWithApp(<Deferred><BillingCheckoutContent fullAccess /></Deferred>, { role });
+  const result = await renderWithApp(<Deferred><BillingCheckoutContent fullAccess organizationId={organizationId} /></Deferred>, { role });
   if (prepare) await prepare(result.api);
   await user.click(screen.getByRole("button", { name: "Show page" }));
   return { ...result, user };
@@ -148,4 +148,17 @@ it.each(["en", "ar"] as const)("%s submitted claims use support correction, then
   expect(corrected.invoice?.paymentClaim).toMatchObject({ reference: "CORRECT-2", amountMinor: before.amountMinor });
   await result.api.recordPlatformInvoicePayment({ invoiceId: before.id, reference: "CORRECT-2", reason: "Matched transfer" });
   expect((await result.api.getPlatformSnapshot()).invoices.find(invoice => invoice.id === before.id)).toMatchObject({ status: "paid", paymentClaim: { reference: "CORRECT-2" } });
+});
+it("refreshes the quote for the displayed organization rather than the bound workspace", async () => {
+  let refresh = vi.fn();
+  const { user } = await renderPage("owner", async api => {
+    const base = await api.getBillingCheckout();
+    const get = vi.spyOn(api, "getBillingCheckout").mockResolvedValue({ ...base, gym: { ...base.gym, id: "other-billing-gym", status: "active" }, invoice: { ...FIRST_INVOICE, planChange: { from: "Basic", to: "Pro" } } });
+    const next = { ...base, gym: { ...base.gym, id: "other-billing-gym" }, invoice: { ...FIRST_INVOICE, id: "INV-refreshed" } };
+    refresh = vi.fn().mockImplementation(async () => { get.mockResolvedValue(next); return next; });
+    vi.spyOn(api, "requestPlanChange").mockImplementation(refresh);
+  }, "other-billing-gym");
+  await user.click(await screen.findByRole("button", { name: "Refresh upgrade quote" }));
+  expect(refresh).toHaveBeenCalledWith({ plan: "Pro", organizationId: "other-billing-gym" });
+  expect(await screen.findByRole("complementary", { name: /Invoice INV-refreshed/ })).toBeInTheDocument();
 });

@@ -54,7 +54,6 @@ export function BillingCheckoutPage() {
   // Previews and tests run on seeded personas instead of a real account.
   const demo = identity.status === "demo";
   const allowed = demo ? signedIn : destination?.area === "billing" || destination?.area === "gym";
-  const fullAccess = demo ? signedIn : destination?.area === "gym";
 
   useEffect(() => {
     if (demo) {
@@ -69,6 +68,8 @@ export function BillingCheckoutPage() {
   const gyms = [...identity.memberships, ...(identity.billingAccess ?? [])];
   const requestedGym = params.get("organizationId");
   const organizationId = gyms.find(gym => gym.organizationId === requestedGym)?.organizationId ?? (!requestedGym && gyms.length === 1 ? gyms[0]!.organizationId : undefined);
+  const fullAccess = demo ? signedIn : destination?.area === "gym";
+  const selectedWorkspaceAccess = fullAccess && (demo || !organizationId || identity.memberships.some(gym => gym.organizationId === organizationId));
   const selectionRequired = Boolean((gyms.length || requestedGym) && !organizationId);
   const query = useApiQuery(organizationId ? [...qk.billingCheckout, organizationId] : qk.billingCheckout, (api) => api.getBillingCheckout(organizationId), { enabled: allowed && !selectionRequired });
 
@@ -77,7 +78,7 @@ export function BillingCheckoutPage() {
       <BillingHeader gymName={query.data?.gym.name} fullAccess={fullAccess} />
       <RestrictedAccessNav />
       <main className="mx-auto w-full max-w-5xl px-4 pb-20 pt-8 sm:px-6 lg:pt-12">
-        {allowed && selectionRequired ? <div className="grid gap-3"><h1>{t("commerce.checkout.chooseBillingGym")}</h1>{gyms.map(gym => <Link className="underline" key={gym.organizationId} href={`/billing?organizationId=${encodeURIComponent(gym.organizationId)}`}>{gym.organizationName}</Link>)}</div> : allowed ? <BillingCheckoutContent key={organizationId} organizationId={organizationId} fullAccess={fullAccess} /> : <CheckoutLoading />}
+        {allowed && selectionRequired ? <div className="grid gap-3"><h1>{t("commerce.checkout.chooseBillingGym")}</h1>{gyms.map(gym => <Link className="underline" key={gym.organizationId} href={`/billing?organizationId=${encodeURIComponent(gym.organizationId)}`}>{gym.organizationName}</Link>)}</div> : allowed ? <BillingCheckoutContent key={organizationId} organizationId={organizationId} fullAccess={selectedWorkspaceAccess} /> : <CheckoutLoading />}
       </main>
     </div>
   );
@@ -182,7 +183,7 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
                   <p className="mt-1 text-ink-2">{t("commerce.checkout.rejected.body", { reason: claim.rejectionReason ?? "" })}</p>
                 </div>
               ) : null}
-              {upgradeTo ? <RefreshUpgradeQuote plan={upgradeTo} /> : null}
+              {upgradeTo ? <RefreshUpgradeQuote plan={upgradeTo} organizationId={checkout.gym.id} /> : null}
               <PaymentInstructions checkout={checkout} />
               <ClaimForm checkout={checkout} />
             </>
@@ -204,12 +205,13 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
   );
 }
 
-function RefreshUpgradeQuote({ plan }: { plan: NonNullable<NonNullable<BillingCheckout["invoice"]>["planChange"]>["to"] }) {
+function RefreshUpgradeQuote({ plan, organizationId }: { organizationId?: string; plan: NonNullable<NonNullable<BillingCheckout["invoice"]>["planChange"]>["to"] }) {
   const { t } = useLocale();
   const client = useQueryClient();
-  const refresh = useApiMutation((api) => api.requestPlanChange({ plan }), {
+  const refresh = useApiMutation((api) => api.requestPlanChange({ plan, organizationId }), {
     onSuccess: async checkout => {
-      client.setQueryData(qk.billingCheckout, checkout);
+      client.setQueryData(checkout.gym.id ? [...qk.billingCheckout, checkout.gym.id] : qk.billingCheckout, checkout);
+      await client.invalidateQueries({ queryKey: qk.billingCheckout });
       await client.invalidateQueries({ queryKey: qk.billingPlans });
       await client.invalidateQueries({ queryKey: qk.myPlatformInvoices });
     },
