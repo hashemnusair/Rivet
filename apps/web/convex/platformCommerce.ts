@@ -1036,9 +1036,10 @@ async function setPromoActive(ctx: MutationCtx, input: Data, request: RequestArg
 }
 
 // ---------------------------------------------------------------- Dispatch
+// Keep the selected branch only when an explicit billing scope stays in its workspace.
 
 export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
-  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: undefined } : requestArgs;
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
   if (operation === "public.websiteOffer") return await websiteOfferView(ctx);
   if (operation === "public.promo.check") {
     const plan = planName(input.plan) ?? "Starter";
@@ -1055,7 +1056,7 @@ export async function commerceQuery(ctx: QueryCtx, operation: string, input: Dat
 }
 
 export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
-  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: undefined } : requestArgs;
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
   if (operation === "platform.commerce.website_offer.update") return await updateWebsiteOffer(ctx, input, request);
   if (operation === "platform.commerce.payment_details.update") return await updatePaymentDetails(ctx, input, request);
   if (operation === "platform.promo.create") return await createPromo(ctx, input, request);

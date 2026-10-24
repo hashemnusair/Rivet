@@ -10,6 +10,10 @@
   reachable, with named organization scope and deliberate multi-gym selection.
   Pending-payment/suspended companions, stale-session denial and exact expiry
   remain covered through real Convex identity/query/mutation tests and the client.
+  Same-organization billing retains an active owner’s selected branch, including
+  multi-branch assignments; cross-organization scope discards that branch. The
+  additional public query/payment regression rejects an unassigned branch without
+  partial state and fails on the first pushed follow-up head `7ae06d9e`.
 - [x] Remediate the four requested Next.js/Zod advisories using patched compatible
   runtime/peer packages and a committed lockfile. Production audit is clean;
   package/peer/transitive versions are verified. No exception/threshold change.

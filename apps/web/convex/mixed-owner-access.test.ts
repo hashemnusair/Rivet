@@ -36,3 +36,20 @@ it.each(["pending_payment", "suspended"] as const)("identity retains cancelled e
   await gym.t.run(ctx => ctx.db.patch(companion, { archivedAt: NOW }));
   await expect(gym.owner.query(api.domain.query, op("billing.checkout", { organizationId: "billing-org" }))).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
 });
+it("preserves a selected operational branch when billing explicitly targets that same active gym", async () => {
+  const gym = await auditGym();
+  await gym.t.run(async ctx => {
+    const owner = (await ctx.db.query("users").collect()).find(user => user.publicId === "owner")!;
+    const membership = (await ctx.db.query("organizationMemberships").collect()).find(row => row.userId === owner._id)!;
+    const second = await ctx.db.insert("branches", { organizationId: gym.org, publicId: "second", name: "Second", code: "S", active: true, status: "active", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.patch(membership._id, { branchScope: "selected", branchIds: [gym.branch, second] });
+  });
+  await gym.invoice("active-invoice");
+  const request = { ...op("billing.checkout", { organizationId: "audit-org" }), organizationId: "audit-org", activeBranchId: "audit-branch" };
+  expect(await gym.owner.query(api.domain.query, request)).toHaveProperty("invoice.id", "active-invoice");
+  const submit = { ...request, ...op("billing.payment.submit", { organizationId: "audit-org", invoiceId: "active-invoice", method: "cliq", reference: "BANK-1", payerName: "Owner", paidOn: "2026-10-10" }) };
+  expect(await gym.owner.mutation(api.domain.mutate, submit)).toHaveProperty("invoice.paymentClaim.reference", "BANK-1");
+  const before = await gym.state();
+  await expect(gym.owner.mutation(api.domain.mutate, { ...submit, activeBranchId: "unassigned" })).rejects.toMatchObject({ data: { code: "FORBIDDEN" } });
+  expect(await gym.state()).toEqual(before);
+});
