@@ -1386,6 +1386,7 @@ export interface BillingNotice {
 }
 
 export interface SessionSubscription {
+  cancelledAt?: ISODateTime;
   addOns?: SubscriptionAddOns;
   effectivePlan?: import("../../../convex/planCatalogue").PlanDefinition;
   plan?: "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";

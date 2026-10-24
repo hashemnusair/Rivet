@@ -1,10 +1,11 @@
+import { replaceableSubscriptionInvoice } from "./subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, validateAddOns, subscriptionInvoiceLines, EMPTY_ADD_ONS } from "./subscriptionAddOns";
 import { effectivePlan } from "./planCapacity";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { domainError, publicOrganizationId, publicUserId, requireBillingActor, requirePlatformAdmin, requireReason, type ActorContext, type RequestArgs } from "./security";
 import { gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
-import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, fundedSubscriptionValue, termChange, termEnd, type BillingInterval, type OutgoingTerm } from "./subscriptionTerm";
+import { DAY_MS, PAYMENT_TERM_DAYS, SUSPENSION_AFTER_DUE_DAYS, fundedSubscriptionValue, upgradeActivation, termChange, termEnd, type BillingInterval, type OutgoingTerm } from "./subscriptionTerm";
 import { pendingOnboardingFee } from "./onboardingBilling";
 import {
   DEFAULT_WEBSITE_PLACES,
@@ -52,6 +53,7 @@ export const COMMERCE_MUTATIONS = [
   "platform.promo.set_active",
   "platform.invoice.payment_reject",
   "billing.payment.submit",
+  "billing.payment.correction_request",
   "billing.plan_change.request",
   "billing.plan_change.cancel",
 ] as const;
@@ -360,6 +362,7 @@ async function checkoutView(ctx: ReadContext, actor: ActorContext): Promise<Data
   const dueAt = row && !isPlanChange(record(row.data)) ? timestamp(record(row.data).dueAt) : undefined;
   return {
     gym: {
+      id: publicOrganizationId(organization),
       name: organization.name,
       status: organization.status,
       plan: organization.subscriptionPlan,
@@ -370,6 +373,7 @@ async function checkoutView(ctx: ReadContext, actor: ActorContext): Promise<Data
     ...(row ? { invoice: invoiceView(row, organization.name) } : {}),
     paymentDetails,
     canPay: canPay(actor),
+    canRequestCorrection: actor.role === "owner",
     // A gym that has never paid has nothing to lose; a paying gym is told
     // the day its access stops if this invoice stays unpaid.
     ...(dueAt !== undefined && organization.status !== "pending_payment" && organization.status !== "suspended" ? { accessEndsAt: iso(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS) } : {}),
@@ -400,9 +404,21 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
   if (Object.keys(fieldErrors).length > 0) {
     domainError("VALIDATION_ERROR", "Check the payment details and try again.", { fieldErrors, correlationId: actor.correlationId });
   }
+  const before = record(invoice.paymentClaim);
+  if (before.status === "submitted") {
+    if (before.method !== method || before.reference !== reference || before.payerName !== payerName || before.paidOn !== paidOn || text(before.note, 500) !== note) {
+      domainError("CONFLICT", "Confirm or return the submitted payment before changing its details.", { correlationId: actor.correlationId });
+    }
+    return await checkoutView(ctx, actor);
+  }
+  if (isPlanChange(invoice)) {
+    const option = (await planChangeOptions(ctx, actor.organization, Date.now())).find(option => option.plan === record(invoice.planChange).to);
+    if (!option || (timestamp(invoice.quoteValidUntil) ?? Infinity) <= Date.now() || invoice.amountMinor !== option.amountMinor || (invoice.creditMinor ?? 0) !== option.creditMinor) domainError("CONFLICT", "This upgrade quote has changed. Refresh the upgrade quote and review the amount before sending payment details.", { correlationId: actor.correlationId });
+  }
   const now = Date.now();
   const claim = {
     status: "submitted",
+    submissionId: crypto.randomUUID(),
     method,
     reference,
     payerName,
@@ -412,7 +428,6 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     submittedAt: iso(now),
     submittedBy: { id: publicUserId(actor.user), name: actor.user.fullName },
   };
-  const before = record(invoice.paymentClaim);
   await ctx.db.patch(row._id, { data: { ...invoice, paymentClaim: claim, updatedAt: iso(now) }, updatedAt: now });
   await platformAudit(ctx, actor, {
     action: "invoice.payment_submitted",
@@ -433,6 +448,33 @@ async function submitPayment(ctx: MutationCtx, input: Data, request: RequestArgs
     dedupeKey: `payment-claim:${row.publicId}:${claim.submittedAt}`,
   });
   await openPaymentRequest(ctx, actor, row, claim);
+  return await checkoutView(ctx, actor);
+}
+
+/** A narrow billing-only path into the existing operator support conversation. */
+async function requestPaymentCorrection(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const actor = await requireBillingActor(ctx, request);
+  if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can request a payment correction.");
+  const row = (await organizationInvoices(ctx, actor.organization._id)).find(row => row.publicId === text(input.invoiceId, 80));
+  if (!row) domainError("NOT_FOUND", "Invoice not found.");
+  const invoice = record(row.data);
+  const claim = record(invoice.paymentClaim);
+  if (!UNPAID_STATUSES.includes(text(invoice.status)) || claim.status !== "submitted") domainError("CONFLICT", "There is no submitted payment to correct.");
+  const reason = text(input.reason, 500);
+  if (!reason) domainError("VALIDATION_ERROR", "Explain what needs correcting.", { fieldErrors: { reason: ["Required"] } });
+  // One immutable request per submitted claim. Retries cannot create new clocks or messages.
+  if ((record(invoice.paymentCorrection).claimSubmissionId ?? record(invoice.paymentCorrection).claimSubmittedAt) === (claim.submissionId ?? claim.submittedAt)) return await checkoutView(ctx, actor);
+  const now = Date.now();
+  const correction = { claimSubmittedAt: claim.submittedAt, ...(typeof claim.submissionId === "string" ? { claimSubmissionId: claim.submissionId } : {}), requestedAt: iso(now), reason };
+  await openPaymentRequest(ctx, actor, row, claim, true);
+  const current = record((await ctx.db.get(row._id))?.data);
+  const caseRow = await supportCaseRow(ctx, text(current.supportCaseId));
+  if (!caseRow) domainError("CONFLICT", "The payment support request is unavailable.");
+  const messageId = `SUP-MSG-${crypto.randomUUID()}`;
+  await ctx.db.insert("domainRecords", { organizationId: actor.organization._id, entityType: "supportMessage", publicId: messageId, createdAt: now, updatedAt: now, data: { id: messageId, caseId: caseRow.publicId, authorType: "gym", authorId: publicUserId(actor.user), authorName: actor.user.fullName, body: reason, createdAt: iso(now) } });
+  await ctx.db.patch(row._id, { data: { ...current, paymentCorrection: correction }, updatedAt: now });
+  await platformAudit(ctx, actor, { action: "invoice.payment_correction_requested", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Owner requested return of submitted payment details", reason, after: { ...correction, supportCaseId: caseRow.publicId } });
+  await notifyPlatformAdmins(ctx, { kind: "support_gym_reply", title: "New gym reply on support case", body: `${actor.organization.name}: ${reason}`, titleMessage: systemMessage("communicationCompletion.notifications.supportGymReply"), bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: actor.organization.name, b: reason }), href: `/platform/support?case=${encodeURIComponent(caseRow.publicId)}`, dedupeKey: `payment-correction:${row.publicId}:${claim.submissionId ?? claim.submittedAt}` });
   return await checkoutView(ctx, actor);
 }
 
@@ -531,10 +573,32 @@ function outgoingTerm(organization: Doc<"organizations">, rows: Doc<"domainRecor
   if (organization.status !== "active" || periodEndsAt === undefined) return undefined;
   const funded = rows
     .map((row) => record(row.data))
-    .filter((invoice) => invoice.status !== "void" && timestamp(invoice.periodEnd) === periodEndsAt)
+    .filter((invoice) => invoice.status !== "void" && (!isPlanChange(invoice) || invoice.status === "paid") && timestamp(invoice.periodEnd) === periodEndsAt)
     .sort((left, right) => text(right.createdAt).localeCompare(text(left.createdAt)))[0];
   const amountMinor = funded ? fundedSubscriptionValue(funded) : undefined;
-  return amountMinor === undefined ? undefined : { periodEndsAt, monthlyPriceMinor, amountMinor, interval };
+  return amountMinor === undefined ? undefined : { periodEndsAt, periodStartsAt: timestamp(funded?.periodStart), monthlyPriceMinor, amountMinor, interval };
+}
+
+/** Read-only preflight, including legacy open quotes issued before credit snapshots. */
+export async function prepareUpgradeActivation(ctx: ReadContext, organization: Doc<"organizations">, invoice: Data, now: number) {
+  const change = record(invoice.planChange);
+  if (change.from !== organization.subscriptionPlan) domainError("CONFLICT", "The subscription changed after this quote. Return the payment and review the upgrade first.");
+  const interval: BillingInterval = invoice.billingInterval === "annual" ? "annual" : "monthly";
+  const basis = record(invoice.creditBasis);
+  const rows = await organizationInvoices(ctx, organization._id);
+  const outgoing = typeof basis.periodEndsAt === "number"
+    ? basis as unknown as OutgoingTerm
+    : outgoingTerm(organization, rows, 0, organization.billingInterval === "annual" ? "annual" : "monthly");
+  if (typeof basis.periodEndsAt === "number" && basis.periodEndsAt !== organization.currentPeriodEndsAt) domainError("CONFLICT", "The paid term changed after this quote. Return the payment and review the upgrade first.");
+  if (typeof basis.periodEndsAt === "number") {
+    const currentFunding = outgoingTerm({ ...organization, status: "active" }, rows, 0, organization.billingInterval === "annual" ? "annual" : "monthly");
+    if (currentFunding?.amountMinor !== basis.amountMinor || currentFunding?.periodStartsAt !== basis.periodStartsAt) domainError("CONFLICT", "The paid funding changed after this quote. Return the payment and review the upgrade first.");
+  }
+  try {
+    return { quotedPeriodStart: text(invoice.periodStart), quotedPeriodEnd: text(invoice.periodEnd), ...upgradeActivation({ now, interval, amountMinor: Number(invoice.amountMinor), subtotalMinor: Number(invoice.subtotalMinor ?? Number(invoice.amountMinor) + Number(invoice.creditMinor ?? 0)), onboardingFeeMinor: Number(invoice.onboardingFeeMinor ?? 0), creditMinor: Number(invoice.creditMinor ?? 0), outgoing }) };
+  } catch {
+    domainError("CONFIGURATION_ERROR", "This upgrade invoice has invalid funding. Review it before confirming payment.");
+  }
 }
 
 /** What each bigger plan costs this gym today, using the same term change as RIVET's own plan changes. */
@@ -543,7 +607,12 @@ async function planChangeOptions(ctx: ReadContext, organization: Doc<"organizati
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";
   const rows = await organizationInvoices(ctx, organization._id);
   const outgoing = outgoingTerm(organization, rows, current ? await gymPlanPriceMinor(ctx, organization, current) : 0, interval);
-  const onboardingFeeMinor = await pendingOnboardingFee(ctx, organization);
+  // Carry setup from invoices this upgrade supersedes, including its own
+  // pending quote. A paid or retained manual invoice must not bill it twice.
+  const invoices = rows.map(row => record(row.data));
+  const hasRetainedSetup = invoices.some(invoice => invoice.status !== "void" && Number(invoice.onboardingFeeMinor ?? 0) > 0 && !replaceableSubscriptionInvoice(invoice));
+  const carriedSetup = Math.max(0, ...invoices.filter(replaceableSubscriptionInvoice).map(invoice => Number(invoice.onboardingFeeMinor ?? 0)));
+  const onboardingFeeMinor = hasRetainedSetup ? 0 : carriedSetup || await pendingOnboardingFee(ctx, organization);
   const options: PlanChangeOption[] = [];
   for (const plan of SELF_SERVE_PLANS) {
     if (planRank(plan) <= planRank(current)) continue;
@@ -598,12 +667,15 @@ async function requestPlanChange(ctx: MutationCtx, input: Data, request: Request
     if (record(pendingInvoice.paymentClaim).status === "submitted") {
       domainError("CONFLICT", "RIVET is checking your payment for the last plan change. Wait until it is confirmed.", { correlationId: actor.correlationId });
     }
-    if (record(pendingInvoice.planChange).to === target) return await checkoutView(ctx, actor);
+    if (record(pendingInvoice.planChange).to === target && pendingInvoice.amountMinor === option.amountMinor && (pendingInvoice.creditMinor ?? 0) === option.creditMinor && (timestamp(pendingInvoice.quoteValidUntil) ?? Infinity) > now) return await checkoutView(ctx, actor);
     await ctx.db.patch(pending._id, { data: { ...pendingInvoice, status: "void", voidedAt: iso(now), updatedAt: iso(now) }, updatedAt: now });
+    await updatePaymentRequest(ctx, pendingInvoice, { state: "cancelled" }, "resolved");
+    await platformAudit(ctx, actor, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: pending.publicId, entityLabel: pending.publicId, summary: "Replaced an unsubmitted upgrade quote", before: { status: pendingInvoice.status, amountMinor: pendingInvoice.amountMinor }, after: { status: "void" } });
   }
   const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
   const interval: BillingInterval = organization.billingInterval === "annual" ? "annual" : "monthly";
   const from = planName(organization.subscriptionPlan);
+  const creditBasis = outgoingTerm(organization, rows, from ? await gymPlanPriceMinor(ctx, organization, from) : 0, interval);
   const invoiceId = `INV-${crypto.randomUUID()}`;
   const invoice: Data = {
     id: invoiceId,
@@ -615,13 +687,15 @@ async function requestPlanChange(ctx: MutationCtx, input: Data, request: Request
     ...(option.onboardingFeeMinor > 0 ? { onboardingFeeMinor: option.onboardingFeeMinor } : {}),
     ...(option.creditMinor > 0 ? { creditMinor: option.creditMinor, creditDays: option.creditDays } : {}),
     planChange: { from, to: target },
+    ...(creditBasis ? { creditBasis } : {}),
+    quoteValidUntil: iso(creditBasis && option.creditDays > 0 ? Math.min(now + PAYMENT_TERM_DAYS * DAY_MS, creditBasis.periodEndsAt - (option.creditDays - 1) * DAY_MS) : now + PAYMENT_TERM_DAYS * DAY_MS),
     addOns: EMPTY_ADD_ONS,
     lines: subscriptionInvoiceLines(option.monthlyPriceMinor, EMPTY_ADD_ONS, interval),
     currency: "JOD",
     date: iso(now),
     issuedAt: iso(now),
     dueAt: iso(now + PAYMENT_TERM_DAYS * DAY_MS),
-    // Provisional: the new term starts when RIVET confirms the payment.
+    // Provisional dates; confirmation values only still-unused credit.
     periodStart: iso(now),
     periodEnd: iso(termEnd(now, interval)),
     cycleKey: `upgrade:${publicOrganizationId(organization)}:${now}`,
@@ -679,10 +753,10 @@ async function supportCaseRow(ctx: ReadContext, caseId: string): Promise<Doc<"do
  * A gym that can open its workspace follows a payment it sent in Support:
  * one request per invoice, opened when the details are first sent and moved
  * along as RIVET returns or confirms them. A gym still waiting for its first
- * payment has only the payment page, which already shows where things are.
+ * payment uses the narrow checkout correction request to reach the same queue.
  */
-async function openPaymentRequest(ctx: MutationCtx, actor: ActorContext, row: Doc<"domainRecords">, claim: Data): Promise<void> {
-  if (actor.organization.status !== "active" && actor.organization.status !== "past_due") return;
+async function openPaymentRequest(ctx: MutationCtx, actor: ActorContext, row: Doc<"domainRecords">, claim: Data, correction = false): Promise<void> {
+  if (!correction && actor.organization.status !== "active" && actor.organization.status !== "past_due") return;
   // Read the invoice again: the caller has just written the payment details to it.
   const invoice = record((await ctx.db.get(row._id))?.data);
   const nowIso = text(claim.submittedAt) || iso(Date.now());
@@ -962,8 +1036,10 @@ async function setPromoActive(ctx: MutationCtx, input: Data, request: RequestArg
 }
 
 // ---------------------------------------------------------------- Dispatch
+// Keep the selected branch only when an explicit billing scope stays in its workspace.
 
-export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
   if (operation === "public.websiteOffer") return await websiteOfferView(ctx);
   if (operation === "public.promo.check") {
     const plan = planName(input.plan) ?? "Starter";
@@ -979,13 +1055,15 @@ export async function commerceQuery(ctx: QueryCtx, operation: string, input: Dat
   domainError("NOT_FOUND", "Unknown operation.");
 }
 
-export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
+  const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
   if (operation === "platform.commerce.website_offer.update") return await updateWebsiteOffer(ctx, input, request);
   if (operation === "platform.commerce.payment_details.update") return await updatePaymentDetails(ctx, input, request);
   if (operation === "platform.promo.create") return await createPromo(ctx, input, request);
   if (operation === "platform.promo.set_active") return await setPromoActive(ctx, input, request);
   if (operation === "platform.invoice.payment_reject") return await rejectPayment(ctx, input, request);
   if (operation === "billing.payment.submit") return await submitPayment(ctx, input, request);
+  if (operation === "billing.payment.correction_request") return await requestPaymentCorrection(ctx, input, request);
   if (operation === "billing.plan_change.request") return await requestPlanChange(ctx, input, request);
   if (operation === "billing.plan_change.cancel") return await cancelPlanChange(ctx, input, request);
   domainError("NOT_FOUND", "Unknown operation.");

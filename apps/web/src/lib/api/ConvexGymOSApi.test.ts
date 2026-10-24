@@ -709,3 +709,19 @@ describe("ConvexGymOSApi contract boundary", () => {
     vi.unstubAllEnvs();
   });
 });
+
+it("carries explicit billing/correction scope without rebinding the active workspace", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const api = new ConvexGymOSApi(transportFor({ query: session, mutation: {} }, (_kind, args) => calls.push(args)));
+  await api.getSession();
+  await api.getBillingCheckout("billing-companion");
+  await api.requestPaymentCorrection({ organizationId: "billing-companion", invoiceId: "INV-owned", reason: "Return the mistaken reference" });
+  await api.submitPlatformPayment({ organizationId: "billing-companion", invoiceId: "INV-owned", method: "cliq", reference: "CORRECT-2", payerName: "Owner", paidOn: "2026-10-10" });
+  await api.requestPlanChange({ organizationId: "billing-companion", plan: "Pro" });
+  await api.listMembers({ page: 1, pageSize: 1 });
+  expect(calls[1]).toMatchObject({ operation: "billing.checkout", input: { organizationId: "billing-companion" } });
+  expect(calls[2]).toMatchObject({ operation: "billing.payment.correction_request", input: { organizationId: "billing-companion", invoiceId: "INV-owned" } });
+  expect(calls[3]).toMatchObject({ operation: "billing.payment.submit", input: { organizationId: "billing-companion", reference: "CORRECT-2" } });
+  expect(calls[4]).toMatchObject({ operation: "billing.plan_change.request", input: { organizationId: "billing-companion", plan: "Pro" } });
+  expect(calls[5]).toMatchObject({ organizationId: session.organization.id, activeBranchId: session.activeBranchId });
+});

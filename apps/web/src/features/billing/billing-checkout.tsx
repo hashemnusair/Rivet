@@ -5,6 +5,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Copy, LogOut } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { RestrictedAccessNav } from "./restricted-access-nav";
 import { useEffect, useState } from "react";
 import { InvoiceLines } from "@/features/billing/invoice-lines";
 import { PaymentProgress, type PaymentOutcome } from "@/features/billing/payment-progress";
@@ -45,13 +47,13 @@ function localToday(timeZone: string): string {
  */
 export function BillingCheckoutPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const identity = useRivetIdentity();
   const { signedIn, sessionLoading } = useApp();
   const destination = identity.status === "ready" ? destinationFor(identity) : undefined;
   // Previews and tests run on seeded personas instead of a real account.
-  const demo = DEMO_AUTH_BYPASS || identity.status === "demo";
+  const demo = identity.status === "demo";
   const allowed = demo ? signedIn : destination?.area === "billing" || destination?.area === "gym";
-  const fullAccess = demo ? signedIn : destination?.area === "gym";
 
   useEffect(() => {
     if (demo) {
@@ -62,19 +64,27 @@ export function BillingCheckoutPage() {
     else if (destination && destination.area !== "billing" && destination.area !== "gym") router.replace(destination.href);
   }, [demo, destination, identity.status, router, sessionLoading, signedIn]);
 
-  const query = useApiQuery(qk.billingCheckout, (api) => api.getBillingCheckout(), { enabled: allowed });
+  const params = useSearchParams();
+  const gyms = [...identity.memberships, ...(identity.billingAccess ?? [])];
+  const requestedGym = params.get("organizationId");
+  const organizationId = gyms.find(gym => gym.organizationId === requestedGym)?.organizationId ?? (!requestedGym && gyms.length === 1 ? gyms[0]!.organizationId : undefined);
+  const fullAccess = demo ? signedIn : destination?.area === "gym";
+  const selectedWorkspaceAccess = fullAccess && (demo || !organizationId || identity.memberships.some(gym => gym.organizationId === organizationId));
+  const selectionRequired = Boolean((gyms.length || requestedGym) && !organizationId);
+  const query = useApiQuery(organizationId ? [...qk.billingCheckout, organizationId] : qk.billingCheckout, (api) => api.getBillingCheckout(organizationId), { enabled: allowed && !selectionRequired });
 
   return (
     <div className="min-h-screen bg-paper text-ink">
       <BillingHeader gymName={query.data?.gym.name} fullAccess={fullAccess} />
+      <RestrictedAccessNav />
       <main className="mx-auto w-full max-w-5xl px-4 pb-20 pt-8 sm:px-6 lg:pt-12">
-        {allowed ? <BillingCheckoutContent fullAccess={fullAccess} /> : <CheckoutLoading />}
+        {allowed && selectionRequired ? <div className="grid gap-3"><h1>{t("commerce.checkout.chooseBillingGym")}</h1>{gyms.map(gym => <Link className="underline" key={gym.organizationId} href={`/billing?organizationId=${encodeURIComponent(gym.organizationId)}`}>{gym.organizationName}</Link>)}</div> : allowed ? <BillingCheckoutContent key={organizationId} organizationId={organizationId} fullAccess={selectedWorkspaceAccess} /> : <CheckoutLoading />}
       </main>
     </div>
   );
 }
 
-function CheckoutLoading() {
+export function CheckoutLoading() {
   const { t } = useLocale();
   return (
     <div role="status" aria-label={t("commerce.checkout.loading")} className="grid gap-4">
@@ -86,8 +96,8 @@ function CheckoutLoading() {
 }
 
 /** The payment page's content for a signed-in gym: the invoice and how to pay it. */
-export function BillingCheckoutContent({ fullAccess }: { fullAccess: boolean }) {
-  const query = useApiQuery(qk.billingCheckout, (api) => api.getBillingCheckout());
+export function BillingCheckoutContent({ fullAccess, organizationId }: { fullAccess: boolean; organizationId?: string }) {
+  const query = useApiQuery(organizationId ? [...qk.billingCheckout, organizationId] : qk.billingCheckout, (api) => api.getBillingCheckout(organizationId));
   if (query.isLoading) return <CheckoutLoading />;
   if (query.isError || !query.data) return <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />;
   return <Checkout checkout={query.data} fullAccess={fullAccess} />;
@@ -112,13 +122,13 @@ function BillingHeader({ gymName, fullAccess }: { gymName?: string; fullAccess: 
   };
   return (
     <header className="border-b border-line bg-surface">
-      <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-3 sm:flex-nowrap sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Image src="/brand/rivet-lockup-488.png" width={110} height={28} alt={t("common.brand.name")} className="dark:hidden" />
           <Image src="/brand/rivet-lockup-rev-488.png" width={110} height={28} alt={t("common.brand.name")} className="hidden dark:block" />
           {gymName ? <span className="truncate border-s border-line ps-3 text-[13px] font-medium text-ink-2" dir="auto">{gymName}</span> : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex max-w-full flex-wrap items-center gap-2">
           <LanguageButton />
           {fullAccess ? (
             <Button asChild variant="ghost" size="sm">
@@ -173,6 +183,7 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
                   <p className="mt-1 text-ink-2">{t("commerce.checkout.rejected.body", { reason: claim.rejectionReason ?? "" })}</p>
                 </div>
               ) : null}
+              {upgradeTo ? <RefreshUpgradeQuote plan={upgradeTo} organizationId={checkout.gym.id} /> : null}
               <PaymentInstructions checkout={checkout} />
               <ClaimForm checkout={checkout} />
             </>
@@ -182,14 +193,30 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
         <aside aria-labelledby="invoice-title" className="rounded-lg border border-line bg-surface p-5 lg:sticky lg:top-6">
           <h2 id="invoice-title" className="text-[15px] font-semibold">{t("commerce.checkout.invoiceTitle", { id: isolateLtr(paymentNoteReference(invoice.id)) })}</h2>
           <p className="mt-1 text-[12.5px] text-ink-3">{t("commerce.checkout.due", { date: f.date(invoice.dueAt) })}</p>
+          {upgradeTo && invoice.quoteValidUntil && claim?.status !== "submitted" ? <p className="mt-1 text-[12.5px] text-ink-3">{t("commerce.checkout.quoteValidUntil", { date: f.dateTime(invoice.quoteValidUntil) })}</p> : null}
           <InvoiceLines invoice={invoice} plan={upgradeTo ?? gym.plan} className="mt-4" />
           {invoice.firstPayment ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.firstTerm", { cadence })}</p> : null}
           {upgradeTo ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.upgradeTerm", { plan: isolate(upgradeTo) })}</p> : null}
+          {upgradeTo && (invoice.creditMinor ?? 0) > 0 ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.creditTiming")}</p> : null}
           {checkout.accessEndsAt ? <p className="mt-4 text-[12.5px] leading-relaxed text-warning-deep">{t("commerce.checkout.accessEnds", { date: f.date(checkout.accessEndsAt) })}</p> : null}
         </aside>
       </div>
     </div>
   );
+}
+
+function RefreshUpgradeQuote({ plan, organizationId }: { organizationId?: string; plan: NonNullable<NonNullable<BillingCheckout["invoice"]>["planChange"]>["to"] }) {
+  const { t } = useLocale();
+  const client = useQueryClient();
+  const refresh = useApiMutation((api) => api.requestPlanChange({ plan, organizationId }), {
+    onSuccess: async checkout => {
+      client.setQueryData(checkout.gym.id ? [...qk.billingCheckout, checkout.gym.id] : qk.billingCheckout, checkout);
+      await client.invalidateQueries({ queryKey: qk.billingCheckout });
+      await client.invalidateQueries({ queryKey: qk.billingPlans });
+      await client.invalidateQueries({ queryKey: qk.myPlatformInvoices });
+    },
+  });
+  return <Button variant="secondary" onClick={() => refresh.mutate(undefined)} loading={refresh.isPending}>{t("commerce.checkout.refreshUpgrade")}</Button>;
 }
 
 function StepHeading({ number, children }: { number: number; children: React.ReactNode }) {
@@ -270,7 +297,7 @@ function PaymentInstructions({ checkout }: { checkout: BillingCheckout }) {
 
 type FormErrors = Partial<Record<"method" | "reference" | "payerName" | "paidOn", string>>;
 
-function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: () => void }) {
+function ClaimForm({ checkout }: { checkout: BillingCheckout }) {
   const { t } = useLocale();
   const queryClient = useQueryClient();
   const invoice = checkout.invoice!;
@@ -285,9 +312,9 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
   const mutation = useApiMutation((api, input: SubmitPlatformPaymentInput) => api.submitPlatformPayment(input), {
     successMessage: t("commerce.checkout.sentToast"),
     onSuccess: (next) => {
-      queryClient.setQueryData(qk.billingCheckout, next);
+      queryClient.setQueryData(next.gym.id ? [...qk.billingCheckout, next.gym.id] : qk.billingCheckout, next);
+      void queryClient.invalidateQueries({ queryKey: qk.billingCheckout });
       void queryClient.invalidateQueries({ queryKey: qk.myPlatformInvoices });
-      onDone?.();
     },
     onError: (error) => {
       if (!isApiError(error) || !error.sourceFieldErrors) return;
@@ -305,7 +332,7 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
     if (!/^\d{4}-\d{2}-\d{2}$/.test(paidOn) || paidOn > today) next.paidOn = t("commerce.checkout.errors.paidOn");
     setErrors(next);
     if (Object.keys(next).length > 0 || !method) return;
-    mutation.mutate({ invoiceId: invoice.id, method, reference: reference.trim(), payerName: payerName.trim(), paidOn, ...(note.trim() ? { note: note.trim() } : {}) });
+    mutation.mutate({ organizationId: checkout.gym.id, invoiceId: invoice.id, method, reference: reference.trim(), payerName: payerName.trim(), paidOn, ...(note.trim() ? { note: note.trim() } : {}) });
   };
 
   return (
@@ -353,10 +380,13 @@ function ClaimForm({ checkout, onDone }: { checkout: BillingCheckout; onDone?: (
 function ClaimSent({ checkout, outcome, fullAccess }: { checkout: BillingCheckout; outcome: PaymentOutcome; fullAccess: boolean }) {
   const { t, isolateLtr } = useLocale();
   const f = useFormat();
-  const [editing, setEditing] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [reason, setReason] = useState("");
+  const client = useQueryClient();
+  const correction = useApiMutation((api) => api.requestPaymentCorrection({ invoiceId: checkout.invoice!.id, reason, organizationId: checkout.gym.id }), { onSuccess: async next => { client.setQueryData(checkout.gym.id ? [...qk.billingCheckout, checkout.gym.id] : qk.billingCheckout, next); await client.invalidateQueries({ queryKey: qk.billingCheckout }); } });
   const claim = checkout.invoice!.paymentClaim!;
   const supportCaseId = checkout.invoice?.supportCaseId;
-  if (editing && checkout.canPay) return <ClaimForm checkout={checkout} onDone={() => setEditing(false)} />;
+  const requested = (checkout.invoice!.paymentCorrection?.claimSubmissionId ?? checkout.invoice!.paymentCorrection?.claimSubmittedAt) === (claim.submissionId ?? claim.submittedAt);
   return (
     <section role="status" className="rounded-lg border border-line bg-surface p-5 sm:p-6">
       <h2 className="text-[17px] font-semibold tracking-tight">{t("commerce.checkout.submitted.title")}</h2>
@@ -369,9 +399,14 @@ function ClaimSent({ checkout, outcome, fullAccess }: { checkout: BillingCheckou
         })}
       </p>
       <PaymentProgress className="mt-5" state="sent" outcome={outcome} />
+      <p className="mt-4 text-[13.5px] leading-relaxed text-ink-2">{t(requested ? "commerce.checkout.submitted.correctionSent" : "commerce.checkout.submitted.correctionHelp")}</p>
+      {requesting && !requested ? <form className="mt-4 grid gap-3" onSubmit={event => { event.preventDefault(); if (reason.trim()) correction.mutate(undefined); }}>
+        <Field label={t("commerce.checkout.submitted.correctionReason")} required><Textarea value={reason} onChange={event => setReason(event.target.value)} maxLength={500} required dir="auto" /></Field>
+        <Button type="submit" loading={correction.isPending} disabled={!reason.trim()}>{t("commerce.checkout.submitted.correctionSubmit")}</Button>
+      </form> : null}
       <div className="mt-5 flex flex-wrap gap-2">
         {supportCaseId && fullAccess ? <Button asChild variant="secondary" size="sm"><Link href={`/support?case=${encodeURIComponent(supportCaseId)}`}>{t("commerce.plans.seeRequest")}</Link></Button> : null}
-        {checkout.canPay ? <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>{t("commerce.checkout.submitted.edit")}</Button> : null}
+        {checkout.canRequestCorrection && !requested ? <Button variant="ghost" size="sm" onClick={() => setRequesting(true)}>{t("commerce.checkout.submitted.correction")}</Button> : null}
       </div>
     </section>
   );

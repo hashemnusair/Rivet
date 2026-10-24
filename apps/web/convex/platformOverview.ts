@@ -1,10 +1,11 @@
+import { addOnMonthlyPrice, validateAddOns, type SubscriptionAddOns } from "./subscriptionAddOns";
 import { gymMonthlyPriceMinor, termPriceMinor } from "./planCatalogue";
 
 export type PlatformQueueSeverity = "danger" | "warning" | "info";
 export interface PlatformOverviewInput {
   now?: number;
   gyms: Array<{ id: string; organizationId?: string; subscriptionStatus: string; trialEndsAt?: string; provisioned?: boolean }>;
-  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; billingInterval?: "monthly" | "annual"; provisioned?: boolean; quotedPriceMinor?: number }>;
+  organizations: Array<{ id?: string; status: string; subscriptionPlan?: string; entitlementPlan?: string; billingInterval?: "monthly" | "annual"; provisioned?: boolean; quotedPriceMinor?: number; subscriptionAddOns?: SubscriptionAddOns }>;
   plans: Array<{ name: string; priceMinor: number }>;
   branches: Array<{ organizationId?: string; active: boolean; status?: string }>;
   members: Array<{ organizationId?: string; status?: string }>;
@@ -137,7 +138,8 @@ export function buildPlatformOverview(input: PlatformOverviewInput) {
     // can lag a plan mutation and must never make MRR look stale.
     const plan = organization.subscriptionPlan ?? organization.entitlementPlan;
     if (!plan) return total;
-    const monthlyPrice = gymMonthlyPriceMinor(plan, planPrices.get(plan) ?? 0, organization.quotedPriceMinor);
+    const monthlyPrice = gymMonthlyPriceMinor(plan, planPrices.get(plan) ?? 0, organization.quotedPriceMinor)
+      + addOnMonthlyPrice(validateAddOns(organization.subscriptionAddOns, plan));
     // Annual tenants pay twelve months with the published annual saving, so
     // their effective monthly revenue is the discounted rate — not the
     // headline monthly price.

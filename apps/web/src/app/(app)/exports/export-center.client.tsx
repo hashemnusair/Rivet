@@ -6,6 +6,7 @@ import { useFormat } from "@/lib/i18n/format";
 
 import { Download, FileSpreadsheet, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { DateTimeText } from "@/components/shared/data-display";
@@ -18,6 +19,7 @@ import { qk } from "@/lib/api/keys";
 import type { ExportJob, ExportKind } from "@/lib/domain/qol";
 import { downloadTextFile } from "@/lib/exports/download";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { exportBranchScopePresentation, exportFailurePresentation, exportJobPresentation } from "./export-job-presentation";
 
@@ -56,12 +58,25 @@ export default function ExportCenterClient() {
   const { locale } = useLocale();
   const format = useFormat();
   const params = useSearchParams();
+  const router = useRouter();
   const { session } = useApp();
+  const identity = useRivetIdentity();
+  const terminatedGyms = identity.exportAccess ?? [];
+  const terminatedOnly = Boolean(terminatedGyms.length && destinationFor(identity).area !== "gym");
+  const gyms = terminatedGyms.length && session && !terminatedOnly
+    ? [{ organizationId: session.organization.id, organizationName: session.organization.name }, ...terminatedGyms]
+    : terminatedGyms;
+  const requestedGym = params.get("organizationId");
+  const candidate = requestedGym || (terminatedOnly && gyms.length === 1 ? gyms[0]!.organizationId : "");
+  const organizationId = gyms.find(gym => gym.organizationId === candidate)?.organizationId;
+  const exportOnly = terminatedOnly || terminatedGyms.some(gym => gym.organizationId === organizationId) || session?.organization.subscription?.status === "cancelled";
+  const selectionRequired = Boolean((terminatedOnly || requestedGym) && !organizationId);
+  const selected = terminatedGyms.find(gym => gym.organizationId === organizationId);
   const { can } = usePermissions();
   const invalidate = useInvalidate();
-  const jobs = useApiQuery(qk.exports, (api) => api.listExportJobs());
+  const jobs = useApiQuery([...qk.exports, organizationId], (api) => api.listExportJobs(organizationId), { enabled: !selectionRequired });
   const filters = useMemo(() => Object.fromEntries(["branchId", "search", "from", "to"].flatMap((key) => { const value = params.get(key); return value ? [[key, value]] : []; })), [params]);
-  const request = useApiMutation((api, kind: ExportKind) => api.requestExport({ kind, filters, locale, idempotencyKey: crypto.randomUUID() }), {
+  const request = useApiMutation((api, kind: ExportKind) => api.requestExport({ kind, filters, locale, ...(organizationId ? { organizationId } : {}), idempotencyKey: crypto.randomUUID() }), {
     // The server answers an oversized request with a "failed" job rather than
     // a truncated file, so the job's own status decides the message: never
     // "File ready: 0 rows." and never a download for a file that was not made.
@@ -74,9 +89,12 @@ export default function ExportCenterClient() {
       await invalidate([qk.exports]);
     },
   });
-  const available = EXPORTS.filter((item) => can(item.permission));
+  const available = EXPORTS.filter((item) => exportOnly || can(item.permission));
 
   return <div className="space-y-5">
+    {exportOnly ? <p role="status" className="text-[13px] text-ink-2">{t("staffTools.exports.terminationAccess")}</p> : null}
+    {selected ? <p className="text-[14px] font-medium" dir="auto">{selected.organizationName} · {t("commerce.checkout.exportDeadline", { date: format.dateTime(selected.expiresAt) })}</p> : null}
+    {gyms.length > 1 || selectionRequired ? <label className="block text-[13px]">{t("staffTools.exports.chooseGym")}<select className="ms-2 rounded-md border border-line p-2" value={organizationId ?? ""} onChange={event => { const next = new URLSearchParams(params.toString()); next.set("organizationId", event.target.value); router.push(`/exports?${next.toString()}`); }}><option value="">{t("staffTools.exports.chooseGym")}</option>{gyms.map(gym => <option key={gym.organizationId} value={gym.organizationId}>{gym.organizationName}</option>)}</select></label> : null}
     <PageHeader sectionLabel={t("staffTools.exports.section")} title={t("nav.item.downloads")} description={t("staffTools.exports.description")} />
     <section className="rounded-lg border border-line bg-sunken/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success-deep" aria-hidden /><p className="text-[12px] leading-5 text-ink-2">{t("staffTools.exports.privacyNote")}</p></div></section>
     {Object.keys(filters).length ? <p className="text-[12px] text-ink-3">{t("staffTools.exports.filtersApplied")}: {Object.entries(filters).map(([key, value]) => {
@@ -100,7 +118,7 @@ export default function ExportCenterClient() {
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-sunken text-ink-2"><FileSpreadsheet className="size-4" aria-hidden /></span>
                 {/* On phones the description keeps its width and the action drops below it. */}
                 <div className="min-w-0 flex-1 basis-56"><h3 className="text-[13.5px] font-semibold">{t(`staffTools.exports.kind.${item.kind}` as TKey)}</h3><p className="text-[12px] text-ink-3">{t(`staffTools.exports.details.${item.kind}` as TKey)}</p></div>
-                <Button className="ms-auto" size="sm" variant="secondary" loading={request.isPending && request.variables === item.kind} disabled={request.isPending} onClick={() => request.mutate(item.kind)}><Download />{t("staffTools.exports.downloadCsv")}</Button>
+                <Button className="ms-auto" size="sm" variant="secondary" loading={request.isPending && request.variables === item.kind} disabled={request.isPending || selectionRequired} onClick={() => request.mutate(item.kind)}><Download />{t("staffTools.exports.downloadCsv")}</Button>
               </article>
             </li>
           ))}

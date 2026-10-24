@@ -4,6 +4,11 @@ import type { commerce as EnCommerce } from "../en/commerce";
 /** How a gym pays RIVET, and the launch offers on its first payment. Wording follows docs/arabic/STANDARD.md and DECISIONS.md. */
 export const commerce: typeof EnCommerce = {
   checkout: {
+    exportDeadline: "تحميل البيانات متاح حتى {date}",
+    permittedDestinations: "الأندية المتاحة لحسابك",
+    billingFor: "الفواتير والدفعات · {gym}",
+    exportsFor: "تحميل البيانات · {gym}",
+    chooseBillingGym: "اختر النادي لدفع فاتورته",
     title: {
       pending: "ادفع لفتح مساحة عملك",
       renewal: "ادفع فاتورة RIVET",
@@ -32,6 +37,10 @@ export const commerce: typeof EnCommerce = {
     invoiceTitle: "فاتورة {id}",
     due: "موعد الدفع: {date}",
     accessEnds: "إذا لم تُدفع هذه الفاتورة، يتوقف وصول ناديك في {date}.",
+    quoteValidUntil: "العرض صالح حتى {date}. حدّثه قبل إرسال الحوالة إذا انقضى هذا الموعد.",
+    activationSummary: "عند التفعيل: تموّل الخدمة الجديدة بمبلغ {funded}، يتضمن رصيدًا غير مستخدم بقيمة {credit}. استُخدم من الرصيد التقديري الأصلي مبلغ {used} مقابل خدمة الباقة السابقة. تبقى الفاتورة الأصلية ومبلغ الحوالة دون تغيير.",
+    creditTiming: "رصيد المدة غير المستخدمة تقديري حتى الدفع. يبدأ احتساب الخدمة المدفوعة بالحوالة عند تأكيدها. استخدام الباقة الحالية قبل التأكيد يقلّل فقط الجزء من مدة الباقة الجديدة المموّل بهذا الرصيد.",
+    refreshUpgrade: "تحديث عرض الترقية",
     upgradeTerm: "تبدأ باقة {plan} يوم تأكيدنا للدفعة.",
     firstTerm: "تبدأ مدة اشتراكك الأولى، ومدتها {cadence}، في اليوم الذي نؤكد فيه دفعتك.",
     step1: "إرسال الدفعة",
@@ -67,7 +76,11 @@ export const commerce: typeof EnCommerce = {
     submitted: {
       title: "نتحقق من دفعتك",
       body: "أرسلت {amount} عبر {method} بتاريخ {date}. رقم المرجع: {reference}. سنراسلك بالبريد الإلكتروني عند تأكيد الدفعة.",
-      edit: "تعديل البيانات",
+      correction: "طلب تصحيح البيانات",
+        correctionHelp: "هل توجد بيانات غير صحيحة؟ اطلب من RIVET إعادة البيانات المرسلة. يمكنك تصحيحها وإرسالها مجددًا بعد إعادتها من فريق RIVET. لا تحوّل المبلغ مرة أخرى.",
+        correctionSent: "وصل طلب التصحيح إلى RIVET. لم تتغيّر بيانات الدفعة المرسلة. بعد إعادتها من فريق RIVET، صحّح البيانات هنا وأرسلها مجددًا. لا تحوّل المبلغ مرة أخرى.",
+        correctionReason: "ما البيانات التي تحتاج إلى تصحيح؟",
+        correctionSubmit: "إرسال طلب التصحيح",
     },
     rejected: {
       title: "لم نتمكن من مطابقة دفعتك",

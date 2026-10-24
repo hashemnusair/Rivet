@@ -42,6 +42,8 @@ export interface InvoicePdfInput {
   interval: "monthly" | "annual";
   /** Days between the issue date and the due date, when both are known. */
   paymentTermDays?: number;
+  /** Settlement evidence alongside the unchanged original quote figures. */
+  activationNote?: string;
   customer: { name: string; address?: string; contactName?: string; contactEmail?: string };
   lines: InvoicePdfLine[];
   subtotal: string;
@@ -162,6 +164,7 @@ export function invoicePdfBlocks(input: InvoicePdfInput): PdfBlock[] {
         ...(input.payment?.balance ? [{ label: t("documents.balance"), value: input.payment.balance }] : []),
       ],
     },
+    ...(input.activationNote ? [{ type: "paragraph" as const, text: input.activationNote, size: 9 }] : []),
     { type: "spacer", height: 10 },
     {
       type: "panel",

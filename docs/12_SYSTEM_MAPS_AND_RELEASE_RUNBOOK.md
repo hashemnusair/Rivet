@@ -1,5 +1,48 @@
 # 12 — System Maps and Release Runbook
 
+## Git deployment hold — 24 October 2026
+
+Hashem authorized a source merge and later AI branch publication, with **no
+deployment**. `rivet-web` remains linked to GitHub `hashemnusair/Rivet`, root
+`apps/web`, production branch `main`. To enforce that boundary:
+
+- `apps/web/vercel.json` sets `git.deploymentEnabled: false` for all branches.
+- The Vercel project Ignored Build Step is `exit 0` (previously unset), also
+  protecting older branches that lack this configuration. An ignored attempt
+  may appear as CANCELED; it must not build or replace the live release.
+- GitHub CI builds/tests source but contains no deployment step. Keep the hold
+  for all AI worktree pushes and PRs; do not copy production environment links.
+
+Official behavior: [Git deployment configuration](https://vercel.com/docs/project-configuration/git-configuration)
+and [Ignored Build Step](https://vercel.com/docs/project-configuration/project-settings#ignored-build-step).
+Inspection found that earlier source pushes did automatically create Previews,
+including `2cb1519e`; prior direct-action handoffs did not establish otherwise.
+The production deployment before this hold is `dpl_8RnoByETV17fHPsda81oHAhHiPtv`.
+
+For a later **explicitly authorized** release, verify current provider settings,
+source/target and credentials, release the billing backend before the frontend,
+then complete the isolated real-identity acceptance matrix below. Decide whether
+to retain manual releases or restore Git deployment; resetting the Ignored Build
+Step to its prior unset value and changing `git.deploymentEnabled` are deliberate
+release-policy changes, never incidental AI implementation work. The hold does
+not prevent manual CLI/API deployment, which remains unauthorized for this task.
+
+## Export workspace-selection follow-up — 24 October 2026 (unreleased)
+
+Source fix `440600ff` removes the loading dead end when an owner with several
+active gyms opens a cancelled gym's permitted exports. The restricted export
+frame and chooser do not depend on choosing an active workspace or use its stale
+session. Existing server authorization, 30-day cancellation window and 24-hour
+file expiry remain authoritative. No additional backend/schema/provider change
+is required by this UI fix; the earlier billing/export batch still requires its
+backend-first release order and credentialed acceptance. Include two active gyms
+plus one/several cancelled gyms in that acceptance matrix.
+
+Main's docs-only AI plan `8b75353f` is integrated by merge `72f22e0b`, without
+runtime changes or duplicate planning sections. The AI implementation remains
+separate, isolated work. CURRENT_STATE records this fix's verification; neither
+this merge nor the branch push is deployment evidence.
+
 ## Planned AI execution ownership — 24 October 2026, no runtime released
 
 [Docs/23](23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) specifies the requested
@@ -30,6 +73,111 @@ a preview frontend can otherwise still point to production. Docs/23 records
 future endpoint configuration and secret placement by model-call runtime. This
 docs-only publication to main does not authorize merging or activating the AI
 implementation itself.
+
+## Mixed owner access — review follow-up, 24 October 2026 (unreleased)
+
+Billing remains the default destination for an owner with a payment-restricted
+gym. A cancelled gym’s export capability is independent: `/exports` must remain
+reachable from scoped links on both restricted pages. Links name the organization;
+several gyms require a deliberate selection. Billing query/payment scope travels
+per request and must not rebind the operational session. Retain an already
+selected branch when the explicit organization matches the workspace; discard it
+on an organization switch. Verify an active owner assigned multiple branches
+can query/submit payment in the selected branch and that unassigned branches fail
+without effects. Scope every checkout mutation, including quote refresh, to the
+displayed organization and update its checkout cache. With an active workspace
+and a restricted companion, a rejected refresh must not create an invoice in the
+active gym; Support links must not point through that gym into the companion’s
+case. Keep the authorized dashboard return. Cancelled gyms never
+receive workspace membership or billing permission from this navigation.
+
+Release the additive billing/correction backend before the matching frontend.
+There is no schema/index migration, backfill, provider change or job activation.
+In isolated acceptance use one real owner with a cancelled gym plus (separately)
+a pending-payment and a suspended gym. Navigate billing → cancelled exports →
+billing, create/retrieve a CSV, and verify the displayed organization and original
+30-day deadline each time. Also test multiple choices, foreign IDs, staff,
+archived gyms, the exact deadline and independent 24-hour file expiry. Verify an
+active gym retains its normal workspace and exports.
+
+For submitted mistakes, checkout’s correction request opens/reuses the existing
+operator support case, including first-payment owners without workspace access.
+Verify the operator sees the request, returns it with a reason, and the owner
+corrects/resubmits before confirmation. Compare original amount, due/notice dates
+and audit history; identical retries create no extra request. Returned upgrades
+retain existing quote-validity checks. No live transfer or email is needed for
+local tests. Real Clerk/inbox acceptance remains a separately credentialed gate.
+
+## Dependency and verification receipt — review follow-up, 24 October 2026
+
+Use the patched manifest and lockfile together: Next.js/lint peers 16.4.2,
+sharp 0.35.5 and Zod 4.6.7 throughout the resolved graph. The official advisories
+set patched floors of [Next.js 16.4.1](https://github.com/advisories/GHSA-2464-fhr4-w9xw)
+(also [cache RCE](https://github.com/advisories/GHSA-673q-mjm6-r5xr) and
+[Server Actions DoS](https://github.com/advisories/GHSA-p3m5-59mp-jv5r)) and
+[Zod 4.6.6](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+No threshold/suppression/override change was used. Check resolved transitive
+versions, not just package declarations.
+
+Final local receipt: 2,398 unit/component tests plus 14 repository safety checks,
+both typechecks, zero-warning lint/secret audit, plain production build,
+Arabic lock, frozen installation and diff check pass. All 21 selected journeys
+pass against the optimized approved mock Preview bundle; exact commands and
+captures are in the latest CURRENT_STATE checkpoint. The plain build matters:
+`/billing` needs its localized Suspense fallback around search-parameter reads.
+Never infer static-production validity solely from the dynamic design preview.
+Generated API/schema signatures did not change; require the normal exact-head
+CI generated-file check before release. No local Convex/Vercel deploy was run.
+
+`pnpm audit --prod` is clean. The optional full `pnpm audit` remains nonzero for
+16 dev-only toolchain findings also present in reviewed `9db78ef5` (20 before
+removing the four requested advisories). None were introduced. Keep that separate
+remediation visible in docs/13; do not disable or suppress the existing CI gate.
+Real multi-gym Clerk and inbox acceptance still require isolated credentials.
+
+## Termination exports — 24 October 2026 (unreleased)
+
+Release backend authorization/identity before the frontend export routing. No
+schema migration, index, retention job, provider setting or automation activation
+is required. A cancelled owner must sign in directly to `/exports` with an export
+frame and the existing seven datasets, without workspace or billing access.
+Check a normal active owner too. In isolated fixtures verify owner versus staff,
+selected branches, foreign tenants, multiple-gym selection, archived organizations,
+missing/future cancellation timestamps, the exact 30-day cutoff and the independent
+24-hour file expiry. A repeat cancelled-status save must retain the original
+termination timestamp. Backend guards recheck the deadline on every create/read;
+a previously open tab cannot extend it. Keep production deletion/renewal jobs off.
+
+
+## Delayed-upgrade release verification — 24 October 2026 (unreleased)
+
+Release Convex before the matching checkout UI. No migration/index or provider
+configuration is required; new optional invoice JSON preserves old readers and
+historical amounts. In isolated staging check monthly/annual Basic with paid
+add-ons: request, expire/refresh, submit, return/resubmit and confirm after the
+old term ends. Verify original transfer amount is fixed, new service starts at
+confirmation, and only cash plus still-unused credit funds its duration. Verify
+`upgradeActivation` and the upgrade audit agree with the organization boundary;
+old paid invoices and signed documents must be unchanged. Confirm a pending
+one-time setup fee survives quote return/refresh exactly once and never funds
+service credit. Inspect activation evidence in both invoice UI and PDF; original
+quoted periods/amounts remain auditable. Changing the source
+paid boundary or funded value after a quote must reject confirmation without side
+effects, including when another invoice is paid while its claim awaits review. Do
+not infer release from a Git push or enable production renewals for this check.
+See docs/14 for the explicit value-preserving billing-date decision.
+
+## Audit correctness release checks — 24 October 2026 (unreleased)
+
+Source publication does not release these fixes. Keep subscription reconciliation
+and provider delivery in their existing disabled/paused states. In isolated tests,
+create a renewal, submit its payment and advance to due +21 days: preview must
+count an operator review rather than suspension; reruns must deduplicate review
+notifications/audits. Return the payment and verify the same original due date
+controls suspension. Repeated claims must not restart a payment clock. Deploy
+backend functions through the guarded workflow only in a separately authorized
+release; no environment or provider change is required by this correction.
+
 
 ## Pending release batch — reconciled 17 October 2026
 

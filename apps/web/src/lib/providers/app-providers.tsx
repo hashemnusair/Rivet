@@ -214,6 +214,10 @@ function SessionProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (identity.status !== "ready") return;
+    if (identity.exportAccess?.length && identity.memberships.length === 0) {
+      setSession(undefined); setSignedIn(false); setSessionLoading(false);
+      return;
+    }
 
     const key = `${identity.userId ?? identity.email ?? "unknown"}:${identity.memberships.map((membership) => `${membership.organizationId}:${membership.role}`).join(",")}:${identity.platformAdmin}`;
     if (convexSessionKey.current === key) return;
@@ -246,7 +250,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         setSignedIn(false);
       })
       .finally(() => setSessionLoading(false));
-  }, [convexMode, identity.email, identity.memberships, identity.platformAdmin, identity.status, identity.userId]);
+  }, [convexMode, identity.email, identity.memberships, identity.platformAdmin, identity.status, identity.userId, identity.exportAccess]);
 
   // A platform subscription mutation updates the tenant organization and its
   // entitlement snapshot. Keep the active gym session in sync with that

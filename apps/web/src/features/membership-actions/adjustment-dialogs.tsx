@@ -222,7 +222,7 @@ export function FreezeDialog({
 }
 
 const makeExtendSchema = (t: TFunction) => z.object({
-  days: z.coerce.number().int().min(1, t("renewFlow.adjust.extend.atLeast")).max(365, t("renewFlow.adjust.extend.atMost")),
+  days: z.coerce.number<number>().int().min(1, t("renewFlow.adjust.extend.atLeast")).max(365, t("renewFlow.adjust.extend.atMost")),
   reason: z.string().min(3, t("renewFlow.adjust.extend.reasonRequired")),
 });
 type ExtendValues = z.infer<ReturnType<typeof makeExtendSchema>>;

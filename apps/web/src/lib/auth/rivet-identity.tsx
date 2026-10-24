@@ -1,5 +1,7 @@
 "use client";
 
+import { terminationExportDeadline } from "@/lib/domain/export-access";
+import { restrictedAccessPreview, PREVIEW_EXPORT_ORG } from "@/lib/mock/restricted-access-preview";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
@@ -82,6 +84,7 @@ export interface RivetIdentity {
    * Gyms this person owns that may only pay: waiting for a first payment, or
    * stopped for an unpaid invoice. They open the payment page, nothing else.
    */
+  exportAccess?: Array<{ organizationId: string; organizationName: string; expiresAt: string }>;
   billingAccess?: Array<{ organizationId: string; organizationName: string; status: "pending_payment" | "suspended" }>;
 }
 
@@ -117,6 +120,16 @@ const IdentityContext = createContext<RivetIdentity>({ status: "loading", platfo
  * component tree shape is fixed for the lifetime of the bundle and the
  * conditional `useQuery` inside `ConvexIdentity` is never conditionally called.
  */
+function DemoIdentityProvider({ children }: { children: ReactNode }) {
+  const [identity, setIdentity] = useState(DEMO_IDENTITY);
+  useEffect(() => {
+    const fixture = restrictedAccessPreview();
+    const deadline = fixture ? terminationExportDeadline({ status: "cancelled", cancelledAt: Date.parse(fixture.cancelledAt) }) : undefined;
+    if (fixture) setIdentity({ ...DEMO_IDENTITY, status: "ready", gymAccessUnavailable: true, billingAccess: [{ organizationId: "10000000-0000-4a00-8a00-000000000001", organizationName: "Forge Fitness Club", status: fixture.status }], exportAccess: deadline ? [{ organizationId: PREVIEW_EXPORT_ORG, organizationName: "Cancelled Preview Gym", expiresAt: new Date(deadline).toISOString() }] : [] });
+  }, []);
+  return <IdentityContext.Provider value={identity}>{children}</IdentityContext.Provider>;
+}
+
 export function RivetIdentityProvider({ children }: { children: ReactNode }) {
   // Resolve the data mode before choosing the identity provider. In a
   // production runtime ConvexGymOSApi throws if mock mode is configured, so a
@@ -125,7 +138,7 @@ export function RivetIdentityProvider({ children }: { children: ReactNode }) {
   // Missing Convex configuration is a configuration failure, not permission
   // to open a seeded demo tenant. Only explicit mock mode can use demo data.
   if (DEMO_AUTH_BYPASS || mode === "mock") {
-    return <IdentityContext.Provider value={DEMO_IDENTITY}>{children}</IdentityContext.Provider>;
+    return <DemoIdentityProvider>{children}</DemoIdentityProvider>;
   }
   if (!CONVEX_ENABLED) {
     return <IdentityContext.Provider value={{ status: "anonymous", platformAdmin: false, gymAccessUnavailable: false, memberships: [] }}>{children}</IdentityContext.Provider>;
@@ -251,6 +264,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
         branches: m.branches,
       })),
       ...(result.billingAccess?.length ? { billingAccess: result.billingAccess } : {}),
+      ...(result.exportAccess?.length ? { exportAccess: result.exportAccess } : {}),
     };
   }
 
@@ -269,7 +283,7 @@ export function useRivetIdentity() {
   return useContext(IdentityContext);
 }
 
-export type Destination = { area: "platform" | "gym" | "billing" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
+export type Destination = { area: "platform" | "gym" | "billing" | "exports" | "member" | "unavailable" | "organization-selection"; href: string; role?: RoleKey };
 
 /**
  * Where this person belongs. Platform administration outranks gym staff, which
@@ -292,8 +306,12 @@ export function destinationFor(identity: RivetIdentity): Destination {
     };
   }
 
+  // This is the default landing only. Export access is an independent route
+  // capability, retained even when another gym needs payment.
   // An owner whose gym is waiting for payment, or stopped for one, can pay.
   if (identity.billingAccess?.length) return { area: "billing", href: "/billing" };
+
+  if (identity.exportAccess?.length) return { area: "exports", href: "/exports" };
 
   if (identity.gymAccessUnavailable) return { area: "unavailable", href: "/login" };
 

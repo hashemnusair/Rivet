@@ -1,3 +1,4 @@
+import { terminationExportDeadline } from "../src/lib/domain/export-access";
 import { query } from "./_generated/server";
 import { toFrontendRole } from "./permissions";
 import { billingOnlyOrganization, membershipInvitationAccepted, WORKSPACE_STATUSES } from "./security";
@@ -77,6 +78,7 @@ export const current = query({
 
     const memberships: IdentityMembership[] = [];
     const billingAccess: BillingAccess[] = [];
+    const exportAccess: Array<{ organizationId: string; organizationName: string; expiresAt: string }> = [];
     let gymAccessUnavailable = false;
     let invitationClaimEligible = false;
     for (const row of rows) {
@@ -96,12 +98,15 @@ export const current = query({
       // tenant itself must still be operational. Suspended/cancelled gyms
       // remain in storage for history and billing, but must disappear from
       // the identity projection so the client cannot advertise a dead route.
-      if (!organization || !organization.publicId || !ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status)) {
+      if (!organization || !organization.publicId || (!ROUTABLE_ORGANIZATION_STATUSES.includes(organization.status) || organization.archivedAt !== undefined)) {
         // The owner of a gym that has not paid, or was stopped for not
         // paying, is routed to the payment page and nowhere else. Other staff
         // still learn only that the gym is unavailable.
         if (organization?.publicId && row.role === "owner" && billingOnlyOrganization(organization)) {
           billingAccess.push({ organizationId: organization.publicId, organizationName: organization.name, status: organization.status as BillingAccess["status"] });
+        } else if (organization?.publicId && row.role === "owner" && terminationExportDeadline(organization) !== undefined) {
+          gymAccessUnavailable = true;
+          exportAccess.push({ organizationId: organization.publicId, organizationName: organization.name, expiresAt: new Date(terminationExportDeadline(organization)!).toISOString() });
         } else {
           gymAccessUnavailable = true;
         }
@@ -145,6 +150,7 @@ export const current = query({
       organizationSelectionRequired: memberships.length > 1,
       memberships,
       ...(billingAccess.length > 0 ? { billingAccess } : {}),
+      ...(exportAccess.length > 0 ? { exportAccess } : {}),
     };
   },
 });

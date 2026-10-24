@@ -3,6 +3,9 @@
   "framework": "nextjs",
   "buildCommand": "pnpm build",
   "regions": ["dub1"],
+  "git": {
+    "deploymentEnabled": false
+  },
   "github": {
     "silent": true
   }

@@ -66,6 +66,8 @@ export const RENEWAL_REMINDER_DAYS = [7, 3, 1] as const;
 export interface OutgoingTerm {
   /** When the paid term was due to end. */
   periodEndsAt: number;
+  /** Stored service start when available, including short funded upgrade terms. */
+  periodStartsAt?: number;
   /** The plan's monthly list price during that term, in minor units. */
   monthlyPriceMinor: number;
   /** Historical subscription value, excluding setup fees; never reprice paid history. */
@@ -85,8 +87,12 @@ export interface TermChangeInput {
 }
 
 /** Only collected money or a carried paid credit can fund the next term. */
-export function fundedSubscriptionValue(invoice: { status?: unknown; subtotalMinor?: unknown; amountMinor?: unknown; onboardingFeeMinor?: unknown; creditMinor?: unknown; websiteMinor?: unknown; subscriptionDiscountMinor?: unknown }): number | undefined {
+export function fundedSubscriptionValue(invoice: { status?: unknown; subtotalMinor?: unknown; amountMinor?: unknown; onboardingFeeMinor?: unknown; creditMinor?: unknown; websiteMinor?: unknown; subscriptionDiscountMinor?: unknown; upgradeActivation?: unknown }): number | undefined {
   if (invoice.status === "void") return undefined;
+  if (invoice.status === "paid" && invoice.upgradeActivation && typeof invoice.upgradeActivation === "object" && "fundedSubscriptionMinor" in invoice.upgradeActivation) {
+    const funded = invoice.upgradeActivation.fundedSubscriptionMinor;
+    return typeof funded === "number" && Number.isSafeInteger(funded) && funded >= 0 ? funded : undefined;
+  }
   // A first invoice can also carry a website and a promo discount; neither is
   // subscription value a later term change should credit back.
   const nonSubscription = (typeof invoice.onboardingFeeMinor === "number" ? invoice.onboardingFeeMinor : 0)
@@ -128,11 +134,45 @@ export function termChange(input: TermChangeInput): TermChange {
   if (!outgoing || outgoing.periodEndsAt <= input.now) {
     return { periodEndsAt, subtotalMinor, creditMinor: 0, creditDays: 0, amountMinor: subtotalMinor };
   }
-  const outgoingStart = termStart(outgoing.periodEndsAt, outgoing.interval);
+  const outgoingStart = outgoing.periodStartsAt ?? termStart(outgoing.periodEndsAt, outgoing.interval);
   const termDays = daysBetween(outgoingStart, outgoing.periodEndsAt);
   const creditDays = Math.min(daysBetween(input.now, outgoing.periodEndsAt), termDays);
   const outgoingPrice = outgoing.amountMinor ?? termPriceMinor(outgoing.monthlyPriceMinor, outgoing.interval);
   const worth = termDays === 0 ? 0 : Math.round((outgoingPrice * creditDays) / termDays);
   const creditMinor = Math.max(0, Math.min(subtotalMinor, worth));
   return { periodEndsAt, subtotalMinor, creditMinor, creditDays: creditMinor > 0 ? creditDays : 0, amountMinor: subtotalMinor - creditMinor };
+}
+
+
+export interface UpgradeActivation {
+  quotedPeriodStart?: string;
+  quotedPeriodEnd?: string;
+  quotedCreditMinor: number;
+  appliedCreditMinor: number;
+  consumedCreditMinor: number;
+  fundedSubscriptionMinor: number;
+  nominalSubscriptionMinor: number;
+  periodStart: string;
+  periodEnd: string;
+}
+
+/**
+ * Preserve cash and historical invoice amounts while consuming old-plan time
+ * only once. Review never backdates new service or consumes the service bought
+ * by the transfer. Only the still-unused part of the quoted credit funds it.
+ */
+export function upgradeActivation(input: { now: number; interval: BillingInterval; amountMinor: number; subtotalMinor: number; onboardingFeeMinor: number; creditMinor: number; outgoing?: OutgoingTerm }): UpgradeActivation {
+  const nominal = input.subtotalMinor - input.onboardingFeeMinor;
+  const cash = input.amountMinor - input.onboardingFeeMinor;
+  if (!Number.isSafeInteger(nominal) || nominal <= 0 || !Number.isSafeInteger(cash) || cash < 0 || !Number.isSafeInteger(input.creditMinor) || input.creditMinor < 0 || cash + input.creditMinor !== nominal) throw new Error("Invalid upgrade funding.");
+  const outgoing = input.outgoing;
+  const sourceStart = outgoing ? outgoing.periodStartsAt ?? termStart(outgoing.periodEndsAt, outgoing.interval) : input.now;
+  const sourceDuration = outgoing ? outgoing.periodEndsAt - sourceStart : 0;
+  const unusedDuration = outgoing ? Math.max(0, Math.min(sourceDuration, outgoing.periodEndsAt - input.now)) : 0;
+  const remaining = outgoing && sourceDuration > 0 ? Math.round((outgoing.amountMinor ?? termPriceMinor(outgoing.monthlyPriceMinor, outgoing.interval)) * unusedDuration / sourceDuration) : 0;
+  const credit = Math.min(input.creditMinor, remaining);
+  const funded = cash + credit;
+  const fullEnd = termEnd(input.now, input.interval);
+  const end = input.now + Math.ceil((fullEnd - input.now) * (funded / nominal));
+  return { quotedCreditMinor: input.creditMinor, appliedCreditMinor: credit, consumedCreditMinor: input.creditMinor - credit, fundedSubscriptionMinor: funded, nominalSubscriptionMinor: nominal, periodStart: new Date(input.now).toISOString(), periodEnd: new Date(end).toISOString() };
 }

@@ -1,3 +1,5 @@
+import { requireExportActor } from "./security";
+import { replaceableSubscriptionInvoice, submittedPayment } from "./subscriptionInvoiceProtection";
 import { addOnMonthlyPrice, addOnModules, applyAddOns, validateAddOns, subscriptionInvoiceLines, type SubscriptionAddOns } from "./subscriptionAddOns";
 import { exportLocale, makeExportCopy } from "../src/lib/exports/copy";
 import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
@@ -64,7 +66,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, validQuotedPriceMinor, termPriceMinor } from "./planCatalogue";
 import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
@@ -5687,7 +5689,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     const provisionedOrganizationIds = new Set(gymProjections.filter(({ view, provisioned, organizationId }) => provisioned && !booleanValue(view.isArchived) && organizationId).map(({ organizationId }) => organizationId as string));
     const overview = buildPlatformOverview({
       gyms: gymProjections.map(({ view, provisioned, organizationId }) => ({ id: stringValue(view.id), organizationId, subscriptionStatus: stringValue(view.subscriptionStatus), trialEndsAt: optionalString(view.trialEndsAt), provisioned: provisioned && !booleanValue(view.isArchived) })),
-      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)), quotedPriceMinor: organization.quotedPriceMinor })),
+      organizations: organizations.map((organization) => ({ id: String(organization._id), status: organization.status, subscriptionPlan: organization.subscriptionPlan, entitlementPlan: entitlementByOrganization.get(String(organization._id))?.subscriptionPlan, subscriptionAddOns: organization.subscriptionAddOns, billingInterval: billingInterval(organization.billingInterval), provisioned: provisionedOrganizationIds.has(String(organization._id)), quotedPriceMinor: organization.quotedPriceMinor })),
       plans: plans.map((plan) => ({ name: stringValue(plan.name), priceMinor: numberValue(plan.priceMinor) })),
       branches: branches.map((branch) => ({ organizationId: String(branch.organizationId), active: branch.active, status: branch.status })),
       members: memberRows.map((member) => ({ organizationId: String(member.organizationId), status: optionalString(data(member.data).status) })),
@@ -6000,7 +6002,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
     });
   }
 
-  const actor = await requireActor(ctx, request);
+  const actor = operation === "exports.list" || operation === "exports.request"
+    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {
@@ -9073,10 +9077,6 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     if (addOnsChanged || (requestedPlan && requestedPlan !== organization.subscriptionPlan)) {
       await assertOrganizationFitsPlan(ctx, organization._id, applyAddOns(await effectivePlan(ctx, addOnPlan), nextAddOns), todayIn(organization.timezone || TZ_FALLBACK), admin.correlationId);
     }
-    if (addOnsChanged) {
-      const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
-      if (invoices.some(row => !["paid", "void"].includes(stringValue(data(row.data).status)) && data(data(row.data).paymentClaim).status === "submitted")) domainError("CONFLICT", "Confirm or return the submitted payment before changing add-ons.", { correlationId: admin.correlationId });
-    }
     // A gym still waiting for its first payment has no paid term to change.
     // RIVET corrects the plan, billing or Enterprise quote it was set up
     // with, and the first invoice is issued again for the corrected plan.
@@ -9212,6 +9212,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     const priorInvoices = startsNewPaidTerm && organization
       ? await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect()
       : [];
+    if (priorInvoices.some(row => replaceableSubscriptionInvoice(data(row.data)) && submittedPayment(data(row.data)))) {
+      domainError("CONFLICT", "Confirm or return the submitted payment before replacing its subscription invoice.", { correlationId: admin.correlationId });
+    }
     const fundedTerm = priorInvoices.map(row => data(row.data)).filter(invoice => invoice.status !== "void" && Date.parse(stringValue(invoice.periodEnd)) === storedPeriodEndsAt).sort((a, b) => Date.parse(stringValue(b.createdAt)) - Date.parse(stringValue(a.createdAt)))[0];
     const outgoingValue = fundedTerm ? fundedSubscriptionValue(fundedTerm) : undefined;
     const change = startsNewPaidTerm
@@ -9223,7 +9226,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           // was never paid for, so it earns no credit; its unpaid invoice is
           // voided below instead.
           ...(previousSubscriptionStatus === "active" && storedPeriodEndsAt !== undefined && outgoingValue !== undefined
-            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingInterval } }
+            ? { outgoing: { periodEndsAt: storedPeriodEndsAt, periodStartsAt: validTimestamp(stringValue(fundedTerm?.periodStart)), monthlyPriceMinor: outgoingMonthlyPrice, amountMinor: outgoingValue, interval: existingInterval } }
             : {}),
         })
       : undefined;
@@ -9246,7 +9249,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       domainError("VALIDATION_ERROR", "An active subscription must end in the future.", { correlationId: admin.correlationId });
     }
     const nextCurrentPeriodEndsAt = nextStatus === "trial" ? undefined : selectedPeriodEndsAt;
-    const nextCancelledAt = nextStatus === "cancelled" ? nowMs : undefined;
+    const nextCancelledAt = nextStatus === "cancelled" ? statusTransitioned ? nowMs : organization.cancelledAt : undefined;
     if (nextStatus === "trial" && nextTrialEndsAt === undefined) {
       domainError("CONFIGURATION_ERROR", "A trial cannot start until its onboarding date is established.", { correlationId: admin.correlationId });
     }
@@ -9262,7 +9265,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       trialEndsAt: nextTrialEndsAt !== undefined ? new Date(nextTrialEndsAt).toISOString() : undefined,
       subscriptionStartedAt: nextSubscriptionStartedAt !== undefined ? new Date(nextSubscriptionStartedAt).toISOString() : undefined,
       currentPeriodEndsAt: nextCurrentPeriodEndsAt !== undefined ? new Date(nextCurrentPeriodEndsAt).toISOString() : undefined,
-      ...(nextStatus === "cancelled" ? { cancelledAt: new Date(nextCancelledAt!).toISOString() } : { cancelledAt: undefined }),
+      ...(nextStatus === "cancelled" ? { cancelledAt: nextCancelledAt !== undefined && Number.isFinite(nextCancelledAt) ? new Date(nextCancelledAt).toISOString() : undefined } : { cancelledAt: undefined }),
       subscriptionStatusReason: reason,
       billingInterval: interval,
       ...(nextStatus === "active" || nextStatus === "trial" ? { lastActiveAt: now } : {}),
@@ -9340,8 +9343,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         for (const row of invoiceRows) {
           const invoice = data(row.data);
           const invoiceStatus = stringValue(invoice.status);
-          const key = optionalString(invoice.cycleKey);
-          if (!key || !["draft", "open", "past_due", "failed"].includes(invoiceStatus)) continue;
+          if (!replaceableSubscriptionInvoice(invoice)) continue;
           await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: nowMs });
           await insertPlatformAudit(ctx, admin, {
             action: "invoice.void",
@@ -9711,9 +9713,20 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (status === "paid" || status === "void") domainError("VALIDATION_ERROR", "Paid or void invoices cannot be voided.", { correlationId: admin.correlationId });
       requireReason(input.reason, admin.correlationId);
       reason = input.reason.trim();
+      if (submittedPayment(current)) domainError("CONFLICT", "Confirm or return the submitted payment before voiding its invoice.", { correlationId: admin.correlationId });
       updated = { ...current, status: "void", voidedAt: now, updatedAt: now };
       action = "invoice.void";
       summary = "Voided platform invoice";
+    }
+
+    let activation: Awaited<ReturnType<typeof prepareUpgradeActivation>> | undefined;
+    if (operation === "platform.invoice.payment" && workspacePlan(data(current.planChange).to)) {
+      const invoices = await ctx.db.query("domainRecords").withIndex("by_organization_type", q => q.eq("organizationId", record.organizationId).eq("entityType", "platformInvoice")).collect();
+      if (invoices.some(row => row._id !== record._id && replaceableSubscriptionInvoice(data(row.data)) && submittedPayment(data(row.data)))) {
+        domainError("CONFLICT", "Confirm or return the submitted payment before replacing its subscription invoice.", { correlationId: admin.correlationId });
+      }
+      const organization = await ctx.db.get(record.organizationId);
+      if (organization) activation = await prepareUpgradeActivation(ctx, organization, current, Date.now());
     }
 
     await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
@@ -9734,9 +9747,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         // A gym's first payment opens its workspace, so its first paid term
         // starts now rather than on the day the invoice was raised.
         const firstTermStart = organization.status === "pending_payment" || upgradeTo ? Date.now() : undefined;
-        const firstTermEnd = firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
+        const firstTermEnd = activation ? Date.parse(activation.periodEnd) : firstTermStart === undefined ? undefined : termEnd(firstTermStart, billing);
         if (firstTermStart !== undefined && firstTermEnd !== undefined) {
-          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd) };
+          updated = { ...updated, periodStart: utcIso(firstTermStart), periodEnd: utcIso(firstTermEnd), ...(activation ? { upgradeActivation: activation } : {}) };
           await ctx.db.patch(record._id, { data: updated, updatedAt: Date.now() });
         }
         // An upgrade starts a new term but not a new subscription.
@@ -9779,7 +9792,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
           const invoiceRows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "platformInvoice")).collect();
           for (const row of invoiceRows) {
             const invoice = data(row.data);
-            if (row.publicId === invoiceId || !optionalString(invoice.cycleKey) || !["draft", "open", "past_due", "failed"].includes(stringValue(invoice.status))) continue;
+            if (row.publicId === invoiceId || !replaceableSubscriptionInvoice(invoice)) continue;
             await ctx.db.patch(row._id, { data: { ...invoice, status: "void", voidedAt: now, updatedAt: now }, updatedAt: Date.now() });
             await insertPlatformAudit(ctx, admin, { action: "invoice.void", entityType: "platform_invoice", entityPublicId: row.publicId, entityLabel: row.publicId, summary: "Voided a subscription invoice replaced by a plan upgrade", reason, before: { status: invoice.status }, after: { status: "void" } });
           }
@@ -9791,7 +9804,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
             summary: `Upgraded ${organization.name} to ${upgradeTo} after confirming ${invoiceId}`,
             reason,
             before: { plan: previousPlan, currentPeriodEndsAt: organization.currentPeriodEndsAt },
-            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary },
+            after: { plan: upgradeTo, currentPeriodEndsAt: nextBoundary, upgradeActivation: activation },
           });
         }
       }
@@ -9941,7 +9954,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     return await supportCaseView(ctx, refreshed);
   }
 
-  const actor = await requireActor(ctx, request);
+  const actor = operation === "exports.list" || operation === "exports.request"
+    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
   switch (operation) {

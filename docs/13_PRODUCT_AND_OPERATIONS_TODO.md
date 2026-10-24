@@ -1,5 +1,27 @@
 # RIVET product, engineering, and operations backlog
 
+## Source merge and deployment hold — 24 October 2026
+
+- [x] Verify billing/export source `2cb1519e`: all 11 CI jobs passed. Preserve
+  its small commits and main's AI planning documentation in the source merge.
+- [x] Prevent Git publication from releasing software: disable automatic Git
+  deployments in `apps/web/vercel.json` and set the Vercel Ignored Build Step to
+  `exit 0`. Keep this hold during separate AI implementation; docs/12 records
+  ownership, prior settings, and the later explicitly authorized release path.
+- [ ] Complete the already listed credentialed acceptance/release work only
+  when separately authorized. A source merge does not complete those gates.
+
+## Export workspace-selection follow-up — 24 October 2026
+
+- [x] Fix cancelled-gym exports remaining on the loading screen when two active
+  gyms require workspace selection (`440600ff`). Preserve explicit export scope,
+  avoid a stale operational session, and keep normal selection/denial without
+  export access. Three regressions fail before the fix; four new UI cases and
+  the 48-test focused suite pass. Full verification is in CURRENT_STATE.
+- Main's docs-only plan `8b75353f` is merged without duplicate AI entries or loss
+  of billing notes (`72f22e0b`). AI implementation and all unrelated release/
+  acceptance work remain pending; no deployment is claimed.
+
 ## AI-native expansion — requested direction, 24 October 2026
 
 Implementation is planned, not shipped. Hashem requested quiet intelligence
@@ -27,6 +49,62 @@ replace the separate release/acceptance work or reopen retired Jev/WhatsApp gate
 - [ ] **AI-5 — Pilot and measured autonomy.** Complete bilingual/role/recovery
   evaluations, selected-tenant rollout, live evidence, spend controls, and
   operational ownership; expand authority from measured results.
+
+## Review follow-up — 24 October 2026, source verified and unreleased
+
+- [x] Replace the unusable submitted-claim edit action with an owner correction
+  request in the existing operator Support workflow. Initial, renewal, suspended
+  and upgrade coverage preserves submitted amounts/history/clocks; return enables
+  corrected resubmission. Backend authorization and retries are regression-tested.
+- [x] Keep cancelled-gym exports and another gym's restricted billing independently
+  reachable, with named organization scope and deliberate multi-gym selection.
+  Pending-payment/suspended companions, stale-session denial and exact expiry
+  remain covered through real Convex identity/query/mutation tests and the client.
+  Same-organization billing retains an active owner’s selected branch, including
+  multi-branch assignments; cross-organization scope discards that branch. The
+  additional public query/payment regression rejects an unassigned branch without
+  partial state and fails on the first pushed follow-up head `7ae06d9e`.
+  Quote refresh now targets the selected organization and updates its checkout
+  cache. UI/API and public-backend controls verify no upgrade is created in an
+  active workspace while a restricted companion’s refresh is rejected. Support
+  links remain scoped while the authorized dashboard return is preserved.
+- [x] Remediate the four requested Next.js/Zod advisories using patched compatible
+  runtime/peer packages and a committed lockfile. Production audit is clean;
+  package/peer/transitive versions are verified. No exception/threshold change.
+- [x] Complete local gates and 21 built-preview browser journeys; see the latest
+  CURRENT_STATE checkpoint and `docs/ui-evidence/review-followup-2026-10-24/`.
+- [ ] Complete separately authorized backend-first release and real Clerk
+  multi-gym/operator-return/inbox acceptance. Source push and CI do not close
+  deployment or production acceptance.
+- [ ] Triage inherited development-toolchain advisories in a separate scoped
+  remediation: the extra full audit reports 16 dev-only findings (2 critical,
+  5 high, 8 moderate, 1 low) in Vitest/mocker, Tinypool, Vite and brace-expansion.
+  Critical Tinypool advisories are GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr.
+  All 16 also occur in reviewed `9db78ef5`; exactly the four requested production
+  advisories were removed (20 → 16), with none introduced. This pass follows the
+  instruction against unrelated upgrades and does not suppress these findings.
+
+Production renewals, Resend/provider/inbox setup, legal/commercial reconciliation,
+restore/incident ownership and broader new features remain deferred unchanged.
+
+## 24 October audit correctness pass — source implementation, unreleased
+
+All six confirmed findings at `3ed7d3d2` are implemented and regression-tested on
+`codex/audit-billing-export-corrections`. This entry records implementation,
+not production acceptance. Final local checks and browser evidence are in the
+24 October CURRENT_STATE.md checkpoint. Existing audit evidence remains historical.
+
+- Implemented and regression-tested: submitted payment claims block every
+  subscription invoice replacement and explicit void; unaffected edits remain
+  available. Upgrade-confirmation replacement is covered too.
+- Implemented and regression-tested: purchased Basic add-ons in monthly/annual MRR.
+- Implemented and component-tested: localized Unlimited upgrade card labels.
+- Implemented and regression-tested: submitted-payment reconciliation review with unchanged enforcement clocks.
+- Implemented and regression-tested: delayed-upgrade quote validity and funded service dates (billing decision in docs/14).
+- Implemented and regression-tested: owner-only termination exports, reachable UI, original cancellation deadline and unchanged dataset/branch/artifact restrictions. Final verification belongs in CURRENT_STATE.md.
+- Deferred unchanged: production renewal activation, provider/inbox acceptance,
+  legal/commercial reconciliation, restore/incident ownership and new features.
+
 
 ## Current priorities — reconciled 17 October 2026
 

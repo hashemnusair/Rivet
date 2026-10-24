@@ -13,6 +13,7 @@ import { invoicePdfFilename, renderInvoicePdfBase64, type InvoicePaymentDetails,
 
 export interface StoredInvoice {
   lines?: unknown;
+  upgradeActivation?: unknown;
   amountMinor?: unknown;
   /** The term at list price, before any credit. Defaults to the amount. */
   subtotalMinor?: unknown;
@@ -123,6 +124,10 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
   const periodEnd = dateText(invoice.periodEnd);
   const plan = customer.plan ? t("documents.plan", { plan: customer.plan }) : t("documents.platformSubscription");
   const status = statusOf(invoice.status);
+  const activation = invoice.upgradeActivation && typeof invoice.upgradeActivation === "object" ? invoice.upgradeActivation as Record<string, unknown> : {};
+  const activationNote = status === "paid" && [activation.fundedSubscriptionMinor, activation.appliedCreditMinor, activation.consumedCreditMinor].every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+    ? t("commerce.checkout.activationSummary", { funded: amountText(Number(activation.fundedSubscriptionMinor), currency), credit: amountText(Number(activation.appliedCreditMinor), currency), used: amountText(Number(activation.consumedCreditMinor), currency) })
+    : undefined;
   const issuedValue = invoice.createdAt ?? invoice.periodStart;
   const paymentTermDays = daysApart(issuedValue, invoice.dueAt);
   return {
@@ -134,6 +139,7 @@ export function invoicePdfInput(number: string, invoice: StoredInvoice, customer
     periodStart,
     periodEnd,
     interval,
+    ...(activationNote ? { activationNote } : {}),
     ...(paymentTermDays === undefined ? {} : { paymentTermDays }),
     customer: { name: customer.name, address: customer.address, contactName: customer.contactName, contactEmail: customer.contactEmail },
     lines: [...(itemized ? storedLines.map(line => ({ description: t("platformFinance.addOns.line", { name: t(`platformFinance.addOns.${line.key}`), quantity: line.quantity }), period: `${periodStart} – ${periodEnd}`, amount: amountText(line.amountMinor, currency) })) : [{

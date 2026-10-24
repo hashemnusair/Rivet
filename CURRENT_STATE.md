@@ -1,5 +1,62 @@
 # GymOS / RIVET current implementation state
 
+## Source-only merge preparation — 24 October 2026
+
+The billing/export branch at `2cb1519e` passed all 11 jobs in
+[CI run 40105544815](https://github.com/hashemnusair/Rivet/actions/runs/40105544815).
+Hashem authorized merging the verified fixes into main while keeping deployment
+separate. The only subsequent change is the documented deployment hold below.
+
+Inspection found Vercel still connected to main and automatically creating
+Preview deployments for earlier branch pushes, including `2cb1519e`. Prior
+statements that no deployment was performed describe the agents' direct actions;
+they did not account for this Git integration and must not be read as evidence
+that no automatic Preview existed. Production was still deployment
+`dpl_8RnoByETV17fHPsda81oHAhHiPtv` before this merge preparation.
+
+Before further publication, the `rivet-web` project's Ignored Build Step was
+set to `exit 0`, and `apps/web/vercel.json` now sets `git.deploymentEnabled` to
+`false`. Git pushes, PRs, and the main merge must stay source-only. This hold
+does not alter the current live deployment; keep it in place for the separate
+AI workstream. Releasing or lifting the hold requires a later explicit request
+and the backend-first acceptance procedure in docs/12. CLI/API deployment is
+not authorized by a source merge. Final main SHA/CI evidence belongs in the
+merge handoff; no AI implementation or credentialed acceptance is claimed.
+
+## Export access during workspace selection — 24 October 2026 (unreleased)
+
+Fix `440600ff` lets an owner with two active gyms and a cancelled gym open the
+cancelled gym's exports without first entering an active workspace. The permitted
+export route uses the restricted frame while organization selection is pending.
+The export chooser also excludes a stale operational session in this state;
+one cancelled gym is explicitly scoped automatically, and several require a
+choice. Without export access the normal workspace-selection redirect remains.
+Backend owner/tenant/branch/deadline checks are unchanged.
+
+Three new UI regressions fail on `8d7d20a1` and pass with the fix: direct scoped
+navigation, the sole-gym default, and multiple cancelled-gym selection. A fourth
+checks denial without the export capability. The focused UI/auth/public-backend
+suite passes 48 tests. Full `pnpm test` passes 2,402 tests plus 14 safety checks,
+with only the two existing opt-in benchmarks skipped. Web/Convex typechecks,
+lint, plain production build, approved mock Preview build, production dependency
+audit, and the Arabic lock pass. All nine built-preview export/mixed-access
+Playwright journeys pass, including English/Arabic at phone/desktop widths.
+The run used `PLAYWRIGHT_PORT=3223 PLAYWRIGHT_SERVER_MODE=start
+PLAYWRIGHT_WORKERS=2 pnpm --filter web exec playwright test
+e2e/mixed-owner-access.spec.ts e2e/termination-exports.spec.ts e2e/exports.spec.ts`.
+The exact pushed-head CI receipt belongs in the final agent handoff.
+
+Merge `72f22e0b` brings docs-only main `8b75353f` into this branch. The shared
+older AI planning draft was reconciled with main's expanded isolation guidance;
+AI sections occur once and all billing/export handoff notes remain. Main's
+docs/23 plan is unchanged. The original shared draft is retained in the named
+local stash `Preserve shared AI planning draft before merging main 8b75353f`.
+Existing untracked audit/output files remain outside these commits.
+
+No deployment, main-branch update, AI implementation, provider change or live
+tenant mutation occurred. Future AI work stays in its separate worktree; this
+branch's source fixes and deployment acceptance remain distinct milestones.
+
 ## AI-native product direction — planning only, 24 October 2026
 
 Hashem requested quiet AI integrated throughout the existing UI and broad
@@ -25,6 +82,259 @@ backend. Docs/23 specifies the proposed server-only endpoint configuration and
 the local-server versus Convex location for a future testing key.
 `FRONTEND_HANDOFF.md` remains frozen. Documentation links and
 whitespace are checked for this change; application tests are not applicable.
+
+## Review follow-up — verified source, 24 October 2026
+
+Continues `codex/audit-billing-export-corrections` from reviewed `9db78ef5`.
+The original seven commits are preserved. This is implemented/tested source,
+not a deployment or production acceptance receipt. Concurrent AI planning edits,
+untracked audit/output work and frozen `FRONTEND_HANDOFF.md` are preserved.
+
+- **Submitted-payment corrections:** the old editable “Change the details” flow
+  contradicted submitted-claim immutability. Checkout now explains the restriction
+  and offers **Request a correction**. The owner supplies a reason into the
+  existing invoice support conversation; first-payment and suspended owners use
+  this narrow checkout operation without gaining workspace/support permissions.
+  The operator sees it, returns the claim, and the owner edits/resubmits before
+  confirmation. Submitted reference/amount, invoice due/notice dates and historical
+  audits stay intact. One request per submission is deduplicated; distinct
+  submission IDs also distinguish return/resubmission in the same millisecond.
+  Returned upgrades retain the existing quote-validity rules in docs/14.
+- **Mixed owner destinations:** billing remains the default landing. Independent,
+  organization-named links let an owner open a cancelled gym's exports alongside
+  another pending-payment or suspended gym's billing. Several/invalid choices
+  never silently bind the first gym. Per-request billing/export scope leaves the
+  operational session unchanged. Removing export capability redirects the tab;
+  restricted identities cannot render the normal workspace shell using stale
+  session state. The original owner/archive/branch/tenant, exact 30-day cutoff and
+  independent 24-hour export expiry guards are unchanged.
+  A final public-boundary regression also preserves the already selected branch
+  when billing explicitly targets the same active organization; switching gyms
+  still discards the previous gym’s branch. Owners assigned multiple branches can
+  pay normally, and an unassigned branch rejects without state changes. This
+  additional case fails on `7ae06d9e` and passes with the follow-up guard.
+  Quote refresh also carries the displayed organization through the API and
+  refreshes that organization’s checkout cache. A blocked companion cannot
+  accidentally create an upgrade in the active workspace. Support links require
+  workspace access to the selected gym; an authorized return to the account’s
+  active dashboard stays available. Focused UI/API/public-backend regressions
+  cover the request scope, fresh invoice display and unchanged state on rejection.
+- **Dependencies:** Next.js, eslint-config-next and @next/eslint-plugin-next now
+  resolve to **16.4.2**, with **sharp 0.35.5**; Zod resolves to **4.6.7** throughout
+  the graph, including the resolver and ESLint paths. These remove
+  GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr, GHSA-p3m5-59mp-jv5r and
+  GHSA-mrhx-c7xc-m3w5. The two required Zod numeric-form type adaptations preserve
+  validation/coercion behavior. No audit suppression, threshold, dependency
+  override or unrelated package upgrade was added.
+
+**Regression evidence:** the new functional regressions fail 10 cases against
+`9db78ef5` (six controls still pass). Current public Convex tests exercise actual
+identity and mutation/query boundaries for initial/renewal/upgrade payments,
+operator return/resubmission/confirmation, authorization, repeated rejections and
+unchanged persistent state. Mock/API/component coverage adds suspended payment,
+same-clock submissions, explicit selection, revoked access and English/Arabic
+presentation. Existing date/branch/archive/file-expiry regressions still pass.
+The bounded-collection security regression traverses three elements on old Zod
+3.25.76 but none on patched Zod; resolver output/errors remain covered.
+
+**Final local gates:** `pnpm test` passes **2,398 Vitest tests in 380 files**, with
+only the two existing opt-in benchmarks skipped, plus all **14 repository safety
+tests**. Frozen installation, web and Convex typechecks, lint/secret-output audit,
+plain production build, approved Preview build, Arabic decision lock and patch
+checks pass. Generated Convex function signatures/schema are unchanged; the exact
+pushed-head CI codegen gate is the generated-file receipt. Local verification
+used Node 24.10.0 / pnpm 11.20.0; CI uses Node 22.
+
+All **21 selected built-preview Playwright journeys** pass: eight new bilingual
+phone/desktop correction/navigation cases plus the 13 adjacent owner upgrade,
+platform add-on and export cases. Tested console/runtime errors and horizontal
+overflow are absent. Eight captures are in
+`docs/ui-evidence/review-followup-2026-10-24/`. A real Arabic phone-header overflow
+was fixed by wrapping controls. Initial failures also caught the missing bilingual
+audit label, an Arabic test selector and the new search-parameter Suspense boundary
+in the plain build; final checks pass without relaxed assertions/tolerances.
+Disk was checked before heavy verification (18 GiB available initially, at least
+27 GiB at final gates); no ENOSPC occurred and no unrelated files were deleted.
+
+**Audit limit:** `pnpm audit --prod` reports **no known vulnerabilities**. An extra
+`pnpm audit` including development tooling still reports **16 inherited findings**
+(2 critical, 5 high, 8 moderate, 1 low), all marked dev-only in Vitest/mocker,
+Tinypool, Vite and brace-expansion. The same lockfile audit at `9db78ef5` reports
+20; exactly the four requested advisories disappear and none are introduced.
+This separate toolchain remediation remains open in docs/13 under the instruction
+to avoid unrelated upgrades. CI's production audit threshold is unchanged.
+
+**Release/acceptance:** backend billing scope/correction operation and additive
+invoice JSON (`submissionId`, `paymentCorrection`) must precede the matching web
+bundle; no schema/index migration, backfill or provider change is needed. Frontend
+release must use the patched manifest and frozen lockfile together. Real Clerk
+multi-gym acceptance and operator-return email/inbox delivery remain credentialed
+isolated acceptance, not proven by mock browser captures. No deployment, merge,
+production job activation, provider configuration, live payment/email/tenant
+mutation or signed-document rewrite was performed. Broader deferred work stays
+unchanged. The final GitHub SHA/remote match and exact-head CI result belong to the
+review handoff; pushing source is not proof of a production release.
+
+**Commands:** `pnpm install --frozen-lockfile`, `pnpm test`, `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `pnpm audit --prod`,
+`python3 docs/arabic/verify-lock.py`, `git diff --check`. Browser verification:
+
+```sh
+NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 \
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright \
+RIVET_DESIGN_PREVIEW=1 pnpm build
+PLAYWRIGHT_PORT=3217 PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_WORKERS=4 \
+pnpm --filter web exec playwright test e2e/payment-correction.spec.ts \
+e2e/mixed-owner-access.spec.ts e2e/owner-upgrade-capacities.spec.ts \
+e2e/termination-exports.spec.ts e2e/subscription-add-ons.spec.ts \
+e2e/platform-subscription-entitlements.spec.ts e2e/exports.spec.ts
+```
+
+Read this checkpoint, docs/12, docs/14, `payment-correction.test.ts`,
+`mixed-owner-access.test.ts` and the checkout/routing components first.
+
+## Audit correctness pass — verified source, 24 October 2026
+
+Implemented source on `codex/audit-billing-export-corrections`, based on audit/main
+`3ed7d3d2`. Existing untracked `docs/audits/` and `outputs/` are preserved.
+No deployment, provider configuration, live financial write or automation activation.
+
+- Submitted-payment protection now follows the invoices actually replaced by an
+  active subscription change (plan, cadence, Enterprise quote, add-ons or
+  reactivation), not just an add-on flag. Upgrade confirmation and explicit voids
+  enforce the same requirement to confirm or return the claim first. Listing,
+  unchanged subscription and boundary-only changes do not replace an invoice and
+  remain available. Unrelated manual invoices do not block term replacement.
+- Regression evidence for this fix: 9 new public-boundary/mock tests pass; the
+  original implementation fails 6 of them. Repeated rejected mutations compare
+  organization, entitlements, invoices, audit and notification state unchanged.
+  Existing commerce/add-on coverage also passed (31 tests including 8 new).
+
+- Purchased Basic add-ons now contribute to platform MRR in real and mock
+  snapshots. Annual base plus add-ons receives the existing 5% discount;
+  onboarding/website invoices do not enter recurring revenue. All 9 focused
+  overview/public-boundary/mock tests pass; all 4 new regressions fail on old code.
+
+- Owner Pro upgrade cards now render the existing localized Unlimited wording
+  for all three sentinel capacities. Finite values and radio accessible names
+  remain intact. Both English/Arabic component regressions fail on old code and
+  pass with the fix. Actual English/Arabic desktop/phone dialogs were inspected
+  at 390/1440px; no overflow or runtime errors. Adjacent platform/public
+  capacity displays already handle the sentinel.
+
+- Reconciliation now withholds automatic suspension at/after the existing
+  threshold for submitted claims and creates one immutable review audit plus a
+  deduplicated platform billing notification. Preview counts review separately.
+  Original due/past-due history stays intact; returning a claim restores ordinary
+  enforcement immediately against that clock. Same-detail submission retries
+  preserve the original claim; changed details require return first. Four new
+  real/mock regressions pass (three fail on old code), and 23 focused existing/new
+  commerce/reconciliation checks pass. Reconciliation remains default-off.
+
+- Delayed owner upgrades now refresh expired/unsubmitted quotes into a new
+  invoice before accepting a transfer claim; old invoices/claims/audits remain.
+  Same-plan retries reuse a current quote and same-detail claim retries preserve
+  the original submission. Submitted amounts and original quoted credit are
+  immutable. Confirmation stores an `upgradeActivation` settlement alongside
+  them: actual remaining old-plan value plus cash (excluding onboarding) funds
+  new service from confirmation, capped at one calendar term. Old-plan service
+  used while available consumes only the credit-funded portion; review never
+  backdates or consumes the portion bought by the transfer. This is the explicit
+  billing-date decision: a discounted transfer does not promise a full later term
+  after its old credit has been used. Settlement uses stored source dates and
+  millisecond proration, rounded to minor units; resulting duration rounds up to
+  a millisecond. Future credits use the actual funded value and stored start.
+  Legacy open upgrades derive funding from their existing paid term; changed
+  source plan/boundary/funding fails closed for operator review. Signed documents and
+  historical invoice amounts are unchanged. Optional data lives in existing
+  invoice JSON; no migration/index/env change. Backend must precede frontend.
+  All 10 public/mock regressions fail on old code. The 16 focused date/mock/UI
+  checks and 41 commerce/term/protection checks pass. Additional regressions cover
+  legacy submitted quotes without snapshots and pending setup fees carried through
+  return/refresh; setup never becomes service credit. Settling another invoice
+  while an upgrade claim waits forces review if its paid funding changes, and
+  already-settled or retained setup fees cannot be billed again. Original quoted period dates
+  are retained in activation evidence. Paid invoice UI and server/browser PDFs
+  explain actual funding beside unchanged original figures, in both languages.
+
+- Cancelled owners retain only `/exports` creation/history/retrieval during
+  `[cancelledAt, cancelledAt + 30 days)`. At the exact deadline, missing/invalid/
+  future timestamps, archived gyms and non-owners are denied. Identity advertises
+  an export destination, not workspace/billing membership. A minimal export frame
+  has no workspace navigation or agreement gate. Existing seven datasets remain
+  available with tenant/branch permissions, row safeguards, immutable export
+  audits, idempotency and 24-hour content expiry. A selected owner can export
+  assigned branches without an operational active-branch selection; unassigned
+  branches remain denied. Multiple gyms require explicit
+  scoped selection; existing operational sessions are not rebound. Repeated
+  cancellation saves retain the original timestamp. No deletion/retention or
+  legal-copy policy is changed. 63 focused backend/auth/mock/UI tests pass;
+  seven new regressions fail on old code. Desktop/phone browser journeys prove
+  creation and repeated retrieval from the export frame without workspace navigation.
+
+**Verification:** the final standalone full suite passes 2,372 Vitest tests in
+376 passing files, with two opt-in benchmarks skipped, plus all 14 repository
+safety tests. Setup-fee carry, legacy submitted quotes and changed source funding
+are included. The three setup/legacy regressions also fail on `3ed7d3d2`.
+Web and Convex typechecks, lint
+(secret-output audit), production build, Arabic lock (revision 607 / 247 agreements),
+Convex code generation and diff check pass. One intermediate typecheck raced with
+Next regenerating build types; the sequential rerun passes. The initial full-suite
+failure identified a missing bilingual review-action label and is corrected. One
+concurrent-load rerun timed out in the unchanged gym-profile test at 5 seconds;
+the complete standalone rerun passes without changing its timeout or assertions.
+
+All 13 selected Playwright journeys pass both on the local development server
+and on the built, sanctioned Preview mock bundle (four workers, 15.6 seconds): four
+English/Arabic owner dialogs at 390/1440px, two platform add-on flows, two owner
+entitlement/payment flows, three existing export downloads and two termination
+export flows. Initial new export-test failures were ambiguous/wrong selectors,
+corrected to scope the notice and actual CSV history control; repeated downloads
+are asserted. No snapshot or screenshot tolerance was changed. Development browser logs show
+existing Clerk/image-aspect warnings; the final built-preview run has no tested
+runtime/console errors. English/Arabic synthetic paid invoices were rendered to
+PNG and inspected:
+one A4 page each, legible activation evidence, no clipping. Selected captures are
+in `docs/ui-evidence/audit-2026-10-24/`.
+
+**Release/limits:** all six findings are implemented and regression-tested source,
+not deployed/accepted production behavior. Optional invoice JSON and optional
+identity export routing need no schema migration, index, backfill or provider
+configuration. Release backend authorization/billing/identity before the matching
+frontend, then complete credentialed isolated acceptance through docs/12. No
+production release, live financial write, provider setup, email delivery, renewal
+activation or production smoke was performed. Source publication and the exact
+GitHub CI result are separate receipts in the reviewing-agent handoff. Broader
+operations, restore/incident ownership, provider/inbox acceptance, legal/commercial
+reconciliation and new features remain deferred.
+
+**Commands:** `pnpm test`, `pnpm typecheck`, `pnpm convex:typecheck`,
+`pnpm lint`, `pnpm build`, `git diff --check`, and
+`python3 docs/arabic/verify-lock.py`. The final browser run used:
+
+```sh
+NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1 \
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright \
+RIVET_DESIGN_PREVIEW=1 pnpm build
+PLAYWRIGHT_PORT=3217 PLAYWRIGHT_SERVER_MODE=start PLAYWRIGHT_WORKERS=4 \
+pnpm --filter web exec playwright test e2e/owner-upgrade-capacities.spec.ts \
+e2e/termination-exports.spec.ts e2e/subscription-add-ons.spec.ts \
+e2e/platform-subscription-entitlements.spec.ts e2e/exports.spec.ts
+```
+
+During verification, `origin/main` advanced to documentation-only `8b75353f`.
+Its application/runtime source is unchanged from `3ed7d3d2`; the audit commits
+remain based on that runtime. Preserve both dated handoff sections when this
+branch is integrated with the independent planning change. The final follow-up
+commit depends on all six fixes: it closes setup-fee/legacy quote evidence,
+localized review labels, generated bindings and the recorded verification gates.
+
+Read this checkpoint, docs/14 and docs/12 first, then `subscriptionTerm.ts`,
+`platformCommerce.ts`, `subscriptionReconciliation.ts`, `security.ts` and the new
+`domain.*` regression tests. `FRONTEND_HANDOFF.md` is byte-for-byte unchanged.
+Concurrent planning edits in shared handoff/backlog/runbook files, README/docs/09,
+the untracked docs/23 plan, and existing audit/output files are preserved outside
+this audit commit series.
 
 ## Current checkpoint — Basic/Pro and paid add-ons, 21 October 2026
 

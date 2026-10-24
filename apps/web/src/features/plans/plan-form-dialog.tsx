@@ -21,7 +21,7 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioCard } from "@/components/ui/radio-group";
 
-const numeric = (schema: z.ZodNumber) => z.preprocess(value => typeof value === "string" ? latinDigits(value).replace(/٫/g, ".") : value, schema);
+const numeric = <T extends z.ZodType<number>>(schema: T) => z.preprocess(value => typeof value === "string" ? latinDigits(value).replace(/٫/g, ".") : value, schema);
 
 const schema = z
   .object({

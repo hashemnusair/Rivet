@@ -3,6 +3,11 @@ import { plural } from "../../dictionary";
 /** How a gym pays RIVET, and the launch offers on its first payment. */
 export const commerce = {
   checkout: {
+    exportDeadline: "Export access until {date}",
+    permittedDestinations: "Your available gym access",
+    billingFor: "Billing · {gym}",
+    exportsFor: "Exports · {gym}",
+    chooseBillingGym: "Choose the gym whose invoice you want to pay",
     title: {
       pending: "Pay to open your workspace",
       renewal: "Pay your RIVET invoice",
@@ -32,6 +37,10 @@ export const commerce = {
     due: "Due {date}",
     accessEnds: "If this stays unpaid, your gym's access stops on {date}.",
     firstTerm: "Your first {cadence} starts on the day we confirm your payment.",
+    quoteValidUntil: "Quote valid until {date}. Refresh it before transferring if this time has passed.",
+    activationSummary: "Activation: {funded} funds the new service term, including {credit} of still-unused credit. {used} of the original quoted credit was used on the old plan. The original invoice and transfer amount are unchanged.",
+    creditTiming: "Unused-time credit is estimated until payment. Your transfer buys service from confirmation. Old-plan time used before confirmation reduces only the part of the new term funded by that credit.",
+    refreshUpgrade: "Refresh upgrade quote",
     upgradeTerm: "Your {plan} plan starts on the day we confirm your payment.",
     step1: "Send the payment",
     step1Body: "Use CliQ or a bank transfer. Write {id} in the payment note so we can find it.",
@@ -66,7 +75,11 @@ export const commerce = {
     submitted: {
       title: "We are checking your payment",
       body: "You sent {amount} by {method} on {date}. Reference: {reference}. We will email you when it is confirmed.",
-      edit: "Change the details",
+      correction: "Request a correction",
+        correctionHelp: "Made a mistake? Ask RIVET to return the submitted details. You can correct and send them again after the operator returns them. Do not transfer the payment again.",
+        correctionSent: "Your correction request is with RIVET. The submitted payment is unchanged. When the operator returns it, correct the details here and send them again. Do not transfer the payment again.",
+        correctionReason: "What needs correcting?",
+        correctionSubmit: "Send correction request",
     },
     rejected: {
       title: "We could not match your payment",

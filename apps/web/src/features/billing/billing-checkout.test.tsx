@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import type { PlatformBillingInvoice } from "@/lib/api/GymOSApi";
 import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
+import { LocaleProvider } from "@/lib/i18n/provider";
 import { BillingCheckoutContent } from "./billing-checkout";
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }));
@@ -57,9 +58,9 @@ function Deferred({ children }: { children: ReactNode }) {
   return shown ? <>{children}</> : <button type="button" onClick={() => setShown(true)}>Show page</button>;
 }
 
-async function renderPage(role: "owner" | "manager", prepare?: (api: MockGymOSApi) => Promise<void>) {
+async function renderPage(role: "owner" | "manager", prepare?: (api: MockGymOSApi) => Promise<void>, organizationId?: string) {
   const user = userEvent.setup();
-  const result = await renderWithApp(<Deferred><BillingCheckoutContent fullAccess /></Deferred>, { role });
+  const result = await renderWithApp(<Deferred><BillingCheckoutContent fullAccess organizationId={organizationId} /></Deferred>, { role });
   if (prepare) await prepare(result.api);
   await user.click(screen.getByRole("button", { name: "Show page" }));
   return { ...result, user };
@@ -120,4 +121,44 @@ describe("the gym's payment page", () => {
     await renderPage("owner");
     await waitFor(() => expect(screen.getByText("Nothing to pay right now")).toBeInTheDocument());
   });
+});
+
+it.each(["en", "ar"] as const)("%s submitted claims use support correction, then returned details can be resubmitted", async locale => {
+  const user = userEvent.setup();
+  const result = await renderWithApp(<LocaleProvider initialLocale={locale}><Deferred><BillingCheckoutContent fullAccess={false} /></Deferred></LocaleProvider>);
+  await withInvoice(result.api);
+  const payment = { invoiceId: "INV-first", method: "cliq" as const, reference: "WRONG-1", payerName: "Owner", paidOn: "2026-10-01" };
+  await result.api.submitPlatformPayment(payment);
+  await user.click(screen.getByRole("button", { name: "Show page" }));
+  const before = (await result.api.getBillingCheckout()).invoice!;
+  expect(screen.queryByRole("button", { name: "Change the details" })).not.toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: locale === "en" ? "Request a correction" : "طلب تصحيح البيانات" }));
+  expect(screen.queryByLabelText(/Reference number/)).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(locale === "en" ? /What needs correcting/ : /ما البيانات التي تحتاج إلى تصحيح/), "Please return the incorrect reference.");
+  await user.click(screen.getByRole("button", { name: locale === "en" ? "Send correction request" : "إرسال طلب التصحيح" }));
+  expect(await screen.findByText(locale === "en" ? /Your correction request is with RIVET/ : /وصل طلب التصحيح إلى RIVET/)).toBeInTheDocument();
+  const requested = (await result.api.getBillingCheckout()).invoice!;
+  expect(requested.paymentClaim).toEqual(before.paymentClaim);
+  const retry = await result.api.requestPaymentCorrection({ invoiceId: before.id, reason: "Same request retry" });
+  expect(retry.invoice).toEqual(requested);
+  // Remount the actual query after the operator returns it, as after a reload.
+  result.unmount();
+  await result.api.rejectPlatformInvoicePayment({ invoiceId: before.id, reason: "Returned for correction" });
+  const corrected = await result.api.submitPlatformPayment({ ...payment, reference: "CORRECT-2" });
+  expect(corrected.invoice?.paymentClaim).toMatchObject({ reference: "CORRECT-2", amountMinor: before.amountMinor });
+  await result.api.recordPlatformInvoicePayment({ invoiceId: before.id, reference: "CORRECT-2", reason: "Matched transfer" });
+  expect((await result.api.getPlatformSnapshot()).invoices.find(invoice => invoice.id === before.id)).toMatchObject({ status: "paid", paymentClaim: { reference: "CORRECT-2" } });
+});
+it("refreshes the quote for the displayed organization rather than the bound workspace", async () => {
+  let refresh = vi.fn();
+  const { user } = await renderPage("owner", async api => {
+    const base = await api.getBillingCheckout();
+    const get = vi.spyOn(api, "getBillingCheckout").mockResolvedValue({ ...base, gym: { ...base.gym, id: "other-billing-gym", status: "active" }, invoice: { ...FIRST_INVOICE, planChange: { from: "Basic", to: "Pro" } } });
+    const next = { ...base, gym: { ...base.gym, id: "other-billing-gym" }, invoice: { ...FIRST_INVOICE, id: "INV-refreshed" } };
+    refresh = vi.fn().mockImplementation(async () => { get.mockResolvedValue(next); return next; });
+    vi.spyOn(api, "requestPlanChange").mockImplementation(refresh);
+  }, "other-billing-gym");
+  await user.click(await screen.findByRole("button", { name: "Refresh upgrade quote" }));
+  expect(refresh).toHaveBeenCalledWith({ plan: "Pro", organizationId: "other-billing-gym" });
+  expect(await screen.findByRole("complementary", { name: /Invoice INV-refreshed/ })).toBeInTheDocument();
 });

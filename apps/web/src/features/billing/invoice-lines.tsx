@@ -51,7 +51,7 @@ export function InvoiceLines({ invoice, plan, className }: { invoice: PlatformBi
     return t("platformFinance.addOns.line", { name: t(`platformFinance.addOns.${line.key}`), quantity: line.quantity ?? 1 });
   };
   return (
-    <dl className={cn("divide-y divide-line text-[13.5px]", className)}>
+    <div className={className}><dl className={cn("divide-y divide-line text-[13.5px]")}>
       {invoiceLines(invoice).map((line) => (
         <div key={line.key} className="flex items-baseline justify-between gap-4 py-2.5">
           <dt className="text-ink-2">{label(line)}</dt>
@@ -74,5 +74,7 @@ export function InvoiceLines({ invoice, plan, className }: { invoice: PlatformBi
         <dd className="tabular text-[17px] font-semibold">{money(invoice.amountMinor ?? 0)}</dd>
       </div>
     </dl>
+    {invoice.status === "paid" && invoice.upgradeActivation ? <p className="mt-3 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.activationSummary", { funded: money(invoice.upgradeActivation.fundedSubscriptionMinor), credit: money(invoice.upgradeActivation.appliedCreditMinor), used: money(invoice.upgradeActivation.consumedCreditMinor) })}</p> : null}
+    </div>
   );
 }
