@@ -67,6 +67,26 @@ no provider activation or production write is performed by this planning change.
 Manual WhatsApp and existing Resend delivery gates remain unchanged. Release
 evidence belongs here and in CURRENT_STATE; work status stays in docs/13.
 
+### AI environment ownership — implementation branch, 24 October 2026
+
+The implementation (`codex/ai-native-rivet`) places the model call in Convex
+internal actions (docs/09 AI-0 decision). Configuration therefore belongs to the
+Convex deployment that runs those actions. None of these variables exists in
+production; leaving them unset keeps AI off.
+
+| Variable | Local mock preview / CI | Isolated dev Convex (test) | Production Convex | Vercel / Next.js |
+| --- | --- | --- | --- | --- |
+| `RIVET_AI_MODE` | Mock adapter only; Convex tests set `fixture` in-process | `fixture` first, `live` only for an approved endpoint test | Unset (off) until a separately authorized release | Never |
+| `RIVET_AI_PROTOCOL` | — | `openai_chat_json` only after the supplied endpoint's contract is verified | Unset | Never |
+| `RIVET_AI_API_KEY` | — | Entered by Hashem in the dashboard; never in Git, shell, logs or chat | Unset | Never (`NEXT_PUBLIC_` forbidden) |
+| `RIVET_AI_BASE_URL`, `RIVET_AI_MODEL` | — | Dashboard | Unset | Never |
+| `RIVET_AI_PROCESSING_APPROVED` | — | Unset (synthetic data only) until processing terms are approved; then `member_data` | Unset | Never |
+| `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS`, `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | Optional caps | Unset | Never |
+
+Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
+never `convex env get`. The gym-level switch (Settings → RIVET assistance), the
+platform stop and capability modes are stored in Convex tables and default to off.
+
 AI implementation must use a separate feature worktree and an isolated test
 backend/identity environment. Verify every connected target before preview tests;
 a preview frontend can otherwise still point to production. Docs/23 records

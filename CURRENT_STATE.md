@@ -1,5 +1,24 @@
 # GymOS / RIVET current implementation state
 
+## AI-native implementation — in progress on `codex/ai-native-rivet`, 24 October 2026
+
+**Not released, not merged, no deployment.** Implementation of
+[docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate
+worktree `/Users/hashemnusair/Documents/gym-os-ai-native` on branch
+`codex/ai-native-rivet`, created from `origin/main` `80a83c7c` (CI passed all 11 jobs
+on that merge). The shared bug-fix checkout and its untracked files were not touched.
+The deployment hold (`apps/web/vercel.json` `git.deploymentEnabled: false`; Vercel
+Ignored Build Step `exit 0`) is unchanged.
+
+Work status lives only in docs/13 under AI-0 to AI-5. Decisions: docs/09 "AI-0
+runtime and model-call ownership" (Convex-native durable runs; model calls in Convex
+internal actions; keys in the isolated dev Convex deployment) and "AI open
+decisions". Environment ownership: docs/12 "AI environment ownership".
+
+Checkpoint 1 (this entry): canonical breakdown, traceability map, capability
+inventory and decisions. No runtime code yet. Later checkpoints below this line
+record each implemented slice with tests and evidence.
+
 ## Source-only merge preparation — 24 October 2026
 
 The billing/export branch at `2cb1519e` passed all 11 jobs in

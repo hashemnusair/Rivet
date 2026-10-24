@@ -30,6 +30,70 @@ and merging the implementation to main require a later explicit instruction.
 Hashem will supply a free testing endpoint; docs/23 specifies proposed server-only
 configuration names and where he can enter the key without committing it.
 
+### AI-0 runtime and model-call ownership — implementation decision, 24 October 2026
+
+Recorded by the implementation agent on `codex/ai-native-rivet` under the docs/23
+discovery contract. This is an engineering decision for review, not a provider,
+commercial or production-activation approval.
+
+**Decision: Convex-native durable runs.** Run, step, grant, proposal and receipt
+state live in new Convex tables. A run advances through internal mutations that
+take a lease (token + expiry, fenced on every write), recheck authority and source
+facts, call the existing domain operation and record the step receipt in the same
+transaction. Model calls happen in Convex internal actions, outside retried
+database transactions, through one replaceable adapter. The Convex scheduler and
+crons drive progress, recovery of expired leases and standing instructions. Only
+existing domain commands commit business state; no second business database exists.
+
+Alternatives compared:
+
+| Option | Why not selected now |
+| --- | --- |
+| `@convex-dev/workflow` / workpool components | Real durable step journaling, but adds component tables outside the existing tenant-purge/export inventory and a second journal beside the run/step receipts the product must show; current needs (bounded batches, leases, idempotent domain writes) are met without it. Revisit if multi-day waits or large fan-out appear. |
+| `@convex-dev/agent` | Thread/message (chat) model and provider SDK assumptions; docs/23 rejects a chat-first surface and forbids assuming an OpenAI-compatible endpoint. |
+| eve | Official getting-started documentation (checked 24 October 2026) requires **Node.js 24 or newer**; this repository declares Node >=20, CI uses Node 22 and `convex.json` pins the Convex Node runtime to 22. An external checkpoint owner would also need a separate recovery protocol around Convex commits. Its execution-model page returned HTTP 500 during review, so its state store was not verified. |
+| Next.js/Vercel server or Vercel workflows | Scheduled and delegated work must run without a browser and close to the transactional authority; a Vercel-owned runtime would need its own credentials to Convex and a deployment to test. |
+
+Synthetic proof required by AI-0 (crash after commit, duplicate events, lease
+fencing, cancellation during a batch, revocation between steps) uses real Convex
+functions in the repository's `convex-test` harness.
+
+**Model-call owner and key placement.** The model call is owned by Convex internal
+actions, because delayed and standing work run without a browser. Therefore
+`RIVET_AI_API_KEY`, `RIVET_AI_BASE_URL` and `RIVET_AI_MODEL` belong in the **isolated
+development Convex deployment's Environment Variables dashboard**, never in
+production and never with `NEXT_PUBLIC_`. A Next.js `apps/web/.env.local` file does
+not configure Convex actions; it is not needed for AI and should not hold the key.
+Additional server-only names introduced by the adapter: `RIVET_AI_MODE`
+(`off` default, `fixture`, `live`), `RIVET_AI_PROTOCOL` (the explicitly declared wire
+protocol; only `openai_chat_json` is implemented and it is unverified until a real
+endpoint is supplied), `RIVET_AI_PROCESSING_APPROVED` (must be exactly `member_data`
+before any member personal data is sent to a live provider), `RIVET_AI_TIMEOUT_MS`
+and budget caps. Production leaves `RIVET_AI_MODE` unset, which means off.
+
+**Fixture mode.** `fixture` uses deterministic bilingual rules for extraction,
+drafting and request interpretation so contracts, UI and evaluations work without a
+provider. Its results are labelled as test results, and production must never set
+it; it is not a production fallback for an unavailable provider.
+
+**Deterministic first.** Facts, eligibility, deduplication, stop conditions, dates,
+money and authorization are computed by code from domain records. The model may
+phrase, extract or interpret; its output is validated and cannot authorize actions.
+Simple batches run as fixed playbooks over typed tools; multi-agent execution is not
+used until an evaluated task benefits from it.
+
+### AI open decisions — not approved by the implementation work
+
+| Decision | Owner | Current default in code |
+| --- | --- | --- |
+| Model provider/endpoint and its actual API contract | Hashem | `RIVET_AI_MODE` unset (off); fixture for local/CI |
+| Provider data processing, retention and region; member-data approval | Hashem (with counsel as needed) | Member data never sent to a live provider unless `RIVET_AI_PROCESSING_APPROVED=member_data` and the gym enabled external processing |
+| Pilot budgets in currency (per run, per gym per month) | Hashem | Code caps exist but stay unset/zero-spend; live calls refuse when a cost is reported without a configured budget |
+| Basic/Pro AI packaging, allowances and pricing | Hashem/Elias | No entitlement change; AI off by default per gym |
+| Pilot gyms, accountable owners, incident responsibility | Hashem/Elias | None selected |
+| Hosted isolated staging deployment for AI acceptance | Hashem | Not created by the agent; acceptance recorded as pending |
+| Which standing authorities may run unattended beyond preparation | Hashem after measured evidence | Standing instructions limited to internal tasks/reports/handovers |
+
 ## Decisions already made
 
 - Working title is GymOS.
