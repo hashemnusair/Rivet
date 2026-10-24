@@ -27,6 +27,7 @@ import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { ChecklistsSection } from "@/features/settings/checklists-section";
+import { AssistanceSettingsSection } from "@/features/assist/assistance-settings-section";
 import { MyProfileSection } from "@/features/settings/my-profile-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
@@ -98,6 +99,7 @@ function settingsGroups(t: TFunction): SettingsGroup[] { return [
       { id: "operations", label: t("settingsCore.text191"), keywords: t("settingsCore.text215"), permission: "settings.manage", component: OperationalRulesSection },
       { id: "hours", label: t("settingsCore.text192"), keywords: t("settingsCore.text216"), permission: "settings.manage", component: HoursAndTrialsSection },
       { id: "checklists", label: t("settingsCore.text193"), keywords: t("settingsCore.text217"), permission: "operations.manage", component: ChecklistsSection },
+      { id: "assistance", label: t("aiWork.settings.title"), keywords: t("aiWork.settings.keywords"), permission: "settings.manage", component: AssistanceSettingsSection },
     ],
   },
 ]; }

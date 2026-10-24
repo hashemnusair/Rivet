@@ -277,7 +277,6 @@ export type AiRunRevision =
   | { kind: "time_of_day"; value: "morning" | "afternoon" | "evening" }
   | { kind: "exclude_member"; memberId: string; memberName: string }
   | { kind: "owner"; ownerId: string; ownerName: string }
-  | { kind: "due_date"; date: string }
   | { kind: "unsupported"; messageKey: string };
 
 export interface AiRunStepView {

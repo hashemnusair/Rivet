@@ -84,6 +84,13 @@ describe("contact notes become prepared fields with their evidence", () => {
     expect(extractNoteDeterministic({ note: "Thinking about it, prefers evenings", noteAt: THURSDAY, timezone: TZ, subject: "member" })).toMatchObject({ renewalInterest: { value: "undecided" }, preferredContactTime: { value: "evening" } });
   });
 
+  it("finds the return date in the clause after the trip", () => {
+    const extraction = extractNoteDeterministic({ note: "Travelling, back in 5 days. Call in 6 days evening", noteAt: THURSDAY, timezone: TZ, subject: "member" });
+    expect(extraction.travelUntil).toMatchObject({ value: { date: "2026-10-27" }, evidence: "back in 5 days" });
+    expect(extraction.followUp?.value).toMatchObject({ date: "2026-10-28", time: "18:00" });
+    expect(extraction.clarifications).toEqual([]);
+  });
+
   it("asks rather than guessing when travel or a callback has no date", () => {
     const extraction = extractNoteDeterministic({ note: "He is travelling. Asked us to call back.", noteAt: THURSDAY, timezone: TZ, subject: "member" });
     expect(extraction.travelUntil).toBeUndefined();

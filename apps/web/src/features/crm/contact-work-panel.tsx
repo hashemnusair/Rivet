@@ -18,6 +18,11 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils/cn";
 import { leadStageLabel } from "@/features/crm/crm-labels";
+import { MemberBriefPanel } from "@/features/assist/member-brief-panel";
+import { NoteAssist, type NoteAssistRemember } from "@/features/assist/note-assist";
+import { capabilityAvailable, useAiSettings } from "@/features/assist/use-assist";
+import { useFormat } from "@/lib/i18n/format";
+import { getApi } from "@/lib/api/client";
 
 /**
  * Outcomes a person can record by hand, most common first. The RIVET WhatsApp
@@ -51,6 +56,10 @@ export function recommendedLeadStage(outcome: ContactOutcome, currentStage?: Lea
   if (outcome === "trial_completed") return "trial_completed";
   if (currentStage && STAGE_OPTIONS.some((option) => option.value === currentStage)) return currentStage;
   return "contacted";
+}
+
+function isManualOutcome(value: string, subject: "lead" | "member"): value is ContactOutcome {
+  return (MANUAL_OUTCOMES as string[]).includes(value) && (subject === "lead" || !LEAD_ONLY_OUTCOMES.has(value as ContactOutcome));
 }
 
 /** Built per render so the "choose what happened" message follows the reader's language. */
@@ -99,6 +108,13 @@ export function LogContactForm({
   const today = todayISODate(timezone);
   const [saveFailed, setSaveFailed] = useState(false);
   const [followUpTouched, setFollowUpTouched] = useState(false);
+  const [outcomeTouched, setOutcomeTouched] = useState(false);
+  // A time read from the note ("Monday evening"); the date field itself stays a plain date.
+  const [followUpTime, setFollowUpTime] = useState<string | undefined>();
+  const [remember, setRemember] = useState<NoteAssistRemember>({});
+  const { data: aiSettings } = useAiSettings();
+  const format = useFormat();
+  const noteAssistAvailable = capabilityAvailable(aiSettings, "note_extraction");
   const [suggestedDays, setSuggestedDays] = useState<number | undefined>(() => defaultOutcome ? suggestedFollowUpDays(defaultOutcome) : undefined);
 
   const form = useForm<FormValues>({
@@ -117,7 +133,8 @@ export function LogContactForm({
     ? [{ value: currentStage, label: leadStageLabel(t, currentStage) }, ...STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))]
     : STAGE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
 
-  const chooseOutcome = (next: ContactOutcome) => {
+  const chooseOutcome = (next: ContactOutcome, byPerson = true) => {
+    if (byPerson) setOutcomeTouched(true);
     form.setValue("outcome", next, { shouldValidate: true });
     form.setValue("stage", subject === "lead" ? recommendedLeadStage(next, currentStage) : undefined);
     // A suggested retry date is a default the person can see and change; it
@@ -132,7 +149,7 @@ export function LogContactForm({
       const input = {
         outcome: v.outcome as ContactOutcome,
         notes: v.notes?.trim() || undefined,
-        nextFollowUpAt: v.nextFollowUp ? localDateTimeToISO(v.nextFollowUp, "10:00", timezone) : undefined,
+        nextFollowUpAt: v.nextFollowUp ? localDateTimeToISO(v.nextFollowUp, followUpTime ?? "10:00", timezone) : undefined,
         // Only send a stage when the person was shown the stage choice; a
         // "no answer" must not pin a lead to its current stage.
         stage: showsStage && v.stage ? (v.stage as LeadStage) : undefined,
@@ -140,10 +157,24 @@ export function LogContactForm({
       return subject === "lead" ? api.logContactAttempt(leadId!, input) : api.logMemberContactAttempt(memberId!, input);
     },
     {
-      onSuccess: async () => {
+      onSuccess: async (logged) => {
         toast.success(t("memberProfile.contact.saved"));
+        // Lasting notes are saved only after the contact itself is saved, and only if the person ticked them.
+        if (subject === "member" && memberId && (remember.travelUntil || remember.contactTime)) {
+          const sourceTimelineId = logged && typeof logged === "object" && "id" in logged ? String((logged as { id: unknown }).id) : undefined;
+          try {
+            const api = getApi();
+            if (remember.travelUntil) await api.recordMemberMemory({ memberId, topic: "travel", effectiveUntil: remember.travelUntil.date, text: remember.travelUntil.evidence, sourceTimelineId });
+            if (remember.contactTime) await api.recordMemberMemory({ memberId, topic: "contact_time", value: remember.contactTime, sourceTimelineId });
+          } catch {
+            toast.warning(t("aiWork.error.internal"));
+          }
+        }
         form.reset({ outcome: undefined, notes: "", nextFollowUp: "", stage: undefined });
         setFollowUpTouched(false);
+        setOutcomeTouched(false);
+        setFollowUpTime(undefined);
+        setRemember({});
         setSuggestedDays(undefined);
         await invalidate();
         onLogged?.();
@@ -211,12 +242,30 @@ export function LogContactForm({
       <Field label={t("common.label.notes")}>
         <Textarea rows={compact ? 2 : 3} dir="auto" placeholder={t("memberProfile.contact.notesPlaceholder")} {...form.register("notes")} data-testid="contact-notes" />
       </Field>
+      {noteAssistAvailable ? (
+        <NoteAssist
+          subject={subject}
+          memberId={memberId}
+          leadId={leadId}
+          note={form.watch("notes") ?? ""}
+          form={{ outcome, nextFollowUp: followUp, touched: { outcome: outcomeTouched, nextFollowUp: followUpTouched } }}
+          onApplyOutcome={(next) => { if (isManualOutcome(next, subject)) chooseOutcome(next, false); }}
+          onApplyFollowUp={(date, time) => {
+            form.setValue("nextFollowUp", date, { shouldValidate: true });
+            setFollowUpTime(time);
+            setSuggestedDays(undefined);
+          }}
+          onRememberChange={setRemember}
+        />
+      ) : null}
       <Field
         label={t("memberProfile.contact.nextFollowUp")}
         hint={
           followUpInPast
             ? undefined
-            : suggestedDays && !followUpTouched
+            : followUpTime && followUp
+              ? t("aiWork.extract.callAt", { time: format.clock(followUpTime) })
+              : suggestedDays && !followUpTouched
               ? suggestedDays === 1
                 ? t("memberProfile.contact.suggestedTomorrow")
                 : t("memberProfile.contact.suggestedInDays", { count: suggestedDays })
@@ -295,6 +344,7 @@ export function LogContactDialog({
             <DialogDescription>{subject === "lead" ? t("memberProfile.contact.dialogDescriptionLead") : t("memberProfile.contact.dialogDescriptionMember")}</DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {subject === "member" && memberId && isOpen ? <ContactBrief memberId={memberId} /> : null}
             <LogContactForm
               subject={subject}
               leadId={leadId}
@@ -311,4 +361,11 @@ export function LogContactDialog({
       </Dialog>
     </>
   );
+}
+
+/** The member brief above the contact form, when the gym's assistance allows it. */
+function ContactBrief({ memberId }: { memberId: string }) {
+  const { data: settings } = useAiSettings();
+  if (!capabilityAvailable(settings, "member_context")) return null;
+  return <MemberBriefPanel memberId={memberId} className="mb-4" />;
 }

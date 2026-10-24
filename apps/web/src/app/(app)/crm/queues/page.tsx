@@ -28,6 +28,10 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
+import { AiRunPanel } from "@/features/assist/run-panel";
+import { PrepareFollowUpsButton } from "@/features/assist/prepare-followups";
+import { MemberBriefView } from "@/features/assist/member-brief-panel";
+import { capabilityAvailable, useAiSettings, useMemberBrief } from "@/features/assist/use-assist";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
@@ -231,6 +235,7 @@ function RenewalQueuePage() {
   const normalizedDays = latinDigits(days);
   const daysNumber = /^\d+$/.test(normalizedDays) ? Number(normalizedDays) : Number.NaN;
   const selectedId = params.get("member") ?? undefined;
+  const runId = params.get("run") ?? undefined;
   const page = Math.max(1, Number(params.get("page")) || 1);
   const setSelectedId = (value: string | undefined) => update({ member: value });
   const panelRef = useRef<HTMLElement | null>(null);
@@ -306,6 +311,8 @@ function RenewalQueuePage() {
         <footer className="border-t border-line px-4 py-3 text-[12px] leading-relaxed text-ink-3">{t("crmCompletion.queues.oneYearRange")}</footer>
       </aside>
 
+      <div className="min-w-0 space-y-4">
+      {runId ? <AiRunPanel runId={runId} onClose={() => update({ run: undefined })} /> : null}
       <div className={cn("grid gap-4", selectedItem && "2xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="follow-up-results-title" data-testid="follow-up-results">
           <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
@@ -314,7 +321,8 @@ function RenewalQueuePage() {
               <h2 id="follow-up-results-title" className="mt-1 text-[15px] font-semibold">{t("crmCompletion.queues.membershipsFound")}</h2>
               <p className="mt-0.5 text-[12px] text-ink-3">{t(BUCKETS.find((option) => option.value === bucket)!.labelKey)} · {fromDate || toDate ? t("crmCompletion.queues.dateRange", { from: format.date(fromDate || oldestDate), to: format.date(toDate || today) }) : daysNumber > 0 ? t(bucket === "expired" ? "crmCompletion.queues.lastDays" : "crmCompletion.queues.nextDays", { count: Math.min(daysNumber, 365) }) : "—"}</p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <PrepareFollowUpsButton bucket={bucket} days={Number.isInteger(daysNumber) && daysNumber > 0 ? daysNumber : undefined} branchId={session?.activeBranchId} onStarted={(run) => update({ run: run.id })} />
               <span className="text-[12px] text-ink-3 tabular">{renewals.data?.totalItems ?? "…"}</span>
               <Button type="button" variant="ghost" size="icon-sm" onClick={() => { void renewals.refetch(); }} aria-label={t("crmCompletion.queues.refreshList")} title={t("crmCompletion.queues.refreshList")}><RefreshCw className="size-3.5" /></Button>
             </div>
@@ -327,17 +335,37 @@ function RenewalQueuePage() {
         {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
         <FollowUpHeader member={selectedItem.member} onClose={() => setSelectedId(undefined)} />
         <div className="px-4 py-4"><RenewalContext item={selectedItem} /></div>
+        <SelectedMemberBrief memberId={selectedItem.member.id} />
         <div className="border-t border-line px-4 py-4"><FollowUpContextPanel memberId={selectedItem.member.id} variant="renewal" /></div>
         <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3" aria-label={t("crmCompletion.queues.followUpActions")}>
           <Button asChild variant="secondary" size="sm"><a href={`tel:${selectedItem.member.phone}`}><PhoneCall /> {t("crmCompletion.queues.call")}</a></Button>
-          <WhatsAppHandoff subject="member" subjectId={selectedItem.member.id} recipientName={selectedItem.member.fullName} recipientPreferredLanguage={selectedItem.member.preferredLanguage} phone={selectedItem.member.phone} onLogged={() => setSelectedId(undefined)} />
+          <PreparedWhatsAppHandoff item={selectedItem} onLogged={() => setSelectedId(undefined)} />
           <LogContactDialog subject="member" memberId={selectedItem.member.id} onLogged={() => setSelectedId(undefined)} />
           {(session?.permissions ?? []).includes("memberships.sell") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=renew`}><RotateCcw />{" "}{t("memberProfile.header.renew")}</Link></Button> : null}
           {selectedItem.membership.outstanding.amount > 0 && (session?.permissions ?? []).includes("payments.collect") ? <Button asChild variant="secondary" size="sm"><Link href={`/members/${selectedItem.member.id}?action=collect`}><Banknote />{" "}{t("renewFlow.payment.collectPlain")}</Link></Button> : null}
         </footer>
         </aside> : null}
       </div>
+      </div>
     </div>;
+}
+
+/** The member brief in the selected renewal, when the gym's assistance allows it. */
+function SelectedMemberBrief({ memberId }: { memberId: string }) {
+  const { data: settings } = useAiSettings();
+  const enabled = capabilityAvailable(settings, "member_context");
+  const { data } = useMemberBrief(memberId, enabled);
+  if (!enabled || !data?.available) return null;
+  return <div className="border-t border-line px-4 py-4"><MemberBriefView brief={data.brief} preparedDraft={data.preparedDraft} compact /></div>;
+}
+
+/** The manual WhatsApp handoff, starting from RIVET's prepared draft when one exists. Opening it is not sending it. */
+function PreparedWhatsAppHandoff({ item, onLogged }: { item: RenewalQueueItem; onLogged: () => void }) {
+  const { data: settings } = useAiSettings();
+  const enabled = capabilityAvailable(settings, "member_context");
+  const { data } = useMemberBrief(item.member.id, enabled);
+  const draft = enabled && data?.available ? data.preparedDraft : undefined;
+  return <WhatsAppHandoff subject="member" subjectId={item.member.id} recipientName={item.member.fullName} recipientPreferredLanguage={item.member.preferredLanguage} phone={item.member.phone} {...(draft ? { initialMessage: draft.text } : {})} onLogged={onLogged} />;
 }
 
 function RenewalRow({ item, selected, onClick }: { item: RenewalQueueItem; selected: boolean; onClick: () => void }) {

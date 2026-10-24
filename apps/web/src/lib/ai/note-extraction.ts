@@ -109,16 +109,21 @@ export function extractNoteDeterministic(input: { note: string; noteAt: string; 
   // Instruction-like clauses never contribute fields; they are reported instead.
   const usable = clauses.filter((clause) => !containsInstructionAttempt(clause));
 
-  // Travel first, so a callback can be kept after the member is back.
-  for (const clause of usable) {
+  // Travel first, so a callback can be kept after the member is back. The
+  // return date may sit in the same clause or the next one ("Travelling,
+  // back in 5 days").
+  for (let index = 0; index < usable.length; index += 1) {
+    const clause = usable[index]!;
     if (!matches(clause, TRAVEL_EN, TRAVEL_AR)) continue;
     if (!result.topics.includes("travel")) result.topics.push("travel");
-    if (matches(clause, UNTIL_EN, UNTIL_AR) || /\b(back|return)/i.test(clause)) {
-      const until = resolveDatePhrase(clause.replace(/\b(evening|morning|afternoon)\b/gi, ""), input.noteAt, input.timezone);
-      if (until) {
-        result.travelUntil = { value: { ...until, time: undefined }, evidence: clause };
-        if (until.alternatives?.length) result.clarifications.push({ field: "travelUntil", messageKey: "aiWork.extract.clarifyTravelDate" });
-      }
+    const candidates = [clause, ...(usable[index + 1] && !matches(usable[index + 1]!, CALL_REQUEST_EN, CALL_REQUEST_AR) ? [usable[index + 1]!] : [])];
+    for (const candidate of candidates) {
+      if (!(matches(candidate, UNTIL_EN, UNTIL_AR) || /\b(back|return)/i.test(candidate))) continue;
+      const until = resolveDatePhrase(candidate.replace(/\b(evening|morning|afternoon)\b/gi, ""), input.noteAt, input.timezone);
+      if (!until) continue;
+      result.travelUntil = { value: { ...until, time: undefined }, evidence: candidate };
+      if (until.alternatives?.length) result.clarifications.push({ field: "travelUntil", messageKey: "aiWork.extract.clarifyTravelDate" });
+      break;
     }
     if (!result.travelUntil) result.clarifications.push({ field: "travelUntil", messageKey: "aiWork.extract.travelNoDate" });
     break;
