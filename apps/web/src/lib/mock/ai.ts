@@ -1,4 +1,5 @@
 import { ApiError, ERR } from "@/lib/api/errors";
+import { hasCatalogue, loadCatalogue } from "@/lib/i18n/core";
 import type { MemberFollowUpContext } from "../../../convex/followupAssist";
 import {
   CAPABILITY_KEYS,
@@ -131,6 +132,7 @@ interface MockRun {
 }
 
 const DEFAULT_STEP_DELAY_MS = 220;
+const PREVIEW_SETTINGS_KEY = "rivet.preview.assistance";
 
 export class MockAiEngine {
   private tenantMode: AiTenantMode = "off";
@@ -146,8 +148,40 @@ export class MockAiEngine {
   private readonly operationKeys = new Map<string, string>();
   private readonly feedback: AiFeedbackInput[] = [];
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private arabicLoadAttempted = false;
+  /** Test seam: the last error a simulated step raised. */
+  lastStepError: unknown;
 
-  constructor(private readonly host: MockAiHost) {}
+  constructor(private readonly host: MockAiHost) {
+    this.restorePreviewSettings();
+  }
+
+  /**
+   * Preview convenience only: the gym-level switch survives a page load in
+   * the same browser tab, as a real setting would. Runs and records stay in
+   * memory, like the rest of the preview data.
+   */
+  private restorePreviewSettings(): void {
+    try {
+      const raw = typeof window === "undefined" ? null : window.sessionStorage.getItem(PREVIEW_SETTINGS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { tenantMode?: AiTenantMode; externalProcessing?: boolean; capabilityModes?: MockAiEngine["capabilityModes"]; revision?: number };
+      if (saved.tenantMode && AI_TENANT_MODES.includes(saved.tenantMode)) this.tenantMode = saved.tenantMode;
+      this.externalProcessing = saved.externalProcessing === true;
+      this.capabilityModes = saved.capabilityModes ?? {};
+      this.revision = Number(saved.revision) || 0;
+    } catch {
+      // Storage can be unavailable; the preview then starts with assistance off.
+    }
+  }
+
+  private savePreviewSettings(): void {
+    try {
+      if (typeof window !== "undefined") window.sessionStorage.setItem(PREVIEW_SETTINGS_KEY, JSON.stringify({ tenantMode: this.tenantMode, externalProcessing: this.externalProcessing, capabilityModes: this.capabilityModes, revision: this.revision }));
+    } catch {
+      // Not persisted; the in-memory value still applies.
+    }
+  }
 
   private get stepDelayMs(): number {
     return this.host.stepDelayMs?.() ?? DEFAULT_STEP_DELAY_MS;
@@ -207,6 +241,7 @@ export class MockAiEngine {
     this.revision += 1;
     this.updatedAt = Date.now();
     this.updatedByName = this.host.actor().name;
+    this.savePreviewSettings();
     this.host.audit({ action: "ai.settings.update", entityId: this.host.db.organization.id, entityLabel: this.host.db.organization.name, summary: `RIVET assistance set to ${this.tenantMode}` });
     if (this.tenantMode === "off") for (const run of this.runs.values()) if (!isTerminalRunStatus(run.status)) run.cancelRequested = true;
     return this.settings();
@@ -264,7 +299,8 @@ export class MockAiEngine {
       today,
       now: new Date().toISOString(),
       extraction: extractionBlocked ? { available: false, reason: extractionBlocked } : { available: true },
-      source: "fixture",
+      // Built from records, exactly as on the server; no model reads anything here.
+      source: "rules",
     });
     return { available: true, brief, ...(draftStep?.step.draft ? { preparedDraft: { ...draftStep.step.draft, runId: draftStep.run.id, preparedAt: draftStep.step.updatedAt } } : {}) };
   }
@@ -370,15 +406,31 @@ export class MockAiEngine {
 
   private schedule(run: MockRun): void {
     if (this.timers.has(run.id)) return;
+    // Drafts follow the member's language. The browser loads the Arabic
+    // catalogue on demand (the server bundles it), so wait for it first.
+    if (!hasCatalogue("ar") && !this.arabicLoadAttempted) {
+      this.arabicLoadAttempted = true;
+      this.timers.set(run.id, setTimeout(() => undefined, 0));
+      void loadCatalogue("ar").catch(() => undefined).finally(() => {
+        this.timers.delete(run.id);
+        this.schedule(run);
+      });
+      return;
+    }
     this.timers.set(run.id, setTimeout(() => {
       this.timers.delete(run.id);
       try {
         this.advance(run);
       } catch (error) {
+        // As on the server: the step's write did not happen; record it as failed and move on.
+        const subject = run.planned[run.cursor];
+        const code = error instanceof ApiError ? error.code : "";
+        run.steps.push({ id: mockUuid(), seq: run.cursor + 1, capability: "step", ...(subject ? { subjectId: subject.id, subjectName: subject.name } : {}), status: "failed", reason: code === ERR.FORBIDDEN ? "permission_denied" : code === ERR.VALIDATION || code === ERR.CONFLICT ? "validation" : code === ERR.NOT_FOUND ? "source_changed" : "internal", updatedAt: new Date().toISOString() });
         run.counts.failed += 1;
         run.cursor += 1;
         run.updatedAt = Date.now();
-        for (const subscriber of this.runSubscribers.get(run.id) ?? []) subscriber.onError?.(error);
+        if (!subject) this.finish(run, run.counts.created > 0 ? "partially_completed" : "failed", "internal");
+        this.lastStepError = error;
       }
       this.notify(run);
       if (!isTerminalRunStatus(run.status)) this.schedule(run);

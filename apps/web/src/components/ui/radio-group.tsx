@@ -3,13 +3,17 @@
 import * as RadioGroupPrimitive from "@radix-ui/react-radio-group";
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from "react";
 import { cn } from "@/lib/utils/cn";
+import { useLocale } from "@/lib/i18n/provider";
 
 const RadioGroup = forwardRef<
   ComponentRef<typeof RadioGroupPrimitive.Root>,
   ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>
->(({ className, ...props }, ref) => (
-  <RadioGroupPrimitive.Root ref={ref} className={cn("grid gap-2", className)} {...props} />
-));
+>(({ className, dir, ...props }, ref) => {
+  // Radix defaults to left-to-right without a direction provider; follow the
+  // reader's language so Arabic options, hints and arrow keys run right to left.
+  const { dir: localeDir } = useLocale();
+  return <RadioGroupPrimitive.Root ref={ref} dir={dir ?? localeDir} className={cn("grid gap-2", className)} {...props} />;
+});
 RadioGroup.displayName = "RadioGroup";
 
 const RadioGroupItem = forwardRef<

@@ -140,8 +140,8 @@ export function composeRenewalFacts(sources: RenewalFactsSources): RenewalMember
   const { context, member, today } = sources;
   const planned = sources.memberships.find((term) => term.id === sources.plannedMembershipId) ?? sources.memberships.find((term) => term.id === context.renewal.membershipId);
   if (!planned) return null;
-  const renewed = sources.memberships.some((term) => term.previousMembershipId === planned.id)
-    || sources.memberships.some((term) => term.id !== planned.id && !term.cancelledAt && term.startDate > planned.startDate && term.endDate > planned.endDate);
+  // The same definition the renewal list and renewal journey use: a successor term linked to this one.
+  const renewed = sources.memberships.some((term) => term.previousMembershipId === planned.id);
   const freeze = planned.activeFreeze ?? {};
   const frozenToday = Boolean(freeze.startDate && freeze.startDate <= today && (!freeze.endDate || freeze.endDate >= today) && (freeze.status ?? "active") !== "ended");
   const memories = sources.memories.filter((row) => row.status === "active" && (!row.effectiveUntil || row.effectiveUntil >= today));

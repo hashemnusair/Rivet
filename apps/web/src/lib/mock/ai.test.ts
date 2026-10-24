@@ -11,6 +11,7 @@ import { MockGymOSApi } from "./MockGymOSApi";
 let api: MockGymOSApi;
 
 beforeEach(async () => {
+  window.sessionStorage.clear();
   api = new MockGymOSApi();
   api.setBehavior({ latencyMs: 0 });
   await api.switchDemoRole("owner");
