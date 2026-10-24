@@ -193,6 +193,11 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
   },
 
   notifications: {
+    aiRunCompleted: "العمل المُعدّ جاهز",
+    aiRunPartly: "اكتمل جزء من العمل المُعدّ",
+    aiRunStopped: "توقّف العمل المُعدّ",
+    aiRunFailed: "تعذّر إكمال العمل المُعدّ",
+    aiRunCounts: "تم إنشاؤها: {created} · مفتوحة مسبقًا: {linked} · تم تخطّيها: {skipped}",
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
     paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",

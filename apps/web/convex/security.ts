@@ -39,6 +39,60 @@ export interface ActorContext {
   branchScope: "all" | "selected";
   branch?: NonNullable<Awaited<ReturnType<typeof findBranch>>>;
   correlationId: string;
+  /** Present only when a persisted delegation grant, not a signed-in person, is acting. */
+  delegation?: { runPublicId: string; grantPublicId: string; tool: string; requestedByUserId: Id<"users"> };
+}
+
+/**
+ * The persisted, narrowly scoped principal used by delayed and delegated work
+ * (docs/23 §7). It names the accountable person, their gym, the permissions
+ * the grant allows and the run/tool acting. It is never a captured browser
+ * session: the actor is rebuilt from current records on every call, so a
+ * deactivated user, removed membership, changed role, inactive branch or
+ * stopped gym ends the authority immediately.
+ */
+export interface DelegationPrincipal {
+  userId: Id<"users">;
+  organizationId: Id<"organizations">;
+  /** The grant's ceiling; the person's current role still applies on top. */
+  allowedPermissions: readonly string[];
+  runPublicId: string;
+  grantPublicId: string;
+  tool: string;
+}
+
+// Only server code holding the request object can attach a principal: the
+// public validators reject unknown fields, and a WeakMap entry cannot be sent
+// over the wire. Spreading a request drops it, which fails closed.
+const delegatedRequests = new WeakMap<object, DelegationPrincipal>();
+
+export function delegatedRequest(args: RequestArgs, principal: DelegationPrincipal): RequestArgs {
+  const request: RequestArgs = { ...args };
+  delegatedRequests.set(request, principal);
+  return request;
+}
+
+/** Derive a request with changed scope while keeping any delegation principal attached. */
+export function deriveRequest(base: RequestArgs, patch: Partial<RequestArgs>): RequestArgs {
+  const request: RequestArgs = { ...base, ...patch };
+  const principal = delegatedRequests.get(base);
+  if (principal) delegatedRequests.set(request, principal);
+  return request;
+}
+
+export function delegationOf(args: RequestArgs): DelegationPrincipal | undefined {
+  return delegatedRequests.get(args);
+}
+
+async function requireDelegatedUser(ctx: ReadCtx, principal: DelegationPrincipal) {
+  // Delegated work runs in scheduled/internal functions. Mixing it into a
+  // signed-in request would let the browser identity and the grant blur.
+  if (await ctx.auth.getUserIdentity()) domainError("FORBIDDEN", "Delegated work cannot run inside a signed-in request.");
+  const user = (await ctx.db.get(principal.userId)) as MaybeUser;
+  if (!user || user.status === "deactivated" || user.status === "invited") {
+    domainError("UNAUTHENTICATED", "This account is not active in RIVET.");
+  }
+  return { user: user as NonNullable<MaybeUser> };
 }
 
 type MaybeUser = {
@@ -275,7 +329,8 @@ export async function requireExportActor(ctx: ReadCtx, args: RequestArgs = {}): 
 }
 
 export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options: ActorOptions = {}): Promise<ActorContext> {
-  const { user } = await requireAuthenticated(ctx);
+  const principal = delegatedRequests.get(args);
+  const { user } = principal ? await requireDelegatedUser(ctx, principal) : await requireAuthenticated(ctx);
   const membership = args.organizationId
     ? await (async () => {
         const organization = await findOrganization(ctx, args.organizationId);
@@ -296,6 +351,9 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options
   }
 
   const organization = (await ctx.db.get(membership.organizationId)) as MaybeOrganization;
+  if (principal && (!organization || organization._id !== principal.organizationId)) {
+    domainError("FORBIDDEN", "This gym is not available.");
+  }
   if (!organization || !(WORKSPACE_STATUSES.includes(organization.status) || (options.billing && billingOnlyOrganization(organization)) || (options.exports && membership.role === "owner" && terminationExportDeadline(organization) !== undefined))) {
     domainError("FORBIDDEN", "This gym is not available.");
   }
@@ -341,16 +399,19 @@ export async function requireActor(ctx: ReadCtx, args: RequestArgs = {}, options
     domainError("FORBIDDEN", "No active branch is available for this gym.");
   }
 
+  const permissions = rolePermissions(role, roleDefinition?.permissions, roleDefinition?.catalogVersion);
   return {
     user,
     organization: organization as NonNullable<MaybeOrganization>,
     membership: membership as NonNullable<MaybeMembership>,
     role,
-    permissions: rolePermissions(role, roleDefinition?.permissions, roleDefinition?.catalogVersion),
+    // A grant can only narrow what the person may currently do, never widen it.
+    permissions: principal ? permissions.filter((permission) => principal.allowedPermissions.includes(permission)) : permissions,
     branchIds,
     branchScope,
     branch: branch ?? undefined,
     correlationId: args.correlationId ?? newCorrelationId(),
+    ...(principal ? { delegation: { runPublicId: principal.runPublicId, grantPublicId: principal.grantPublicId, tool: principal.tool, requestedByUserId: principal.userId } } : {}),
   };
 }
 

@@ -23,6 +23,7 @@ import {
   requirePermission,
   requirePlatformAdmin,
   requireReason,
+  deriveRequest,
   type ActorContext,
   type OrganizationRole,
   type StoredOrganizationRole,
@@ -68,7 +69,11 @@ import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, e
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
-import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { buildMemberFollowUpContext, eligibleReminderTemplates, followUpHandoffDraft, renderReminderForMember, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
+import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
+import { mentionsEveningClasses, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
+import { evaluateRenewalCandidate, usualTimeOfDay, type RenewalCandidateFacts } from "../src/lib/ai/renewal-batch";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1284,6 +1289,8 @@ async function insertTimeline(ctx: MutationCtx, actor: ActorContext, value: Data
     ...value,
     actorId: optionalString(value.actorId) ?? publicUserId(actor.user),
     actorName: optionalString(value.actorName) ?? actor.user.fullName,
+    // Delegated work names the accountable person and the run that acted for them.
+    ...(actor.delegation ? { meta: { ...data(value.meta), delegation: { runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId, tool: actor.delegation.tool } } } : {}),
   };
   return await insertRecord(ctx, actor, "timeline", event, {
     branchId: optionalString(event.branchId) ?? optionalString(event.homeBranchId),
@@ -1337,6 +1344,7 @@ async function insertAudit(
     before: value.before,
     after: value.after,
     approvalStatus: value.approvalStatus,
+    ...(actor.delegation ? { details: { delegation: { runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId, tool: actor.delegation.tool } } } : {}),
     correlationId: actor.correlationId,
     occurredAt: Date.now(),
   };
@@ -1608,6 +1616,205 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
     now: Date.now(),
     organizationDefaultLanguage: actor.organization.defaultLanguage,
   });
+}
+
+// ---------------------------------------------------------------------------
+// RIVET assistance: domain facts for the AI layer (docs/23). These loaders
+// read through the same actor scope as every other operation; the AI layer
+// never reads domain tables directly for business facts.
+// ---------------------------------------------------------------------------
+
+function localHourOf(instant: string, timezone: string): number | undefined {
+  const parsed = Date.parse(instant);
+  if (!Number.isFinite(parsed)) return undefined;
+  try {
+    const hour = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(new Date(parsed));
+    return Number(hour);
+  } catch {
+    return undefined;
+  }
+}
+
+async function eveningClassOptions(ctx: ReadContext, actor: ActorContext, branchPublicId: string | undefined): Promise<MemberClassOptions | undefined> {
+  if (!branchPublicId) return undefined;
+  const branch = await branchByPublicId(ctx, actor.organization._id, branchPublicId);
+  if (!branch) return undefined;
+  const sessions = await ctx.db.query("classSessions").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).take(200);
+  // Weekly templates: each scheduled slot happens once in the next seven days.
+  const active = sessions.filter((session) => session.status !== "cancelled" && typeof session.startMinute === "number");
+  return {
+    branchName: branch.name,
+    eveningNext7Days: active.filter((session) => (session.startMinute ?? 0) >= 17 * 60).length,
+    morningNext7Days: active.filter((session) => (session.startMinute ?? 0) < 12 * 60).length,
+  };
+}
+
+async function memberCheckInSummary(ctx: ReadContext, actor: ActorContext, memberId: string, branchPublicId: string | undefined, today: string): Promise<{ attendance: MemberAttendance; localHours: number[] }> {
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const rows = (await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", memberId).eq("entityType", "checkIn")).collect()).filter((record) => inActorScope(actor, record));
+  const visits = rows.map((row) => ({ id: row.publicId, at: stringValue(data(row.data).occurredAt) })).filter((visit) => Number.isFinite(Date.parse(visit.at))).sort((left, right) => right.at.localeCompare(left.at));
+  const recentFrom = addDays(today, -28);
+  const priorFrom = addDays(today, -84);
+  let captured = visits.length > 0;
+  if (!captured && branchPublicId) {
+    // No visit for this member: absence is only meaningful if the branch records check-ins at all.
+    const branch = await branchByPublicId(ctx, actor.organization._id, branchPublicId);
+    if (branch) captured = Boolean(await ctx.db.query("domainRecords").withIndex("by_organization_branch_type_created", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("entityType", "checkIn")).order("desc").first());
+  }
+  const localDate = (instant: string) => businessDate(instant, timezone);
+  const last = visits[0];
+  return {
+    attendance: {
+      captured,
+      ...(last ? { lastVisitAt: last.at, lastVisitId: last.id } : {}),
+      visitsLast28Days: visits.filter((visit) => localDate(visit.at) > recentFrom).length,
+      visitsPrior56Days: visits.filter((visit) => localDate(visit.at) > priorFrom && localDate(visit.at) <= recentFrom).length,
+    },
+    localHours: visits.filter((visit) => localDate(visit.at) > addDays(today, -60)).map((visit) => localHourOf(visit.at, timezone)).filter((hour): hour is number => hour !== undefined),
+  };
+}
+
+export async function memberBriefFacts(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberBriefFacts> {
+  const context = await memberFollowUpContextData(ctx, actor, memberId);
+  const memberRecord = await recordOf(ctx, actor, "member", memberId);
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const branchPublicId = optionalString(member.homeBranchId);
+  const { attendance } = await memberCheckInSummary(ctx, actor, memberId, branchPublicId, today);
+  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data));
+  const frozen = memberships.map((term) => data(term.activeFreeze)).find((freeze) => optionalString(freeze.startDate) && stringValue(freeze.startDate) <= today && (!optionalString(freeze.endDate) || stringValue(freeze.endDate) >= today) && stringValue(freeze.status, "active") !== "ended");
+  return {
+    context,
+    attendance,
+    ...(frozen ? { activeFreeze: { startDate: stringValue(frozen.startDate), ...(optionalString(frozen.endDate) ? { endDate: stringValue(frozen.endDate) } : {}) } } : {}),
+    classOptions: await eveningClassOptions(ctx, actor, branchPublicId),
+    ...(memberRecord.branchId ? { memberBranchId: memberRecord.branchId } : {}),
+  };
+}
+
+export interface RenewalMemberFacts extends RenewalCandidateFacts {
+  draft: { language: "en" | "ar"; text: string };
+  homeBranchId?: string;
+  eveningClassesAvailable: boolean;
+}
+
+/**
+ * Current facts for one member's renewal follow-up, loaded inside the write
+ * transaction so a renewal, contact, freeze, opt-out or new task recorded a
+ * moment ago changes the decision. `membershipId` is the term the batch planned
+ * around; a successor for it means the member renewed.
+ */
+export async function renewalFactsForMember(ctx: ReadContext, actor: ActorContext, memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null> {
+  let context: MemberFollowUpContext;
+  let memberRecord: DomainRecord;
+  try {
+    memberRecord = await recordOf(ctx, actor, "member", memberId);
+    context = await memberFollowUpContextData(ctx, actor, memberId);
+  } catch {
+    return null;
+  }
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data));
+  const planned = memberships.find((term) => term.id === membershipId) ?? memberships.find((term) => term.id === context.renewal.membershipId);
+  if (!planned) return null;
+  const renewed = memberships.some((term) => optionalString(term.previousMembershipId) === planned.id) || memberships.some((term) => term.id !== planned.id && !optionalString(term.cancelledAt) && stringValue(term.startDate) > stringValue(planned.startDate) && stringValue(term.endDate) > stringValue(planned.endDate));
+  const freeze = data(planned.activeFreeze);
+  const frozenToday = Boolean(optionalString(freeze.startDate) && stringValue(freeze.startDate) <= today && (!optionalString(freeze.endDate) || stringValue(freeze.endDate) >= today) && stringValue(freeze.status, "active") !== "ended");
+  const retention = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "retentionState").eq("publicId", `retention:${memberId}`)).unique();
+  const memories = (await ctx.db.query("aiMemories").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectType", "member").eq("subjectId", memberId)).take(50)).filter((row) => row.status === "active" && (!row.effectiveUntil || row.effectiveUntil >= today));
+  const travel = memories.find((row) => row.topic === "travel");
+  const contactTime = memories.find((row) => row.topic === "contact_time");
+  const { localHours } = await memberCheckInSummary(ctx, actor, memberId, optionalString(member.homeBranchId), today);
+  const openFollowUp = context.relatedWork.find((task) => task.status === "open" && (task.type === "follow_up" || task.type === "renewal_call"));
+  const classOptions = await eveningClassOptions(ctx, actor, optionalString(member.homeBranchId));
+  const template = eligibleReminderTemplates(context)[0];
+  const draft = template
+    ? { language: context.preferredLanguage, text: renderReminderForMember(template, context, actor.organization.name) }
+    : followUpHandoffDraft({ fullName: context.memberName, preferredLanguage: member.preferredLanguage }, actor.organization.name, actor.organization.defaultLanguage);
+  const mentionsEvening = context.evidence.some((item) => mentionsEveningClasses(`${item.title} ${item.excerpt ?? ""}`));
+  return {
+    memberId,
+    memberName: context.memberName,
+    memberStatus: stringValue(member.status, "active"),
+    membershipId: stringValue(planned.id),
+    membershipEndDate: stringValue(planned.endDate),
+    renewed,
+    ...(context.phone ? { phone: context.phone } : {}),
+    noContact: context.renewal.journeyStopReason === "member_requested_no_contact" || memories.some((row) => row.topic === "no_contact"),
+    messagesOptedOut: context.messaging.consent === "explicit_opt_out" || context.messaging.channelOptedOut,
+    frozenToday,
+    ...(retention && optionalString(data(retention.data).snoozedUntil) ? { snoozedUntil: stringValue(data(retention.data).snoozedUntil) } : {}),
+    ...(travel?.effectiveUntil ? { travellingUntil: travel.effectiveUntil } : {}),
+    ...(context.lastContact ? { lastContactAt: context.lastContact.at } : {}),
+    ...(openFollowUp ? { openFollowUp: { id: openFollowUp.id, type: openFollowUp.type, ownerId: openFollowUp.ownerId, dueAt: openFollowUp.dueAt, title: openFollowUp.title } } : {}),
+    ...(usualTimeOfDay(localHours) ? { usualTimeOfDay: usualTimeOfDay(localHours) } : {}),
+    ...(contactTime && ["morning", "afternoon", "evening"].includes(contactTime.text) ? { preferredContactTime: contactTime.text as "morning" | "afternoon" | "evening" } : {}),
+    ...(optionalString(member.assignedSalespersonId) ? { assignedSalespersonId: stringValue(member.assignedSalespersonId) } : {}),
+    preferredLanguage: context.preferredLanguage,
+    mentionsEveningClasses: mentionsEvening,
+    draft: { language: draft.language, text: draft.text },
+    ...(optionalString(member.homeBranchId) ? { homeBranchId: stringValue(member.homeBranchId) } : {}),
+    eveningClassesAvailable: (classOptions?.eveningNext7Days ?? 0) > 0,
+  };
+}
+
+/** Active, accepted staff of the actor's gym, for owner/transfer choices. */
+async function aiStaffMembers(ctx: ReadContext, actor: ActorContext): Promise<Array<{ id: string; userId: Id<"users">; name: string; active: boolean }>> {
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const staff = [];
+  for (const membership of memberships) {
+    if (!membership.active || !membershipInvitationAccepted(membership) || membership.role === "auditor") continue;
+    const user = await ctx.db.get(membership.userId);
+    if (!user || user.status === "deactivated" || user.status === "invited") continue;
+    staff.push({ id: publicUserId(user), userId: user._id, name: user.fullName, active: true });
+  }
+  return staff;
+}
+
+async function aiEntitledModules(ctx: ReadContext, actor: ActorContext): Promise<string[]> {
+  const access = await workspaceAccessData(ctx, actor);
+  const entitled = new Set(arrayValue(data(access.entitlements).entitledModules).map(String));
+  return arrayValue(data(access.preferences).enabledModules).map(String).filter((key) => entitled.has(key));
+}
+
+/** What a renewal batch would do right now, without writing anything (standing-instruction preview). */
+async function previewAiPlaybook(ctx: QueryCtx, actor: ActorContext, playbook: AiPlaybookKey, params: Record<string, string | number | boolean>, request: RequestArgs): Promise<{ subjects: Array<{ id: string; name: string; decision: string; reason?: string }>; digest: string }> {
+  if (playbook !== "renewal_followups") return { subjects: [], digest: previewDigest([]) };
+  const queue = data(await queryData(ctx, "renewal.queue", { bucket: params.bucket ?? "expiring", ...(params.days ? { days: params.days } : {}), page: 1, pageSize: 100 }, request));
+  const today = tenantToday(actor);
+  const subjects = [];
+  for (const item of arrayValue(queue.items).map(data).slice(0, 100)) {
+    const memberId = stringValue(data(item.member).id);
+    const facts = await renewalFactsForMember(ctx, actor, memberId, optionalString(data(item.membership).id));
+    if (!facts) continue;
+    const decision = evaluateRenewalCandidate(facts, { today, now: isoNow(), revisions: [] });
+    subjects.push({ id: memberId, name: facts.memberName, decision: decision.decision, ...(decision.decision === "exclude" ? { reason: decision.reason } : {}) });
+  }
+  return { subjects, digest: previewDigest(subjects) };
+}
+
+export const aiDomainPort: AiDomainPort = {
+  memberBriefFacts,
+  entitledModules: aiEntitledModules,
+  insertAudit: async (ctx, actor, value) => await insertAudit(ctx, actor, value),
+  scopedMember: async (ctx, actor, memberId) => {
+    const record = await recordOf(ctx, actor, "member", memberId);
+    const value = data(record.data);
+    return { publicId: record.publicId, fullName: stringValue(value.fullName), ...(optionalString(value.homeBranchId) ? { branchPublicId: stringValue(value.homeBranchId) } : {}) };
+  },
+  tenantToday,
+  previewPlaybook: previewAiPlaybook,
+  staffMembers: aiStaffMembers,
+};
+
+/** The existing domain handlers, for the delegated-work executor. */
+export async function executeDomainQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  return await queryData(ctx, operation, input, request);
+}
+
+export async function executeDomainMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  return await mutationData(ctx, operation, input, request);
 }
 
 /** An explicit, accepted link from a new task to an existing open task about the same person; never inferred. */
@@ -5397,6 +5604,7 @@ function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
 }
 
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if ((AI_QUERY_OPERATIONS as readonly string[]).includes(operation)) return await aiQuery(ctx, operation, input, request, aiDomainPort);
   if (operation === "users.profile.get") {
     const actor = await requireActor(ctx, request);
     return { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email, phone: actor.user.phone ?? "" };
@@ -6003,7 +6211,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
 
   const actor = operation === "exports.list" || operation === "exports.request"
-    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    ? await requireExportActor(ctx, deriveRequest(request, { organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) }))
     : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
@@ -7720,7 +7928,26 @@ async function createMembershipMutation(
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
   if (operation === "sale") await applyReferralReward(ctx, actor, memberData);
+  if (operation !== "plan_change") await closeObsoleteAiRenewalWork(ctx, actor, stringValue(memberData.id), membership.id);
   return result;
+}
+
+/**
+ * A renewal or new membership makes RIVET-prepared renewal follow-ups for
+ * the member obsolete. They close in the same transaction as the sale, so a
+ * call is never placed to someone who just renewed. Staff-created tasks and
+ * the renewal journey's own call tasks keep their existing behavior.
+ */
+async function closeObsoleteAiRenewalWork(ctx: MutationCtx, actor: ActorContext, memberId: string, newMembershipId: string): Promise<void> {
+  const tasks = await recordsOfMember(ctx, actor.organization._id, memberId, "task");
+  for (const record of tasks) {
+    const task = data(record.data);
+    if (stringValue(task.status, "open") !== "open") continue;
+    if (stringValue(data(task.origin).kind) !== "ai_run" || stringValue(data(task.aiContext).purpose) !== "renewal") continue;
+    if (optionalString(data(task.aiContext).membershipId) === newMembershipId) continue;
+    await ctx.db.patch(record._id, { data: { ...task, status: "completed", outcome: "Renewed — follow-up no longer needed", completedAt: isoNow(), closedBy: "renewal" }, updatedAt: Date.now() });
+    await insertTimeline(ctx, actor, { memberId, type: "task_completed", title: `Task completed: ${stringValue(task.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(task.title) }), body: "Renewed — follow-up no longer needed", meta: { reason: "renewed", taskId: record.publicId, runId: optionalString(data(task.origin).runId) } });
+  }
 }
 
 /**
@@ -7888,7 +8115,10 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const member = input.memberId ? await recordOf(ctx, actor, "member", stringValue(input.memberId)) : null;
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
   const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
-  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
+  // Only a delegated actor can mark a task as prepared by RIVET; clients cannot claim that origin.
+  const aiContext = actor.delegation ? data(input.aiContext) : {};
+  const origin = actor.delegation ? { origin: { kind: "ai_run", runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId }, ...(optionalString(aiContext.purpose) ? { aiContext: { purpose: stringValue(aiContext.purpose), membershipId: optionalString(aiContext.membershipId), topic: optionalString(aiContext.topic) } } : {}) } : {};
+  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}), ...origin }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
   if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
@@ -8515,6 +8745,7 @@ async function ensureCustomerReferralLink(ctx: MutationCtx, membershipId: string
 }
 
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if ((AI_MUTATION_OPERATIONS as readonly string[]).includes(operation)) return await aiMutation(ctx, operation, input, request, aiDomainPort);
   if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);

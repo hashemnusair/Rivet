@@ -15,9 +15,48 @@ runtime and model-call ownership" (Convex-native durable runs; model calls in Co
 internal actions; keys in the isolated dev Convex deployment) and "AI open
 decisions". Environment ownership: docs/12 "AI environment ownership".
 
-Checkpoint 1 (this entry): canonical breakdown, traceability map, capability
-inventory and decisions. No runtime code yet. Later checkpoints below this line
-record each implemented slice with tests and evidence.
+Checkpoint 1: canonical breakdown, traceability map, capability inventory and
+decisions (`7f503745`).
+
+**Checkpoint 2 — AI-1/AI-2 foundation, INCOMPLETE (session usage limit).**
+Implemented locally, deterministic evidence only, no UI yet:
+
+- Shared pure contracts in `apps/web/src/lib/ai/`: `contracts.ts`, `capabilities.ts`
+  (tool/playbook registry, authority intersection, param schemas), `model.ts`
+  (off/fixture/live adapter, `openai_chat_json` protocol unverified, member-data gate),
+  `note-extraction.ts` + `relative-dates.ts` (bilingual note → fields, dates resolved
+  by RIVET against note time/gym timezone, ambiguity alternatives, injection flag),
+  `member-brief.ts`, `renewal-batch.ts`.
+- Convex: AI tables in `schema.ts` (+ `tenantPurge` inventory); delegated principal in
+  `security.ts` (`delegatedRequest`, `deriveRequest`; refused inside signed-in calls;
+  permissions intersected with the grant; actor rebuilt from current records);
+  `ai.ts` (operations on the existing `domain.query/mutate` transport), `aiPolicy.ts`,
+  `aiRuns.ts` (lease/fencing worker, recovery and standing crons), `aiPlaybooks.ts`
+  (renewal follow-ups batch only), `aiModelCall.ts`; `domain.ts` gains fact loaders,
+  `aiDomainPort`, timeline/audit delegation attribution, task `origin` for delegated
+  writes only, and a transactional hook closing RIVET-prepared renewal calls on renewal.
+- Tests: `src/lib/ai/note-extraction.test.ts` (15) and `convex/ai.delegation.test.ts`
+  (21 pass, 1 skipped): off/prepare gating, brief facts/sources/gaps, cross-tenant and
+  branch denial, batch creates verified tasks with drafts and exclusions, repeat-start
+  and second-batch dedupe, crash-after-commit resume, lease fencing, cancel with
+  committed effects reported, revocation mid-run, tenant off mid-run, renewal stop,
+  revision without redoing work, takeover, grant narrowing. `tenantPurge.test.ts` passes.
+- **Known defect:** `nextSlot` in `convex/ai.ts` returns the wrong standing slot
+  (Sunday instead of the next matching weekday); the standing test is skipped with a
+  note. Fix first.
+- **Not yet run:** full `pnpm test`, lint, build, Playwright, codegen in CI. Generated
+  bindings were produced with a worktree-local anonymous Convex backend
+  (`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen` from `apps/web`,
+  selector kept in ignored `apps/web/.env.ai-local-backend.local`; no hosted target).
+
+**Next steps (in order):** fix `nextSlot` and re-enable the test; run full gates; add
+`GymOSApi` methods + Convex/Mock adapters + parity tests; `aiActions.prepare` public
+action for note extraction/filters/revision; UI (brief + "Fill from note" in
+`features/crm/contact-work-panel.tsx`, "Prepare follow-ups" + run panel in
+`app/(app)/crm/queues/page.tsx`, Settings → Assistance, standing instructions);
+`aiWork` en/ar catalogs per docs/arabic; then AI-3 report/handover playbooks, AI-4
+slices, AI-5 eval harness. Read docs/13 AI section, docs/09 AI-0 decision, then the
+files above.
 
 ## Source-only merge preparation — 24 October 2026
 

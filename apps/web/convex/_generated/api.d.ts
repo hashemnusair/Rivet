@@ -11,6 +11,11 @@
 import type * as accessMaintenance from "../accessMaintenance.js";
 import type * as accounting from "../accounting.js";
 import type * as accountingLedger from "../accountingLedger.js";
+import type * as ai from "../ai.js";
+import type * as aiModelCall from "../aiModelCall.js";
+import type * as aiPlaybooks from "../aiPlaybooks.js";
+import type * as aiPolicy from "../aiPolicy.js";
+import type * as aiRuns from "../aiRuns.js";
 import type * as analyticsReports from "../analyticsReports.js";
 import type * as arabicReview from "../arabicReview.js";
 import type * as arabicReviewModel from "../arabicReviewModel.js";
@@ -102,6 +107,11 @@ declare const fullApi: ApiFromModules<{
   accessMaintenance: typeof accessMaintenance;
   accounting: typeof accounting;
   accountingLedger: typeof accountingLedger;
+  ai: typeof ai;
+  aiModelCall: typeof aiModelCall;
+  aiPlaybooks: typeof aiPlaybooks;
+  aiPolicy: typeof aiPolicy;
+  aiRuns: typeof aiRuns;
   analyticsReports: typeof analyticsReports;
   arabicReview: typeof arabicReview;
   arabicReviewModel: typeof arabicReviewModel;

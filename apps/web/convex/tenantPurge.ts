@@ -104,6 +104,15 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "idempotencyRecords", index: "by_organization_operation_key" },
   { table: "entryPasses", index: "by_organization_public_id" },
   { table: "sequenceCounters", index: "by_organization_key" },
+  { table: "aiSettings", index: "by_organization" },
+  { table: "aiGrants", index: "by_organization" },
+  { table: "aiRuns", index: "by_organization" },
+  { table: "aiRunSteps", index: "by_organization_run" },
+  { table: "aiProposals", index: "by_organization_status" },
+  { table: "aiMemories", index: "by_organization_subject" },
+  { table: "aiArtifacts", index: "by_organization_public_id" },
+  { table: "aiUsage", index: "by_organization_month" },
+  { table: "aiFeedback", index: "by_organization" },
 ];
 
 type AnyDoc = { _id: Id<TableNames>; organizationId?: Id<"organizations">; storageId?: Id<"_storage"> };
