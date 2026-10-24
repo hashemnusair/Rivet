@@ -24,6 +24,7 @@ import {
   type AiMemberBriefResult,
   type AiMemoryView,
   type AiPlaybookKey,
+  type AiProposalView,
   type AiRunExclusion,
   type AiRunLimits,
   type AiRunResultRef,
@@ -45,6 +46,7 @@ import { runFixtureTask } from "@/lib/ai/model";
 import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
 import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
+import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
 import type * as T from "@/lib/domain/types";
 import type { MockDb } from "./store";
@@ -81,6 +83,26 @@ export interface MockAiHost {
   reportInputs(range: { from: string; to: string; branchId?: string }): Promise<ReportInputs>;
   handoverInputs(branchId: string, date: string): Promise<HandoverInputs>;
   requestExport(input: { kind: "payments"; filters: Record<string, string>; idempotencyKey: string }): Promise<{ id: string }>;
+  /** The recorded drawer story for one shift, read as the server reads it; throws without access. */
+  cashShiftFacts(shiftId: string): CashShiftFacts;
+  /** The existing cash-difference review, as the signed-in person. */
+  reviewVariance(shiftId: string, input: { decision: "approved"; note: string }): void;
+}
+
+interface MockProposal {
+  id: string;
+  runId: string;
+  tool: string;
+  subjectLabel: string;
+  changes: AiProposalView["changes"];
+  payload: { shiftId: string; decision: "approved"; note: string; varianceMinor: number };
+  changesetHash: string;
+  requiredPermission: string;
+  status: AiProposalView["status"];
+  proposedAt: number;
+  expiresAt: number;
+  decidedByName?: string;
+  invalidationReason?: AiErrorCategory;
 }
 
 interface MockGrant {
@@ -152,6 +174,7 @@ export class MockAiEngine {
   private readonly runSubscribers = new Map<string, Set<{ onValue: (run: AiRunView) => void; onError?: (error: unknown) => void }>>();
   private readonly memories: Array<AiMemoryView & { createdAt: number }> = [];
   private readonly artifacts = new Map<string, AiArtifactView & { requiredPermissions: string[] }>();
+  private readonly proposals = new Map<string, MockProposal>();
   private readonly operationKeys = new Map<string, string>();
   private readonly feedback: AiFeedbackInput[] = [];
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -435,7 +458,7 @@ export class MockAiEngine {
 
   private async step(run: MockRun): Promise<void> {
       try {
-        if (run.playbook === "management_report" || run.playbook === "shift_handover") await this.advanceJob(run);
+        if (run.playbook === "management_report" || run.playbook === "shift_handover" || run.playbook === "cash_difference") await this.advanceJob(run);
         else this.advance(run);
       } catch (error) {
         // As on the server: the step's write did not happen; record it as failed and move on.
@@ -461,6 +484,7 @@ export class MockAiEngine {
     const blocked = playbookBlocked(definition, this.authority(definition.capability));
     if (blocked) return this.finish(run, run.results.length ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
     const stamp = () => new Date().toISOString();
+    if (run.playbook === "cash_difference") return this.advanceCashDifference(run);
     if (run.playbook === "management_report") {
       const params = run.params as { from: string; to: string; includeExport?: boolean };
       if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {
@@ -511,6 +535,102 @@ export class MockAiEngine {
       run.writes += 1;
     }
     this.finish(run, "completed");
+  }
+
+  /** Cash-difference investigation: the same matching and binding as the server, over preview records. */
+  private advanceCashDifference(run: MockRun): void {
+    const params = run.params as { shiftId: string };
+    let facts: CashShiftFacts;
+    try {
+      facts = this.host.cashShiftFacts(params.shiftId);
+    } catch {
+      return this.finish(run, "failed", "permission_denied");
+    }
+    if (facts.status !== "closed" || !facts.varianceMinor) return this.finish(run, "failed", "validation");
+    const investigation = investigateCashDifference(facts);
+    const composed = composeCashDifference(facts, investigation);
+    const artifact = this.saveArtifact(run, "cash_difference", "aiWork.cash.title", composed, ["reconciliation.read"]);
+    const stamp = new Date().toISOString();
+    const ref: AiRunResultRef = { kind: "artifact", id: artifact.id, label: artifact.title, href: `/payments/shifts?run=${run.id}` };
+    run.steps.push({ id: mockUuid(), seq: 1, capability: "artifact.save_cash_difference", status: "verified", resultRef: ref, updatedAt: stamp });
+    run.results.push(ref);
+    run.writes += 1;
+    if (shouldPrepareVarianceReview(facts, investigation)) {
+      const prepared = varianceReviewProposal(facts, investigation);
+      const existing = [...this.proposals.values()].find((item) => item.runId === run.id);
+      const proposal: MockProposal = existing ?? { id: `proposal-${mockUuid()}`, runId: run.id, tool: "shift.propose_variance_review", subjectLabel: facts.shiftId, changes: prepared.changes, payload: prepared.payload, changesetHash: prepared.changesetHash, requiredPermission: "reconciliation.approve_variance", status: "pending", proposedAt: Date.now(), expiresAt: Date.now() + 24 * 3_600_000 };
+      if (!existing) {
+        this.proposals.set(proposal.id, proposal);
+        run.writes += 1;
+      }
+      const proposalRef: AiRunResultRef = { kind: "proposal", id: proposal.id, label: "aiWork.proposal.varianceReview", href: `/payments/shifts?run=${run.id}` };
+      run.steps.push({ id: mockUuid(), seq: 2, capability: "shift.propose_variance_review", status: "verified", resultRef: proposalRef, updatedAt: stamp });
+      run.results.push(proposalRef);
+    }
+    this.finish(run, composed.verification.verified ? "completed" : "partially_completed", composed.verification.verified ? undefined : "source_changed");
+  }
+
+  private proposalView(proposal: MockProposal): AiProposalView {
+    const expired = proposal.status === "pending" && proposal.expiresAt <= Date.now();
+    const pending = proposal.status === "pending" && !expired;
+    const mayDecide = pending && this.host.permissions().includes(proposal.requiredPermission);
+    return {
+      id: proposal.id,
+      runId: proposal.runId,
+      capability: proposal.tool,
+      changes: proposal.changes.map((change) => ({ ...change })),
+      subjectLabel: proposal.subjectLabel,
+      changesetHash: proposal.changesetHash,
+      requiredPermissionKey: proposal.requiredPermission,
+      status: expired ? "expired" : proposal.status,
+      proposedAt: new Date(proposal.proposedAt).toISOString(),
+      expiresAt: new Date(proposal.expiresAt).toISOString(),
+      ...(proposal.decidedByName ? { decidedByName: proposal.decidedByName } : {}),
+      ...(proposal.invalidationReason ? { invalidationReason: proposal.invalidationReason } : {}),
+      allowed: { approve: mayDecide, reject: mayDecide },
+    };
+  }
+
+  listProposals(query: { runId?: string }): AiProposalView[] {
+    const rows = [...this.proposals.values()].filter((proposal) => (query.runId ? proposal.runId === query.runId : proposal.status === "pending"));
+    return rows.filter((proposal) => {
+      const run = this.runs.get(proposal.runId);
+      return Boolean(run && this.canRead(run));
+    }).map((proposal) => this.proposalView(proposal));
+  }
+
+  /** A person decides; approval reruns the existing review only if the records still derive the same change. */
+  decideProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string }): AiProposalView {
+    const proposal = this.proposals.get(input.proposalId);
+    const run = proposal ? this.runs.get(proposal.runId) : undefined;
+    if (!proposal || !run || !this.canRead(run)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    this.requireHumanPermission(proposal.requiredPermission);
+    if (proposal.status !== "pending") throw ApiError.of(ERR.CONFLICT, "This change was already decided.");
+    if (proposal.expiresAt <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This prepared change expired. Prepare it again.");
+    if (input.changesetHash !== proposal.changesetHash) throw ApiError.of(ERR.CONFLICT, "This record changed. Refresh and try again.");
+    const actor = this.host.actor();
+    if (input.decision === "reject") {
+      Object.assign(proposal, { status: "rejected", decidedByName: actor.name });
+      this.host.audit({ action: "ai.proposal.reject", entityId: proposal.id, entityLabel: proposal.subjectLabel, summary: "Prepared change rejected" });
+      return this.proposalView(proposal);
+    }
+    let rederived: string | null = null;
+    try {
+      const facts = this.host.cashShiftFacts(proposal.payload.shiftId);
+      const investigation = investigateCashDifference(facts);
+      rederived = shouldPrepareVarianceReview(facts, investigation) ? varianceReviewProposal(facts, investigation).changesetHash : null;
+    } catch {
+      rederived = null;
+    }
+    if (rederived !== proposal.changesetHash) {
+      Object.assign(proposal, { status: "invalidated", invalidationReason: "source_changed", decidedByName: actor.name });
+      this.host.audit({ action: "ai.proposal.invalidate", entityId: proposal.id, entityLabel: proposal.subjectLabel, summary: "Prepared change no longer matched the records" });
+      return this.proposalView(proposal);
+    }
+    this.host.reviewVariance(proposal.payload.shiftId, { decision: "approved", note: proposal.payload.note });
+    Object.assign(proposal, { status: "executed", decidedByName: actor.name });
+    this.host.audit({ action: "ai.proposal.approve", entityId: proposal.id, entityLabel: proposal.subjectLabel, summary: "Prepared change approved and saved" });
+    return this.proposalView(proposal);
   }
 
   private saveArtifact(run: MockRun, kind: AiArtifactView["kind"], title: string, composed: ReturnType<typeof composeManagementReport>, requiredPermissions: string[]): AiArtifactView {

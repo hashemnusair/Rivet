@@ -101,7 +101,7 @@ export type AiMessageParam =
   | { at: string }
   | { clock: string }
   | { amountMinor: number; currency: string }
-  | { enum: "contactOutcome" | "exclusion" | "timeOfDay" | "renewalInterest" | "weekday"; value: string };
+  | { enum: "contactOutcome" | "exclusion" | "timeOfDay" | "renewalInterest" | "weekday" | "paymentMethod"; value: string };
 
 export interface AiMessage {
   key: string;

@@ -79,6 +79,7 @@ export const activityLog: typeof EnglishActivityLog = {
     aiStandingTransfer: "نقل عمل متكرر إلى شخص آخر",
     aiProposalApprove: "اعتماد تغيير مُعدّ",
     aiProposalReject: "رفض تغيير مُعدّ",
+    aiProposalInvalidate: "تغيير مُعدّ لم يعد يطابق السجلات",
     aiMemoryRecord: "حفظ ملاحظة للمتابعات",
     aiMemoryRevoke: "إيقاف استخدام ملاحظة في المتابعات",
     aiGlobalStop: "إيقاف المساعدة لجميع الأندية",

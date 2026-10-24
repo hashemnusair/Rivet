@@ -120,6 +120,26 @@ test.describe("RIVET assistance", () => {
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
+  test("looks into a cash difference and says plainly when nothing recorded matches it", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    // The seeded Abdoun drawer closed 7.000 short and is waiting for approval.
+    await page.goto("/payments/shifts?branch=10000000-0000-4a00-8a00-000000000002");
+    await page.getByTestId("check-cash-difference").filter({ visible: true }).first().click();
+    const panel = page.getByTestId("ai-run-panel");
+    await expect(panel).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
+    await expect(page).toHaveURL(/[?&]run=/);
+    const artifact = panel.getByTestId("ai-artifact");
+    await expect(artifact).toHaveAttribute("data-kind", "cash_difference");
+    await expect(artifact.getByTestId("ai-artifact-section-difference")).toContainText("Cash short:");
+    await expect(artifact.getByTestId("ai-artifact-section-candidates")).toContainText("Nothing recorded in this shift matches the difference exactly.");
+    await expect(artifact.getByTestId("ai-artifact-section-candidates")).toContainText("RIVET cannot see the cash drawer.");
+    // Nothing to approve: RIVET prepares an approval only for an exact match.
+    await expect(panel.getByTestId("ai-proposal")).toHaveCount(0);
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));

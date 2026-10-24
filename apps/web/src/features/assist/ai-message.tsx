@@ -25,7 +25,7 @@ export function useAiMessage(): (message: AiMessage) => string {
       else if ("clock" in value) vars[name] = format.clock(value.clock);
       else if ("amountMinor" in value) vars[name] = format.money({ amount: value.amountMinor, currency: value.currency });
       else if ("enum" in value) {
-        const key = value.enum === "contactOutcome" ? `memberProfile.contact.outcome.${value.value}` : value.enum === "exclusion" ? `aiWork.exclusion.${value.value}` : value.enum === "timeOfDay" ? `aiWork.timeOfDay.${value.value}` : value.enum === "renewalInterest" ? `aiWork.extract.interest.${value.value}` : `aiWork.settings.weekday.${value.value}`;
+        const key = value.enum === "contactOutcome" ? `memberProfile.contact.outcome.${value.value}` : value.enum === "exclusion" ? `aiWork.exclusion.${value.value}` : value.enum === "timeOfDay" ? `aiWork.timeOfDay.${value.value}` : value.enum === "renewalInterest" ? `aiWork.extract.interest.${value.value}` : value.enum === "paymentMethod" ? `domain.paymentMethod.${value.value}` : `aiWork.settings.weekday.${value.value}`;
         vars[name] = t(key as TKey);
       }
     }

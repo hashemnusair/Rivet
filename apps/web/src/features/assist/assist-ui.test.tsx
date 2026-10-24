@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
+import type { MockDb } from "@/lib/mock/store";
 import { AiRunPanel } from "./run-panel";
 import { AssistanceSettingsSection } from "./assistance-settings-section";
 
@@ -113,6 +114,36 @@ describe("prepared work", () => {
     await user.click(await screen.findByTestId("ai-run-cancel"));
     await waitFor(() => expect(screen.getByTestId("ai-run-panel")).toHaveAttribute("data-status", "cancelled"), { timeout: 5_000 });
     expect(screen.getByTestId("ai-run-stage")).toHaveTextContent("Stopped");
+  });
+});
+
+describe("prepared approvals", () => {
+  /** A closed drawer 4.250 over with one card payment of exactly that amount. */
+  function seedOverDrawer(api: MockGymOSApi): string {
+    const db = (api as unknown as { db: MockDb }).db;
+    const branchId = db.branches[0]!.id;
+    const shiftId = "ui-cash-shift";
+    const currency = db.organization.currency;
+    const payment = (id: string, method: "cash" | "card", amount: number) => ({ id, organizationId: db.organization.id, branchId, memberId: db.members[0]!.id, type: "payment" as const, amount: { amount, currency }, method, status: "completed" as const, receiptId: `${id}-receipt`, receiptNumber: id.toUpperCase(), collectedById: db.users[0]!.id, collectedByName: db.users[0]!.name, shiftId, idempotencyKey: id, occurredAt: "2026-10-22T08:00:00.000Z" });
+    db.payments.push(payment("ui-cash", "cash", 20_000), payment("ui-card", "card", 4_250));
+    db.shifts.push({ id: shiftId, organizationId: db.organization.id, branchId, openedById: db.users[0]!.id, openedByName: db.users[0]!.name, openedAt: "2026-10-22T05:00:00.000Z", openingFloat: { amount: 10_000, currency }, closedAt: "2026-10-22T17:00:00.000Z", closedById: db.users[0]!.id, expectedCash: { amount: 30_000, currency }, countedCash: { amount: 34_250, currency }, variance: { amount: 4_250, currency }, varianceExplanation: "Counted twice", varianceApprovalStatus: "pending", status: "closed" });
+    return shiftId;
+  }
+
+  it("shows exactly what will be saved and approves it through the usual review", async () => {
+    const holder = { runId: "", shiftId: "" };
+    function Panel() { return <AiRunPanel runId={holder.runId} />; }
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<Panel />, { prepare: async (prepared) => { await enable(prepared); holder.shiftId = seedOverDrawer(prepared); holder.runId = (await prepared.startAiRun({ playbook: "cash_difference", params: { shiftId: holder.shiftId }, requestKey: "ui-cash-1" })).id; } });
+    await waitFor(() => expect(screen.getByTestId("ai-run-panel")).toHaveAttribute("data-status", "completed"), { timeout: 5_000 });
+    expect(await screen.findByTestId("ai-artifact")).toHaveAttribute("data-kind", "cash_difference");
+    const card = await screen.findByTestId("ai-proposal");
+    expect(within(card).getByText("Approve the cash difference")).toBeInTheDocument();
+    expect(within(card).getByText(/matches receipt UI-CARD/)).toBeInTheDocument();
+    expect(within(card).getByText(/RIVET cannot approve it/)).toBeInTheDocument();
+    await user.click(within(card).getByTestId("ai-proposal-approve"));
+    await waitFor(() => expect(screen.getByTestId("ai-proposal")).toHaveAttribute("data-status", "executed"));
+    expect((await api.listCashShifts({ pageSize: 200 })).items.find((shift) => shift.id === holder.shiftId)?.varianceApprovalStatus).toBe("approved");
   });
 });
 

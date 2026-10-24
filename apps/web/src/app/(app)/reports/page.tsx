@@ -29,7 +29,7 @@ import type { TFunction, TKey } from "@/lib/i18n/core";
 import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, type ReportScope } from "@/features/reports/report-scope";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import { AiRunPanel } from "@/features/assist/run-panel";
-import { PrepareReportButton } from "@/features/assist/prepare-jobs";
+import { PrepareReportButton, useAssistJobAvailable } from "@/features/assist/prepare-jobs";
 
 function paymentMethodLabel(method: string, t: TFunction): string {
   return ["cash", "card", "bank_transfer", "cliq", "other"].includes(method) ? t(`domain.paymentMethod.${method}` as TKey) : method;
@@ -180,16 +180,18 @@ function ReportsPageInner() {
       });
     },
   });
+  const canPrepareReport = useAssistJobAvailable("report_job", "reports.financial.read");
+  const downloadAction = view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> {" "}{t("reportsWorkspace.download")}</Button> : null;
 
   return (
     <div className="space-y-5">
       <PageHeader
         title={t("nav.item.reports")}
         description={view === "overview" ? t("reportsWorkspace.overviewQuestion") : t(OPERATIONAL_REPORT_QUESTIONS[view])}
-        actions={<div className="flex flex-wrap items-center gap-2">
+        actions={canPrepareReport ? <div className="flex flex-wrap items-center gap-2">
           <PrepareReportButton from={from} to={to} branchId={branchInput} onStarted={(run) => { const next = new URLSearchParams(searchParams.toString()); next.set("run", run.id); replaceQueryInPlace(router, `${pathname}?${next}`); }} />
-          {view === "overview" ? <Button variant="signal" onClick={() => exportReport.mutate()} loading={exportReport.isPending} disabled={!dashboard || transactions.length === 0}><Download /> {" "}{t("reportsWorkspace.download")}</Button> : null}
-        </div>}
+          {downloadAction}
+        </div> : downloadAction ?? undefined}
       />
       {searchParams.get("run") ? <AiRunPanel runId={searchParams.get("run")!} onClose={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname); }} /> : null}
 

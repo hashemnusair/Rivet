@@ -8,6 +8,7 @@ import { modelTaskBlocked, runFixtureTask, type DraftFollowUpTask, type ModelTas
 import type { AiErrorCategory, AiExclusionReason, AiRunExclusion, AiRunResultRef, AiRunRevision, AiRunStatus } from "../src/lib/ai/contracts";
 import { addDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
 import { composeHandover, composeManagementReport, ledgerTotals } from "../src/lib/ai/jobs";
+import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
 import type { AdvanceResult } from "./aiRuns";
 
 /**
@@ -33,6 +34,7 @@ export interface PlaybookStepEnv {
   executeQuery(operation: string, input: Data, request: RequestArgs): Promise<unknown>;
   executeMutation(operation: string, input: Data, request: RequestArgs): Promise<unknown>;
   renewalFacts(memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null>;
+  cashShiftFacts(shiftId: string): Promise<CashShiftFacts>;
 }
 
 function record(value: unknown): Data {
@@ -363,6 +365,71 @@ async function shiftHandoverStep(ctx: MutationCtx, env: PlaybookStepEnv): Promis
   return { done: true };
 }
 
+// ---------------------------------------------------------------------------
+// Cash-difference investigation (AI-4.1) with a bound approval (AI-3.4)
+// ---------------------------------------------------------------------------
+
+/** Proposals stay open for one day; a cash review older than that should be prepared again. */
+const PROPOSAL_TTL_MS = 24 * 3_600_000;
+
+async function cashDifferenceStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
+  const { run } = env;
+  const params = run.params as { shiftId: string };
+  const now = Date.now();
+  const blocked = (await env.toolBlocked("shift.investigate")) ?? (await env.toolBlocked("artifact.save_cash_difference"));
+  if (blocked) {
+    await env.finish("failed", blocked);
+    return { done: true };
+  }
+  let facts: CashShiftFacts;
+  try {
+    facts = await env.cashShiftFacts(params.shiftId);
+  } catch {
+    await env.finish("failed", "permission_denied");
+    return { done: true };
+  }
+  // RIVET cannot count a drawer: an open shift or a shift without a difference has nothing to investigate.
+  if (facts.status !== "closed" || !facts.varianceMinor) {
+    await env.finish("failed", "validation");
+    return { done: true };
+  }
+  const investigation = investigateCashDifference(facts);
+  const composed = composeCashDifference(facts, investigation);
+  const artifactId = await saveArtifact(ctx, run, {
+    kind: "cash_difference",
+    title: "aiWork.cash.title",
+    branchPublicId: facts.branchId,
+    content: composed,
+    requiredPermissions: ["reconciliation.read"],
+    createdByUserId: run.ownerUserId,
+    sourceDigest: `${facts.shiftId}:${facts.updatedAt}:${investigation.recomputedExpectedMinor}`,
+  });
+  const artifactRef = resultRef("artifact", artifactId, "aiWork.cash.title", { href: `/payments/shifts?run=${run.publicId}` });
+  await recordStep(ctx, run, { seq: 1, tool: "artifact.save_cash_difference", status: "verified", resultRef: artifactRef });
+  const refs = [...run.resultRefs, artifactRef];
+  let writes = run.budget.writes + 1;
+  if (shouldPrepareVarianceReview(facts, investigation) && !(await env.toolBlocked("shift.propose_variance_review"))) {
+    const proposal = varianceReviewProposal(facts, investigation);
+    const operationKey = `variance-review:${facts.shiftId}:${proposal.changesetHash}`;
+    const prior = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", run.organizationId).eq("operation", "ai.proposal.variance_review").eq("key", operationKey)).unique();
+    let proposalId = prior ? text(record(prior.result).proposalId) : "";
+    if (!proposalId) {
+      proposalId = `proposal-${crypto.randomUUID()}`;
+      await ctx.db.insert("aiProposals", { organizationId: run.organizationId, publicId: proposalId, runPublicId: run.publicId, tool: "shift.propose_variance_review", subjectLabel: facts.shiftId, changes: proposal.changes, payload: proposal.payload, changesetHash: proposal.changesetHash, sourceVersions: proposal.sourceVersions, requiredPermission: "reconciliation.approve_variance", status: "pending", proposedAt: now, expiresAt: now + PROPOSAL_TTL_MS });
+      const saved = await ctx.db.query("aiProposals").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", proposalId)).unique();
+      if (!saved || saved.changesetHash !== proposal.changesetHash) throw new Error("Saved proposal did not match what was prepared.");
+      await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.proposal.variance_review", key: operationKey, requestHash: run.publicId, result: { proposalId }, createdAt: now, expiresAt: now + PROPOSAL_TTL_MS });
+      writes += 1;
+    }
+    const proposalRef = resultRef("proposal", proposalId, "aiWork.proposal.varianceReview", { href: `/payments/shifts?run=${run.publicId}` });
+    await recordStep(ctx, run, { seq: 2, tool: "shift.propose_variance_review", operationKey, status: "verified", resultRef: proposalRef });
+    refs.push(proposalRef);
+  }
+  await ctx.db.patch(run._id, { stage: "aiWork.stage.done", artifactPublicId: artifactId, resultRefs: refs, budget: { ...run.budget, writes }, updatedAt: now });
+  await env.finish(composed.verification.verified ? "completed" : "partially_completed", composed.verification.verified ? undefined : "source_changed");
+  return { done: true };
+}
+
 export async function runPlaybookStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
   switch (env.run.playbook) {
     case "renewal_followups":
@@ -371,6 +438,8 @@ export async function runPlaybookStep(ctx: MutationCtx, env: PlaybookStepEnv): P
       return await managementReportStep(ctx, env);
     case "shift_handover":
       return await shiftHandoverStep(ctx, env);
+    case "cash_difference":
+      return await cashDifferenceStep(ctx, env);
     default:
       await env.finish("failed", "validation");
       return { done: true };

@@ -12,6 +12,18 @@ import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { capabilityAvailable, useAiSettings } from "./use-assist";
+import type { AiCapabilityKey } from "@/lib/ai/contracts";
+
+/**
+ * Whether a prepared-work entry point should appear at all. Pages use it to
+ * keep their existing layout untouched (no empty wrappers) while assistance is
+ * off or the person lacks the access.
+ */
+export function useAssistJobAvailable(capability: AiCapabilityKey, permission: string): boolean {
+  const { session } = useApp();
+  const { data: settings } = useAiSettings();
+  return (session?.permissions ?? []).includes(permission) && capabilityAvailable(settings, capability, true);
+}
 
 /** "Prepare a report" for the period on screen. Hidden unless the gym's assistance and the person's access allow it. */
 export function PrepareReportButton({ from, to, branchId, onStarted }: { from: string; to: string; branchId?: string; onStarted: (run: AiRunView) => void }) {
@@ -95,5 +107,25 @@ export function PrepareHandoverButton({ branchId, onStarted }: { branchId: strin
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * "Look into the difference" on a closed shift whose count did not match. It
+ * starts straight away: the investigation only reads records and saves a
+ * protected summary; any approval it prepares still waits for a person.
+ */
+export function CheckCashDifferenceButton({ shiftId, onStarted, compact = false }: { shiftId: string; onStarted: (run: AiRunView) => void; compact?: boolean }) {
+  const { t } = useLocale();
+  const { session } = useApp();
+  const { data: settings } = useAiSettings();
+  const start = useApiMutation((api, _unused: void) => api.startAiRun({ playbook: "cash_difference", params: { shiftId }, requestKey: crypto.randomUUID() }), {
+    onSuccess: (run) => onStarted(run),
+  });
+  if (!(session?.permissions ?? []).includes("reconciliation.read") || !capabilityAvailable(settings, "cash_difference", true)) return null;
+  return (
+    <Button type="button" variant={compact ? "ghost" : "secondary"} size="sm" loading={start.isPending} onClick={() => start.mutate()} title={t("aiWork.cash.prepareHint")} data-testid="check-cash-difference">
+      {t("aiWork.cash.prepare")}
+    </Button>
   );
 }

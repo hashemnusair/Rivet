@@ -74,6 +74,7 @@ import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBrief
 import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
 import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
 import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
+import type { CashShiftFacts } from "../src/lib/ai/cash-difference";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1699,6 +1700,66 @@ export async function memberBriefFacts(ctx: ReadContext, actor: ActorContext, me
  * around; a successor for it means the member renewed. The composition is
  * shared with the preview adapter (`composeRenewalFacts`).
  */
+/**
+ * The recorded drawer story for one shift, for the cash-difference
+ * investigation: every payment and refund tied to the shift (voided ones
+ * included, marked as such), supplier cash and the stored close figures. Read
+ * only; branch scope and reconciliation access apply as for the shift list.
+ */
+export async function cashShiftFactsFor(ctx: ReadContext, actor: ActorContext, shiftId: string): Promise<CashShiftFacts> {
+  requirePermission(actor, "reconciliation.read");
+  const record = await recordOf(ctx, actor, "shift", shiftId);
+  const shift = data(record.data);
+  const transactions = (await paymentRecords(ctx, actor))
+    .filter((row) => data(row.data).shiftId === record.publicId)
+    .map((row) => {
+      const payment = data(row.data);
+      return {
+        id: row.publicId,
+        ...(optionalString(payment.receiptId) ? { receiptId: stringValue(payment.receiptId) } : {}),
+        ...(optionalString(payment.receiptNumber) ? { receiptNumber: stringValue(payment.receiptNumber) } : {}),
+        type: stringValue(payment.type),
+        method: stringValue(payment.method),
+        status: stringValue(payment.status),
+        amountMinor: Math.abs(amountOf(payment.amount)),
+        occurredAt: stringValue(payment.occurredAt),
+        ...(optionalString(payment.memberName) ? { memberName: stringValue(payment.memberName) } : {}),
+        updatedAt: row.updatedAt,
+      };
+    });
+  const supplierCash = await supplierCashShiftMovements(ctx, actor, record.publicId);
+  const closed = shift.status === "closed";
+  return {
+    shiftId: record.publicId,
+    branchId: stringValue(shift.branchId),
+    status: stringValue(shift.status),
+    openedAt: stringValue(shift.openedAt),
+    ...(optionalString(shift.closedAt) ? { closedAt: stringValue(shift.closedAt) } : {}),
+    ...(optionalString(shift.openedByName) ? { openedByName: stringValue(shift.openedByName) } : {}),
+    ...(optionalString(shift.closedById) ? { closedByName: (await userByPublicId(ctx, actor.organization._id, stringValue(shift.closedById)))?.fullName ?? "" } : {}),
+    currency: actor.organization.currency,
+    timezone: actor.organization.timezone || TZ_FALLBACK,
+    openingFloatMinor: amountOf(shift.openingFloat),
+    ...(closed ? { expectedCashMinor: amountOf(shift.expectedCash), countedCashMinor: amountOf(shift.countedCash), varianceMinor: amountOf(shift.variance) } : {}),
+    varianceApprovalStatus: stringValue(shift.varianceApprovalStatus, "none"),
+    ...(optionalString(shift.varianceExplanation) ? { varianceExplanation: stringValue(shift.varianceExplanation) } : {}),
+    supplierCashPaidMinor: supplierCash.paidMinor,
+    supplierCashReversedMinor: supplierCash.reversedMinor,
+    transactions,
+    updatedAt: record.updatedAt,
+  };
+}
+
+/** Current versions of the records a prepared change was bound to; a missing record reads as -1. */
+export async function aiSourceVersions(ctx: ReadContext, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]> {
+  const versions: number[] = [];
+  for (const source of sources) {
+    const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", source.table).eq("publicId", source.id)).unique();
+    versions.push(row ? row.updatedAt : -1);
+  }
+  return versions;
+}
+
 export async function renewalFactsForMember(ctx: ReadContext, actor: ActorContext, memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null> {
   let context: MemberFollowUpContext;
   let memberRecord: DomainRecord;
@@ -1780,6 +1841,9 @@ export const aiDomainPort: AiDomainPort = {
   tenantToday,
   previewPlaybook: previewAiPlaybook,
   staffMembers: aiStaffMembers,
+  cashShiftFacts: cashShiftFactsFor,
+  sourceVersions: aiSourceVersions,
+  executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
 };
 
 /** The existing domain handlers, for the delegated-work executor. */

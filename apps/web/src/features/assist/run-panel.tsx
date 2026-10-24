@@ -18,6 +18,7 @@ import { useAiErrorText, useAiMessage } from "./ai-message";
 import { PLAYBOOKS } from "@/lib/ai/capabilities";
 import { isRunWorking, useAiRun } from "./use-assist";
 import { AiArtifactPanel } from "./artifact-panel";
+import { AiProposals } from "./proposal-card";
 
 function statusVariant(status: AiRunView["status"]): "neutral" | "success" | "warning" | "danger" | "outline" {
   if (status === "completed") return "success";
@@ -105,11 +106,12 @@ export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () =>
         {run.source === "fixture" && PLAYBOOKS[run.playbook]?.usesModel ? <p className="text-[12px] text-ink-3">{t("aiWork.run.testMode")}</p> : null}
 
         {run.results.filter((result) => result.kind === "artifact").map((result) => <AiArtifactPanel key={result.id} artifactId={result.id} />)}
-        {run.results.some((result) => result.kind !== "artifact") ? (
+        {run.results.some((result) => result.kind === "proposal") ? <AiProposals runId={run.id} /> : null}
+        {run.results.some((result) => result.kind !== "artifact" && result.kind !== "proposal") ? (
           <div data-testid="ai-run-results">
             <p className="context-label">{t("aiWork.run.results")}</p>
             <ul className="mt-1 space-y-1.5">
-              {run.results.filter((result) => result.kind !== "artifact").map((result) => {
+              {run.results.filter((result) => result.kind !== "artifact" && result.kind !== "proposal").map((result) => {
                 const draft = drafts.find((step) => step.resultRef?.id === result.id)?.draft;
                 return (
                   <li key={`${result.kind}-${result.id}`} className="text-[12.5px]">

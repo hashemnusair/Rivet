@@ -17,6 +17,8 @@ import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/
 import { MockProspectStore } from "./prospects";
 import { MockAiEngine } from "./ai";
 import type * as AI from "@/lib/ai/contracts";
+import type { CashShiftFacts } from "@/lib/ai/cash-difference";
+import { stableHash } from "@/lib/ai/note-extraction";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
   AuditQuery,
@@ -944,7 +946,54 @@ export class MockGymOSApi implements GymOSApi {
         };
       },
       requestExport: async (input) => await this.requestExport({ kind: input.kind, filters: input.filters, idempotencyKey: input.idempotencyKey, locale: "en" }),
+      cashShiftFacts: (shiftId) => this.cashShiftFactsSync(shiftId),
+      reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
     });
+  }
+
+  /**
+   * The preview has no row versions, so a record's version is a digest of its
+   * current contents: any change to it reads as a new version, as on the server.
+   */
+  private recordVersion(value: unknown): number {
+    return Number.parseInt(stableHash(JSON.stringify(value)), 16);
+  }
+
+  private cashShiftFactsSync(shiftId: string): CashShiftFacts {
+    this.require("reconciliation.read");
+    const shift = this.db.shifts.find((item) => item.id === shiftId);
+    if (!shift || !this.branchIsVisible(shift.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    const payments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((payment) => payment.shiftId === shift.id);
+    const closed = shift.status === "closed";
+    return {
+      shiftId: shift.id,
+      branchId: shift.branchId,
+      status: shift.status,
+      openedAt: shift.openedAt,
+      ...(shift.closedAt ? { closedAt: shift.closedAt } : {}),
+      openedByName: shift.openedByName,
+      ...(shift.closedById ? { closedByName: this.db.users.find((user) => user.id === shift.closedById)?.name ?? "" } : {}),
+      currency: this.db.organization.currency,
+      timezone: this.db.organization.timezone || TZ,
+      openingFloatMinor: shift.openingFloat.amount,
+      ...(closed ? { expectedCashMinor: shift.expectedCash?.amount ?? 0, countedCashMinor: shift.countedCash?.amount ?? 0, varianceMinor: shift.variance?.amount ?? 0 } : {}),
+      varianceApprovalStatus: shift.varianceApprovalStatus ?? "none",
+      ...(shift.varianceExplanation ? { varianceExplanation: shift.varianceExplanation } : {}),
+      supplierCashPaidMinor: this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.shiftId === shift.id).reduce((sum, payment) => sum + payment.amount.amount, 0),
+      supplierCashReversedMinor: this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.status === "reversed" && payment.reversal?.shiftId === shift.id).reduce((sum, payment) => sum + payment.amount.amount, 0),
+      transactions: payments.map((payment) => ({
+        id: payment.id,
+        ...(payment.receiptId ? { receiptId: payment.receiptId } : {}),
+        ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
+        type: payment.type,
+        method: payment.method,
+        status: payment.status,
+        amountMinor: Math.abs(payment.amount.amount),
+        occurredAt: payment.occurredAt,
+        updatedAt: this.recordVersion(payment),
+      })),
+      updatedAt: this.recordVersion(shift),
+    };
   }
 
   /**
@@ -4344,8 +4393,8 @@ export class MockGymOSApi implements GymOSApi {
   previewStandingInstruction(input: { playbook: AI.AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: T.UUID }): Promise<AI.AiStandingPreview> { return this.respond(() => this.ai.previewStanding(input)); }
   createStandingInstruction(input: AI.CreateStandingInstructionInput & { previewDigest: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.createStanding(input)); }
   updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.updateStanding(input)); }
-  listAiProposals(_query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => []); }
-  decideAiProposal(_input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => { throw ApiError.of(ERR.NOT_FOUND, "Record not found."); }); }
+  listAiProposals(query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => this.ai.listProposals(query)); }
+  decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => this.ai.decideProposal(input)); }
   getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => this.ai.getArtifact(artifactId)); }
   listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.respond(() => this.ai.listMemories(memberId)); }
   recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }
@@ -9393,16 +9442,18 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<T.CashShift> {
-    return this.respond(() => {
-      this.require("reconciliation.approve_variance");
-      this.requireReason(input.note);
-      const shift = this.db.shifts.find((s) => s.id === shiftId);
-      if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
-      shift.varianceApprovalStatus = input.decision;
-      const audit = this.db.audits.find((a) => a.entityType === "cash_shift" && a.entityId === shift.id && a.approvalStatus === "pending");
-      if (audit) audit.approvalStatus = input.decision;
-      return shift;
-    });
+    return this.respond(() => this.reviewVarianceSync(shiftId, input));
+  }
+
+  private reviewVarianceSync(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): T.CashShift {
+    this.require("reconciliation.approve_variance");
+    this.requireReason(input.note);
+    const shift = this.db.shifts.find((s) => s.id === shiftId);
+    if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
+    shift.varianceApprovalStatus = input.decision;
+    const audit = this.db.audits.find((a) => a.entityType === "cash_shift" && a.entityId === shift.id && a.approvalStatus === "pending");
+    if (audit) audit.approvalStatus = input.decision;
+    return shift;
   }
 
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> {

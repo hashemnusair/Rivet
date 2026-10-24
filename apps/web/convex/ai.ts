@@ -43,6 +43,7 @@ import {
 } from "../src/lib/ai/contracts";
 import { buildMemberBrief, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
 import { modelTaskBlocked } from "../src/lib/ai/model";
+import { investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
 import { nextStandingSlot as nextSlot } from "../src/lib/ai/schedule";
 import type { MemberFollowUpContext } from "./followupAssist";
 
@@ -86,7 +87,38 @@ export interface AiDomainPort {
   tenantToday(actor: ActorContext): string;
   previewPlaybook(ctx: QueryCtx, actor: ActorContext, playbook: AiPlaybookKey, params: Record<string, string | number | boolean>, request: RequestArgs): Promise<{ subjects: Array<{ id: string; name: string; decision: string; reason?: string }>; digest: string }>;
   staffMembers(ctx: ReadCtx, actor: ActorContext): Promise<Array<{ id: string; userId: Id<"users">; name: string; active: boolean }>>;
+  cashShiftFacts(ctx: ReadCtx, actor: ActorContext, shiftId: string): Promise<CashShiftFacts>;
+  /** Current versions of bound records, in order; -1 when a record no longer exists. */
+  sourceVersions(ctx: ReadCtx, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]>;
+  /** Runs an existing domain operation as the signed-in approver, with every check it already has. */
+  executeApproved(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown>;
 }
+
+/**
+ * How an approved proposal executes: an allowlisted existing operation with
+ * input rebuilt from the stored payload, and a re-derivation of the changeset
+ * from current records. Anything that no longer derives the same changeset is
+ * a material change and invalidates the approval.
+ */
+const PROPOSAL_EXECUTORS: Record<string, {
+  operation: string;
+  input(payload: Data): Data | null;
+  rederive(ctx: ReadCtx, actor: ActorContext, port: AiDomainPort, payload: Data): Promise<string | null>;
+}> = {
+  "shift.propose_variance_review": {
+    operation: "shifts.review",
+    input: (payload) => {
+      const shiftId = text(payload.shiftId);
+      const note = text(payload.note);
+      return shiftId && note && payload.decision === "approved" ? { shiftId, decision: "approved", note } : null;
+    },
+    rederive: async (ctx, actor, port, payload) => {
+      const facts = await port.cashShiftFacts(ctx, actor, text(payload.shiftId));
+      const investigation = investigateCashDifference(facts);
+      return shouldPrepareVarianceReview(facts, investigation) ? varianceReviewProposal(facts, investigation).changesetHash : null;
+    },
+  },
+};
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -549,6 +581,8 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
     }
 
     case "ai.proposal.decide": {
+      // RIVET never decides its own proposal; only a signed-in person can.
+      requireHuman(actor);
       const proposal = await ctx.db.query("aiProposals").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", text(input.proposalId))).unique();
       if (!proposal) domainError("NOT_FOUND", "Record not found.", { correlationId: actor.correlationId });
       const run = await runByPublicId(ctx, actor, proposal.runPublicId);
@@ -557,18 +591,31 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       if (decision !== "approve" && decision !== "reject") domainError("VALIDATION_ERROR", "Choose approve or reject.", { correlationId: actor.correlationId });
       if (proposal.status !== "pending") domainError("CONFLICT", "This change was already decided.", { correlationId: actor.correlationId });
       const now = Date.now();
-      if (proposal.expiresAt <= now) {
-        await ctx.db.patch(proposal._id, { status: "expired" });
-        domainError("CONFLICT", "This prepared change expired. Prepare it again.", { correlationId: actor.correlationId });
-      }
+      // The view already reads an elapsed proposal as expired; a write here would be rolled back by the error.
+      if (proposal.expiresAt <= now) domainError("CONFLICT", "This prepared change expired. Prepare it again.", { correlationId: actor.correlationId });
       if (text(input.changesetHash) !== proposal.changesetHash) domainError("CONFLICT", "This record changed. Refresh and try again.", { correlationId: actor.correlationId });
       if (decision === "reject") {
         await ctx.db.patch(proposal._id, { status: "rejected", decidedByUserId: actor.user._id, decidedAt: now });
         await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.reject", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change rejected", branchId: run.branchPublicId });
         return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
       }
-      // Approval executes elsewhere (domain.ts) so the existing operation runs as the approving person.
-      return { approve: true, proposal };
+      const executor = PROPOSAL_EXECUTORS[proposal.tool];
+      const executorInput = executor?.input(record(proposal.payload));
+      if (!executor || !executorInput) domainError("VALIDATION_ERROR", "This prepared change cannot be approved here.", { correlationId: actor.correlationId });
+      const versions = await port.sourceVersions(ctx, actor, proposal.sourceVersions);
+      const sourcesMoved = proposal.sourceVersions.some((source, index) => versions[index] !== source.updatedAt);
+      const rederived = sourcesMoved ? null : await executor.rederive(ctx, actor, port, record(proposal.payload));
+      if (rederived !== proposal.changesetHash) {
+        // A material change since it was prepared: record that, change nothing else.
+        await ctx.db.patch(proposal._id, { status: "invalidated", invalidationReason: "source_changed", decidedByUserId: actor.user._id, decidedAt: now });
+        await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.invalidate", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change no longer matched the records", branchId: run.branchPublicId });
+        return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
+      }
+      // The existing operation runs as the approving person, with its own permission, reason and audit.
+      const result = record(await port.executeApproved(ctx, executor.operation, executorInput, request));
+      await ctx.db.patch(proposal._id, { status: "executed", decidedByUserId: actor.user._id, decidedAt: now, executionReceipt: { operation: executor.operation, recordId: text(result.id), executedAt: now } });
+      await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.approve", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change approved and saved", branchId: run.branchPublicId });
+      return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
     }
 
     case "ai.memory.record": {
