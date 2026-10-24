@@ -168,48 +168,52 @@ delegable or not yet in scope.
 
 Exit: real backend-to-UI context flow; cross-tenant/branch denial; invalidation after
 source/access change; malformed-model, timeout and unavailable-model cases; check-in and
-payment never depend on model availability. **Status: not started.**
+payment never depend on model availability. **Status: implemented locally with
+deterministic and browser (mock) evidence; real provider evidence and isolated
+staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.test.ts`,
+`src/lib/ai/note-extraction.test.ts`, `src/lib/mock/ai.test.ts`,
+`src/features/assist/assist-ui.test.tsx`, `e2e/ai-assist.spec.ts` (commits `6d4c9efa`…`f257a890`).
 
-- [ ] **AI-1.1 Durable records.** Tables for settings, controls, grants/standing
+- [x] **AI-1.1 Durable records.** *(Implemented locally; tenant purge test passes.)* Tables for settings, controls, grants/standing
   instructions, runs, steps, proposals, memories, artifacts, usage traces and
   feedback; tenant-scoped indexes; tenant purge coverage; existing
   `idempotencyRecords`, `auditEvents.details`, timeline `meta` and
   `operationalNotifications` are reused instead of duplicated.
-- [ ] **AI-1.2 Delegated principal and authority intersection.** Effective authority =
+- [x] **AI-1.2 Delegated principal and authority intersection.** *(Implemented locally; escalation, revocation, signed-in refusal and grant-narrowing tests pass.)* Effective authority =
   current actor access ∩ tenant/branch scope ∩ plan entitlement ∩ grant ∩ tool policy ∩
   required approval, enforced on reads and again inside each write transaction.
   Delayed work uses a persisted, narrowly scoped principal (never a browser session or
   unrestricted service key). Revoked staff, suspended gyms, changed roles, expired
   grants and disabled features stop the work. Tests attempt horizontal and vertical
   escalation.
-- [ ] **AI-1.3 Governed capability and playbook registry.** Each tool declares typed
+- [x] **AI-1.3 Governed capability and playbook registry.** *(Registry and the renewal playbook implemented; other playbooks are AI-3/AI-4 items.)* Each tool declares typed
   input/output, read scope, permissions, entitlement, side-effect class, preview,
   source-version preconditions, idempotency key, approval, verification and
   failure/compensation. Tools wrap existing domain operations; no direct table writes
   by agents and no success inferred from timeline text. Versioned playbooks name goal,
   permitted tools, context and completion checks.
-- [ ] **AI-1.4 Replaceable server-side model adapter.** Modes `off` (default),
+- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live, `openai_chat_json` contract tested against a stubbed provider; real endpoint evidence pending Hashem.)* Modes `off` (default),
   `fixture` (deterministic, non-production) and `live` (explicit protocol, key, base
   URL and model in the isolated Convex deployment). Strict output validation,
   timeouts, malformed/refusal handling, minimized context, member-data gate, versioned
   prompts, no raw prompts or notes in traces.
-- [ ] **AI-1.5 Feature controls, limits and stop controls.** Global (environment +
+- [ ] **AI-1.5 Feature controls, limits and stop controls.** *(Global/platform/gym/capability/run stops, write limit and tenant concurrency implemented; monthly budget enforcement pending approved budgets.)* Global (environment +
   platform switch), tenant, capability and run-level stops; read/prepare versus
   execute modes; per-run step/write/time limits, tenant concurrency and monthly budget
   with useful budget-exhausted behavior. Stopping AI never blocks ordinary workflows.
-- [ ] **AI-1.6 Client contract and adapter parity.** Typed `GymOSApi` methods for
+- [x] **AI-1.6 Client contract and adapter parity.** *(GymOSApi methods, Convex mapping test, explicit preview engine sharing the decision code.)* Typed `GymOSApi` methods for
   context, extraction, runs (start/get/subscribe/revise/cancel/takeover), proposals,
   feedback, settings and standing instructions; `ConvexGymOSApi` and explicit
   `MockGymOSApi` fixtures with matching states and consequences; parity tests.
-- [ ] **AI-1.7 Member context beside the contact action.** One useful sentence first,
+- [x] **AI-1.7 Member context beside the contact action.** *(Implemented in the contact dialog and renewal panel; local/mock evidence only.)* One useful sentence first,
   then facts with source links, freshness, missing or stale data, observed facts versus
   staff statements; ordinary form usable when AI is off or unavailable.
-- [ ] **AI-1.8 Contact note → prepared fields.** Outcome, follow-up date/time, travel
+- [x] **AI-1.8 Contact note → prepared fields.** *(Implemented with bilingual fixture reader, ambiguity pickers, preserved edits and post-save memories; live model accuracy unmeasured.)* Outcome, follow-up date/time, travel
   period, renewal interest and topic from a short note in English/Arabic/mixed text;
   relative dates resolved against the note time and gym timezone, ambiguity asked
   about, per-field accept, staff edits never overwritten, original note preserved and
   accepted fields saved once.
-- [ ] **AI-1.9 Derived-context cache and invalidation.** Cache keys include tenant,
+- [ ] **AI-1.9 Derived-context cache and invalidation.** *(Brief is recomputed per read from current records with scope checks, so there is nothing stale to invalidate yet; a model-output cache is not built and stays open.)* Cache keys include tenant,
   branch/access scope, subject, source revisions, locale, policy and prompt/model
   versions; access rechecked when serving; permission change, merge, deletion or
   corrected source invalidates affected content.
@@ -218,28 +222,29 @@ payment never depend on model availability. **Status: not started.**
 
 Exit: single-member and batch journeys pass with real domain mutations in isolated
 staging; interruption/retry does not duplicate tasks; no false send/contact claim;
-English/Arabic/phone interactions pass. **Status: not started.** Isolated hosted staging
-is an acceptance dependency (AI-2.7).
+English/Arabic/phone interactions pass. **Status: implemented locally; the exit is not
+met until AI-2.7 isolated staging runs.** AI-2.1 (connected item per member in the list
+rows) is partly done: the selected-member panel shows the brief headline.
 
 - [ ] **AI-2.1 One connected renewal opportunity per member** in the existing renewal
   list/Today surfaces, with supporting facts and source links; complete, stable list
   preserved; mandatory work never hidden by ranking.
-- [ ] **AI-2.2 Prepared message and truthful manual handoff.** Editable draft in the
+- [x] **AI-2.2 Prepared message and truthful manual handoff.** *(Drafts in member language from approved catalogue text; WhatsApp handoff opens the draft and records only `whatsapp_opened`.)* Editable draft in the
   member's language using approved catalogue wording; opening WhatsApp records only
   `whatsapp_opened`; consent/opt-out and recent contact govern suitability.
-- [ ] **AI-2.3 Bounded travel/freeze suppression.** A staff statement such as
+- [x] **AI-2.3 Bounded travel/freeze suppression.** *(120-day bound, provenance, revocable; batch moves calls after the return date.)* A staff statement such as
   "travelling until Sunday" is saved, with provenance and expiry, as a staff statement
   (not a verified fact); suppresses absence suggestions for that period only; never
   alters attendance, balances or membership dates; visible and revocable.
-- [ ] **AI-2.4 Delegated "Prepare follow-ups" batch.** Finds eligible members in the
+- [x] **AI-2.4 Delegated "Prepare follow-ups" batch.** *(Implemented and verified locally with real Convex functions; isolated staging pending.)* Finds eligible members in the
   displayed branch/window, excludes renewed, recently contacted, opted-out, frozen,
   travelling and already-tasked members with reasons, prepares drafts, creates/assigns
   deduplicated tasks within the grant, verifies persisted tasks, reports progress,
   partial results and exclusions, and resumes safely after interruption.
-- [ ] **AI-2.5 Stop conditions and changed facts.** Renewal stops obsolete AI renewal
+- [x] **AI-2.5 Stop conditions and changed facts.** *(Renewal closes prepared calls transactionally; facts rechecked per write.)* Renewal stops obsolete AI renewal
   work in the same transaction; another staff contact or consent/freeze change is
   rechecked before each write; obsolete queued work is skipped with a reason.
-- [ ] **AI-2.6 Attribution.** Timeline and activity log show who requested the work,
+- [x] **AI-2.6 Attribution.** *(Timeline meta and audit details name run/grant/tool; Activity log category "Prepared work".)* Timeline and activity log show who requested the work,
   the run and grant used; tasks are real records; no contact, call or message is
   claimed unless a person recorded it.
 - [ ] **AI-2.7 Isolated staging acceptance.** Pending a separately authorized isolated
@@ -251,12 +256,12 @@ Exit: work survives navigation and worker restart; revocation stops pending writ
 scheduled runs stay within grants; each job produces verified saved records or protected
 artifacts; uncertainty and partial results are truthful. **Status: not started.**
 
-- [ ] **AI-3.1 Inspect and resume.** Run state, steps and receipts persist; navigating
+- [x] **AI-3.1 Inspect and resume.** *(Leases with fencing, recovery cron, crash-after-commit test; run kept in the page URL.)* Run state, steps and receipts persist; navigating
   back shows the same run; leases with fencing; recovery cron resumes expired leases.
-- [ ] **AI-3.2 Revise, cancel and take over.** Short corrections replan remaining work
+- [x] **AI-3.2 Revise, cancel and take over.** *(Implemented for the renewal batch with tests.)* Short corrections replan remaining work
   without redoing completed steps; cancellation reports in-flight/completed effects;
   takeover hands remaining items to a person.
-- [ ] **AI-3.3 Standing instructions.** Visible owner, scope, schedule, permitted
+- [x] **AI-3.3 Standing instructions.** *(Preview digest required, one run per slot, owner-loss revocation; UI in Settings → Assistance.)* Visible owner, scope, schedule, permitted
   actions, limits, pause/revoke/transfer; initial-effect preview before enabling;
   scheduled runs deduplicated per slot and stopped by lost authority.
 - [ ] **AI-3.4 Consequence review.** Grouped proposals bound to exact records, amounts,
@@ -334,9 +339,19 @@ Recorded as found during implementation; each entry names its subitem and eviden
   re-enabled.
 - **Guard found (AI-2.6):** every new audit action needs an Activity-log label
   (`src/lib/i18n/activity-log.test.ts`); English/Arabic labels added for all AI actions.
-- Status at checkpoint 2: AI-1.1–AI-1.5 and AI-2.4/AI-2.5/AI-2.6 backend implemented
-  locally with deterministic tests (see CURRENT_STATE); AI-1.6–AI-1.9 client/UI work,
-  AI-2.1–AI-2.3 UI and all acceptance remain open. No milestone is complete.
+- **Fixed (AI-1.8):** English never selected explicit `zero` plural forms, so existing
+  strings such as "Membership expires today" or "No urgent tasks" showed "0 …" forms;
+  an explicit zero form now wins for a count of 0 (`src/lib/i18n/dictionary.ts`).
+- **Fixed (UI, RTL):** shared `RadioGroup` defaulted to left-to-right, misplacing
+  punctuation and arrow-key order in Arabic (plan form, PT confirmation, platform
+  dialogs, assistance settings); it now follows the reader's language like `Select`.
+- **Fixed (AI-2.4):** a later unlinked term was briefly treated as a renewal, which
+  contradicted the renewal list; "renewed" now means a linked successor term, the
+  domain's existing definition. Found by inspecting the rendered run panel.
+- **Known limitation (AI-2.4):** task titles are stored in English, like other
+  system-created tasks, so Arabic readers see an English title on prepared calls.
+- No milestone is complete. Current status per subitem is above; evidence and
+  remaining work are in CURRENT_STATE.
 
 ## Review follow-up — 24 October 2026, source verified and unreleased
 

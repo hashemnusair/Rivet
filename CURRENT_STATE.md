@@ -52,14 +52,41 @@ Implemented locally, deterministic evidence only, no UI yet:
   (`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen` from `apps/web`,
   selector kept in ignored `apps/web/.env.ai-local-backend.local`; no hosted target).
 
-**Next steps (in order):** add
-`GymOSApi` methods + Convex/Mock adapters + parity tests; `aiActions.prepare` public
-action for note extraction/filters/revision; UI (brief + "Fill from note" in
-`features/crm/contact-work-panel.tsx`, "Prepare follow-ups" + run panel in
-`app/(app)/crm/queues/page.tsx`, Settings → Assistance, standing instructions);
-`aiWork` en/ar catalogs per docs/arabic; then AI-3 report/handover playbooks, AI-4
-slices, AI-5 eval harness. Read docs/13 AI section, docs/09 AI-0 decision, then the
-files above.
+**Checkpoint 3 — client contract, UI and browser verification (`ae457c4d`…`f257a890`).**
+
+- `GymOSApi` assistance methods; `ConvexGymOSApi` maps them to `ai.*` operations and
+  the `aiActions.prepare` action (model-backed preparation, authorized in an internal
+  query, model call outside transactions, safe usage trace). `MockGymOSApi` delegates
+  to `src/lib/mock/ai.ts`, an explicit preview engine using the same shared decision
+  code (`composeRenewalFacts`, `evaluateRenewalCandidate`, scheduling, authority).
+- UI (`src/features/assist/`): member brief in the contact dialog and renewal panel;
+  "Fill from note" with per-field use, ambiguity pickers, preserved staff edits and
+  post-save travel/call-time notes; "Prepare follow-ups" and a live run panel on the
+  renewals list (`?run=` keeps it across navigation; stop, take over, retry, short
+  corrections confirmed before applying); Settings → Assistance (gym mode, per-task
+  switches, external-processing consent, previewed repeating work). Assistance is
+  invisible while off. `aiWork` English/Arabic catalogue follows docs/arabic.
+- Tests added: `convex/ai.prepare.test.ts` (fixture reading, scope denial, member-data
+  gate, live protocol success/429/timeout/malformed/refusal, no key or note in traces),
+  `src/lib/api/ConvexGymOSApi.ai.test.ts`, `src/lib/mock/ai.test.ts`,
+  `src/features/assist/assist-ui.test.tsx`, `e2e/ai-assist.spec.ts` (4 journeys:
+  off state, batch survives leaving the list, note reading, Arabic phone without
+  overflow; no console errors).
+- Rendered-screen review found and fixed: renewed-definition mismatch, Arabic
+  catalogue not loaded for preview drafts, RadioGroup RTL direction (app-wide), English
+  zero plurals, brief source label. Stored task titles stay English (limitation).
+- Local gates at this checkpoint: full `pnpm test` — 2,461 Vitest tests passed in 386
+  files (2 existing opt-in benchmarks skipped) plus the repository safety tests,
+  `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, approved mock preview build,
+  `e2e/ai-assist.spec.ts` 4/4. Full Playwright suite, plain production build, audit
+  and Arabic lock are run before publication (see the publication record below).
+
+**Next steps (in order):** AI-3.5 management report/export and AI-3.6 shift handover
+playbooks (Convex + preview + UI entry points); AI-3.4 grouped approvals with the
+AI-4.1 cash-difference investigation; AI-4.2–AI-4.9 slices; AI-5.1 evaluation harness
+command with held-out cases; AI-1.5 monthly budget enforcement once budgets are set.
+Read docs/13 AI section, docs/09 AI-0 decision, `convex/aiRuns.ts`,
+`convex/aiPlaybooks.ts`, `src/lib/ai/*`, `src/lib/mock/ai.ts`, `src/features/assist/*`.
 
 ## Source-only merge preparation — 24 October 2026
 
