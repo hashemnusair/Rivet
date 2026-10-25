@@ -197,7 +197,7 @@ staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.
   URL and model in the isolated Convex deployment). Strict output validation,
   timeouts, malformed/refusal handling, minimized context, member-data gate, versioned
   prompts, no raw prompts or notes in traces.
-- [ ] **AI-1.5 Feature controls, limits and stop controls.** *(Global/platform/gym/capability/run stops, write limit and tenant concurrency implemented; monthly budget enforcement pending approved budgets.)* Global (environment +
+- [x] **AI-1.5 Feature controls, limits and stop controls.** *(Global/platform/gym/capability/run stops, write limit, tenant concurrency and spend caps implemented: live mode spends nothing without an approved monthly budget, and gym-month and per-run caps stop further calls with a useful fallback. The budget amounts themselves remain an open decision, AI-0.7.)* Global (environment +
   platform switch), tenant, capability and run-level stops; read/prepare versus
   execute modes; per-run step/write/time limits, tenant concurrency and monthly budget
   with useful budget-exhausted behavior. Stopping AI never blocks ordinary workflows.

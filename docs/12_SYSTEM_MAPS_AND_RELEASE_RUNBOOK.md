@@ -81,7 +81,8 @@ production; leaving them unset keeps AI off.
 | `RIVET_AI_API_KEY` | — | Entered by Hashem in the dashboard; never in Git, shell, logs or chat | Unset | Never (`NEXT_PUBLIC_` forbidden) |
 | `RIVET_AI_BASE_URL`, `RIVET_AI_MODEL` | — | Dashboard | Unset | Never |
 | `RIVET_AI_PROCESSING_APPROVED` | — | Unset (synthetic data only) until processing terms are approved; then `member_data` | Unset | Never |
-| `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS`, `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | Optional caps | Unset | Never |
+| `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS` | — | Optional | Unset | Never |
+| `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | **Required for any live call**: the approved per-gym monthly budget in micro-units of the provider's billing currency; unset means live mode spends nothing | Unset | Never |
 
 Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
 never `convex env get`. The gym-level switch (Settings → Roles & access →
