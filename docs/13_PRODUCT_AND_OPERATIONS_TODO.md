@@ -318,7 +318,7 @@ controls, cost headroom, incident ownership and a repeatable improvement process
   and sample size, run in CI and as a documented command.
 - [ ] **AI-5.2 Opt-in live provider evaluation** (synthetic fixtures only until data
   handling is approved); pending endpoint.
-- [ ] **AI-5.3 Instrumentation and outcome measures**: usage, latency, cost, task
+- [x] **AI-5.3 Instrumentation and outcome measures** *(Implemented locally: owner-visible monthly summary of runs, saved tasks and their later outcome, proposal decisions, corrections, model calls/latency/cost and feedback. "Unnecessary contacts" and suggestion dismissals are not measured yet: the product records neither, so they stay open in AI-4.10.)*: usage, latency, cost, task
   completion, corrections, dismissals, unnecessary contacts; owner-visible summary.
 - [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Rehearsed locally only, not on a hosted deployment.)*: global/tenant/capability/run
   stops, pending-grant revocation, in-flight effect reporting, ordinary workflows
