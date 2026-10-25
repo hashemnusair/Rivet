@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils/cn";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
 import { latinDigits } from "@/lib/utils/text";
 import { money } from "@/lib/utils/money";
+import { MemberClassSuggestions } from "@/features/assist/member-class-suggestions";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type Section = "membership" | "classes" | "pt";
@@ -312,6 +313,8 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
           {t("memberExperience.genderInstruction")}{" "}<Link href="/customer/profile" className="font-semibold underline underline-offset-4">{t("memberExperience.yourProfile")}</Link>
         </div>
       ) : null}
+
+      {value.assistance?.classSuggestions ? <MemberClassSuggestions experience={value} timeZone={timeZone} onPick={(picked) => { setPanelView("week"); setSelectedDate(picked); }} /> : null}
 
       <SegmentedTabs
         label={t("memberExperience.classViews")}

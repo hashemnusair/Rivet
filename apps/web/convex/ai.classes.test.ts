@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { GLOBAL_CONTROL_KEY, memberCapabilityOn } from "./aiPolicy";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -97,5 +98,18 @@ describe("class finder", () => {
     const run = await book(t, "clerk-cls-trainer", "mem-lina", view.options![0]!.occurrenceId, "class-request-3");
     expect(run).toMatchObject({ status: "failed", errorCategory: "permission_denied" });
     expect(await t.run(async (ctx) => (await ctx.db.query("classBookings").collect()).length)).toBe(0);
+  });
+
+  it("turns member class suggestions on only with the gym's assistance, and off under the platform stop", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const check = async () => await t.run(async (ctx) => await memberCapabilityOn(ctx, (await ctx.db.query("organizations").collect())[0]!._id, "member_class_finder"));
+    expect(await check()).toBe(true);
+    await t.withIdentity({ subject: "clerk-cls-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { capabilities: { member_class_finder: "off" }, expectedRevision: 1 }));
+    expect(await check()).toBe(false);
+    await t.withIdentity({ subject: "clerk-cls-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { capabilities: { member_class_finder: "prepare" }, expectedRevision: 2 }));
+    expect(await check()).toBe(true);
+    await t.run(async (ctx) => { await ctx.db.insert("aiControls", { key: GLOBAL_CONTROL_KEY, stopped: true, changedAt: Date.now() }); });
+    expect(await check()).toBe(false);
   });
 });

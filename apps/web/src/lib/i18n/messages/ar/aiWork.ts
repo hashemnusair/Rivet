@@ -422,6 +422,7 @@ export const aiWork: typeof En = {
     hint: "يعرض RIVET حصص هذا الأسبوع التي يمكن حجزها لهذا العضو. يتبع الحجز قواعد الحصص المعتادة.",
     timeLabel: "وقت اليوم",
     anyTime: "أي وقت",
+    time: { morning: "الصباح", afternoon: "بعد الظهر", evening: "المساء" },
     find: "البحث عن حصص",
     spots: plural({ one: "مكان واحد متاح", two: "مكانان متاحان", few: "{count} أماكن متاحة", many: "{count} مكانًا متاحًا", other: "{count} مكان متاح" }),
     book: "حجز",
@@ -444,6 +445,11 @@ export const aiWork: typeof En = {
     openProblems: plural({ one: "لهذا الجهاز مشكلة مفتوحة: {title}.", two: "لهذا الجهاز مشكلتان مفتوحتان، منها {title}.", few: "لهذا الجهاز {count} مشكلات مفتوحة، منها {title}.", many: "لهذا الجهاز {count} مشكلة مفتوحة، منها {title}.", other: "لهذا الجهاز {count} مشكلة مفتوحة، منها {title}." }),
     checkFirst: "تحقق قبل تسجيلها مرة أخرى",
     youDecide: "أنت تحدد درجة الخطورة وما إذا كان الجهاز آمنًا للاستخدام.",
+  },
+  memberClasses: {
+    title: "حصص تناسبك",
+    usual: "عادةً تأتي في {time}.",
+    none: "لا توجد حصة هذا الأسبوع فيها مكان متاح في هذا الوقت. جرّب وقتًا آخر أو تصفّح الأسبوع أدناه.",
   },
   artifact: {
     coverage: "ما يتضمنه",

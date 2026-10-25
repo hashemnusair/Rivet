@@ -64,3 +64,21 @@ export function classOptions(facts: ClassOptionFacts[], context: { now: string; 
   }
   return { options: options.slice(0, context.limit ?? CLASS_FINDER_LIMIT), excluded };
 }
+
+/** The time of day a member usually comes to class, from their own attended classes; undefined until there are three. */
+export function usualClassTime(attendedStartMinutes: readonly number[]): ClassTimeOfDay | undefined {
+  if (attendedStartMinutes.length < 3) return undefined;
+  const counts = new Map<ClassTimeOfDay, number>();
+  for (const minute of attendedStartMinutes) counts.set(classTimeOfDay(minute), (counts.get(classTimeOfDay(minute)) ?? 0) + 1);
+  const [top, second] = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+  return top && (!second || top[1] > second[1]) ? top[0] : undefined;
+}
+
+/** A member's own bookable classes with an open spot at the chosen time, soonest first. */
+export function memberClassSuggestions<T extends { startMinuteLocal: number; canBook: boolean; spotsRemaining: number; startsAt: string; booking?: unknown }>(upcoming: readonly T[], timeOfDay: ClassTimeOfDay | undefined, limit = 3): T[] {
+  return upcoming
+    .filter((item) => item.canBook && !item.booking && item.spotsRemaining > 0 && (!timeOfDay || classTimeOfDay(item.startMinuteLocal) === timeOfDay))
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
+    .slice(0, limit);
+}
+

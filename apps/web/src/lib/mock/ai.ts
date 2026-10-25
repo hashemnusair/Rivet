@@ -383,6 +383,11 @@ export class MockAiEngine {
     return { available: true, options, excluded, canBook };
   }
 
+  /** Member-facing capability switch, as the member portal sees it. */
+  memberCapabilityOn(capability: AiCapabilityKey): boolean {
+    return effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability) !== "off";
+  }
+
   prepareCollections(branchId: string | undefined): AiCollectionsResult {
     this.requireHumanPermission("members.read");
     const blocked = toolBlocked(TOOLS["collections.prepare"]!, this.authority("collections_prep"));

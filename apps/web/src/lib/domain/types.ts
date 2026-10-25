@@ -1003,6 +1003,8 @@ export interface CustomerClassExperience {
   history: CustomerClassOccurrence[];
   noShowCount: number;
   profileCorrectionRequired: boolean;
+  /** Member-facing assistance the gym has turned on; absent means off. */
+  assistance?: { classSuggestions: boolean };
 }
 
 export interface ClassBookingResult {

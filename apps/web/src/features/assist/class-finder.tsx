@@ -53,7 +53,7 @@ function ClassFinderPanel({ memberId }: { memberId: string }) {
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label={t("aiWork.classes.timeLabel")}>
           {TIMES.map((option) => (
             <button key={option} type="button" aria-pressed={time === option} onClick={() => setTime(option)} className={cn("min-h-8 rounded-md border px-2.5 text-[12.5px]", time === option ? "border-ink bg-sunken font-medium text-ink" : "border-line text-ink-2 hover:bg-sunken/60")}>
-              {option === "any" ? t("aiWork.classes.anyTime") : t(`aiWork.timeOfDay.${option}` as TKey)}
+              {option === "any" ? t("aiWork.classes.anyTime") : t(`aiWork.classes.time.${option}` as TKey)}
             </button>
           ))}
           <Button type="button" size="sm" variant="secondary" loading={query.isFetching} onClick={() => { if (requested) void query.refetch(); else setRequested(true); }} data-testid="class-finder-find">{t("aiWork.classes.find")}</Button>

@@ -12827,6 +12827,7 @@ export class MockGymOSApi implements GymOSApi {
       history: all.filter((candidate) => candidate.date < fromDate && candidate.roster.some((entry) => entry.memberId === member.id)).slice(-20).reverse().map(view),
       noShowCount: all.reduce((count, candidate) => count + candidate.roster.filter((entry) => entry.memberId === member.id && entry.status === "no_show").length, 0),
       profileCorrectionRequired,
+      assistance: { classSuggestions: this.ai.memberCapabilityOn("member_class_finder") },
     };
   }
 

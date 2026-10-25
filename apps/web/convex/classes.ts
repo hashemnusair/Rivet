@@ -14,6 +14,7 @@ import {
 import { deriveServerMembershipStatus } from "./invariants";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone, todayISODate } from "../src/lib/utils/dates";
 import type { ClassOptionFacts } from "../src/lib/ai/class-finder";
+import { memberCapabilityOn } from "./aiPolicy";
 import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -771,6 +772,7 @@ async function customerClassExperience(ctx: QueryCtx, context: CustomerClassCont
     history: history.filter(Boolean),
     noShowCount: memberBookings.filter((booking) => booking.status === "no_show").length,
     profileCorrectionRequired,
+    assistance: { classSuggestions: await memberCapabilityOn(ctx, context.organization._id, "member_class_finder") },
   };
 }
 

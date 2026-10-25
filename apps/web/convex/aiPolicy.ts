@@ -72,6 +72,17 @@ export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organization
   };
 }
 
+/**
+ * Whether a member-facing capability is on for a gym: deployment not off, no
+ * platform stop, gym assistance on and the capability not turned off. Used
+ * by member surfaces, which never see staff settings themselves.
+ */
+export async function memberCapabilityOn(ctx: ReadCtx, organizationId: Id<"organizations">, capability: AiCapabilityKey): Promise<boolean> {
+  if (adapterConfig().mode === "off" || (await globalStopped(ctx)).stopped) return false;
+  const settings = await aiSettingsFor(ctx, organizationId);
+  return effectiveCapabilityMode(tenantModeOf(settings), settings?.capabilityModes?.[capability], capability) !== "off";
+}
+
 export async function globalStopped(ctx: ReadCtx): Promise<{ stopped: boolean; reason?: string }> {
   const row = await ctx.db.query("aiControls").withIndex("by_key", (q) => q.eq("key", GLOBAL_CONTROL_KEY)).unique();
   return { stopped: Boolean(row?.stopped), reason: row?.reason };

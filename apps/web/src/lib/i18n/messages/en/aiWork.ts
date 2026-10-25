@@ -420,6 +420,7 @@ export const aiWork = {
     hint: "RIVET lists this week's classes this member can be booked into. Booking follows the usual class rules.",
     timeLabel: "Time of day",
     anyTime: "Any time",
+    time: { morning: "Morning", afternoon: "Afternoon", evening: "Evening" },
     find: "Find classes",
     spots: plural({ one: "1 spot left", other: "{count} spots left" }),
     book: "Book",
@@ -442,6 +443,11 @@ export const aiWork = {
     openProblems: plural({ one: "This machine already has an open problem: {title}.", other: "This machine already has {count} open problems, including {title}." }),
     checkFirst: "Check before filing again",
     youDecide: "You set the severity and whether it is safe to use.",
+  },
+  memberClasses: {
+    title: "Classes that fit you",
+    usual: "You usually come in the {time}.",
+    none: "No class this week has an open spot at that time. Try another time or browse the week below.",
   },
   artifact: {
     coverage: "What is included",
