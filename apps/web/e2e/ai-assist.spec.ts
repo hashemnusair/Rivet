@@ -140,6 +140,25 @@ test.describe("RIVET assistance", () => {
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
+  test("prepares lead follow-ups from the pipeline with drafts a person sends", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    await page.goto("/crm/pipeline");
+    await page.getByTestId("prepare-lead-follow-ups").click();
+    const panel = page.getByTestId("ai-run-panel");
+    await expect(panel).toHaveAttribute("data-status", "completed", { timeout: 30_000 });
+    await expect(page).toHaveURL(/[?&]run=/);
+    await expect(panel.getByTestId("ai-run-counts")).toContainText(/Created: \d+/);
+    const results = panel.getByTestId("ai-run-results");
+    await expect(results.getByText(/^Follow up with /).first()).toBeVisible();
+    // Drafts are copied or opened by a person; nothing was sent.
+    await expect(results.getByText("Message", { exact: true }).first()).toBeVisible();
+    await results.getByRole("link", { name: "Open" }).first().click();
+    await expect(page).toHaveURL(/\/crm\/leads\//);
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));

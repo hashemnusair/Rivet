@@ -47,6 +47,7 @@ import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, ren
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
 import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
+import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
 import type * as T from "@/lib/domain/types";
 import type { MockDb } from "./store";
@@ -87,6 +88,10 @@ export interface MockAiHost {
   cashShiftFacts(shiftId: string): CashShiftFacts;
   /** The existing cash-difference review, as the signed-in person. */
   reviewVariance(shiftId: string, input: { decision: "approved"; note: string }): void;
+  /** Open leads due by the end of today, as the server's lead list filters them. */
+  dueLeads(branchId: string | undefined, endOfTodayIso: string): Array<{ id: string; name: string }>;
+  /** Recorded facts for one lead; null when it is outside the person's access. */
+  leadFollowUpFacts(leadId: string): LeadFollowUpFacts | null;
 }
 
 interface MockProposal {
@@ -684,6 +689,67 @@ export class MockAiEngine {
     });
   }
 
+  /** Lead follow-ups: the same decisions and one-per-date key as the server, over preview leads. */
+  private advanceSales(run: MockRun, grant: MockGrant): void {
+    const params = run.params as { owner?: "me" | "lead_owner" };
+    const today = this.host.today();
+    if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {
+      const due = this.host.dueLeads(run.branchId, localDateTimeToISO(today, "23:59", this.host.timezone()));
+      run.planned = due.slice(0, 100);
+      run.counts.considered = due.length;
+      run.stage = run.planned.length ? "aiWork.stage.checkingContacts" : "aiWork.stage.nothingToDo";
+      run.updatedAt = Date.now();
+      if (!run.planned.length) this.finish(run, "completed");
+      return;
+    }
+    if (run.cursor >= run.planned.length) return this.finish(run, run.counts.failed > 0 ? "partially_completed" : "completed");
+    const subject = run.planned[run.cursor]!;
+    const seq = run.cursor + 1;
+    const stamp = new Date().toISOString();
+    const leadHref = `/crm/leads/${subject.id}`;
+    const next = () => {
+      run.cursor += 1;
+      run.stage = "aiWork.stage.preparingFollowUps";
+      run.updatedAt = Date.now();
+    };
+    const exclude = (reason: AiExclusionReason) => {
+      run.steps.push({ id: mockUuid(), seq, capability: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "skipped", reason, updatedAt: stamp });
+      run.counts.skipped += 1;
+      run.exclusions.push({ subjectId: subject.id, subjectName: subject.name, reason, sources: [{ kind: "lead", id: subject.id, href: leadHref }] });
+      next();
+    };
+    const facts = this.host.leadFollowUpFacts(subject.id);
+    if (!facts) return exclude("outside_scope");
+    const decision = evaluateLeadCandidate(facts, { now: stamp });
+    if (decision.decision === "exclude") return exclude(decision.reason);
+    const key = leadOperationKey(this.host.db.organization.id, subject.id, facts.nextFollowUpAt);
+    const priorId = this.operationKeys.get(key);
+    const prior = priorId ? this.host.db.tasks.find((task) => task.id === priorId) : undefined;
+    if (prior && prior.status !== "open") return exclude("lead_already_prepared");
+    if (decision.decision === "link" || prior) {
+      const taskId = decision.decision === "link" ? decision.taskId : prior!.id;
+      const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
+      const ref: AiRunResultRef = { kind: "task", id: taskId, label: title, href: leadHref, subjectName: subject.name };
+      run.steps.push({ id: mockUuid(), seq, capability: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", reason: "has_open_followup", resultRef: ref, updatedAt: stamp });
+      run.counts.linked += 1;
+      run.results.push(ref);
+      return next();
+    }
+    if (run.writes >= run.maxWrites) return this.finish(run, run.counts.created + run.counts.linked > 0 ? "partially_completed" : "failed", "limit_reached");
+    const writeBlocked = toolBlocked(TOOLS["task.create_lead_followup"]!, { ...this.authority("sales_followups"), grantTools: grant.tools, grantActive: true });
+    if (writeBlocked) return this.finish(run, run.counts.created + run.counts.linked > 0 ? "partially_completed" : "failed", writeBlocked === "permission_denied" ? "authority_revoked" : writeBlocked);
+    const ownerId = params.owner === "me" || !facts.ownerId ? run.ownerId : facts.ownerId;
+    const task = this.host.createTask({ type: "follow_up", title: leadTaskTitle(facts.leadName), ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, origin: { kind: "ai_run", runId: run.id, grantId: grant.id }, aiContext: { purpose: "lead" } });
+    this.operationKeys.set(key, task.id);
+    const ref: AiRunResultRef = { kind: "task", id: task.id, label: task.title, href: leadHref, subjectName: subject.name };
+    run.steps.push({ id: mockUuid(), seq, capability: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", resultRef: ref, ...(facts.draft ? { draft: facts.draft } : {}), updatedAt: stamp });
+    run.counts.created += 1;
+    if (facts.draft) run.counts.prepared += 1;
+    run.writes += 1;
+    run.results.push(ref);
+    next();
+  }
+
   private advance(run: MockRun): void {
     if (isTerminalRunStatus(run.status)) return;
     run.status = "running";
@@ -693,6 +759,7 @@ export class MockAiEngine {
     if (!grant || grant.status !== "active") return this.finish(run, partial ? "partially_completed" : "failed", "authority_revoked");
     const blocked = playbookBlocked(PLAYBOOKS[run.playbook], this.authority(PLAYBOOKS[run.playbook].capability));
     if (blocked) return this.finish(run, partial ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
+    if (run.playbook === "sales_followups") return this.advanceSales(run, grant);
     if (run.playbook !== "renewal_followups") return this.finish(run, "failed", "validation"); // other playbooks run in advanceJob or are not offered in the preview
     const params = run.params as { bucket?: "expiring" | "expired"; days?: number; owner?: "me" | "assigned" };
     const today = this.host.today();

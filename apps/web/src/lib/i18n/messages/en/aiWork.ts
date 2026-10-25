@@ -168,6 +168,9 @@ export const aiWork = {
     snoozed: "Follow-up put off",
     already_prepared: "Already handled for this membership",
     changed_since_planning: "Changed since RIVET started",
+    lead_closed: "Already sold or marked not sold",
+    lead_contacted_recently: "Contacted in the last 24 hours",
+    lead_already_prepared: "Already handled for this follow-up date",
   },
   error: {
     ai_off: "Assistance is off.",
@@ -190,6 +193,8 @@ export const aiWork = {
     internal: "Something went wrong. Nothing more was saved.",
   },
   prepare: {
+    leadFollowUps: "Prepare lead follow-ups",
+    leadFollowUpsHint: "RIVET saves a call task with a draft for each lead due today. It does not contact anyone or offer prices.",
     followUps: "Prepare follow-ups",
     followUpsHint: "RIVET checks each member's recent contact and open work, then saves a call task for those who need one.",
     starting: "Starting…",

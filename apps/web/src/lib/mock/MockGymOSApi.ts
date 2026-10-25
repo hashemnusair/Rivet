@@ -18,6 +18,7 @@ import { MockProspectStore } from "./prospects";
 import { MockAiEngine } from "./ai";
 import type * as AI from "@/lib/ai/contracts";
 import type { CashShiftFacts } from "@/lib/ai/cash-difference";
+import { leadIsDue, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import { stableHash } from "@/lib/ai/note-extraction";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
@@ -106,7 +107,7 @@ import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/c
 import type * as T from "@/lib/domain/types";
 import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
-import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
+import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "../../../convex/planCatalogue";
 import { DEFAULT_WEBSITE_PLACES, DEFAULT_WEBSITE_PRICE_MINOR, firstPaymentQuote, normalizePromoCode, paymentNoteReference, PROMO_TARGETS, validPromoCodeShape, type PromoCheck } from "../../../convex/firstPayment";
@@ -906,9 +907,10 @@ export class MockGymOSApi implements GymOSApi {
       classSessions: () => this.classSessions.map((session) => ({ branchId: session.branchId, startMinute: session.startMinute })),
       createTask: (input) => {
         const member = input.memberId ? this.db.members.find((item) => item.id === input.memberId) : undefined;
+        const lead = input.leadId ? this.db.leads.find((item) => item.id === input.leadId) : undefined;
         const owner = this.db.users.find((user) => user.id === input.ownerId);
         if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Task owner not found.");
-        const task: T.Task = { ...input, id: mockUuid(), organizationId: this.db.organization.id, ownerName: owner.name, subjectName: member?.fullName ?? "—", status: "open", createdById: this.actor().id, createdAt: nowISO() };
+        const task: T.Task = { ...input, id: mockUuid(), organizationId: this.db.organization.id, ownerName: owner.name, subjectName: member?.fullName ?? lead?.fullName ?? "—", status: "open", createdById: this.actor().id, createdAt: nowISO() };
         this.db.tasks.push(task);
         if (member) this.activity({ memberId: member.id, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: task.title }), actorId: this.actor().id, actorName: this.actor().name, meta: { delegationRunId: input.origin.runId, delegationGrantId: input.origin.grantId, delegationTool: "task.create_followup" } });
         return task;
@@ -947,6 +949,15 @@ export class MockGymOSApi implements GymOSApi {
       },
       requestExport: async (input) => await this.requestExport({ kind: input.kind, filters: input.filters, idempotencyKey: input.idempotencyKey, locale: "en" }),
       cashShiftFacts: (shiftId) => this.cashShiftFactsSync(shiftId),
+      dueLeads: (branchId, endOfTodayIso) => {
+        this.require("crm.read");
+        return this.db.leads
+          .filter((lead) => this.branchIsVisible(lead.branchId) && (!branchId || lead.branchId === branchId) && (OPEN_LEAD_STAGES as readonly string[]).includes(lead.stage))
+          .filter((lead) => leadIsDue({ stage: lead.stage, ...(lead.nextFollowUpAt ? { nextFollowUpAt: lead.nextFollowUpAt } : {}), ...(lead.convertedMemberId ? { convertedMemberId: lead.convertedMemberId } : {}) }, endOfTodayIso))
+          .sort((left, right) => (left.nextFollowUpAt ?? "").localeCompare(right.nextFollowUpAt ?? ""))
+          .map((lead) => ({ id: lead.id, name: lead.fullName }));
+      },
+      leadFollowUpFacts: (leadId) => this.leadFollowUpFactsSync(leadId),
       reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
     });
   }
@@ -957,6 +968,27 @@ export class MockGymOSApi implements GymOSApi {
    */
   private recordVersion(value: unknown): number {
     return Number.parseInt(stableHash(JSON.stringify(value)), 16);
+  }
+
+  private leadFollowUpFactsSync(leadId: string): LeadFollowUpFacts | null {
+    if (!permissionsFor(this.db, currentRole(this.db)).includes("crm.read")) return null;
+    const lead = this.db.leads.find((item) => item.id === leadId);
+    if (!lead || !this.branchIsVisible(lead.branchId)) return null;
+    const summary = this.toLeadSummary(lead);
+    const preferredLanguage = (lead as T.Lead & { preferredLanguage?: string }).preferredLanguage;
+    return {
+      leadId: lead.id,
+      leadName: lead.fullName,
+      stage: lead.stage,
+      branchId: lead.branchId,
+      ...(lead.ownerId ? { ownerId: lead.ownerId } : {}),
+      ...(lead.phone ? { phone: lead.phone } : {}),
+      ...(lead.nextFollowUpAt ? { nextFollowUpAt: lead.nextFollowUpAt } : {}),
+      ...(summary.lastContactAt ? { lastContactAt: summary.lastContactAt } : {}),
+      ...(lead.convertedMemberId ? { convertedMemberId: lead.convertedMemberId } : {}),
+      openTasks: this.followUpRelatedTasks({ leadId: lead.id }).map((task) => ({ id: task.id, title: task.title })),
+      draft: followUpHandoffDraft({ fullName: lead.fullName, preferredLanguage }, this.db.organization.name, this.db.organization.defaultLanguage),
+    };
   }
 
   private cashShiftFactsSync(shiftId: string): CashShiftFacts {

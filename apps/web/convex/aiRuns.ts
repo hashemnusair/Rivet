@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { delegatedRequest, publicBranchId, publicOrganizationId, requireActor, type ActorContext, type DelegationPrincipal, type RequestArgs } from "./security";
-import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, renewalFactsForMember } from "./domain";
+import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, renewalFactsForMember } from "./domain";
 import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
 import { createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
@@ -254,6 +254,7 @@ export const advance = internalMutation({
       executeMutation: async (operation, input, request) => await executeDomainMutation(ctx, operation, input, request),
       renewalFacts: async (memberId, membershipId) => await renewalFactsForMember(ctx, authority.actor, memberId, membershipId),
       cashShiftFacts: async (shiftId) => await cashShiftFactsFor(ctx, authority.actor, shiftId),
+      leadFacts: async (leadId) => await leadFollowUpFactsFor(ctx, authority.actor, leadId),
     };
     return await runPlaybookStep(ctx, env);
   },

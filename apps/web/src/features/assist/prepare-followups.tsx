@@ -28,3 +28,30 @@ export function PrepareFollowUpsButton({ bucket, days, branchId, onStarted }: { 
     </Button>
   );
 }
+
+/**
+ * "Prepare lead follow-ups" on the pipeline. RIVET saves a call task with a
+ * catalogue draft for each lead due today in the displayed branch; it never
+ * records a contact, an offer or a discount.
+ */
+export function PrepareLeadFollowUpsButton({ branchId, onStarted }: { branchId?: string; onStarted: (run: AiRunView) => void }) {
+  const { session } = useApp();
+  const { data: settings } = useAiSettings();
+  const permissions = session?.permissions ?? [];
+  // Nothing is set up while hidden, so the pipeline's own controls are untouched.
+  if (!permissions.includes("crm.read") || !permissions.includes("crm.write") || !capabilityAvailable(settings, "sales_followups", true)) return null;
+  return <StartLeadFollowUps branchId={branchId} onStarted={onStarted} />;
+}
+
+function StartLeadFollowUps({ branchId, onStarted }: { branchId?: string; onStarted: (run: AiRunView) => void }) {
+  const { t } = useLocale();
+  const start = useApiMutation((api, _unused: void) => api.startAiRun({ playbook: "sales_followups", params: { owner: "lead_owner" }, ...(branchId ? { branchId } : {}), requestKey: crypto.randomUUID() }), {
+    successMessage: t("aiWork.prepare.started"),
+    onSuccess: (run) => onStarted(run),
+  });
+  return (
+    <Button type="button" variant="secondary" loading={start.isPending} onClick={() => start.mutate()} title={t("aiWork.prepare.leadFollowUpsHint")} data-testid="prepare-lead-follow-ups">
+      {start.isPending ? t("aiWork.prepare.starting") : t("aiWork.prepare.leadFollowUps")}
+    </Button>
+  );
+}

@@ -261,7 +261,10 @@ export type AiExclusionReason =
   | "revision_excluded"
   | "snoozed"
   | "already_prepared"
-  | "changed_since_planning";
+  | "changed_since_planning"
+  | "lead_closed"
+  | "lead_contacted_recently"
+  | "lead_already_prepared";
 
 export interface AiRunRevisionView {
   id: string;

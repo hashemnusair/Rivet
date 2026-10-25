@@ -69,12 +69,13 @@ import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, e
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
-import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
 import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
 import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
 import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
 import type { CashShiftFacts } from "../src/lib/ai/cash-difference";
+import type { LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1747,6 +1748,37 @@ export async function cashShiftFactsFor(ctx: ReadContext, actor: ActorContext, s
     supplierCashReversedMinor: supplierCash.reversedMinor,
     transactions,
     updatedAt: record.updatedAt,
+  };
+}
+
+/**
+ * Recorded facts for one lead, reloaded inside the write transaction of a
+ * prepared lead follow-up. Null when the lead is outside the actor's scope.
+ */
+export async function leadFollowUpFactsFor(ctx: ReadContext, actor: ActorContext, leadId: string): Promise<LeadFollowUpFacts | null> {
+  requirePermission(actor, "crm.read");
+  let record: DomainRecord;
+  try {
+    record = await recordOf(ctx, actor, "lead", leadId);
+  } catch {
+    return null;
+  }
+  const lead = data(record.data);
+  const [summary] = await toLeadSummaries(ctx, actor, [lead]);
+  const openTasks = (await followUpRelatedTasks(ctx, actor, { leadId: record.publicId })).map((task) => ({ id: task.id, title: task.title }));
+  const fullName = stringValue(lead.fullName);
+  return {
+    leadId: record.publicId,
+    leadName: fullName,
+    stage: stringValue(lead.stage, "new"),
+    ...(optionalString(lead.branchId) ? { branchId: stringValue(lead.branchId) } : {}),
+    ...(optionalString(lead.ownerId) ? { ownerId: stringValue(lead.ownerId) } : {}),
+    ...(optionalString(lead.phone) ? { phone: stringValue(lead.phone) } : {}),
+    ...(optionalString(lead.nextFollowUpAt) ? { nextFollowUpAt: stringValue(lead.nextFollowUpAt) } : {}),
+    ...(optionalString(summary?.lastContactAt) ? { lastContactAt: stringValue(summary?.lastContactAt) } : {}),
+    ...(optionalString(lead.convertedMemberId) ? { convertedMemberId: stringValue(lead.convertedMemberId) } : {}),
+    openTasks,
+    draft: followUpHandoffDraft({ fullName, preferredLanguage: lead.preferredLanguage }, actor.organization.name, actor.organization.defaultLanguage),
   };
 }
 

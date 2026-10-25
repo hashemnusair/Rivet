@@ -163,3 +163,17 @@ describe("preview cash-difference investigation", () => {
     await expect(api.startAiRun({ playbook: "cash_difference", params: { shiftId }, requestKey: "cash-preview-3" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
+
+describe("preview lead follow-ups", () => {
+  it("prepares call tasks for leads due today without duplicating them", async () => {
+    await enable();
+    const first = await settled((await api.startAiRun({ playbook: "sales_followups", params: {}, requestKey: "sales-preview-1" })).id);
+    expect(first.status).toBe("completed");
+    expect(first.counts.created + first.counts.linked).toBeGreaterThan(0);
+    const created = (await api.listTasks({ status: "open", pageSize: 200 })).items.filter((task) => task.origin?.runId === first.id);
+    expect(created.length).toBe(first.counts.created);
+    expect(created.every((task) => task.leadId && task.title.startsWith("Follow up with "))).toBe(true);
+    const again = await settled((await api.startAiRun({ playbook: "sales_followups", params: {}, requestKey: "sales-preview-2" })).id);
+    expect(again.counts.created).toBe(0);
+  });
+});

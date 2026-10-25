@@ -9,6 +9,7 @@ import type { AiErrorCategory, AiExclusionReason, AiRunExclusion, AiRunResultRef
 import { addDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
 import { composeHandover, composeManagementReport, ledgerTotals } from "../src/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
+import { evaluateLeadCandidate, leadIsDue, leadOperationKey, leadTaskTitle, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
 import type { AdvanceResult } from "./aiRuns";
 
 /**
@@ -35,6 +36,7 @@ export interface PlaybookStepEnv {
   executeMutation(operation: string, input: Data, request: RequestArgs): Promise<unknown>;
   renewalFacts(memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null>;
   cashShiftFacts(shiftId: string): Promise<CashShiftFacts>;
+  leadFacts(leadId: string): Promise<LeadFollowUpFacts | null>;
 }
 
 function record(value: unknown): Data {
@@ -192,6 +194,92 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
   return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
 }
 
+
+// ---------------------------------------------------------------------------
+// Lead follow-ups (AI-4.2)
+// ---------------------------------------------------------------------------
+
+async function salesFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
+  const { run, actor } = env;
+  const params = run.params as { owner?: "me" | "lead_owner" };
+  const now = Date.now();
+  const timezone = actor.organization.timezone || "Asia/Amman";
+  const today = todayISODate(timezone);
+
+  if (run.stage === "aiWork.stage.starting" || run.stage === "aiWork.stage.queued") {
+    const blocked = await env.toolBlocked("leads.due");
+    if (blocked) {
+      await env.finish("failed", blocked);
+      return { done: true };
+    }
+    const page = record(await env.executeQuery("leads.list", { stage: [...OPEN_LEAD_STAGES], ...(run.branchPublicId ? { branchId: run.branchPublicId } : {}), sort: "nextFollowUpAt", page: 1, pageSize: 500 }, env.toolRequest("leads.due", 0)));
+    const endOfToday = localDateTimeToISO(today, "23:59", timezone);
+    const due = (Array.isArray(page.items) ? page.items : []).map(record).filter((lead) => leadIsDue({ stage: text(lead.stage), ...(text(lead.nextFollowUpAt) ? { nextFollowUpAt: text(lead.nextFollowUpAt) } : {}), ...(text(lead.convertedMemberId) ? { convertedMemberId: text(lead.convertedMemberId) } : {}) }, endOfToday));
+    const planned = due.slice(0, run.limits.maxSubjects).map((lead) => ({ id: text(lead.id), name: text(lead.fullName) })).filter((subject) => subject.id);
+    await ctx.db.patch(run._id, { plannedSubjects: planned, counts: { ...run.counts, considered: due.length }, stage: planned.length ? "aiWork.stage.checkingContacts" : "aiWork.stage.nothingToDo", updatedAt: now });
+    if (!planned.length) {
+      await env.finish("completed");
+      return { done: true };
+    }
+    return { done: false };
+  }
+
+  if (run.cursor >= run.plannedSubjects.length) {
+    await env.finish(run.counts.failed > 0 ? "partially_completed" : "completed");
+    return { done: true };
+  }
+
+  const subject = run.plannedSubjects[run.cursor]!;
+  const seq = run.cursor + 1;
+  const leadHref = `/crm/leads/${subject.id}`;
+  const advance = async (patch: Partial<AiRunDoc>) => {
+    await ctx.db.patch(run._id, { ...patch, cursor: run.cursor + 1, stage: "aiWork.stage.preparingFollowUps", updatedAt: Date.now() });
+    return { done: false } as AdvanceResult;
+  };
+  const exclude = async (reason: AiExclusionReason) => {
+    await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "skipped", reason });
+    return await advance({ counts: { ...run.counts, skipped: run.counts.skipped + 1 }, exclusions: [...run.exclusions, { subjectId: subject.id, subjectName: subject.name, reason, sources: [{ kind: "lead", id: subject.id, href: leadHref }] }] });
+  };
+
+  // Reloaded now, inside this transaction: a call logged a moment ago changes the decision.
+  const facts = await env.leadFacts(subject.id);
+  if (!facts) return await exclude("outside_scope");
+  const decision = evaluateLeadCandidate(facts, { now: new Date(now).toISOString() });
+  if (decision.decision === "exclude") return await exclude(decision.reason);
+  const operationKey = leadOperationKey(publicOrganizationId(actor.organization), subject.id, facts.nextFollowUpAt);
+  const prior = await priorTaskState(ctx, run, "ai.task.create_lead_followup", operationKey);
+  if (prior && !prior.open) return await exclude("lead_already_prepared");
+  if (decision.decision === "link" || prior) {
+    const taskId = decision.decision === "link" ? decision.taskId : prior!.taskId;
+    const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
+    const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name });
+    await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", reason: "has_open_followup", resultRef: ref });
+    return await advance({ counts: { ...run.counts, linked: run.counts.linked + 1 }, resultRefs: [...run.resultRefs, ref] });
+  }
+
+  if (run.budget.writes >= run.limits.maxWrites) {
+    await env.finish(run.counts.created + run.counts.linked > 0 ? "partially_completed" : "failed", "limit_reached");
+    return { done: true };
+  }
+  const blocked = await env.toolBlocked("task.create_lead_followup");
+  if (blocked) {
+    await env.finish(run.counts.created + run.counts.linked > 0 ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
+    return { done: true };
+  }
+  const ownerId = params.owner === "me" || !facts.ownerId ? publicUserId(actor.user) : facts.ownerId;
+  const title = leadTaskTitle(facts.leadName);
+  const created = record(await env.executeMutation("tasks.create", { type: "follow_up", title, ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, aiContext: { purpose: "lead" } }, env.toolRequest("task.create_lead_followup", seq)));
+  const taskId = text(created.id);
+  const persisted = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", run.organizationId).eq("entityType", "task").eq("publicId", taskId)).unique();
+  const saved = record(persisted?.data);
+  if (!persisted || saved.leadId !== subject.id || saved.status !== "open" || saved.ownerId !== ownerId || record(saved.origin).runId !== run.publicId) {
+    throw new Error("Saved lead follow-up did not match what was requested.");
+  }
+  await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.task.create_lead_followup", key: operationKey, requestHash: `${run.publicId}:${subject.id}`, result: { taskId, runId: run.publicId }, createdAt: now, expiresAt: now + 90 * 86_400_000 });
+  const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name });
+  await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", resultRef: ref, ...(facts.draft ? { draft: facts.draft } : {}) });
+  return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (facts.draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
+}
 
 // ---------------------------------------------------------------------------
 // Shared helpers for report-style jobs
@@ -440,6 +528,8 @@ export async function runPlaybookStep(ctx: MutationCtx, env: PlaybookStepEnv): P
       return await shiftHandoverStep(ctx, env);
     case "cash_difference":
       return await cashDifferenceStep(ctx, env);
+    case "sales_followups":
+      return await salesFollowupsStep(ctx, env);
     default:
       await env.finish("failed", "validation");
       return { done: true };

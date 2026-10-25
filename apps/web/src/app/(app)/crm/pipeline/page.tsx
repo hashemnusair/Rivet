@@ -17,6 +17,9 @@ import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
+import { AiRunPanel } from "@/features/assist/run-panel";
+import { PrepareLeadFollowUpsButton } from "@/features/assist/prepare-followups";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Monogram, Skeleton } from "@/components/ui/misc";
@@ -228,11 +231,13 @@ function PipelinePageInner() {
               >
                 <LayoutList className="inline size-3.5 align-[-2px]" />{" "}{t("palette.notifications.viewList")}</button>
             </div>
+            <PrepareLeadFollowUpsButton branchId={session?.activeBranchId} onStarted={(run) => { const next = new URLSearchParams(searchParams.toString()); next.set("run", run.id); replaceQueryInPlace(router, `/crm/pipeline?${next}`); }} />
             <Button onClick={() => setNewOpen(true)} data-testid="new-lead">
               <Plus />{" "}{t("crm.newLead.title")}</Button>
           </div>
         }
       />
+      {searchParams.get("run") ? <AiRunPanel runId={searchParams.get("run")!} onClose={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `/crm/pipeline?${next}` : "/crm/pipeline"); }} /> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="w-full max-w-xs"><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("crmCompletion.pipeline.searchPlaceholder")} aria-label={t("crmCompletion.pipeline.searchLabel")} /></div>

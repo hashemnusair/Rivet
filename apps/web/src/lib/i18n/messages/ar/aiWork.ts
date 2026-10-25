@@ -170,6 +170,9 @@ export const aiWork: typeof En = {
     snoozed: "تم تأجيل المتابعة",
     already_prepared: "تمت معالجته مسبقًا لهذا الاشتراك",
     changed_since_planning: "تغيّر منذ أن بدأ RIVET",
+    lead_closed: "تم البيع أو سُجّلت كفرصة بيع مفقودة",
+    lead_contacted_recently: "تم التواصل خلال آخر 24 ساعة",
+    lead_already_prepared: "تمت معالجتها لموعد المتابعة هذا",
   },
   error: {
     ai_off: "المساعدة متوقفة.",
@@ -192,6 +195,8 @@ export const aiWork: typeof En = {
     internal: "حدث خطأ. لم يُحفظ أي شيء إضافي.",
   },
   prepare: {
+    leadFollowUps: "تجهيز متابعات المهتمين بالاشتراك",
+    leadFollowUpsHint: "يحفظ RIVET مهمة اتصال مع مسودة رسالة لكل مهتم بالاشتراك حان موعد متابعته اليوم. لا يتواصل مع أحد ولا يعرض أسعارًا.",
     followUps: "تجهيز المتابعات",
     followUpsHint: "يتحقق RIVET من آخر تواصل والمتابعات المفتوحة لكل عضو، ثم يحفظ مهمة اتصال لمن يحتاج إليها.",
     starting: "جارٍ البدء…",
