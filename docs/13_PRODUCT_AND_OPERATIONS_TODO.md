@@ -301,7 +301,7 @@ started.**
   authorization; no staff context.
 - [ ] **AI-4.8 Platform console** review preparation under platform-admin authority;
   no blanket cross-tenant gym-agent access.
-- [ ] **AI-4.9 Collections preparation** (unpaid accounts, receipts lookup); no claim
+- [x] **AI-4.9 Collections preparation** *(Implemented locally as prepare-only: unsaved call list with last receipt and contact; drafts only where an approved template's claim is true. Most overdue balances get no draft because the catalogue has no truthful "N days overdue" reminder; recorded below.)* (unpaid accounts, receipts lookup); no claim
   of payment without recorded evidence.
 - [ ] **AI-4.10 Remaining inventory rows** recorded as explicit coverage gaps with
   acceptance examples (stock drafts, settings explanation, automation proposals,
@@ -384,6 +384,10 @@ Recorded as found during implementation; each entry names its subitem and eviden
 - **Known limitation (AI-5.1):** the deterministic reader missed an Arabic instruction
   attempt in a note ("تعليمات للنظام: …"); nothing was acted on, but the "ignored
   instructions" notice was not shown.
+- **Found (AI-4.9):** the approved payment catalogue only says "due today", "due in 3
+  days" or "3 days overdue", so for most overdue balances no truthful approved draft
+  exists; a neutral "you have an unpaid balance of {amount}" utility template would need
+  catalogue review (and WhatsApp approval) before it can be offered.
 - **Constraint found (settings):** the desktop settings rail is full at 1280×900 and
   existing browser tests pin its height and keyboard order, so any new section row
   overflows it. Assistance lives under Roles & access with no row of its own
