@@ -111,6 +111,11 @@ export interface AiDomainPort {
   sourceVersions(ctx: ReadCtx, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]>;
   /** Runs an existing domain operation as the signed-in approver, with every check it already has. */
   executeApproved(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown>;
+  /**
+   * A task RIVET prepared, read through the person's own scope, closed as not
+   * needed if it is still open. Refuses tasks people created themselves.
+   */
+  closePreparedTaskAsNotNeeded(ctx: MutationCtx, actor: ActorContext, taskId: string): Promise<{ runId: string; title: string; branchId?: string; closed: boolean }>;
 }
 
 /**
@@ -334,6 +339,7 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
       const usage = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", month)).collect();
       const live = usage.filter((row) => row.source === "live");
       const feedback = (await ctx.db.query("aiFeedback").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthStart)).collect());
+      const rated = (rating: Doc<"aiFeedback">["rating"]) => feedback.filter((row) => row.rating === rating).length;
       const count = (status: string) => runs.filter((run) => run.status === status).length;
       return {
         month,
@@ -349,7 +355,9 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
         },
         revisions: runs.reduce((sum, run) => sum + run.revisions.length, 0),
         model: { liveCalls: live.length, testCalls: usage.length - live.length, failures: usage.filter((row) => row.outcome !== "ok").length, ...(live.length ? { averageLatencyMs: Math.round(live.reduce((sum, row) => sum + row.latencyMs, 0) / live.length) } : {}), costMicros: usage.reduce((sum, row) => sum + (row.costMicros ?? 0), 0) },
-        feedback: { useful: feedback.filter((row) => row.rating === "useful").length, notUseful: feedback.filter((row) => row.rating === "not_useful").length },
+        feedback: { useful: rated("useful"), notUseful: rated("not_useful") },
+        dismissals: rated("dismissed"),
+        unnecessaryContacts: rated("unnecessary"),
       } satisfies AiOutcomeSummary;
     }
 
@@ -925,10 +933,27 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
     case "ai.feedback.record": {
       const subjectKind = text(input.subjectKind);
       const rating = text(input.rating);
-      if (!["brief", "extraction", "run", "draft", "artifact"].includes(subjectKind) || !["useful", "not_useful"].includes(rating)) domainError("VALIDATION_ERROR", "Check the details and try again.", { correlationId: actor.correlationId });
+      // "dismissed": a suggestion closed without being used, counted in the monthly summary (AI-5.3).
+      if (!["brief", "extraction", "run", "draft", "artifact"].includes(subjectKind) || !["useful", "not_useful", "dismissed"].includes(rating)) domainError("VALIDATION_ERROR", "Check the details and try again.", { correlationId: actor.correlationId });
       const correctedFields = Array.isArray(input.correctedFields) ? input.correctedFields.map(String).filter((field) => /^[a-zA-Z]{1,40}$/.test(field)).slice(0, 10) : [];
       await ctx.db.insert("aiFeedback", { organizationId: actor.organization._id, publicId: newAiPublicId("feedback"), subjectKind: subjectKind as Doc<"aiFeedback">["subjectKind"], subjectId: text(input.subjectId).slice(0, 120), rating: rating as Doc<"aiFeedback">["rating"], correctedFields, userId: actor.user._id, createdAt: Date.now() });
       return undefined;
+    }
+
+    case "ai.task.mark_unnecessary": {
+      // A contact RIVET prepared turned out not to be needed: closed if still open, and counted (AI-5.3).
+      requirePermission(actor, "crm.write");
+      const taskId = text(input.taskId);
+      const task = await port.closePreparedTaskAsNotNeeded(ctx, actor, taskId);
+      const marked = (await ctx.db.query("aiFeedback").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectKind", "task").eq("subjectId", taskId)).collect()).some((row) => row.rating === "unnecessary");
+      if (!marked) {
+        const now = Date.now();
+        await ctx.db.insert("aiFeedback", { organizationId: actor.organization._id, publicId: newAiPublicId("feedback"), subjectKind: "task", subjectId: taskId, rating: "unnecessary", correctedFields: [], userId: actor.user._id, createdAt: now });
+        const steps = await ctx.db.query("aiRunSteps").withIndex("by_organization_run", (q) => q.eq("organizationId", actor.organization._id).eq("runPublicId", task.runId)).take(500);
+        for (const step of steps) if (record(step.resultRef).kind === "task" && record(step.resultRef).id === taskId) await ctx.db.patch(step._id, { markedUnnecessaryAt: now, updatedAt: now });
+        await port.insertAudit(ctx, actor, { category: "ai", action: "ai.contact.unnecessary", entityType: "task", entityId: taskId, entityLabel: task.title, summary: task.closed ? "Prepared contact closed as not needed" : "Prepared contact marked as not needed", reason: text(input.reason).slice(0, 200) || undefined, after: { closed: task.closed, runId: task.runId }, branchId: task.branchId });
+      }
+      return { taskId, closed: task.closed, alreadyMarked: marked };
     }
 
     default:

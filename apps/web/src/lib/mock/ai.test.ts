@@ -114,6 +114,20 @@ describe("preview assistance", () => {
     await expect(api.recordMemberMemory({ memberId: member.id, topic: "travel", effectiveUntil: "2099-01-01" })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
+  it("closes a prepared call as not needed once, refuses work people created, and counts dismissals", async () => {
+    await enable();
+    const run = await settled((await api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "request-not-needed" })).id);
+    const created = (await api.listTasks({ status: "open", pageSize: 500 })).items.find((task) => task.origin?.runId === run.id)!;
+    expect(await api.markAiTaskNotNeeded({ taskId: created.id })).toEqual({ taskId: created.id, closed: true, alreadyMarked: false });
+    expect(await api.markAiTaskNotNeeded({ taskId: created.id })).toMatchObject({ closed: false, alreadyMarked: true });
+    expect((await api.listTasks({ status: "open", pageSize: 500 })).items.some((task) => task.id === created.id)).toBe(false);
+    expect((await api.getAiRun(run.id)).steps.find((step) => step.resultRef?.id === created.id)?.markedUnnecessary).toBe(true);
+    const own = (await api.listTasks({ status: "open", pageSize: 500 })).items.find((task) => !task.origin)!;
+    await expect(api.markAiTaskNotNeeded({ taskId: own.id })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    await api.recordAiFeedback({ subjectKind: "extraction", subjectId: "note-hash", rating: "dismissed" });
+    expect(await api.getAiOutcomeSummary()).toMatchObject({ unnecessaryContacts: 1, dismissals: 1 });
+  });
+
   it("reads a note into fields with the fixture reader and labels the source", async () => {
     await enable();
     const member = (await api.listMembers({ status: "active", pageSize: 1 })).items[0]!;

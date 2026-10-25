@@ -72,6 +72,13 @@ export function NoteAssist({
     setUsed((current) => new Set(current).add(field));
   };
   const usable = suggestions.filter((item) => (item.field === "outcome" || item.field === "nextFollowUp") && !item.blockedByEdit && !item.needsChoice);
+  // Hiding the suggestions counts as a dismissal in the owner's monthly summary; the note and the form stay as they are.
+  const dismiss = useApiMutation((api, noteHash: string) => api.recordAiFeedback({ subjectKind: "extraction", subjectId: noteHash, rating: "dismissed" }));
+  const hide = () => {
+    if (extraction) dismiss.mutate(extraction.noteHash);
+    setExtraction(undefined);
+    updateRemember({});
+  };
   const enough = note.trim().length >= 8;
   return (
     <div className="space-y-2" data-testid="note-assist">
@@ -84,7 +91,10 @@ export function NoteAssist({
         <div className="space-y-2 rounded-md border border-line bg-surface px-3 py-2.5" data-testid="note-assist-suggestions" aria-live="polite">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="context-label">{t("aiWork.extract.title")}</p>
-            {usable.length > 1 ? <Button type="button" variant="ghost" size="xs" onClick={() => usable.forEach((item) => apply(item.field, item.value, item.time))} data-testid="note-assist-use-all">{t("aiWork.extract.acceptAll")}</Button> : null}
+            <div className="flex flex-wrap items-center gap-1">
+              {usable.length > 1 ? <Button type="button" variant="ghost" size="xs" onClick={() => usable.forEach((item) => apply(item.field, item.value, item.time))} data-testid="note-assist-use-all">{t("aiWork.extract.acceptAll")}</Button> : null}
+              <Button type="button" variant="ghost" size="xs" onClick={hide} data-testid="note-assist-dismiss">{t("aiWork.extract.dismiss")}</Button>
+            </div>
           </div>
           {extraction.ignoredInstructions ? <p className="text-[12px] text-warning-deep">{t("aiWork.extract.ignoredInstructions")}</p> : null}
           {suggestions.length === 0 ? <p className="text-[12.5px] text-ink-3">{t("aiWork.extract.nothingFound")}</p> : null}

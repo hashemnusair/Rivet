@@ -144,6 +144,12 @@ test.describe("RIVET assistance", () => {
     // The saved tasks are real tasks a person can open.
     const firstResult = panel.getByTestId("ai-run-results").getByRole("link", { name: "Open" }).first();
     await expect(firstResult).toBeVisible();
+    // A call that turns out not to be needed is closed and counted, once.
+    const notNeeded = panel.getByTestId("ai-run-mark-not-needed");
+    const before = await notNeeded.count();
+    await notNeeded.first().click();
+    await expect(panel.getByTestId("ai-run-not-needed")).toHaveCount(1);
+    await expect(notNeeded).toHaveCount(before - 1);
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
@@ -163,6 +169,11 @@ test.describe("RIVET assistance", () => {
     await dialog.getByTestId("note-assist-use-all").click();
     await expect(dialog.getByRole("radio", { name: "No answer" })).toHaveAttribute("aria-checked", "true");
     await expect(dialog.getByText("Call at 18:00")).toBeVisible();
+    await expect(dialog.getByTestId("contact-notes")).toHaveValue("No answer, try again tomorrow evening");
+    // Hiding the suggestions keeps what the person already chose and wrote.
+    await dialog.getByTestId("note-assist-dismiss").click();
+    await expect(dialog.getByTestId("note-assist-suggestions")).toHaveCount(0);
+    await expect(dialog.getByRole("radio", { name: "No answer" })).toHaveAttribute("aria-checked", "true");
     await expect(dialog.getByTestId("contact-notes")).toHaveValue("No answer, try again tomorrow evening");
   });
 

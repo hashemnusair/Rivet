@@ -75,6 +75,21 @@ describe("assistance beside the contact form", () => {
     expect((await api.listTasks({ memberId: holder.memberId, status: "open", pageSize: 50 })).items.every((task) => !task.origin)).toBe(true);
   });
 
+  it("hides the suggestions on request, leaves the form as it was and counts a dismissal", async () => {
+    const holder = { memberId: "" };
+    const Dialog = contactDialog(holder);
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<Dialog />, { prepare: async (prepared) => { await enable(prepared, "prepare"); holder.memberId = await activeMemberId(prepared); } });
+    await user.type(await screen.findByTestId("contact-notes"), "No answer, try again tomorrow evening");
+    await user.click(screen.getByTestId("note-assist-fill"));
+    expect(await screen.findByTestId("note-assist-suggestions")).toBeInTheDocument();
+    await user.click(screen.getByTestId("note-assist-dismiss"));
+    expect(screen.queryByTestId("note-assist-suggestions")).not.toBeInTheDocument();
+    expect(screen.getByTestId("contact-notes")).toHaveValue("No answer, try again tomorrow evening");
+    expect(screen.getByRole("radio", { name: "No answer" })).toHaveAttribute("aria-checked", "false");
+    await waitFor(async () => expect((await api.getAiOutcomeSummary()).dismissals).toBe(1));
+  });
+
   it("never replaces an outcome the person already chose", async () => {
     const holder = { memberId: "" };
     const Dialog = contactDialog(holder);
@@ -117,6 +132,19 @@ describe("prepared work", () => {
     expect(screen.getByTestId("ai-run-counts")).toHaveTextContent(/Created: \d+/);
     expect(screen.getByTestId("ai-run-results")).toBeInTheDocument();
     expect(screen.queryByTestId("ai-run-cancel")).not.toBeInTheDocument();
+  });
+
+  it("lets a person mark a prepared call as not needed, once, and counts it", async () => {
+    const holder = { runId: "" };
+    function Panel() { return <AiRunPanel runId={holder.runId} />; }
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<Panel />, { prepare: async (prepared) => { await enable(prepared); holder.runId = (await prepared.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "ui-request-not-needed" })).id; } });
+    await waitFor(() => expect(screen.getByTestId("ai-run-panel")).toHaveAttribute("data-status", "completed"), { timeout: 5_000 });
+    const marks = screen.getAllByTestId("ai-run-mark-not-needed");
+    await user.click(marks[0]!);
+    expect(await screen.findByTestId("ai-run-not-needed")).toHaveTextContent("Marked not needed");
+    expect(screen.getAllByTestId("ai-run-mark-not-needed")).toHaveLength(marks.length - 1);
+    expect((await api.getAiOutcomeSummary()).unnecessaryContacts).toBe(1);
   });
 
   it("stops at the next step and says what was already saved", async () => {

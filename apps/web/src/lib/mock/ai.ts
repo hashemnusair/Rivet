@@ -112,6 +112,8 @@ export interface MockAiHost {
   classOptionFacts(memberId: string, from: string, to: string): { enabled: boolean; facts: ClassOptionFacts[] };
   /** The existing staff roster add; returns the member's booking status afterwards. */
   bookClass(occurrenceKey: string, memberId: string): string | undefined;
+  /** The member timeline line for a prepared task closed as not needed. */
+  recordTaskNotNeeded(task: T.Task): void;
   /** Gyms the platform console lists, for choosing which may use assistance. */
   platformOrganizations(): Array<{ id: string; name: string; status: string }>;
   platformAudit(input: { action: string; entityId: string; entityLabel: string; summary: string; reason: string; before: Record<string, unknown>; after: Record<string, unknown> }): void;
@@ -210,6 +212,8 @@ export class MockAiEngine {
   private readonly proposals = new Map<string, MockProposal>();
   private readonly operationKeys = new Map<string, string>();
   private readonly feedback: AiFeedbackInput[] = [];
+  /** Tasks RIVET prepared that a person marked as not needed. */
+  private readonly notNeeded = new Set<string>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private arabicLoadAttempted = false;
   /** Test seam: the last error a simulated step raised. */
@@ -457,6 +461,8 @@ export class MockAiEngine {
       revisions: runs.reduce((sum, run) => sum + run.revisions.length, 0),
       model: { liveCalls: 0, testCalls: 0, failures: 0, costMicros: 0 },
       feedback: { useful: this.feedback.filter((item) => item.rating === "useful").length, notUseful: this.feedback.filter((item) => item.rating === "not_useful").length },
+      dismissals: this.feedback.filter((item) => item.rating === "dismissed").length,
+      unnecessaryContacts: this.notNeeded.size,
     };
   }
 
@@ -1401,6 +1407,30 @@ export class MockAiEngine {
 
   recordFeedback(input: AiFeedbackInput): void {
     this.feedback.push(input);
+  }
+
+  /** A contact RIVET prepared was not needed: closed if still open, marked on its run and counted, as on the server. */
+  markTaskNotNeeded(taskId: string): { taskId: string; closed: boolean; alreadyMarked: boolean } {
+    this.requireHumanPermission("crm.write");
+    const task = this.host.db.tasks.find((item) => item.id === taskId);
+    const member = task?.memberId ? this.host.db.members.find((item) => item.id === task.memberId) : undefined;
+    if (!task || (member && !this.host.branchVisible(member.homeBranchId))) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    if (task.origin?.kind !== "ai_run") throw ApiError.of(ERR.VALIDATION, "Only work RIVET prepared can be marked as not needed.");
+    let closed = false;
+    if (task.status === "open") {
+      Object.assign(task, { status: "cancelled", outcome: "Not needed", completedAt: new Date().toISOString() });
+      closed = true;
+      this.host.recordTaskNotNeeded(task);
+    }
+    const alreadyMarked = this.notNeeded.has(task.id);
+    if (!alreadyMarked) {
+      this.notNeeded.add(task.id);
+      const run = this.runs.get(task.origin.runId);
+      for (const step of run?.steps ?? []) if (step.resultRef?.kind === "task" && step.resultRef.id === task.id) step.markedUnnecessary = true;
+      if (run) this.notify(run);
+      this.host.audit({ action: "ai.contact.unnecessary", entityId: task.id, entityLabel: task.title, summary: closed ? "Prepared contact closed as not needed" : "Prepared contact marked as not needed" });
+    }
+    return { taskId: task.id, closed, alreadyMarked };
   }
 
   /** Test seam: stop every simulated timer. */

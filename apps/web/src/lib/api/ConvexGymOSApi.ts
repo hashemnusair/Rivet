@@ -390,6 +390,7 @@ export class ConvexGymOSApi implements GymOSApi {
   }
   revokeMemberMemory(memoryId: string): Promise<void> { return this.mutate("ai.memory.revoke", { memoryId }); }
   recordAiFeedback(input: AI.AiFeedbackInput): Promise<void> { return this.mutate("ai.feedback.record", input); }
+  markAiTaskNotNeeded(input: { taskId: T.UUID; reason?: string }): Promise<{ taskId: T.UUID; closed: boolean; alreadyMarked: boolean }> { return this.mutate("ai.task.mark_unnecessary", input); }
 
   async getSession(): Promise<T.Session> {
     const session = await this.query<T.Session>("session");

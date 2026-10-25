@@ -653,3 +653,51 @@ describe("task titles RIVET prepares", () => {
     expect(timeline.find((event) => event.type === "task_completed")?.titleMessage?.params?.title).toEqual({ message: { key: "communicationCompletion.tasks.renewalCallEveningClasses", params: { name: "Omar Haddad" } } });
   });
 });
+
+describe("dismissed suggestions and contacts later marked not needed (AI-5.3)", () => {
+  type Summary = { dismissals: number; unnecessaryContacts: number; feedback: { useful: number; notUseful: number } };
+  const summary = async (t: Harness) => await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.outcomes.summary")) as Summary;
+
+  it("closes a prepared call as not needed once, marks it on its run and counts it", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const started = await startRun(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const [omarTask] = await tasksOf(t, "m-omar");
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    expect(await sales.mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: omarTask!.id }, { activeBranchId: MAIN }))).toEqual({ taskId: omarTask!.id, closed: true, alreadyMarked: false });
+    expect(await tasksOf(t, "m-omar")).toHaveLength(0);
+    expect((await tasksOf(t, "m-omar", "cancelled"))[0]).toMatchObject({ id: omarTask!.id, outcome: "Not needed" });
+    const run = await getRun(t, started.id) as RunView & { steps: Array<{ subjectId?: string; markedUnnecessary?: boolean }> };
+    expect(run.steps.find((step) => step.subjectId === "m-omar")?.markedUnnecessary).toBe(true);
+    // Marking again changes nothing and counts once.
+    expect(await sales.mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: omarTask!.id }, { activeBranchId: MAIN }))).toMatchObject({ closed: false, alreadyMarked: true });
+    expect((await summary(t)).unnecessaryContacts).toBe(1);
+    const records = await t.run(async (ctx) => ({ audits: (await ctx.db.query("auditEvents").collect()).map((row) => row.action), timeline: (await ctx.db.query("domainRecords").collect()).filter((row) => row.entityType === "timeline").map((row) => row.data as { titleMessage?: { key: string } }) }));
+    expect(records.audits.filter((action) => action === "ai.contact.unnecessary")).toHaveLength(1);
+    expect(records.timeline.some((event) => event.titleMessage?.key === "communicationCompletion.timeline.taskNotNeeded")).toBe(true);
+  });
+
+  it("refuses tasks people created themselves, staff without the access and records outside their scope", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    await startRun(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    await expect(sales.mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: "task-rami-existing" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    const [omarTask] = await tasksOf(t, "m-omar");
+    await expect(t.withIdentity({ subject: "clerk-ai-desk-north" }).mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: omarTask!.id }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: expect.stringMatching(/FORBIDDEN|NOT_FOUND/) }) });
+    expect(await tasksOf(t, "m-omar")).toHaveLength(1);
+    expect((await summary(t)).unnecessaryContacts).toBe(0);
+  });
+
+  it("counts suggestions people hid, separately from useful and not useful", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    await sales.mutation(api.domain.mutate, op("ai.feedback.record", { subjectKind: "extraction", subjectId: "note-hash-1", rating: "dismissed" }, { activeBranchId: MAIN }));
+    await sales.mutation(api.domain.mutate, op("ai.feedback.record", { subjectKind: "brief", subjectId: "m-omar", rating: "useful" }, { activeBranchId: MAIN }));
+    await expect(sales.mutation(api.domain.mutate, op("ai.feedback.record", { subjectKind: "extraction", subjectId: "x", rating: "unnecessary" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    expect(await summary(t)).toMatchObject({ dismissals: 1, unnecessaryContacts: 0, feedback: { useful: 1, notUseful: 0 } });
+  });
+});

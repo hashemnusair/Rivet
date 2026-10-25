@@ -1951,6 +1951,21 @@ export const aiDomainPort: AiDomainPort = {
   classOptionFacts: classOptionFactsFor,
   sourceVersions: aiSourceVersions,
   executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
+  closePreparedTaskAsNotNeeded: async (ctx, actor, taskId) => {
+    const record = await recordOf(ctx, actor, "task", taskId);
+    const task = data(record.data);
+    const origin = data(task.origin);
+    if (stringValue(origin.kind) !== "ai_run") domainError("VALIDATION_ERROR", "Only work RIVET prepared can be marked as not needed.", { correlationId: actor.correlationId });
+    let closed = false;
+    if (stringValue(task.status, "open") === "open") {
+      await patchRecord(ctx, actor, record, { status: "cancelled", outcome: "Not needed", completedAt: isoNow() });
+      closed = true;
+      const titleMessage = preparedTaskTitleMessage(task.titleMessage);
+      if (task.memberId) await insertTimeline(ctx, actor, { memberId: stringValue(task.memberId), type: "task_completed", title: `Task not needed: ${stringValue(task.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskNotNeeded", { title: titleMessage ? { message: titleMessage } : stringValue(task.title) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+    }
+    const branchId = task.memberId ? optionalString(data((await recordOfOptional(ctx, actor, "member", stringValue(task.memberId)))?.data).homeBranchId) : task.leadId ? optionalString(data((await recordOfOptional(ctx, actor, "lead", stringValue(task.leadId)))?.data).branchId) : undefined;
+    return { runId: stringValue(origin.runId), title: stringValue(task.title), ...(branchId ? { branchId } : {}), closed };
+  },
 };
 
 /** The existing domain handlers, for the delegated-work executor. */

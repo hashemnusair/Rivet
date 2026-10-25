@@ -22,6 +22,8 @@ export function OutcomeSummary() {
     [t("aiWork.outcomes.corrections"), format.number(value.revisions)],
     [t("aiWork.outcomes.model"), value.model.liveCalls ? t("aiWork.outcomes.modelLive", { calls: value.model.liveCalls, latency: format.number(value.model.averageLatencyMs ?? 0), failures: value.model.failures }) : t("aiWork.outcomes.modelNone", { calls: value.model.testCalls })],
     [t("aiWork.outcomes.feedback"), t("aiWork.outcomes.feedbackValue", { useful: value.feedback.useful, notUseful: value.feedback.notUseful })],
+    [t("aiWork.outcomes.dismissals"), format.number(value.dismissals)],
+    [t("aiWork.outcomes.unnecessaryContacts"), format.number(value.unnecessaryContacts)],
   ];
   return (
     <details className="mt-2 text-[12.5px]" data-testid="assistance-outcomes">

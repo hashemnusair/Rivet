@@ -294,6 +294,8 @@ export interface AiRunStepView {
   reason?: AiExclusionReason | AiErrorCategory;
   resultRef?: AiRunResultRef;
   draft?: { language: "en" | "ar"; text: string };
+  /** A person marked the contact this step saved as not needed. */
+  markedUnnecessary?: boolean;
   updatedAt: string;
 }
 
@@ -449,6 +451,10 @@ export interface AiOutcomeSummary {
   revisions: number;
   model: { liveCalls: number; testCalls: number; failures: number; averageLatencyMs?: number; costMicros: number };
   feedback: { useful: number; notUseful: number };
+  /** Suggestions people dismissed this month. */
+  dismissals: number;
+  /** Contacts RIVET prepared that people later marked as not needed this month. */
+  unnecessaryContacts: number;
 }
 
 /** For each visible member in a list, the brief fact the row does not already show (AI-2.1); members outside scope are left out. */
@@ -526,7 +532,8 @@ export interface CreateStandingInstructionInput {
 export interface AiFeedbackInput {
   subjectKind: "brief" | "extraction" | "run" | "draft" | "artifact";
   subjectId: string;
-  rating: "useful" | "not_useful";
+  /** `dismissed`: the person closed a suggestion without using it. */
+  rating: "useful" | "not_useful" | "dismissed";
   correctedFields?: string[];
 }
 
@@ -566,6 +573,7 @@ export const AI_MUTATION_OPERATIONS = [
   "ai.memory.record",
   "ai.memory.revoke",
   "ai.feedback.record",
+  "ai.task.mark_unnecessary",
   "ai.platform.stop",
   "ai.platform.availability.set",
 ] as const;

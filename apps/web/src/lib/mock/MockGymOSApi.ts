@@ -971,6 +971,9 @@ export class MockGymOSApi implements GymOSApi {
         return updated.roster.find((entry) => entry.memberId === memberId && ["booked", "waitlisted"].includes(entry.status))?.status;
       },
       reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
+      recordTaskNotNeeded: (task) => {
+        if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task not needed: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskNotNeeded", { title: task.titleMessage ? { message: task.titleMessage } : task.title }), actorId: this.actor().id, actorName: this.actor().name });
+      },
       platformOrganizations: () => [
         { id: this.db.organization.id, name: this.db.organization.name, status: this.db.organization.status },
         ...[...this.provisionedTenants.values()].map((tenant) => ({ id: tenant.organization.id, name: tenant.organization.name, status: tenant.organization.status })),
@@ -4532,6 +4535,7 @@ export class MockGymOSApi implements GymOSApi {
   recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }
   revokeMemberMemory(memoryId: string): Promise<void> { return this.respond(() => this.ai.revokeMemory(memoryId)); }
   recordAiFeedback(input: AI.AiFeedbackInput): Promise<void> { return this.respond(() => this.ai.recordFeedback(input)); }
+  markAiTaskNotNeeded(input: { taskId: T.UUID; reason?: string }): Promise<{ taskId: T.UUID; closed: boolean; alreadyMarked: boolean }> { return this.respond(() => this.ai.markTaskNotNeeded(input.taskId)); }
   /** Preview seam for tests: start due standing slots, as the server's cron does. */
   dispatchDueStandingInstructions(now?: number): number { return this.ai.dispatchDueStanding(now); }
 

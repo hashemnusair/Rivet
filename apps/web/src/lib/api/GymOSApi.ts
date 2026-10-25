@@ -1585,6 +1585,8 @@ export interface GymOSApi {
   recordMemberMemory(input: { memberId: UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<import("@/lib/ai/contracts").AiMemoryView>;
   revokeMemberMemory(memoryId: string): Promise<void>;
   recordAiFeedback(input: import("@/lib/ai/contracts").AiFeedbackInput): Promise<void>;
+  /** A contact RIVET prepared was not needed: closes the task if still open and counts it in the monthly summary. */
+  markAiTaskNotNeeded(input: { taskId: UUID; reason?: string }): Promise<{ taskId: UUID; closed: boolean; alreadyMarked: boolean }>;
 
   // Demo utilities
   resetDemo(): Promise<void>;

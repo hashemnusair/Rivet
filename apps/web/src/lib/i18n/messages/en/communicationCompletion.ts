@@ -297,6 +297,7 @@ export const communicationCompletion = {
     taskCreated: "Task: {title}",
     taskFollowOn: "Follow-on to: {title}",
     taskCompleted: "Task completed: {title}",
+    taskNotNeeded: "Task not needed: {title}",
     taskContactCompleted: "Contact logged — {outcome}",
     tagsAdded: "Tags added: {tags}",
     tagsRemoved: "Tags removed: {tags}",

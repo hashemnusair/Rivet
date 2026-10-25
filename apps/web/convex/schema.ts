@@ -2179,6 +2179,8 @@ export default defineSchema({
     reason: v.optional(v.string()),
     resultRef: v.optional(v.any()),
     draft: v.optional(v.object({ language: v.union(v.literal("en"), v.literal("ar")), text: v.string() })),
+    /** A person marked the contact this step saved as not needed (AI-5.3). */
+    markedUnnecessaryAt: v.optional(v.number()),
     attempts: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -2297,15 +2299,19 @@ export default defineSchema({
   })
     .index("by_organization_month", ["organizationId", "month"]),
 
+  // Useful / not useful, suggestions dismissed, and prepared contacts later
+  // marked not needed (AI-5.3). Counts feed the monthly outcome summary.
   aiFeedback: defineTable({
     organizationId: v.id("organizations"),
     publicId: v.string(),
-    subjectKind: v.union(v.literal("brief"), v.literal("extraction"), v.literal("run"), v.literal("draft"), v.literal("artifact")),
+    subjectKind: v.union(v.literal("brief"), v.literal("extraction"), v.literal("run"), v.literal("draft"), v.literal("artifact"), v.literal("task")),
     subjectId: v.string(),
-    rating: v.union(v.literal("useful"), v.literal("not_useful")),
+    rating: v.union(v.literal("useful"), v.literal("not_useful"), v.literal("dismissed"), v.literal("unnecessary")),
     correctedFields: v.array(v.string()),
     userId: v.id("users"),
     createdAt: v.number(),
-  }).index("by_organization", ["organizationId", "createdAt"]),
+  })
+    .index("by_organization", ["organizationId", "createdAt"])
+    .index("by_organization_subject", ["organizationId", "subjectKind", "subjectId"]),
 
 });

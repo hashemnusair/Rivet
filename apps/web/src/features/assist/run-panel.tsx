@@ -14,6 +14,7 @@ import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { TKey } from "@/lib/i18n/core";
 import { useLocale } from "@/lib/i18n/provider";
 import { useTaskTitle } from "@/lib/i18n/use-task-title";
+import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { useAiErrorText, useAiMessage } from "./ai-message";
 import { PLAYBOOKS } from "@/lib/ai/capabilities";
@@ -85,6 +86,12 @@ export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () =>
   const control = useApiMutation((api, action: "cancel" | "takeOver" | "retry") => action === "cancel" ? api.cancelAiRun(run.id) : action === "takeOver" ? api.takeOverAiRun(run.id) : api.retryAiRun(run.id), {
     onSuccess: async () => { await invalidate([qk.aiRun(run.id)]); },
   });
+  // A prepared call that turned out not to be needed: closed if still open and counted for the owner (AI-5.3).
+  const canMarkContacts = (useApp().session?.permissions ?? []).includes("crm.write");
+  const notNeeded = useApiMutation((api, taskId: string) => api.markAiTaskNotNeeded({ taskId }), {
+    successMessage: t("aiWork.run.notNeededToast"),
+    onSuccess: async () => { await invalidate([qk.aiRun(run.id), qk.tasks()]); },
+  });
   const drafts = run.steps.filter((step) => step.draft && step.resultRef);
   return (
     <section className="panel overflow-hidden" aria-labelledby={`ai-run-${run.id}-title`} data-testid="ai-run-panel" data-status={run.status}>
@@ -115,12 +122,18 @@ export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () =>
             <ul className="mt-1 space-y-1.5">
               {run.results.filter((result) => result.kind !== "artifact" && result.kind !== "proposal").map((result) => {
                 const draft = drafts.find((step) => step.resultRef?.id === result.id)?.draft;
+                const step = result.kind === "task" ? run.steps.find((item) => item.resultRef?.kind === "task" && item.resultRef.id === result.id) : undefined;
                 return (
                   <li key={`${result.kind}-${result.id}`} className="text-[12.5px]">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="font-medium text-ink" dir="auto">{result.kind === "export" ? t("aiWork.report.export") : result.subjectName ?? result.label}</span>
                       {result.kind !== "export" ? <span className="text-ink-3" dir="auto">{taskTitle({ title: result.label, titleMessage: result.labelMessage })}</span> : null}
                       {result.href ? <Link href={result.href} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{t("aiWork.run.open")}</Link> : null}
+                      {step?.markedUnnecessary
+                        ? <Badge variant="neutral" data-testid="ai-run-not-needed">{t("aiWork.run.markedNotNeeded")}</Badge>
+                        : step && step.reason !== "has_open_followup" && canMarkContacts
+                          ? <Button type="button" variant="ghost" size="xs" loading={notNeeded.isPending && notNeeded.variables === result.id} disabled={notNeeded.isPending} onClick={() => notNeeded.mutate(result.id)} data-testid="ai-run-mark-not-needed">{t("aiWork.run.notNeeded")}</Button>
+                          : null}
                     </div>
                     {draft ? (
                       <details className="mt-1">
