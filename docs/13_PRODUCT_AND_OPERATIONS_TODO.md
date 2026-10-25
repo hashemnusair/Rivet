@@ -293,7 +293,7 @@ started.**
   repair history, prepared issue report within grant.
 - [ ] **AI-4.4 Import assistance** (member import): column mapping and plan-label
   suggestions applied into the existing reviewed preview; commit stays human.
-- [ ] **AI-4.5 Classes/PT**: eligible sessions for a member with capacity/eligibility
+- [x] **AI-4.5 Classes/PT** *(Implemented locally for group classes on the member overview: eligible options with exclusion counts; booking rechecks the spot at commit and never joins a waitlist. PT session booking is not covered and stays open in AI-4.10.)*: eligible sessions for a member with capacity/eligibility
   rechecked at commit; booking within grant through existing roster/PT rules.
 - [x] **AI-4.6 Natural-language filters** *(Implemented locally for the members list: mapped onto the list's own filters only, with not-applied parts and reasons shown. Leads are not covered: the pipeline has search but no structured filters to map onto.)* for members/leads producing editable,
   visible filters.
