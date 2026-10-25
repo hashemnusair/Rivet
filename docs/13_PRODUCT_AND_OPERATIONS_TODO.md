@@ -287,7 +287,7 @@ started.**
 - [x] **AI-4.1 Payment and cash-difference investigation** (cash shifts): *(Implemented locally: exact-amount matches only, voided movements included, expected cash rechecked, "nothing matches" stated plainly; entry point on Shifts & cash; isolated staging pending.)* candidate
   transactions and unresolved difference; human supplies physical count; posting and
   approval unchanged.
-- [ ] **AI-4.2 Sales preparation** (leads): due-lead queue, approved-plan comparison,
+- [x] **AI-4.2 Sales preparation** (leads): *(Implemented locally: due-lead queue, per-lead recheck, one call task per lead and follow-up date, catalogue drafts; entry point on Leads. The approved-plan comparison is not built yet and stays open below; lead contact consent is not modelled, so no consent check applies to leads. Isolated staging pending.)* due-lead queue, approved-plan comparison,
   drafts and deduplicated tasks; no fabricated offer, discount or contact attempt.
 - [ ] **AI-4.3 Operations triage** (maintenance): fault category/target, related
   repair history, prepared issue report within grant.
@@ -370,6 +370,10 @@ Recorded as found during implementation; each entry names its subitem and eviden
 - **Preview data note (AI-4.1):** seeded preview payments are not linked to closed
   shifts, so the seeded drawers show "nothing recorded matches"; the approval path is
   covered with synthetic drawers in Convex, preview-adapter and component tests.
+- **Open (AI-4.2):** approved-plan comparison for a lead (plans and current approved
+  prices beside the prepared call) is not built; drafts deliberately carry no price.
+- **Found (AI-4.2):** leads have no stored contact consent or opt-out, unlike members, so
+  lead preparation cannot honour a "do not contact" request; recorded for product review.
 - **Constraint found (settings):** the desktop settings rail is full at 1280×900 and
   existing browser tests pin its height and keyboard order, so any new section row
   overflows it. Assistance lives under Roles & access with no row of its own
