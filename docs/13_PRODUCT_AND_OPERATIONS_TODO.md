@@ -291,7 +291,7 @@ started.**
   drafts and deduplicated tasks; no fabricated offer, discount or contact attempt.
 - [x] **AI-4.3 Operations triage** *(Implemented locally as intake assistance: machine target and title suggested by deterministic bilingual rules, open problems on that machine shown before filing; the person files through the existing owner/manager form. No severity, safety or fault-category suggestion and no delegated filing: safety needs someone who saw the machine. Evaluation 12/12, same author as the rules.)* (maintenance): fault category/target, related
   repair history, prepared issue report within grant.
-- [ ] **AI-4.4 Import assistance** (member import): column mapping and plan-label
+- [x] **AI-4.4 Import assistance** *(Implemented locally: deterministic value-based column suggestions and plan-label matching that fill only empty choices in the existing reviewed mapping; commit unchanged.)* (member import): column mapping and plan-label
   suggestions applied into the existing reviewed preview; commit stays human.
 - [x] **AI-4.5 Classes/PT** *(Implemented locally for group classes on the member overview: eligible options with exclusion counts; booking rechecks the spot at commit and never joins a waitlist. PT session booking is not covered and stays open in AI-4.10.)*: eligible sessions for a member with capacity/eligibility
   rechecked at commit; booking within grant through existing roster/PT rules.
