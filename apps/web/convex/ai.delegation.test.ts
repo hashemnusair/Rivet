@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { delegatedRequest, requireActor } from "./security";
 import { executeDomainMutation } from "./domain";
+import { GLOBAL_CONTROL_KEY } from "./aiPolicy";
 import { LEASE_MS } from "./aiPolicy";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -300,6 +301,35 @@ describe("Prepare follow-ups saves and verifies real tasks", () => {
     await t.withIdentity({ subject: "clerk-ai-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 1, reason: "Pausing assistance" }));
     expect(await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! })).toEqual({ done: true });
     expect((await getRun(t, started.id, "clerk-ai-owner")).status).toBe("cancelled");
+    expect(await tasksOf(t, "m-huda")).toHaveLength(0);
+  });
+
+  it("stops at the next step when the platform-wide stop is switched on", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const started = await startRun(t);
+    const args = { organizationId: ids.org, runPublicId: started.id };
+    const lease = await t.mutation(internal.aiRuns.acquireLease, args);
+    await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! });
+    await t.run(async (ctx) => { await ctx.db.insert("aiControls", { key: GLOBAL_CONTROL_KEY, stopped: true, reason: "Incident drill", changedAt: Date.now() }); });
+    expect(await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! })).toEqual({ done: true });
+    const run = await getRun(t, started.id, "clerk-ai-owner");
+    expect(["failed", "cancelled", "partially_completed"]).toContain(run.status);
+    expect(await tasksOf(t, "m-huda")).toHaveLength(0);
+    // Ordinary work is untouched by the stop.
+    await expect(t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("tasks.list", { status: "open", pageSize: 5 }))).resolves.toBeTruthy();
+  });
+
+  it("stops a capability's runs when only that capability is turned off", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const started = await startRun(t);
+    const args = { organizationId: ids.org, runPublicId: started.id };
+    const lease = await t.mutation(internal.aiRuns.acquireLease, args);
+    await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! });
+    await t.withIdentity({ subject: "clerk-ai-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { capabilities: { followup_batch: "off" }, expectedRevision: 1, reason: "Pausing prepared follow-ups" }));
+    expect(await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! })).toEqual({ done: true });
+    expect(["failed", "cancelled"]).toContain((await getRun(t, started.id, "clerk-ai-owner")).status);
     expect(await tasksOf(t, "m-huda")).toHaveLength(0);
   });
 

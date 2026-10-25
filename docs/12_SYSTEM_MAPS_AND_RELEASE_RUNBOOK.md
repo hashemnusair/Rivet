@@ -84,8 +84,9 @@ production; leaving them unset keeps AI off.
 | `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS`, `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | Optional caps | Unset | Never |
 
 Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
-never `convex env get`. The gym-level switch (Settings → RIVET assistance), the
-platform stop and capability modes are stored in Convex tables and default to off.
+never `convex env get`. The gym-level switch (Settings → Roles & access →
+Assistance), the platform stop and capability modes are stored in Convex tables and
+default to off.
 
 AI implementation must use a separate feature worktree and an isolated test
 backend/identity environment. Verify every connected target before preview tests;
@@ -93,6 +94,52 @@ a preview frontend can otherwise still point to production. Docs/23 records
 future endpoint configuration and secret placement by model-call runtime. This
 docs-only publication to main does not authorize merging or activating the AI
 implementation itself.
+
+### AI release verification, stops and pilot record — implementation branch
+
+**Local and CI verification (no provider, no credentials).** From the repository
+root: `pnpm install --frozen-lockfile`, `pnpm test` (includes the AI evaluation gate),
+`pnpm ai:eval` (prints the evaluation and writes
+`apps/web/test-results/ai-eval/report.json`), `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `pnpm audit --prod`,
+`python3 docs/arabic/verify-lock.py`, `git diff --check`, credential-free codegen
+against a worktree-local anonymous backend (no `_generated` diff), and the built
+mock preview with the full Playwright suite plus `e2e/ai-assist.spec.ts`. These are
+deterministic and local evidence only; they say nothing about a real provider.
+
+**Stops and what they do.** Every stop takes effect at the next step of a run,
+inside the step's transaction; committed effects are reported, never "rolled back".
+Ordinary workflows never depend on assistance.
+
+| Stop | Who | Effect | Rehearsal (real Convex functions) |
+| --- | --- | --- | --- |
+| Platform stop (`aiControls` key `global`) | Platform admin, `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step | `convex/ai.delegation.test.ts` "platform-wide stop" |
+| Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary | "turns assistance off mid-run" |
+| One capability off | Owner | Only that capability's runs stop | "only that capability is turned off" |
+| Run cancel | Requester, owner or manager | Stops at the next step; reports what was saved | "stops at the next step when cancelled" |
+| Lost access / revoked grant | Automatic | Pending writes stop; standing work revoked | "loses access between steps", standing-instruction test |
+| Deactivated person | Automatic | Actor rebuilt from records has no authority | "a deactivated person has no authority" |
+| Worker crash | Automatic | Lease expiry and recovery cron resume without repeating a committed step | "resumes after a worker stops right after a commit", lease fencing test |
+
+**Pilot release record (fill one per activation; leave blank fields blank).**
+
+| Field | Value |
+| --- | --- |
+| Source SHA and branch | |
+| Target deployment (isolated dev / selected production) and its Convex/Clerk/Vercel identifiers (names only) | |
+| `RIVET_AI_MODE`, protocol, model name and version | |
+| Prompt versions (`PROMPT_VERSIONS`) and tool versions (`TOOLS`) | |
+| Capabilities enabled and their modes | |
+| Tenants and branches activated | |
+| Deterministic evaluation report (set, date, result) | |
+| Live provider evaluation report (set, sample sizes, result), or "not run" | |
+| Provider data-handling approval and `RIVET_AI_PROCESSING_APPROVED` state | |
+| Per-run and monthly budget caps | |
+| Incident owner and stop owner (names) | |
+| Rollback: stop used, how verified, who verified | |
+
+Activation, staging acceptance and live evidence (AI-2.7, AI-5.6) need separate
+authorization; nothing on this branch performs them.
 
 ## Mixed owner access — review follow-up, 24 October 2026 (unreleased)
 

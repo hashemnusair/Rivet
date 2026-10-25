@@ -82,6 +82,20 @@ phrase, extract or interpret; its output is validated and cannot authorize actio
 Simple batches run as fixed playbooks over typed tools; multi-agent execution is not
 used until an evaluated task benefits from it.
 
+**Evaluation protocol (implementation decision, 25 October 2026).** `pnpm ai:eval`
+and the unit suite run the same deterministic gate (`apps/web/src/lib/ai/evals`).
+Only a held-out set written before the readers last changed may gate. When a
+held-out set's failures are used to fix a reader, that set becomes the development
+set and a new held-out set is written and committed first (v1 → v2 happened this
+way: `5f7bbafe` then `13ca7832`). The same author wrote both sets, so v2 is not
+blind to phrasing habits; the live-provider evaluation (AI-5.2) must use the same
+cases plus new ones from real staff notes once data handling is approved.
+Minimums (note fields ≥ 85%, filters ≥ 75% of cases, revisions ≥ 80%, decision
+tasks exact, zero fabrications everywhere) may be raised freely; lowering one needs
+a recorded decision here. The deterministic reader is a fixture: its Arabic note
+result on v2 (6/12 cases) is not adequate for an Arabic release of reading, which
+needs the live reader to be measured on the same set first.
+
 ### AI open decisions — not approved by the implementation work
 
 | Decision | Owner | Current default in code |

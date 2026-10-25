@@ -314,16 +314,16 @@ Exit: live evidence for the exact released scope, known limitations, effective s
 controls, cost headroom, incident ownership and a repeatable improvement process.
 **Status: not started; live parts pending authorization.**
 
-- [ ] **AI-5.1 Deterministic evaluation harness** with held-out results by task type
+- [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 50/58 fields (86.2%; en 10/12, ar 6/12 cases), filters 13/16 cases, revisions 10/10, cash matching 8/8, lead decisions 8/8, filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
   and sample size, run in CI and as a documented command.
 - [ ] **AI-5.2 Opt-in live provider evaluation** (synthetic fixtures only until data
   handling is approved); pending endpoint.
 - [ ] **AI-5.3 Instrumentation and outcome measures**: usage, latency, cost, task
   completion, corrections, dismissals, unnecessary contacts; owner-visible summary.
-- [ ] **AI-5.4 Stop/recovery mechanisms and rehearsal**: global/tenant/capability/run
+- [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Rehearsed locally only, not on a hosted deployment.)*: global/tenant/capability/run
   stops, pending-grant revocation, in-flight effect reporting, ordinary workflows
   intact; rehearsed in tests and documented in docs/12.
-- [ ] **AI-5.5 Pilot-readiness documentation**: release record template (source SHA,
+- [x] **AI-5.5 Pilot-readiness documentation** *(Release checks and the per-activation record template are in docs/12; no record is filled because nothing is activated.)*: release record template (source SHA,
   target, model/prompt/tool versions, capabilities, tenants, mode, evaluations,
   provider evidence, budgets, owners, rollback/stop).
 - [ ] **AI-5.6 Hosted isolated staging, selected-tenant activation and live pilot
@@ -374,6 +374,16 @@ Recorded as found during implementation; each entry names its subitem and eviden
   prices beside the prepared call) is not built; drafts deliberately carry no price.
 - **Found (AI-4.2):** leads have no stored contact consent or opt-out, unlike members, so
   lead preparation cannot honour a "do not contact" request; recorded for product review.
+- **Fixed (AI-5.1, found by evaluation):** an Arabic note "بعد يومين بالعصر" ("in two
+  days, afternoon") resolved to today; "بخلص اشتراكهم خلال أسبوعين" (ending within two
+  weeks) was read as the opposite filter, expired; "for a month" became 14 days;
+  Arabic plural verbs and preference verbs were missed (`13ca7832`).
+- **Known limitation (AI-5.1):** Arabic requests cannot match branch or people names
+  stored in Latin script ("الصويفية" vs "Sweifieh", "لينا" vs "Lina"); there is no Arabic
+  name or alias field. Shown as "not applied", never guessed.
+- **Known limitation (AI-5.1):** the deterministic reader missed an Arabic instruction
+  attempt in a note ("تعليمات للنظام: …"); nothing was acted on, but the "ignored
+  instructions" notice was not shown.
 - **Constraint found (settings):** the desktop settings rail is full at 1280×900 and
   existing browser tests pin its height and keyboard order, so any new section row
   overflows it. Assistance lives under Roles & access with no row of its own
