@@ -37,6 +37,24 @@ describe("describe what you found", () => {
     expect(onFileIssue).toHaveBeenCalledWith({ assetId: branch.assets.find((asset) => asset.code === "TREAD-01")?.id, description: "TREAD-01 belt slipping again under load, grinding noise at speed 10" });
   });
 
+  it("suggests the machine and a title when assistance is on, leaving severity and safety to the person", async () => {
+    const user = userEvent.setup();
+    const onFileIssue = vi.fn();
+    await renderWithApp(<IntakeProbe onFileIssue={onFileIssue} />, { role: "owner", prepare: async (api) => {
+      const settings = await api.getAiSettings();
+      await api.updateAiSettings({ tenantMode: "prepare", expectedRevision: settings.revision });
+      stash("branch", await equipmentBranch(api));
+    } });
+    const branch = stored<{ assets: EquipmentAsset[] }>("branch");
+    const target = branch.assets.at(-1)!;
+    await user.type(await screen.findByTestId("report-intake-text"), `${target.code} display is blank. Members asked twice.`);
+    await user.click(screen.getByTestId("machine-suggestion-run"));
+    expect(await screen.findByTestId("machine-suggestion-match")).toHaveTextContent(target.code);
+    expect(screen.getByText("You set the severity and whether it is safe to use.")).toBeInTheDocument();
+    await user.click(screen.getByTestId("report-intake-file-issue"));
+    expect(onFileIssue).toHaveBeenCalledWith({ assetId: target.id, description: `${target.code} display is blank. Members asked twice.`, title: `${target.code} display is blank` });
+  });
+
   it("keeps maintenance work explicit and points space issues at the maintenance page", async () => {
     const user = userEvent.setup();
     const onFileIssue = vi.fn();

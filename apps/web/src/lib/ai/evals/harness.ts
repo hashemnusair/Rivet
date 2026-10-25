@@ -3,7 +3,8 @@ import { memberFilterPlan } from "../list-filters";
 import { interpretFiltersDeterministic, interpretRevisionDeterministic } from "../model";
 import { extractNoteDeterministic } from "../note-extraction";
 import { evaluateLeadCandidate, type LeadDecision, type LeadFollowUpFacts } from "../sales-batch";
-import { EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, FILTER_CASES_V2, HELD_OUT_SET_VERSION, NOTE_AT, NOTE_CASES, NOTE_CASES_V2, REVISION_CANDIDATES, REVISION_CASES, REVISION_CASES_V2, TIMEZONE, type FilterCase, type Language, type NoteCase, type RevisionCase } from "./cases";
+import { preselectedMachine } from "../fault-triage";
+import { EVAL_MACHINES, MACHINE_CASES, EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, FILTER_CASES_V2, HELD_OUT_SET_VERSION, NOTE_AT, NOTE_CASES, NOTE_CASES_V2, REVISION_CANDIDATES, REVISION_CASES, REVISION_CASES_V2, TIMEZONE, type FilterCase, type Language, type NoteCase, type RevisionCase } from "./cases";
 
 /**
  * Deterministic evaluation of RIVET's assistance readers and decisions. It
@@ -45,6 +46,7 @@ export const MINIMUMS = {
   note_extraction: 0.85,
   filter_interpretation: 0.75,
   revision_interpretation: 0.8,
+  machine_matching: 0.75,
 } as const;
 
 function tally(report: TaskReport, language: Language | undefined, passed: boolean): void {
@@ -225,9 +227,26 @@ function evaluateFilterMapping(): TaskReport {
   return finishReport(report);
 }
 
+function evaluateMachines(): TaskReport {
+  const report = emptyReport("machine_matching", "reader", { metric: "case_accuracy", value: MINIMUMS.machine_matching, fabrications: 0 });
+  for (const item of MACHINE_CASES) {
+    const chosen = preselectedMachine(item.text, EVAL_MACHINES)?.id ?? null;
+    const ok = chosen === item.expect;
+    report.fields!.scored += 1;
+    if (ok) report.fields!.correct += 1;
+    else {
+      // Preselecting the wrong machine, or one when none was meant, is worse than choosing none.
+      if (chosen !== null) report.fabrications += 1;
+      report.failures.push({ id: item.id, detail: `expected ${JSON.stringify(item.expect)}, got ${JSON.stringify(chosen)}` });
+    }
+    tally(report, item.language, ok);
+  }
+  return finishReport(report);
+}
+
 export function runEvaluations(now = new Date()): EvalReport {
   txnSeq = 0;
-  const tasks = [evaluateNotes(NOTE_CASES_V2), evaluateFilters(FILTER_CASES_V2), evaluateRevisions(REVISION_CASES_V2), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
+  const tasks = [evaluateNotes(NOTE_CASES_V2), evaluateFilters(FILTER_CASES_V2), evaluateRevisions(REVISION_CASES_V2), evaluateMachines(), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
   const development = [evaluateNotes(NOTE_CASES), evaluateFilters(FILTER_CASES), evaluateRevisions(REVISION_CASES)];
   return { set: HELD_OUT_SET_VERSION, developmentSet: EVAL_SET_VERSION, reader: "deterministic", ranAt: now.toISOString(), tasks, development, meetsMinimums: tasks.every((task) => task.meetsMinimum) };
 }

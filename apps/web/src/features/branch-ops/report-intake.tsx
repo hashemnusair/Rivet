@@ -9,12 +9,15 @@ import { Field } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/input";
 import { ContextLabel } from "@/components/ui/typography";
-import type { EquipmentAsset } from "@/lib/domain/types";
+import type { EquipmentAsset, EquipmentIssue } from "@/lib/domain/types";
+import { MachineSuggestion } from "@/features/assist/machine-suggestion";
 import { BRANCHOPS_DESCRIPTION_MAX_LENGTH, BRANCHOPS_DESCRIPTION_MIN_LENGTH, type ReportSpaceLike } from "../../../convex/branchOpsAssist";
 
 export interface ReportIntakeFiling {
   assetId?: string;
   description: string;
+  /** A suggested title the person can change; present only when assistance suggested one. */
+  title?: string;
 }
 
 /**
@@ -22,9 +25,10 @@ export interface ReportIntakeFiling {
  * the details and choose the registered machine themselves; severity, safety
  * and the final filing remain in the existing reviewed form.
  */
-export function ReportIntake({ branchId, machines, spaces, onFileIssue }: { branchId: string; machines: EquipmentAsset[]; spaces: ReportSpaceLike[]; onFileIssue: (filing: ReportIntakeFiling) => void }) {
+export function ReportIntake({ branchId, machines, spaces, issues, onFileIssue }: { branchId: string; machines: EquipmentAsset[]; spaces: ReportSpaceLike[]; issues?: EquipmentIssue[]; onFileIssue: (filing: ReportIntakeFiling) => void }) {
   const t = useT();
   const [draft, setDraft] = useState("");
+  const [suggestedTitle, setSuggestedTitle] = useState<string | undefined>();
   const [assetId, setAssetId] = useState(machines[0]?.id ?? "");
   useEffect(() => {
     if (!machines.some((machine) => machine.id === assetId)) setAssetId(machines[0]?.id ?? "");
@@ -50,9 +54,10 @@ export function ReportIntake({ branchId, machines, spaces, onFileIssue }: { bran
           <SelectContent>{machines.map((machine) => <SelectItem key={machine.id} value={machine.id}>{machine.code} · {machine.name}</SelectItem>)}</SelectContent>
         </Select>
       </Field>
+      <MachineSuggestion description={trimmed} machines={machines} issues={issues ?? []} branchId={branchId} onSuggest={(suggestion) => { if (suggestion.assetId) setAssetId(suggestion.assetId); setSuggestedTitle(suggestion.title); }} />
       {spaces.length ? <p className="text-[12px] text-ink-3">{t("operationsWorkspace.spaceProblemHint")}</p> : null}
       <div className="flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="secondary" data-testid="report-intake-file-issue" disabled={!ready || !assetId || !machines.length} onClick={() => onFileIssue({ assetId, description: trimmed })}><ShieldAlert /> {" "}{t("operationsWorkspace.reportMachineAction")}</Button>
+        <Button type="button" size="sm" variant="secondary" data-testid="report-intake-file-issue" disabled={!ready || !assetId || !machines.length} onClick={() => onFileIssue({ assetId, description: trimmed, ...(suggestedTitle ? { title: suggestedTitle } : {}) })}><ShieldAlert /> {" "}{t("operationsWorkspace.reportMachineAction")}</Button>
         <Button asChild type="button" size="sm" variant="ghost"><Link href={maintenanceHref} data-testid="report-intake-open-maintenance"><ClipboardCheck /> {" "}{t("operationsWorkspace.goMaintenance")}</Link></Button>
       </div>
     </section>

@@ -177,3 +177,33 @@ export const REVISION_CASES_V2: RevisionCase[] = [
   { id: "v2-r-ar-04", language: "ar", text: "عيّنهم لـ Sara", expect: { kind: "owner", ownerId: "s-1" } },
   { id: "v2-r-ar-05", language: "ar", text: "اعرض عليهم شهر مجاني", expect: { kind: "unsupported" } },
 ];
+
+// ---------------------------------------------------------------------------
+// Machine matching (AI-4.3), written 2026-10-25 before this set was first run.
+// `expect: null` means no machine should be preselected.
+// ---------------------------------------------------------------------------
+
+export const EVAL_MACHINES = [
+  { id: "tm1", code: "TM-01", name: "Treadmill 1" },
+  { id: "tm2", code: "TM-02", name: "Treadmill 2" },
+  { id: "bk1", code: "BK-01", name: "Spin bike 1" },
+  { id: "rw1", code: "RW-01", name: "Rowing machine" },
+  { id: "lp1", code: "LP-01", name: "Leg press" },
+];
+
+export interface MachineCase { id: string; language: Language; text: string; expect: string | null }
+
+export const MACHINE_CASES: MachineCase[] = [
+  { id: "mm-en-01", language: "en", text: "TM-02 won't start", expect: "tm2" },
+  { id: "mm-en-02", language: "en", text: "Treadmill 1 belt squeaks loudly", expect: "tm1" },
+  { id: "mm-en-03", language: "en", text: "the rower seat is loose", expect: "rw1" },
+  { id: "mm-en-04", language: "en", text: "leg press cable frayed", expect: "lp1" },
+  { id: "mm-en-05", language: "en", text: "a treadmill is making noise", expect: null },
+  { id: "mm-en-06", language: "en", text: "water leaking from the ceiling", expect: null },
+  { id: "mm-ar-01", language: "ar", text: "المشاية ٢ ما بتشتغل", expect: "tm2" },
+  { id: "mm-ar-02", language: "ar", text: "جهاز التجديف الكرسي فيه رخاوة", expect: "rw1" },
+  { id: "mm-ar-03", language: "ar", text: "الدراجة ١ الشاشة طافية", expect: "bk1" },
+  { id: "mm-ar-04", language: "ar", text: "BK-01 صوتها عالي", expect: "bk1" },
+  { id: "mm-ar-05", language: "ar", text: "في مشاية صوتها عالي", expect: null },
+  { id: "mm-ar-06", language: "ar", text: "المكيف بنقط مي", expect: null },
+];

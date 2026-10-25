@@ -434,6 +434,15 @@ export const aiWork = {
     },
     bookingNeeds: "Booking needs “Prepare and save work” and access to manage class rosters.",
   },
+  triage: {
+    suggest: "Suggest the machine",
+    matched: "Matched {machine} from “{evidence}”.",
+    several: "Several machines could match: {machines}. Choose one below.",
+    none: "No registered machine matches the description. Choose it below.",
+    openProblems: plural({ one: "This machine already has an open problem: {title}.", other: "This machine already has {count} open problems, including {title}." }),
+    checkFirst: "Check before filing again",
+    youDecide: "You set the severity and whether it is safe to use.",
+  },
   artifact: {
     coverage: "What is included",
     open: "Open",
