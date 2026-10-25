@@ -347,6 +347,18 @@ export function parseLiveResponse(task: ModelTask, body: unknown): ModelTaskResu
 }
 
 /** Gate a task before any provider call. Returns the reason it may not run, if any. */
+/**
+ * Spend gate before a live model call. No approved monthly budget means no
+ * spend; reaching the gym's monthly cap or the run's cap stops further calls.
+ * Fixture and off modes cost nothing and are never budget-blocked.
+ */
+export function budgetBlocked(config: Pick<AiAdapterConfig, "mode" | "maxMonthlyCostMicros" | "maxRunCostMicros">, spent: { monthMicros: number; runMicros?: number }): AiErrorCategory | undefined {
+  if (config.mode !== "live") return undefined;
+  if (!config.maxMonthlyCostMicros || spent.monthMicros >= config.maxMonthlyCostMicros) return "budget_exhausted";
+  if (config.maxRunCostMicros && spent.runMicros !== undefined && spent.runMicros >= config.maxRunCostMicros) return "budget_exhausted";
+  return undefined;
+}
+
 export function modelTaskBlocked(task: ModelTask, config: AiAdapterConfig, tenant: { externalProcessing: boolean }): AiErrorCategory | undefined {
   if (config.mode === "off") return "ai_off";
   if (config.mode === "fixture") return undefined;

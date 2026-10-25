@@ -63,6 +63,15 @@ export async function aiSettingsFor(ctx: ReadCtx, organizationId: Id<"organizati
   return await ctx.db.query("aiSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
 }
 
+/** Recorded model spend this month for a gym, and for one run when named. */
+export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organizations">, runPublicId?: string): Promise<{ monthMicros: number; runMicros?: number }> {
+  const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now()))).collect();
+  return {
+    monthMicros: rows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
+    ...(runPublicId ? { runMicros: rows.filter((row) => row.runPublicId === runPublicId).reduce((sum, row) => sum + (row.costMicros ?? 0), 0) } : {}),
+  };
+}
+
 export async function globalStopped(ctx: ReadCtx): Promise<{ stopped: boolean; reason?: string }> {
   const row = await ctx.db.query("aiControls").withIndex("by_key", (q) => q.eq("key", GLOBAL_CONTROL_KEY)).unique();
   return { stopped: Boolean(row?.stopped), reason: row?.reason };

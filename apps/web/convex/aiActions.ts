@@ -4,9 +4,9 @@ import type { Id } from "./_generated/dataModel";
 import { action, internalQuery } from "./_generated/server";
 import { domainError, publicBranchId, requireActor } from "./security";
 import { aiDomainPort } from "./domain";
-import { adapterConfig, aiSettingsFor, authorityInput, canControlRun } from "./aiPolicy";
+import { adapterConfig, aiSettingsFor, authorityInput, canControlRun, spentMicros } from "./aiPolicy";
 import { TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
-import { modelTaskBlocked, type ModelTask, type ModelTaskOutput } from "../src/lib/ai/model";
+import { budgetBlocked, modelTaskBlocked, type ModelTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import { NOTE_MAX_LENGTH } from "../src/lib/ai/note-extraction";
 import type { AiErrorCategory, AiExtractNoteResult, AiInterpretFiltersResult, AiInterpretRevisionResult } from "../src/lib/ai/contracts";
 import { callModel } from "./aiModelCall";
@@ -60,7 +60,7 @@ export const prepareContext = internalQuery({
       if (blocked) return { blocked };
       const noteAt = text(input.noteAt) && Number.isFinite(Date.parse(text(input.noteAt))) && Math.abs(Date.parse(text(input.noteAt)) - Date.now()) < 86_400_000 ? new Date(Date.parse(text(input.noteAt))).toISOString() : new Date().toISOString();
       const task: ModelTask = { kind: "extract_contact_note", note, noteAt, timezone: actor.organization.timezone || "Asia/Amman", subject };
-      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false });
+      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false }) ?? budgetBlocked(config, await spentMicros(ctx, actor.organization._id));
       return gated ? { blocked: gated } : { task, organizationId: actor.organization._id, capability: "note_extraction" };
     }
     if (args.operation === "interpret_revision") {
@@ -71,7 +71,7 @@ export const prepareContext = internalQuery({
       const staff = await aiDomainPort.staffMembers(ctx, actor);
       const remaining = run.plannedSubjects.slice(run.cursor);
       const task: ModelTask = { kind: "interpret_revision", text: text(input.text).slice(0, 300), candidates: [...remaining.map((subject) => ({ id: subject.id, name: subject.name, kind: "member" as const })), ...staff.map((person) => ({ id: person.id, name: person.name, kind: "staff" as const }))], today: aiDomainPort.tenantToday(actor) };
-      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false });
+      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false }) ?? budgetBlocked(config, await spentMicros(ctx, actor.organization._id));
       return gated ? { blocked: gated } : { task, organizationId: actor.organization._id, capability: "followup_batch" };
     }
     const surface = input.surface === "leads" ? "leads" : "members";
@@ -82,7 +82,7 @@ export const prepareContext = internalQuery({
       .filter((branch) => branch.active && (actor.branchScope === "all" || actor.branchIds.includes(branch._id)))
       .map((branch) => ({ id: publicBranchId(branch), name: branch.name }));
     const task: ModelTask = { kind: "interpret_filters", surface, text: text(input.text).slice(0, 300), branches };
-    const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false });
+    const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false }) ?? budgetBlocked(config, await spentMicros(ctx, actor.organization._id));
     return gated ? { blocked: gated } : { task, organizationId: actor.organization._id, capability: "nl_filters" };
   },
 });

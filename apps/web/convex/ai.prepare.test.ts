@@ -80,22 +80,41 @@ describe("reading a contact note into fields", () => {
   });
 
   describe("with an approved live endpoint", () => {
-    async function liveHarness(response: () => Promise<Response>) {
+    async function liveHarness(response: () => Promise<Response>, options: { budgetMicros?: string; spentMicros?: number } = { budgetMicros: "5000000" }) {
       vi.stubEnv("RIVET_AI_MODE", "live");
       vi.stubEnv("RIVET_AI_PROTOCOL", "openai_chat_json");
       vi.stubEnv("RIVET_AI_API_KEY", SECRET);
       vi.stubEnv("RIVET_AI_BASE_URL", "https://provider.example/v1");
       vi.stubEnv("RIVET_AI_MODEL", "test-model");
       vi.stubEnv("RIVET_AI_PROCESSING_APPROVED", "member_data");
+      // An approved endpoint comes with an approved monthly budget; without one nothing is spent.
+      if (options.budgetMicros) vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", options.budgetMicros);
       const fetchSpy = vi.fn(response);
       vi.stubGlobal("fetch", fetchSpy);
       const t = convexTest(schema, modules);
       await seed(t, true);
+      if (options.spentMicros) {
+        await t.run(async (ctx) => {
+          const org = (await ctx.db.query("organizations").collect())[0]!;
+          const now = Date.now();
+          await ctx.db.insert("aiUsage", { organizationId: org._id, task: "extract_contact_note", capability: "note_extraction", source: "live", promptVersion: "earlier", latencyMs: 1, costMicros: options.spentMicros, outcome: "ok", month: `${new Date(now).getUTCFullYear()}-${String(new Date(now).getUTCMonth() + 1).padStart(2, "0")}`, createdAt: now });
+        });
+      }
       const result = await t.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ memberId: "prep-member", note }));
       const usage = await t.run(async (ctx) => await ctx.db.query("aiUsage").collect());
       return { result, usage, fetchSpy };
     }
     const completion = (content: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) } }], usage: { prompt_tokens: 120, completion_tokens: 40 } }), { status: 200 });
+
+    it("spends nothing without an approved monthly budget, and stops once the month's budget is used", async () => {
+      const unbudgeted = await liveHarness(async () => completion({}), {});
+      expect(unbudgeted.result).toEqual({ ok: false, reason: "budget_exhausted" });
+      expect(unbudgeted.fetchSpy).not.toHaveBeenCalled();
+      vi.unstubAllEnvs();
+      const spent = await liveHarness(async () => completion({}), { budgetMicros: "1000", spentMicros: 1000 });
+      expect(spent.result).toEqual({ ok: false, reason: "budget_exhausted" });
+      expect(spent.fetchSpy).not.toHaveBeenCalled();
+    });
 
     it("validates the provider's answer and computes dates itself", async () => {
       const { result, usage, fetchSpy } = await liveHarness(async () => completion({ outcome: { value: "answered_call_back", evidence: "call Monday evening" }, followUpPhrase: { phrase: "Monday evening", evidence: "call Monday evening" }, travelUntilPhrase: { phrase: "until Sunday", evidence: "Travelling until Sunday" }, renewalInterest: null, preferredContactTime: null, topics: ["travel"] }));

@@ -1,17 +1,17 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { delegatedRequest, publicBranchId, publicOrganizationId, requireActor, type ActorContext, type DelegationPrincipal, type RequestArgs } from "./security";
 import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, notifyProposalWaiting, renewalFactsForMember } from "./domain";
 import { classBookingStatusFor, classOptionFactsFor } from "./classes";
-import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
+import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, spentMicros, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
 import { createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
 import { runPlaybookStep, type PlaybookStepEnv } from "./aiPlaybooks";
 import { PLAYBOOKS, playbookBlocked, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
 import { isTerminalRunStatus, type AiErrorCategory, type AiPlaybookKey, type AiRunStatus } from "../src/lib/ai/contracts";
-import type { ModelTask, ModelTaskOutput } from "../src/lib/ai/model";
+import { budgetBlocked, type ModelTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 
 /**
@@ -113,6 +113,12 @@ export const tick = internalAction({
       if (result.done) return null;
       if (result.modelTask && result.subjectId) {
         const config = adapterConfig();
+        // Over budget: no call; the step keeps the approved catalogue wording.
+        const overBudget: AiErrorCategory | null = await ctx.runQuery(internal.aiRuns.budgetCheck, args);
+        if (overBudget) {
+          modelOutput = { subjectId: result.subjectId, result: { failed: overBudget } };
+          continue;
+        }
         const outcome = await callModel(result.modelTask, config);
         await ctx.runMutation(internal.aiRuns.recordUsage, {
           organizationId: args.organizationId,
@@ -133,6 +139,12 @@ export const tick = internalAction({
     await ctx.runMutation(internal.aiRuns.releaseAndContinue, { ...args, leaseToken: lease.token });
     return null;
   },
+});
+
+export const budgetCheck = internalQuery({
+  args: runArgs,
+  // Convex returns null rather than undefined across a function boundary.
+  handler: async (ctx, args): Promise<AiErrorCategory | null> => budgetBlocked(adapterConfig(), await spentMicros(ctx, args.organizationId, args.runPublicId)) ?? null,
 });
 
 export const acquireLease = internalMutation({
