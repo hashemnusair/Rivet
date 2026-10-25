@@ -178,4 +178,17 @@ describe("Settings → Assistance", () => {
     await user.click(screen.getByRole("button", { name: /save/i }));
     await waitFor(async () => expect((await api.getAiSettings()).tenantMode).toBe("execute"));
   });
+
+  it("shows the owner this month's outcomes after work is prepared", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<AssistanceSettingsSection />, { prepare: async (api) => {
+      await enable(api);
+      const run = await api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "ui-outcomes-1" });
+      await waitFor(async () => expect(["completed", "partially_completed"]).toContain((await api.getAiRun(run.id)).status), { timeout: 5_000 });
+    } });
+    const outcomes = await screen.findByTestId("assistance-outcomes");
+    await user.click(within(outcomes).getByText(/This month: what RIVET did/));
+    expect(within(outcomes).getByText(/1 started · 1 ready/)).toBeInTheDocument();
+    expect(within(outcomes).getByText(/saved · \d+ done · \d+ still open/)).toBeInTheDocument();
+  });
 });

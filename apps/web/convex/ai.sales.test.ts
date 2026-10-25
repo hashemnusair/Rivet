@@ -109,4 +109,23 @@ describe("lead follow-up preparation", () => {
     await seed(t);
     await expect(t.withIdentity({ subject: "clerk-sales-desk" }).mutation(api.domain.mutate, op("ai.run.start", { playbook: "sales_followups", params: {}, requestKey: "sales-request-5" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
+
+  it("shows the owner what was prepared and what people did with it, and nobody else", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const run = await prepare(t, "clerk-sales-owner", "sales-request-6");
+    const prepared = (await openLeadTasks(t)).filter((task) => task.origin?.runId === run.id);
+    // Someone finishes one of the prepared calls.
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("domainRecords").collect()).find((item) => item.publicId === prepared[0]!.id)!;
+      await ctx.db.patch(row._id, { data: { ...(row.data as Record<string, unknown>), status: "completed" } });
+    });
+    const summary = await t.withIdentity({ subject: "clerk-sales-owner" }).query(api.domain.query, op("ai.outcomes.summary")) as { runs: { total: number; completed: number }; tasks: { prepared: number; done: number; open: number }; model: { liveCalls: number } };
+    expect(summary.runs).toMatchObject({ total: 1, completed: 1 });
+    // Linked work that was already open is not counted as prepared.
+    expect(summary.tasks).toEqual({ prepared: 2, done: 1, open: 1, closedOther: 0 });
+    expect(summary.model.liveCalls).toBe(0);
+    await expect(t.withIdentity({ subject: "clerk-sales-rep" }).query(api.domain.query, op("ai.outcomes.summary"))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+  });
 });
+

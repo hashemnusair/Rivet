@@ -3,6 +3,7 @@ export const qk = {
   session: ["session"] as const,
   aiSettings: ["ai", "settings"] as const,
   aiPlatformStatus: ["ai", "platformStatus"] as const,
+  aiOutcomes: ["ai", "outcomes"] as const,
   memberBrief: (memberId: string) => ["ai", "brief", memberId] as const,
   aiRun: (runId: string) => ["ai", "run", runId] as const,
   aiRuns: (params?: unknown) => ["ai", "runs", params] as const,

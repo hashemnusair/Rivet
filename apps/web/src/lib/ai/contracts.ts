@@ -408,6 +408,19 @@ export interface AiPlatformStatus {
   changedByName?: string;
 }
 
+/** What RIVET did for a gym this month and how it turned out (AI-5.3). Counts only; no content. */
+export interface AiOutcomeSummary {
+  month: string;
+  runs: { total: number; completed: number; partly: number; failed: number; cancelled: number };
+  /** Tasks RIVET saved this month and what people have done with them since. */
+  tasks: { prepared: number; done: number; open: number; closedOther: number };
+  proposals: { prepared: number; approved: number; rejected: number; invalidated: number; expired: number; pending: number };
+  /** Short corrections people gave to running work. */
+  revisions: number;
+  model: { liveCalls: number; testCalls: number; failures: number; averageLatencyMs?: number; costMicros: number };
+  feedback: { useful: number; notUseful: number };
+}
+
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
@@ -494,6 +507,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.collections.prepare",
   "ai.classes.options",
   "ai.platform.status",
+  "ai.outcomes.summary",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [

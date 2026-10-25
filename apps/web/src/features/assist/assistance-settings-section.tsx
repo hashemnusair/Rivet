@@ -19,6 +19,7 @@ import type { TKey } from "@/lib/i18n/core";
 import { useLocale } from "@/lib/i18n/provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { useAiSettings } from "./use-assist";
+import { OutcomeSummary } from "./outcome-summary";
 
 /** Capabilities this release can actually run; the rest stay listed as off until their slice ships. */
 const SHOWN_CAPABILITIES: AiCapabilityKey[] = ["member_context", "note_extraction", "followup_batch", "report_job", "handover_job", "cash_difference", "sales_followups", "ops_triage", "class_finder", "nl_filters"];
@@ -149,6 +150,7 @@ export function AssistanceSettingsSection() {
       <SettingsPanel>
         <ProviderStatus settings={data} />
         <p className="mt-1 text-[12px] text-ink-3">{t("aiWork.settings.usage", { runs: data.usage.monthRuns })}</p>
+        {data.canManage ? <OutcomeSummary /> : null}
       </SettingsPanel>
       <SettingsPanel title={t("aiWork.settings.modeLabel")}>
         <RadioGroup value={draft.tenantMode} onValueChange={(value) => setDraft({ ...draft, tenantMode: value as AiTenantMode })} aria-label={t("aiWork.settings.modeLabel")} disabled={!data.canManage} className="grid gap-2 sm:grid-cols-3">

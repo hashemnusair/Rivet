@@ -23,6 +23,7 @@ import {
   canReadRun,
   GLOBAL_CONTROL_KEY,
   memoryView,
+  monthKey,
   newAiPublicId,
   proposalView,
   runView,
@@ -39,6 +40,7 @@ import {
   type AiCollectionsResult,
   type AiClassOptionsResult,
   type AiPlatformStatus,
+  type AiOutcomeSummary,
   type AiPlaybookKey,
   type AiRunRevision,
   type AiRunStatus,
@@ -246,6 +248,52 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
       // Booking needs execute mode and the roster access the booking operation itself checks.
       const canBook = !playbookBlocked(PLAYBOOKS.class_finder, authority) && (actor.permissions.includes("members.write") || actor.permissions.includes("pt.book_for_member"));
       return { available: true, options, excluded, canBook } satisfies AiClassOptionsResult;
+    }
+
+    case "ai.outcomes.summary": {
+      requirePermission(actor, "settings.manage");
+      const now = Date.now();
+      const month = monthKey(now);
+      const monthStart = Date.parse(`${month}-01T00:00:00.000Z`);
+      const runs = await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthStart)).take(1000);
+      const preparedTaskIds: string[] = [];
+      for (const run of runs) {
+        const steps = await ctx.db.query("aiRunSteps").withIndex("by_organization_run", (q) => q.eq("organizationId", actor.organization._id).eq("runPublicId", run.publicId)).collect();
+        for (const step of steps) {
+          const ref = record(step.resultRef);
+          // Linked work was already open; only tasks RIVET saved count as prepared.
+          if (step.status === "verified" && ref.kind === "task" && step.reason !== "has_open_followup") preparedTaskIds.push(text(ref.id));
+        }
+      }
+      const tasks = { prepared: preparedTaskIds.length, done: 0, open: 0, closedOther: 0 };
+      for (const taskId of preparedTaskIds.slice(0, 1000)) {
+        const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "task").eq("publicId", taskId)).unique();
+        const status = text(record(row?.data).status) || "open";
+        if (status === "completed") tasks.done += 1;
+        else if (status === "open") tasks.open += 1;
+        else tasks.closedOther += 1;
+      }
+      const proposals = (await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((row) => row.proposedAt >= monthStart);
+      const usage = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", month)).collect();
+      const live = usage.filter((row) => row.source === "live");
+      const feedback = (await ctx.db.query("aiFeedback").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthStart)).collect());
+      const count = (status: string) => runs.filter((run) => run.status === status).length;
+      return {
+        month,
+        runs: { total: runs.length, completed: count("completed"), partly: count("partially_completed"), failed: count("failed"), cancelled: count("cancelled") },
+        tasks,
+        proposals: {
+          prepared: proposals.length,
+          approved: proposals.filter((row) => row.status === "executed").length,
+          rejected: proposals.filter((row) => row.status === "rejected").length,
+          invalidated: proposals.filter((row) => row.status === "invalidated").length,
+          expired: proposals.filter((row) => row.status === "expired" || (row.status === "pending" && row.expiresAt <= now)).length,
+          pending: proposals.filter((row) => row.status === "pending" && row.expiresAt > now).length,
+        },
+        revisions: runs.reduce((sum, run) => sum + run.revisions.length, 0),
+        model: { liveCalls: live.length, testCalls: usage.length - live.length, failures: usage.filter((row) => row.outcome !== "ok").length, ...(live.length ? { averageLatencyMs: Math.round(live.reduce((sum, row) => sum + row.latencyMs, 0) / live.length) } : {}), costMicros: usage.reduce((sum, row) => sum + (row.costMicros ?? 0), 0) },
+        feedback: { useful: feedback.filter((row) => row.rating === "useful").length, notUseful: feedback.filter((row) => row.rating === "not_useful").length },
+      } satisfies AiOutcomeSummary;
     }
 
     case "ai.memories.list": {

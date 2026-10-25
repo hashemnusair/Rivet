@@ -23,6 +23,7 @@ import {
   type AiCollectionsResult,
   type AiClassOptionsResult,
   type AiPlatformStatus,
+  type AiOutcomeSummary,
   type AiInterpretRevisionResult,
   type AiMemberBriefResult,
   type AiMemoryView,
@@ -389,6 +390,31 @@ export class MockAiEngine {
   memberCapabilityOn(capability: AiCapabilityKey): boolean {
     if (this.platformStop?.stopped) return false;
     return effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability) !== "off";
+  }
+
+  /** The month's outcomes, counted the way the server counts them. */
+  outcomeSummary(): AiOutcomeSummary {
+    const now = Date.now();
+    const month = new Date(now).toISOString().slice(0, 7);
+    const monthStart = Date.parse(`${month}-01T00:00:00.000Z`);
+    const runs = [...this.runs.values()].filter((run) => run.createdAt >= monthStart);
+    const prepared = runs.flatMap((run) => run.steps.filter((step) => step.status === "verified" && step.resultRef?.kind === "task" && step.reason !== "has_open_followup").map((step) => step.resultRef!.id));
+    const tasks = { prepared: prepared.length, done: 0, open: 0, closedOther: 0 };
+    for (const id of prepared) {
+      const status = this.host.db.tasks.find((task) => task.id === id)?.status ?? "open";
+      if (status === "completed") tasks.done += 1; else if (status === "open") tasks.open += 1; else tasks.closedOther += 1;
+    }
+    const proposals = [...this.proposals.values()].filter((item) => item.proposedAt >= monthStart);
+    const count = (status: AiRunStatus) => runs.filter((run) => run.status === status).length;
+    return {
+      month,
+      runs: { total: runs.length, completed: count("completed"), partly: count("partially_completed"), failed: count("failed"), cancelled: count("cancelled") },
+      tasks,
+      proposals: { prepared: proposals.length, approved: proposals.filter((item) => item.status === "executed").length, rejected: proposals.filter((item) => item.status === "rejected").length, invalidated: proposals.filter((item) => item.status === "invalidated").length, expired: proposals.filter((item) => item.status === "expired" || (item.status === "pending" && item.expiresAt <= now)).length, pending: proposals.filter((item) => item.status === "pending" && item.expiresAt > now).length },
+      revisions: runs.reduce((sum, run) => sum + run.revisions.length, 0),
+      model: { liveCalls: 0, testCalls: 0, failures: 0, costMicros: 0 },
+      feedback: { useful: this.feedback.filter((item) => item.rating === "useful").length, notUseful: this.feedback.filter((item) => item.rating === "not_useful").length },
+    };
   }
 
   platformStatus(): AiPlatformStatus {
