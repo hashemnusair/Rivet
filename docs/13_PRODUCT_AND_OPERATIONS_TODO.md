@@ -289,7 +289,7 @@ started.**
   approval unchanged.
 - [x] **AI-4.2 Sales preparation** (leads): *(Implemented locally: due-lead queue, per-lead recheck, one call task per lead and follow-up date, catalogue drafts; entry point on Leads. The approved-plan comparison is not built yet and stays open below; lead contact consent is not modelled, so no consent check applies to leads. Isolated staging pending.)* due-lead queue, approved-plan comparison,
   drafts and deduplicated tasks; no fabricated offer, discount or contact attempt.
-- [ ] **AI-4.3 Operations triage** (maintenance): fault category/target, related
+- [x] **AI-4.3 Operations triage** *(Implemented locally as intake assistance: machine target and title suggested by deterministic bilingual rules, open problems on that machine shown before filing; the person files through the existing owner/manager form. No severity, safety or fault-category suggestion and no delegated filing: safety needs someone who saw the machine. Evaluation 12/12, same author as the rules.)* (maintenance): fault category/target, related
   repair history, prepared issue report within grant.
 - [ ] **AI-4.4 Import assistance** (member import): column mapping and plan-label
   suggestions applied into the existing reviewed preview; commit stays human.
