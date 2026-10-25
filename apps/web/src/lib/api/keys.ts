@@ -9,6 +9,7 @@ export const qk = {
   aiMemories: (memberId: string) => ["ai", "memories", memberId] as const,
   aiArtifact: (artifactId: string) => ["ai", "artifact", artifactId] as const,
   aiProposals: (params?: unknown) => ["ai", "proposals", params] as const,
+  aiCollections: (params?: unknown) => ["ai", "collections", params] as const,
   publicOffer: (token: string) => ["publicOffer", token] as const,
   dashboard: (branchId?: string) => ["dashboard", branchId ?? "all"] as const,
   /** Keyed by the viewer and their branch scope: a restricted manager never reads an owner's cached brief. */

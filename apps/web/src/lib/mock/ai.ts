@@ -20,6 +20,7 @@ import {
   type AiExtractNoteResult,
   type AiFeedbackInput,
   type AiInterpretFiltersResult,
+  type AiCollectionsResult,
   type AiInterpretRevisionResult,
   type AiMemberBriefResult,
   type AiMemoryView,
@@ -48,6 +49,7 @@ import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
 import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
 import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
+import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "@/lib/ai/collections";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
 import type * as T from "@/lib/domain/types";
 import type { MockDb } from "./store";
@@ -92,6 +94,8 @@ export interface MockAiHost {
   dueLeads(branchId: string | undefined, endOfTodayIso: string): Array<{ id: string; name: string }>;
   /** Recorded facts for one lead; null when it is outside the person's access. */
   leadFollowUpFacts(leadId: string): LeadFollowUpFacts | null;
+  /** Members owing collectible money with their last receipt and contact; throws without access. */
+  collectionFacts(branchId: string | undefined, limit: number): { facts: CollectionMemberFacts[]; considered: number };
 }
 
 interface MockProposal {
@@ -357,6 +361,16 @@ export class MockAiEngine {
     const staff = this.host.db.users.filter((user) => user.status === "active").map((user) => ({ id: user.id, name: user.name, kind: "staff" as const }));
     const result = runFixtureTask({ kind: "interpret_revision", text: input.text.slice(0, 300), candidates: [...run.planned.slice(run.cursor).map((subject) => ({ id: subject.id, name: subject.name, kind: "member" as const })), ...staff], today: this.host.today() });
     return result.output.kind === "interpret_revision" ? { ok: true, kind: "interpret_revision", revision: result.output.revision } : { ok: false, reason: "model_malformed" };
+  }
+
+  prepareCollections(branchId: string | undefined): AiCollectionsResult {
+    this.requireHumanPermission("members.read");
+    const blocked = toolBlocked(TOOLS["collections.prepare"]!, this.authority("collections_prep"));
+    if (blocked) return { available: false, reason: blocked };
+    const { facts, considered } = this.host.collectionFacts(branchId, COLLECTION_LIST_LIMIT);
+    const context = { today: this.host.today(), now: new Date().toISOString(), gymName: this.host.db.organization.name, currency: this.host.db.organization.currency };
+    const items = rankCollections(facts.map((item) => prepareCollectionItem(item, context)).filter((item): item is CollectionItem => Boolean(item)));
+    return { available: true, items, considered, limited: considered > COLLECTION_LIST_LIMIT };
   }
 
   interpretFilters(input: { surface: "members" | "leads"; text: string }): AiInterpretFiltersResult {

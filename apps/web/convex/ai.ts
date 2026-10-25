@@ -36,6 +36,7 @@ import {
   isTerminalRunStatus,
   type AiCapabilityKey,
   type AiMemberBriefResult,
+  type AiCollectionsResult,
   type AiPlaybookKey,
   type AiRunRevision,
   type AiRunStatus,
@@ -44,6 +45,7 @@ import {
 import { buildMemberBrief, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
 import { modelTaskBlocked } from "../src/lib/ai/model";
 import { investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
+import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "../src/lib/ai/collections";
 import { nextStandingSlot as nextSlot } from "../src/lib/ai/schedule";
 import type { MemberFollowUpContext } from "./followupAssist";
 
@@ -88,6 +90,7 @@ export interface AiDomainPort {
   previewPlaybook(ctx: QueryCtx, actor: ActorContext, playbook: AiPlaybookKey, params: Record<string, string | number | boolean>, request: RequestArgs): Promise<{ subjects: Array<{ id: string; name: string; decision: string; reason?: string }>; digest: string }>;
   staffMembers(ctx: ReadCtx, actor: ActorContext): Promise<Array<{ id: string; userId: Id<"users">; name: string; active: boolean }>>;
   cashShiftFacts(ctx: ReadCtx, actor: ActorContext, shiftId: string): Promise<CashShiftFacts>;
+  collectionFacts(ctx: ReadCtx, actor: ActorContext, branchId: string | undefined, limit: number): Promise<{ facts: CollectionMemberFacts[]; considered: number }>;
   /** Current versions of bound records, in order; -1 when a record no longer exists. */
   sourceVersions(ctx: ReadCtx, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]>;
   /** Runs an existing domain operation as the signed-in approver, with every check it already has. */
@@ -198,6 +201,18 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
         brief,
         ...(draftStep?.draft ? { preparedDraft: { ...draftStep.draft, runId: draftStep.runPublicId, preparedAt: new Date(draftStep.updatedAt).toISOString() } } : {}),
       } satisfies AiMemberBriefResult;
+    }
+
+    case "ai.collections.prepare": {
+      requirePermission(actor, "members.read");
+      const entitled = await port.entitledModules(ctx, actor);
+      const blocked = toolBlocked(TOOLS["collections.prepare"]!, await authorityInput(ctx, actor, "collections_prep", entitled));
+      if (blocked) return { available: false, reason: blocked } satisfies AiCollectionsResult;
+      const branchId = text(input.branchId) || (actor.branch ? publicBranchId(actor.branch) : undefined);
+      const { facts, considered } = await port.collectionFacts(ctx, actor, branchId, COLLECTION_LIST_LIMIT);
+      const context = { today: port.tenantToday(actor), now: new Date().toISOString(), gymName: actor.organization.name, currency: actor.organization.currency };
+      const items = rankCollections(facts.map((item) => prepareCollectionItem(item, context)).filter((item): item is CollectionItem => Boolean(item)));
+      return { available: true, items, considered, limited: considered > COLLECTION_LIST_LIMIT } satisfies AiCollectionsResult;
     }
 
     case "ai.memories.list": {

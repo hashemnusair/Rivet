@@ -389,6 +389,11 @@ export interface AiProposalView {
   allowed: { approve: boolean; reject: boolean };
 }
 
+/** A prepared, unsaved collections call list (AI-4.9). */
+export type AiCollectionsResult =
+  | { available: true; items: import("./collections").CollectionItem[]; considered: number; limited: boolean }
+  | { available: false; reason: AiErrorCategory };
+
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
@@ -472,6 +477,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.proposals.list",
   "ai.artifact.get",
   "ai.memories.list",
+  "ai.collections.prepare",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [

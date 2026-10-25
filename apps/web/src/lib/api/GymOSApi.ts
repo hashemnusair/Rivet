@@ -1547,6 +1547,8 @@ export interface GymOSApi {
   getAiSettings(): Promise<import("@/lib/ai/contracts").AiSettingsView>;
   updateAiSettings(input: import("@/lib/ai/contracts").UpdateAiSettingsInput): Promise<import("@/lib/ai/contracts").AiSettingsView>;
   getMemberBrief(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemberBriefResult>;
+  /** An unsaved collections call list for the displayed branch (AI-4.9). */
+  prepareCollections(query: { branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiCollectionsResult>;
   extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
   interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;

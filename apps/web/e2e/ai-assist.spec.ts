@@ -174,6 +174,20 @@ test.describe("RIVET assistance", () => {
     await expect(page.getByRole("combobox", { name: /Membership/ })).toContainText("Owes money");
   });
 
+  test("prepares an unsaved collections call list beside the owes-money filter", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare only");
+    await page.goto("/members?membership=outstanding");
+    const panel = page.getByTestId("collection-calls");
+    await panel.getByTestId("collection-calls-prepare").click();
+    const list = panel.getByTestId("collection-calls-list");
+    await expect(list.getByTestId("collection-call").first()).toBeVisible();
+    await expect(list.getByTestId("collection-call").first()).toContainText(/Owes /);
+    await expect(list.getByTestId("collection-call").first()).toContainText(/overdue|Due today/);
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));

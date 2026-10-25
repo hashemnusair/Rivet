@@ -76,6 +76,8 @@ import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-
 import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
 import type { CashShiftFacts } from "../src/lib/ai/cash-difference";
 import type { LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
+import type { CollectionMemberFacts } from "../src/lib/ai/collections";
+import { consentForRenewalChannel } from "./renewalPolicy";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
 import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
@@ -1792,6 +1794,64 @@ export async function notifyProposalWaiting(ctx: MutationCtx, input: { organizat
   await notifyOrganizationRoles(ctx, { organizationId: input.organizationId, branchId: branch?._id, roles: ["owner", "manager"], kind: "ai_proposal", title: "A prepared change is waiting for approval", body: `Prepared by RIVET for ${input.requesterName}`, titleMessage: systemMessage("communicationCompletion.notifications.aiProposalWaiting"), bodyMessage: systemMessage("communicationCompletion.notifications.aiProposalFor", { name: input.requesterName }), href: input.href, dedupeKey: input.dedupeKey, excludeUserId: input.excludeUserId });
 }
 
+/**
+ * Members with collectible money still owed, with their last receipt and last
+ * recorded contact, for the unsaved collections call list. Read only; branch
+ * scope applies through the same record reads as the members list.
+ */
+export async function collectionFactsFor(ctx: ReadContext, actor: ActorContext, branchId: string | undefined, limit: number): Promise<{ facts: CollectionMemberFacts[]; considered: number }> {
+  requirePermission(actor, "members.read");
+  const today = tenantToday(actor);
+  const owedByMember = new Map<string, Array<{ id: string; dueDate: string; outstandingMinor: number }>>();
+  for (const record of await chargeRecords(ctx, actor)) {
+    const charge = data(record.data);
+    const outstandingMinor = collectibleOutstandingValue(charge, today);
+    const memberId = optionalString(charge.memberId);
+    if (!memberId || outstandingMinor <= 0) continue;
+    owedByMember.set(memberId, [...(owedByMember.get(memberId) ?? []), { id: record.publicId, dueDate: chargeDueDateValue(charge), outstandingMinor }]);
+  }
+  if (!owedByMember.size) return { facts: [], considered: 0 };
+  const members = (await recordsOf(ctx, actor, "member")).filter((record) => {
+    const member = data(record.data);
+    return owedByMember.has(record.publicId) && stringValue(member.status, "active") !== "archived" && (!branchId || stringValue(member.homeBranchId) === branchId);
+  });
+  // Read the expensive facts only for the people who will be shown: oldest and largest debts first.
+  const ranked = members.sort((left, right) => {
+    const a = owedByMember.get(left.publicId)!;
+    const b = owedByMember.get(right.publicId)!;
+    const oldest = (rows: typeof a) => rows.map((row) => row.dueDate).sort()[0]!;
+    return oldest(a).localeCompare(oldest(b)) || b.reduce((sum, row) => sum + row.outstandingMinor, 0) - a.reduce((sum, row) => sum + row.outstandingMinor, 0);
+  }).slice(0, limit);
+  const lastPaymentByMember = new Map<string, Data>();
+  for (const record of await paymentRecords(ctx, actor)) {
+    const payment = data(record.data);
+    const memberId = optionalString(payment.memberId);
+    if (!memberId || payment.type !== "payment" || payment.status === "voided") continue;
+    const prior = lastPaymentByMember.get(memberId);
+    if (!prior || stringValue(payment.occurredAt) > stringValue(prior.occurredAt)) lastPaymentByMember.set(memberId, payment);
+  }
+  const facts: CollectionMemberFacts[] = [];
+  for (const record of ranked) {
+    const member = data(record.data);
+    const contacts = (await recordsOfMemberIdentity(ctx, actor, record.publicId, "timeline")).map((row) => data(row.data)).filter((event) => ["call_attempt", "message"].includes(stringValue(event.type)));
+    const lastContactAt = contacts.map((event) => stringValue(event.occurredAt)).sort().at(-1);
+    const payment = lastPaymentByMember.get(record.publicId);
+    const consent = consentForRenewalChannel(member, "whatsapp");
+    const language = optionalString(member.preferredLanguage);
+    facts.push({
+      memberId: record.publicId,
+      memberName: stringValue(member.fullName),
+      ...(optionalString(member.phone) ? { phone: stringValue(member.phone) } : {}),
+      ...(language === "ar" || language === "en" ? { preferredLanguage: language } : {}),
+      charges: owedByMember.get(record.publicId)!,
+      ...(payment ? { lastPayment: { ...(optionalString(payment.receiptId) ? { receiptId: stringValue(payment.receiptId) } : {}), ...(optionalString(payment.receiptNumber) ? { receiptNumber: stringValue(payment.receiptNumber) } : {}), at: stringValue(payment.occurredAt), amountMinor: Math.abs(amountOf(payment.amount)) } } : {}),
+      ...(lastContactAt ? { lastContactAt } : {}),
+      optedOut: consent.status === "explicit_opt_out" || consent.channelOptedOut,
+    });
+  }
+  return { facts, considered: members.length };
+}
+
 /** Current versions of the records a prepared change was bound to; a missing record reads as -1. */
 export async function aiSourceVersions(ctx: ReadContext, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]> {
   const versions: number[] = [];
@@ -1884,6 +1944,7 @@ export const aiDomainPort: AiDomainPort = {
   previewPlaybook: previewAiPlaybook,
   staffMembers: aiStaffMembers,
   cashShiftFacts: cashShiftFactsFor,
+  collectionFacts: collectionFactsFor,
   sourceVersions: aiSourceVersions,
   executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
 };

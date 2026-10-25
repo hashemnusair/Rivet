@@ -19,6 +19,8 @@ import { MockAiEngine } from "./ai";
 import type * as AI from "@/lib/ai/contracts";
 import type { CashShiftFacts } from "@/lib/ai/cash-difference";
 import { leadIsDue, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
+import type { CollectionMemberFacts } from "@/lib/ai/collections";
+import { consentForRenewalChannel } from "../../../convex/renewalPolicy";
 import { stableHash } from "@/lib/ai/note-extraction";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
@@ -958,6 +960,7 @@ export class MockGymOSApi implements GymOSApi {
           .map((lead) => ({ id: lead.id, name: lead.fullName }));
       },
       leadFollowUpFacts: (leadId) => this.leadFollowUpFactsSync(leadId),
+      collectionFacts: (branchId, limit) => this.collectionFactsSync(branchId, limit),
       reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
     });
   }
@@ -968,6 +971,37 @@ export class MockGymOSApi implements GymOSApi {
    */
   private recordVersion(value: unknown): number {
     return Number.parseInt(stableHash(JSON.stringify(value)), 16);
+  }
+
+  private collectionFactsSync(branchId: string | undefined, limit: number): { facts: CollectionMemberFacts[]; considered: number } {
+    this.require("members.read");
+    const today = this.today();
+    const owed = new Map<string, CollectionMemberFacts["charges"]>();
+    for (const charge of this.db.charges) {
+      const dueDate = charge.dueDate ?? charge.issueDate ?? charge.createdAt.slice(0, 10);
+      if (charge.status === "refunded" || charge.status === "void" || dueDate > today || charge.outstandingAmount.amount <= 0) continue;
+      owed.set(charge.memberId, [...(owed.get(charge.memberId) ?? []), { id: charge.id, dueDate, outstandingMinor: charge.outstandingAmount.amount }]);
+    }
+    const members = this.db.members.filter((member) => owed.has(member.id) && member.status !== "archived" && this.branchIsVisible(member.homeBranchId) && (!branchId || member.homeBranchId === branchId));
+    const oldest = (memberId: string) => owed.get(memberId)!.map((row) => row.dueDate).sort()[0]!;
+    const total = (memberId: string) => owed.get(memberId)!.reduce((sum, row) => sum + row.outstandingMinor, 0);
+    const ranked = [...members].sort((left, right) => oldest(left.id).localeCompare(oldest(right.id)) || total(right.id) - total(left.id)).slice(0, limit);
+    const facts = ranked.map((member): CollectionMemberFacts => {
+      const payment = this.db.payments.filter((item) => item.memberId === member.id && item.type === "payment" && item.status !== "voided").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
+      const lastContactAt = this.db.activities.filter((event) => event.memberId === member.id && (event.type === "call_attempt" || event.type === "message")).map((event) => event.occurredAt).sort().at(-1);
+      const consent = consentForRenewalChannel(member as unknown as Record<string, unknown>, "whatsapp");
+      return {
+        memberId: member.id,
+        memberName: member.fullName,
+        ...(member.phone ? { phone: member.phone } : {}),
+        ...(member.preferredLanguage === "ar" || member.preferredLanguage === "en" ? { preferredLanguage: member.preferredLanguage } : {}),
+        charges: owed.get(member.id)!,
+        ...(payment ? { lastPayment: { receiptId: payment.receiptId, receiptNumber: payment.receiptNumber, at: payment.occurredAt, amountMinor: Math.abs(payment.amount.amount) } } : {}),
+        ...(lastContactAt ? { lastContactAt } : {}),
+        optedOut: consent.status === "explicit_opt_out" || consent.channelOptedOut,
+      };
+    });
+    return { facts, considered: members.length };
   }
 
   private leadFollowUpFactsSync(leadId: string): LeadFollowUpFacts | null {
@@ -4410,6 +4444,7 @@ export class MockGymOSApi implements GymOSApi {
   getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
   updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
   getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
+  prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.respond(() => this.ai.prepareCollections(query.branchId ?? this.db.session.activeBranchId)); }
   extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }
