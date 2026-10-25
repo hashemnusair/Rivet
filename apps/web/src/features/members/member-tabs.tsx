@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { ClassFinder } from "@/features/assist/class-finder";
 import { ptBookingAwaitsOutcome, ptNextBooking } from "@/lib/domain/personal-training";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
           )}
         </div>
       </section>
+      <ClassFinder memberId={member.id} />
     </div>
   );
 }

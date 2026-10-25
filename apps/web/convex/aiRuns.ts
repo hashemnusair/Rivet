@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { delegatedRequest, publicBranchId, publicOrganizationId, requireActor, type ActorContext, type DelegationPrincipal, type RequestArgs } from "./security";
 import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, notifyProposalWaiting, renewalFactsForMember } from "./domain";
+import { classBookingStatusFor, classOptionFactsFor } from "./classes";
 import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
 import { createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
@@ -261,6 +262,8 @@ export const advance = internalMutation({
       renewalFacts: async (memberId, membershipId) => await renewalFactsForMember(ctx, authority.actor, memberId, membershipId),
       cashShiftFacts: async (shiftId) => await cashShiftFactsFor(ctx, authority.actor, shiftId),
       leadFacts: async (leadId) => await leadFollowUpFactsFor(ctx, authority.actor, leadId),
+      classOptionFacts: async (memberId, from, to) => await classOptionFactsFor(ctx, authority.actor, memberId, from, to),
+      classBookingStatus: async (occurrenceKey, memberId) => await classBookingStatusFor(ctx, authority.actor, occurrenceKey, memberId),
     };
     return await runPlaybookStep(ctx, env);
   },

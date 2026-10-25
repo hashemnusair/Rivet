@@ -37,6 +37,7 @@ import {
   type AiCapabilityKey,
   type AiMemberBriefResult,
   type AiCollectionsResult,
+  type AiClassOptionsResult,
   type AiPlaybookKey,
   type AiRunRevision,
   type AiRunStatus,
@@ -46,6 +47,8 @@ import { buildMemberBrief, type MemberAttendance, type MemberClassOptions } from
 import { modelTaskBlocked } from "../src/lib/ai/model";
 import { investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
 import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "../src/lib/ai/collections";
+import { CLASS_FINDER_DAYS, classOptions, type ClassOptionFacts, type ClassTimeOfDay } from "../src/lib/ai/class-finder";
+import { addDays } from "../src/lib/utils/dates";
 import { nextStandingSlot as nextSlot } from "../src/lib/ai/schedule";
 import type { MemberFollowUpContext } from "./followupAssist";
 
@@ -91,6 +94,7 @@ export interface AiDomainPort {
   staffMembers(ctx: ReadCtx, actor: ActorContext): Promise<Array<{ id: string; userId: Id<"users">; name: string; active: boolean }>>;
   cashShiftFacts(ctx: ReadCtx, actor: ActorContext, shiftId: string): Promise<CashShiftFacts>;
   collectionFacts(ctx: ReadCtx, actor: ActorContext, branchId: string | undefined, limit: number): Promise<{ facts: CollectionMemberFacts[]; considered: number }>;
+  classOptionFacts(ctx: ReadCtx, actor: ActorContext, memberId: string, from: string, to: string): Promise<{ enabled: boolean; facts: ClassOptionFacts[] }>;
   /** Current versions of bound records, in order; -1 when a record no longer exists. */
   sourceVersions(ctx: ReadCtx, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]>;
   /** Runs an existing domain operation as the signed-in approver, with every check it already has. */
@@ -213,6 +217,27 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
       const context = { today: port.tenantToday(actor), now: new Date().toISOString(), gymName: actor.organization.name, currency: actor.organization.currency };
       const items = rankCollections(facts.map((item) => prepareCollectionItem(item, context)).filter((item): item is CollectionItem => Boolean(item)));
       return { available: true, items, considered, limited: considered > COLLECTION_LIST_LIMIT } satisfies AiCollectionsResult;
+    }
+
+    case "ai.classes.options": {
+      requirePermission(actor, "members.read");
+      const memberId = text(input.memberId);
+      const entitled = await port.entitledModules(ctx, actor);
+      const authority = await authorityInput(ctx, actor, "class_finder", entitled);
+      const blocked = toolBlocked(TOOLS["classes.eligible"]!, authority);
+      if (blocked) {
+        await port.scopedMember(ctx, actor, memberId);
+        return { available: false, reason: blocked } satisfies AiClassOptionsResult;
+      }
+      const today = port.tenantToday(actor);
+      const { enabled, facts } = await port.classOptionFacts(ctx, actor, memberId, today, addDays(today, CLASS_FINDER_DAYS - 1));
+      if (!enabled) return { available: false, reason: "classes_paused" } satisfies AiClassOptionsResult;
+      const wanted = text(input.timeOfDay);
+      const timeOfDay = wanted === "morning" || wanted === "afternoon" || wanted === "evening" ? wanted as ClassTimeOfDay : undefined;
+      const { options, excluded } = classOptions(facts, { now: new Date().toISOString(), ...(timeOfDay ? { timeOfDay } : {}) });
+      // Booking needs execute mode and the roster access the booking operation itself checks.
+      const canBook = !playbookBlocked(PLAYBOOKS.class_finder, authority) && (actor.permissions.includes("members.write") || actor.permissions.includes("pt.book_for_member"));
+      return { available: true, options, excluded, canBook } satisfies AiClassOptionsResult;
     }
 
     case "ai.memories.list": {

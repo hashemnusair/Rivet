@@ -394,6 +394,11 @@ export type AiCollectionsResult =
   | { available: true; items: import("./collections").CollectionItem[]; considered: number; limited: boolean }
   | { available: false; reason: AiErrorCategory };
 
+/** Classes a member could be booked into now (AI-4.5); computed on read, nothing saved. */
+export type AiClassOptionsResult =
+  | { available: true; options: import("./class-finder").ClassOption[]; excluded: Partial<Record<import("./class-finder").ClassExclusion, number>>; canBook: boolean }
+  | { available: false; reason: AiErrorCategory | "classes_paused" };
+
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
@@ -478,6 +483,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.artifact.get",
   "ai.memories.list",
   "ai.collections.prepare",
+  "ai.classes.options",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [

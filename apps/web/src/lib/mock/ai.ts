@@ -21,6 +21,7 @@ import {
   type AiFeedbackInput,
   type AiInterpretFiltersResult,
   type AiCollectionsResult,
+  type AiClassOptionsResult,
   type AiInterpretRevisionResult,
   type AiMemberBriefResult,
   type AiMemoryView,
@@ -50,6 +51,7 @@ import { composeHandover, composeManagementReport, type HandoverInputs, type Rep
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
 import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "@/lib/ai/collections";
+import { CLASS_FINDER_DAYS, classExclusion, classOptions, type ClassOptionFacts, type ClassTimeOfDay } from "@/lib/ai/class-finder";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
 import type * as T from "@/lib/domain/types";
 import type { MockDb } from "./store";
@@ -96,6 +98,10 @@ export interface MockAiHost {
   leadFollowUpFacts(leadId: string): LeadFollowUpFacts | null;
   /** Members owing collectible money with their last receipt and contact; throws without access. */
   collectionFacts(branchId: string | undefined, limit: number): { facts: CollectionMemberFacts[]; considered: number };
+  /** Upcoming classes with the member's eligibility and booking state; throws without access. */
+  classOptionFacts(memberId: string, from: string, to: string): { enabled: boolean; facts: ClassOptionFacts[] };
+  /** The existing staff roster add; returns the member's booking status afterwards. */
+  bookClass(occurrenceKey: string, memberId: string): string | undefined;
 }
 
 interface MockProposal {
@@ -363,6 +369,20 @@ export class MockAiEngine {
     return result.output.kind === "interpret_revision" ? { ok: true, kind: "interpret_revision", revision: result.output.revision } : { ok: false, reason: "model_malformed" };
   }
 
+  classOptions(memberId: string, timeOfDay: ClassTimeOfDay | undefined): AiClassOptionsResult {
+    this.requireHumanPermission("members.read");
+    const authority = this.authority("class_finder");
+    const blocked = toolBlocked(TOOLS["classes.eligible"]!, authority);
+    if (blocked) return { available: false, reason: blocked };
+    const today = this.host.today();
+    const { enabled, facts } = this.host.classOptionFacts(memberId, today, addDays(today, CLASS_FINDER_DAYS - 1));
+    if (!enabled) return { available: false, reason: "classes_paused" };
+    const { options, excluded } = classOptions(facts, { now: new Date().toISOString(), ...(timeOfDay ? { timeOfDay } : {}) });
+    const permissions = this.host.permissions();
+    const canBook = !playbookBlocked(PLAYBOOKS.class_finder, authority) && (permissions.includes("members.write") || permissions.includes("pt.book_for_member"));
+    return { available: true, options, excluded, canBook };
+  }
+
   prepareCollections(branchId: string | undefined): AiCollectionsResult {
     this.requireHumanPermission("members.read");
     const blocked = toolBlocked(TOOLS["collections.prepare"]!, this.authority("collections_prep"));
@@ -477,7 +497,7 @@ export class MockAiEngine {
 
   private async step(run: MockRun): Promise<void> {
       try {
-        if (run.playbook === "management_report" || run.playbook === "shift_handover" || run.playbook === "cash_difference") await this.advanceJob(run);
+        if (run.playbook === "management_report" || run.playbook === "shift_handover" || run.playbook === "cash_difference" || run.playbook === "class_finder") await this.advanceJob(run);
         else this.advance(run);
       } catch (error) {
         // As on the server: the step's write did not happen; record it as failed and move on.
@@ -504,6 +524,7 @@ export class MockAiEngine {
     if (blocked) return this.finish(run, run.results.length ? "partially_completed" : "failed", blocked === "permission_denied" ? "authority_revoked" : blocked);
     const stamp = () => new Date().toISOString();
     if (run.playbook === "cash_difference") return this.advanceCashDifference(run);
+    if (run.playbook === "class_finder") return this.advanceClassBooking(run);
     if (run.playbook === "management_report") {
       const params = run.params as { from: string; to: string; includeExport?: boolean };
       if (run.stage === "aiWork.stage.queued" || run.stage === "aiWork.stage.starting") {
@@ -553,6 +574,26 @@ export class MockAiEngine {
       run.counts.created += 1;
       run.writes += 1;
     }
+    this.finish(run, "completed");
+  }
+
+  /** Class booking: the spot is rechecked right before the existing roster add, as on the server. */
+  private advanceClassBooking(run: MockRun): void {
+    const params = run.params as { memberId: string; book?: boolean; occurrenceKey?: string };
+    if (!params.book || !params.occurrenceKey) return this.finish(run, "failed", "validation");
+    const permissions = this.host.permissions();
+    if (!permissions.includes("members.write") && !permissions.includes("pt.book_for_member")) return this.finish(run, "failed", "permission_denied");
+    const today = this.host.today();
+    const { enabled, facts } = this.host.classOptionFacts(params.memberId, today, addDays(today, CLASS_FINDER_DAYS - 1));
+    const target = facts.find((item) => item.occurrenceId === params.occurrenceKey);
+    if (!enabled || !target || classExclusion(target, new Date().toISOString())) return this.finish(run, "failed", "source_changed");
+    const status = this.host.bookClass(params.occurrenceKey, params.memberId);
+    if (status !== "booked") return this.finish(run, "failed", "source_changed");
+    const ref: AiRunResultRef = { kind: "class_booking", id: params.occurrenceKey, label: target.name, href: `/classes?date=${target.date}`, subjectName: target.branchName };
+    run.steps.push({ id: mockUuid(), seq: 1, capability: "class.book", subjectId: params.memberId, status: "verified", resultRef: ref, updatedAt: new Date().toISOString() });
+    run.results.push(ref);
+    run.counts.created += 1;
+    run.writes += 1;
     this.finish(run, "completed");
   }
 

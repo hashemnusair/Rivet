@@ -79,7 +79,7 @@ import type { LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
 import type { CollectionMemberFacts } from "../src/lib/ai/collections";
 import { consentForRenewalChannel } from "./renewalPolicy";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
-import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
+import { classesMutation, classesQuery, classOptionFactsFor, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
 import { accountingMutation, accountingQuery } from "./accounting";
@@ -1945,6 +1945,7 @@ export const aiDomainPort: AiDomainPort = {
   staffMembers: aiStaffMembers,
   cashShiftFacts: cashShiftFactsFor,
   collectionFacts: collectionFactsFor,
+  classOptionFacts: classOptionFactsFor,
   sourceVersions: aiSourceVersions,
   executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
 };

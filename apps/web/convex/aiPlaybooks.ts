@@ -10,6 +10,7 @@ import { addDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/date
 import { composeHandover, composeManagementReport, ledgerTotals } from "../src/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
 import { evaluateLeadCandidate, leadIsDue, leadOperationKey, leadTaskTitle, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
+import { CLASS_FINDER_DAYS, classExclusion, type ClassOptionFacts } from "../src/lib/ai/class-finder";
 import type { AdvanceResult } from "./aiRuns";
 
 /**
@@ -37,6 +38,8 @@ export interface PlaybookStepEnv {
   renewalFacts(memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null>;
   cashShiftFacts(shiftId: string): Promise<CashShiftFacts>;
   leadFacts(leadId: string): Promise<LeadFollowUpFacts | null>;
+  classOptionFacts(memberId: string, from: string, to: string): Promise<{ enabled: boolean; facts: ClassOptionFacts[] }>;
+  classBookingStatus(occurrenceKey: string, memberId: string): Promise<string | undefined>;
 }
 
 function record(value: unknown): Data {
@@ -279,6 +282,47 @@ async function salesFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Promi
   const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name });
   await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", resultRef: ref, ...(facts.draft ? { draft: facts.draft } : {}) });
   return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (facts.draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
+}
+
+// ---------------------------------------------------------------------------
+// Class booking (AI-4.5)
+// ---------------------------------------------------------------------------
+
+async function classFinderStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<AdvanceResult> {
+  const { run, actor } = env;
+  const params = run.params as { memberId: string; book?: boolean; occurrenceKey?: string };
+  if (!params.book || !params.occurrenceKey) {
+    await env.finish("failed", "validation");
+    return { done: true };
+  }
+  const blocked = (await env.toolBlocked("classes.eligible")) ?? (await env.toolBlocked("class.book"));
+  if (blocked) {
+    await env.finish("failed", blocked);
+    return { done: true };
+  }
+  // The roster operation accepts either access; without one, stop before planning a write it would refuse.
+  if (!actor.permissions.includes("members.write") && !actor.permissions.includes("pt.book_for_member")) {
+    await env.finish("failed", "permission_denied");
+    return { done: true };
+  }
+  // Rechecked in this transaction: a spot taken a moment ago stops the booking instead of joining a waitlist.
+  const today = todayISODate(actor.organization.timezone || "Asia/Amman");
+  const { enabled, facts } = await env.classOptionFacts(params.memberId, today, addDays(today, CLASS_FINDER_DAYS - 1));
+  const target = facts.find((item) => item.occurrenceId === params.occurrenceKey);
+  const reason = !enabled || !target ? "outside" : classExclusion(target, new Date().toISOString());
+  if (reason) {
+    await recordStep(ctx, run, { seq: 1, tool: "class.book", subjectId: params.memberId, status: "skipped", reason: reason === "full" || reason === "started" ? "changed_since_planning" : "outside_scope" });
+    await env.finish("failed", "source_changed");
+    return { done: true };
+  }
+  await env.executeMutation("classes.occurrence.roster.add", { occurrenceId: params.occurrenceKey, memberId: params.memberId }, env.toolRequest("class.book", 1));
+  const status = await env.classBookingStatus(params.occurrenceKey, params.memberId);
+  if (status !== "booked") throw new Error("Saved class booking did not match what was requested.");
+  const ref = resultRef("class_booking", params.occurrenceKey, target!.name, { href: `/classes?date=${target!.date}`, subjectName: target!.branchName });
+  await recordStep(ctx, run, { seq: 1, tool: "class.book", subjectId: params.memberId, status: "verified", resultRef: ref });
+  await ctx.db.patch(run._id, { stage: "aiWork.stage.done", resultRefs: [...run.resultRefs, ref], counts: { ...run.counts, created: run.counts.created + 1 }, budget: { ...run.budget, writes: run.budget.writes + 1 }, updatedAt: Date.now() });
+  await env.finish("completed");
+  return { done: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +574,8 @@ export async function runPlaybookStep(ctx: MutationCtx, env: PlaybookStepEnv): P
       return await cashDifferenceStep(ctx, env);
     case "sales_followups":
       return await salesFollowupsStep(ctx, env);
+    case "class_finder":
+      return await classFinderStep(ctx, env);
     default:
       await env.finish("failed", "validation");
       return { done: true };

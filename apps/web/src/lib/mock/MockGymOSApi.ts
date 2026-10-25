@@ -20,6 +20,7 @@ import type * as AI from "@/lib/ai/contracts";
 import type { CashShiftFacts } from "@/lib/ai/cash-difference";
 import { leadIsDue, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import type { CollectionMemberFacts } from "@/lib/ai/collections";
+import type { ClassOptionFacts } from "@/lib/ai/class-finder";
 import { consentForRenewalChannel } from "../../../convex/renewalPolicy";
 import { stableHash } from "@/lib/ai/note-extraction";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
@@ -107,7 +108,7 @@ import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, i
 import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
-import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
 import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
@@ -961,6 +962,14 @@ export class MockGymOSApi implements GymOSApi {
       },
       leadFollowUpFacts: (leadId) => this.leadFollowUpFactsSync(leadId),
       collectionFacts: (branchId, limit) => this.collectionFactsSync(branchId, limit),
+      classOptionFacts: (memberId, from, to) => this.classOptionFactsSync(memberId, from, to),
+      bookClass: (occurrenceKey, memberId) => {
+        const occurrence = this.classOccurrenceById(occurrenceKey);
+        const membership = this.db.memberships.find((candidate) => candidate.memberId === memberId && !candidate.cancelledAt && candidate.startDate <= occurrence.date && candidate.endDate >= occurrence.date);
+        if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Member membership not found.");
+        const updated = this.addClassOccurrenceAttendeeSync({ occurrenceId: occurrenceKey, memberId, membershipId: membership.id });
+        return updated.roster.find((entry) => entry.memberId === memberId && ["booked", "waitlisted"].includes(entry.status))?.status;
+      },
       reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
     });
   }
@@ -971,6 +980,49 @@ export class MockGymOSApi implements GymOSApi {
    */
   private recordVersion(value: unknown): number {
     return Number.parseInt(stableHash(JSON.stringify(value)), 16);
+  }
+
+  private classOptionFactsSync(memberId: string, from: string, to: string): { enabled: boolean; facts: ClassOptionFacts[] } {
+    this.require("members.read");
+    const member = this.db.members.find((candidate) => candidate.id === memberId && candidate.status !== "archived");
+    if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+    const policy = this.db.operationalPolicies.classBooking;
+    if (!policy.enabled) return { enabled: false, facts: [] };
+    const timezone = this.db.organization.timezone || TZ;
+    const facts: ClassOptionFacts[] = [];
+    for (const branch of this.db.branches.filter((candidate) => candidate.status === "active" && this.branchIsVisible(candidate.id))) {
+      for (let date = from; date <= to; date = addDays(date, 1)) {
+        const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+        for (const template of this.classSessions.filter((candidate) => candidate.branchId === branch.id && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+      }
+      for (const occurrence of this.classOccurrences.filter((candidate) => candidate.branchId === branch.id && candidate.date >= from && candidate.date <= to).map((candidate) => this.refreshClassOccurrence(candidate))) {
+        const eligible = this.db.memberships.some((membership) => membership.memberId === member.id && !membership.cancelledAt && membership.startDate <= occurrence.date && membership.endDate >= occurrence.date
+          && !(membership.activeFreeze && membership.activeFreeze.startDate <= occurrence.date && membership.activeFreeze.endDate >= occurrence.date)
+          && (policy.eligibilityMode === "all_active_memberships" || policy.eligiblePlanIds.includes(membership.planId))
+          && membership.homeBranchId === branch.id);
+        const local = partsInTimeZone(new Date(occurrence.startsAt), timezone);
+        const gender = member.gender;
+        facts.push({
+          occurrenceId: occurrence.id,
+          name: occurrence.name,
+          branchId: branch.id,
+          branchName: branch.name,
+          date: occurrence.date,
+          startsAt: occurrence.startsAt,
+          endsAt: occurrence.endsAt,
+          startMinuteLocal: Number(local.hour) * 60 + Number(local.minute),
+          audience: occurrence.audience,
+          ...(occurrence.coachName ? { coachName: occurrence.coachName } : {}),
+          status: occurrence.status,
+          capacity: occurrence.capacity,
+          bookedCount: this.classSeatedCount(occurrence),
+          memberBooked: occurrence.roster.some((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status)),
+          memberEligible: eligible,
+          audienceFits: (gender === "male" || gender === "female") && (occurrence.audience === "mixed" || (occurrence.audience === "women" && gender === "female") || (occurrence.audience === "men" && gender === "male")),
+        });
+      }
+    }
+    return { enabled: true, facts };
   }
 
   private collectionFactsSync(branchId: string | undefined, limit: number): { facts: CollectionMemberFacts[]; considered: number } {
@@ -4445,6 +4497,7 @@ export class MockGymOSApi implements GymOSApi {
   updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
   getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
   prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.respond(() => this.ai.prepareCollections(query.branchId ?? this.db.session.activeBranchId)); }
+  getClassOptions(query: { memberId: T.UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<AI.AiClassOptionsResult> { return this.respond(() => this.ai.classOptions(query.memberId, query.timeOfDay)); }
   extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }
@@ -12855,7 +12908,11 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> {
-    return this.respond(() => {
+    return this.respond(() => this.addClassOccurrenceAttendeeSync(input));
+  }
+
+  private addClassOccurrenceAttendeeSync(input: T.ClassOccurrenceRosterInput): T.ClassOccurrence {
+    {
       this.requireRosterPermission();
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
@@ -12879,7 +12936,7 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, titleMessage: systemMessage(status === "booked" ? "communicationCompletion.timeline.classBooked" : "communicationCompletion.timeline.classWaitlisted", { className: occurrence.name }), body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
       this.audit({ category: "operations", action: status === "booked" ? "classes.booking.create" : "classes.waitlist.join", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${member.fullName} ${status === "booked" ? "booked" : "joined the waitlist for"} ${occurrence.name}`, reason: override });
       return this.refreshClassOccurrence(occurrence);
-    });
+    }
   }
 
   removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> {

@@ -188,6 +188,26 @@ test.describe("RIVET assistance", () => {
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
+  test("finds a class a member can take and books it through the roster rules", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    await page.goto("/members?membership=active");
+    await page.getByTestId("member-filters").waitFor();
+    await page.locator('main a[href^="/members/"]:not([href^="/members/duplicates"]):not([href^="/members/import"]):not([href^="/members/new"])').filter({ visible: true }).first().click();
+    await expect(page).toHaveURL(/\/members\/[^/?]+/);
+    const finder = page.getByTestId("class-finder");
+    await finder.getByTestId("class-finder-find").click();
+    const option = finder.getByTestId("class-option").first();
+    await expect(option).toBeVisible();
+    await expect(option).toContainText(/spots? left/);
+    await option.getByTestId("class-option-book").click();
+    const panel = finder.getByTestId("ai-run-panel");
+    await expect(panel).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
+    await expect(panel.getByTestId("ai-run-results")).toBeVisible();
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));
