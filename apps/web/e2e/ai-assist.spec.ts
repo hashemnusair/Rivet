@@ -159,6 +159,21 @@ test.describe("RIVET assistance", () => {
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
+  test("turns a plain request into the members list's own filters", async ({ page }) => {
+    await enterOwner(page);
+    await turnOnAssistance(page, "Prepare only");
+    await page.goto("/members");
+    const filters = page.getByTestId("natural-filters");
+    await filters.getByTestId("natural-filters-input").fill("members who owe money and haven't visited in 2 weeks");
+    await filters.getByTestId("natural-filters-interpret").click();
+    await expect(filters.getByTestId("natural-filters-membership")).toHaveText("Membership: Owes money");
+    await expect(filters.getByTestId("natural-filters-not-applied")).toContainText("Not visited for 14 days isn't a filter on this list.");
+    await filters.getByTestId("natural-filters-apply").click();
+    await expect(page).toHaveURL(/[?&]membership=outstanding/);
+    // The ordinary control now shows the filter, ready to change.
+    await expect(page.getByRole("combobox", { name: /Membership/ })).toContainText("Owes money");
+  });
+
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));

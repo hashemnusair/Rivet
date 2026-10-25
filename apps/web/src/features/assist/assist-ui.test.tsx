@@ -7,6 +7,7 @@ import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import type { MockDb } from "@/lib/mock/store";
 import { AiRunPanel } from "./run-panel";
 import { AssistanceSettingsSection } from "./assistance-settings-section";
+import { NaturalMemberFilters } from "./natural-filters";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => ({}), usePathname: () => "/", useSearchParams: () => new URLSearchParams() }));
 
@@ -144,6 +145,26 @@ describe("prepared approvals", () => {
     await user.click(within(card).getByTestId("ai-proposal-approve"));
     await waitFor(() => expect(screen.getByTestId("ai-proposal")).toHaveAttribute("data-status", "executed"));
     expect((await api.listCashShifts({ pageSize: 200 })).items.find((shift) => shift.id === holder.shiftId)?.varianceApprovalStatus).toBe("approved");
+  });
+});
+
+describe("natural-language member filters", () => {
+  it("is absent while assistance is off", async () => {
+    await renderWithApp(<NaturalMemberFilters onApply={() => undefined} />);
+    expect(screen.queryByTestId("natural-filters")).not.toBeInTheDocument();
+  });
+
+  it("shows what it understood, applies only real list filters and says what it could not apply", async () => {
+    const user = userEvent.setup();
+    const applied: Array<{ membership?: string }> = [];
+    await renderWithApp(<NaturalMemberFilters onApply={(filters) => applied.push(filters)} />, { prepare: async (api) => { await enable(api, "prepare"); } });
+    await user.type(await screen.findByTestId("natural-filters-input"), "expiring in 30 days and not visited 3 weeks");
+    await user.click(screen.getByTestId("natural-filters-interpret"));
+    expect(await screen.findByTestId("natural-filters-membership")).toHaveTextContent("Membership: Ends within 14 days");
+    expect(screen.getByText(/you asked about 30 days/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("natural-filters-not-applied")).getByText(/Not visited for 21 days/)).toBeInTheDocument();
+    await user.click(screen.getByTestId("natural-filters-apply"));
+    expect(applied).toEqual([{ membership: "expiring" }]);
   });
 });
 

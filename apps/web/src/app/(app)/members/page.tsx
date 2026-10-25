@@ -24,6 +24,7 @@ import type { BulkOperationKind } from "@/lib/domain/qol";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import { useApp } from "@/lib/providers/app-providers";
+import { NaturalMemberFilters } from "@/features/assist/natural-filters";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 
 type MemberColumn = "phone" | "branch" | "plan" | "status" | "expiry" | "balance" | "last_check_in";
@@ -112,6 +113,8 @@ function MembersPageInner() {
       {filtersActive ? <Button size="sm" variant="ghost" className="h-11 w-full min-[1180px]:h-8 min-[1180px]:w-auto" onClick={clearFilters} data-testid="member-clear-filters"><FilterX /> {t("common.action.clearFilters")}</Button> : null}
       <SavedViewControls compact className="col-span-2 sm:col-span-2 min-[1180px]:col-span-1 min-[1180px]:shrink-0" surface="members" state={viewState} onApply={applyView} hasExplicitState={["q", "record", "membership", "plan", "sort", "columns"].some((key) => params.has(key))} />
     </div>
+
+    <NaturalMemberFilters onApply={(filters) => replaceParams({ membership: filters.membership })} />
 
     {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{t("members.list.selected", { count: selected.size })}</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><Tags /> {t("members.list.updateSelected")}</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>{t("members.list.clearSelection")}</button></div> : null}
 
