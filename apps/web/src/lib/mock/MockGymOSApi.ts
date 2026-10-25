@@ -4496,6 +4496,7 @@ export class MockGymOSApi implements GymOSApi {
   getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
   updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
   getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
+  getMemberHeadlines(memberIds: T.UUID[]): Promise<AI.AiMemberHeadlinesResult> { return this.respond(() => this.ai.memberHeadlines(memberIds)); }
   prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.respond(() => this.ai.prepareCollections(query.branchId ?? this.db.session.activeBranchId)); }
   getClassOptions(query: { memberId: T.UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<AI.AiClassOptionsResult> { return this.respond(() => this.ai.classOptions(query.memberId, query.timeOfDay)); }
   getAiOutcomeSummary(): Promise<AI.AiOutcomeSummary> { return this.respond(() => { this.require("settings.manage"); return this.ai.outcomeSummary(); }); }

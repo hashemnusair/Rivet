@@ -421,6 +421,11 @@ export interface AiOutcomeSummary {
   feedback: { useful: number; notUseful: number };
 }
 
+/** For each visible member in a list, the brief fact the row does not already show (AI-2.1); members outside scope are left out. */
+export type AiMemberHeadlinesResult =
+  | { available: true; items: Array<{ memberId: string; fact: AiMessage }> }
+  | { available: false; reason: AiErrorCategory };
+
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
@@ -508,6 +513,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.classes.options",
   "ai.platform.status",
   "ai.outcomes.summary",
+  "ai.member.headlines",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [

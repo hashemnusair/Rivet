@@ -24,6 +24,8 @@ import {
   type AiClassOptionsResult,
   type AiPlatformStatus,
   type AiOutcomeSummary,
+  type AiMemberHeadlinesResult,
+  type AiMessage,
   type AiInterpretRevisionResult,
   type AiMemberBriefResult,
   type AiMemoryView,
@@ -45,7 +47,7 @@ import {
   type StartAiRunInput,
   type UpdateAiSettingsInput,
 } from "@/lib/ai/contracts";
-import { buildMemberBrief, type MemberAttendance } from "@/lib/ai/member-brief";
+import { buildMemberBrief, listRowFact, type MemberAttendance } from "@/lib/ai/member-brief";
 import { runFixtureTask } from "@/lib/ai/model";
 import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
@@ -324,6 +326,23 @@ export class MockAiEngine {
   private activeMemoriesFor(memberId: string): AiMemoryView[] {
     const today = this.host.today();
     return this.memories.filter((memory) => memory.subjectId === memberId && memory.status === "active" && (!memory.effectiveUntil || memory.effectiveUntil >= today)).map(({ createdAt: _createdAt, ...memory }) => memory);
+  }
+
+  memberHeadlines(memberIds: string[]): AiMemberHeadlinesResult {
+    this.requireHumanPermission("members.read");
+    const blocked = toolBlocked(TOOLS["member.context"]!, this.authority("member_context"));
+    if (blocked) return { available: false, reason: blocked };
+    const items: Array<{ memberId: string; fact: AiMessage }> = [];
+    for (const memberId of [...new Set(memberIds)].slice(0, 25)) {
+      try {
+        const result = this.memberBrief(memberId);
+        const fact = result.available ? listRowFact(result.brief) : undefined;
+        if (fact) items.push({ memberId, fact });
+      } catch {
+        // Outside the reader's scope: left out.
+      }
+    }
+    return { available: true, items };
   }
 
   memberBrief(memberId: string): AiMemberBriefResult {

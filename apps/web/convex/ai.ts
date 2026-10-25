@@ -41,12 +41,14 @@ import {
   type AiClassOptionsResult,
   type AiPlatformStatus,
   type AiOutcomeSummary,
+  type AiMemberHeadlinesResult,
+  type AiMessage,
   type AiPlaybookKey,
   type AiRunRevision,
   type AiRunStatus,
   type AiTenantMode,
 } from "../src/lib/ai/contracts";
-import { buildMemberBrief, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
+import { buildMemberBrief, listRowFact, type MemberAttendance, type MemberClassOptions } from "../src/lib/ai/member-brief";
 import { modelTaskBlocked } from "../src/lib/ai/model";
 import { investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
 import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "../src/lib/ai/collections";
@@ -160,6 +162,41 @@ export { nextStandingSlot } from "../src/lib/ai/schedule";
 // Queries
 // ---------------------------------------------------------------------------
 
+/** The member brief from current records, scoped through the reader's own access. */
+async function memberBriefResult(ctx: QueryCtx, actor: ActorContext, port: AiDomainPort, memberId: string, entitled: string[]): Promise<AiMemberBriefResult> {
+  const facts = await port.memberBriefFacts(ctx, actor, memberId);
+  const today = port.tenantToday(actor);
+  const memories = await activeMemories(ctx, actor.organization._id, "member", memberId, today);
+  const settings = await aiSettingsFor(ctx, actor.organization._id);
+  const extractionAuthority = await authorityInput(ctx, actor, "note_extraction", entitled);
+  const extractionBlocked = toolBlocked(TOOLS["note.extract"]!, extractionAuthority)
+    ?? modelTaskBlocked({ kind: "extract_contact_note", note: "", noteAt: new Date().toISOString(), timezone: actor.organization.timezone, subject: "member" }, adapterConfig(), { externalProcessing: settings?.externalProcessing ?? false });
+  const steps = await ctx.db.query("aiRunSteps").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectId", memberId)).order("desc").take(10);
+  const draftStep = steps.find((step) => step.draft && step.updatedAt > Date.now() - 14 * 86_400_000 && (step.status === "verified" || step.status === "committed"));
+  const activeStep = steps.find((step) => step.status === "planned");
+  let openRun: { id: string; status: AiRunStatus } | undefined;
+  if (activeStep) {
+    const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", activeStep.runPublicId)).unique();
+    if (run && !isTerminalRunStatus(run.status as AiRunStatus) && canReadRun(actor, run)) openRun = { id: run.publicId, status: run.status as AiRunStatus };
+  }
+  const brief = buildMemberBrief({
+    context: facts.context,
+    attendance: facts.attendance,
+    memories,
+    activeFreeze: facts.activeFreeze,
+    classOptions: facts.classOptions,
+    today,
+    now: new Date().toISOString(),
+    extraction: extractionBlocked ? { available: false, reason: extractionBlocked } : { available: true },
+    ...(openRun ? { openRun } : {}),
+  });
+  return {
+    available: true,
+    brief,
+    ...(draftStep?.draft ? { preparedDraft: { ...draftStep.draft, runId: draftStep.runPublicId, preparedAt: new Date(draftStep.updatedAt).toISOString() } } : {}),
+  } satisfies AiMemberBriefResult;
+}
+
 export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs, port: AiDomainPort): Promise<unknown> {
   if (operation === "ai.platform.status") {
     // Operators only; no tenant actor is involved and no gym data is read.
@@ -184,37 +221,26 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
         await port.scopedMember(ctx, actor, memberId);
         return { available: false, reason: blocked } satisfies AiMemberBriefResult;
       }
-      const facts = await port.memberBriefFacts(ctx, actor, memberId);
-      const today = port.tenantToday(actor);
-      const memories = await activeMemories(ctx, actor.organization._id, "member", memberId, today);
-      const settings = await aiSettingsFor(ctx, actor.organization._id);
-      const extractionAuthority = await authorityInput(ctx, actor, "note_extraction", entitled);
-      const extractionBlocked = toolBlocked(TOOLS["note.extract"]!, extractionAuthority)
-        ?? modelTaskBlocked({ kind: "extract_contact_note", note: "", noteAt: new Date().toISOString(), timezone: actor.organization.timezone, subject: "member" }, adapterConfig(), { externalProcessing: settings?.externalProcessing ?? false });
-      const steps = await ctx.db.query("aiRunSteps").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectId", memberId)).order("desc").take(10);
-      const draftStep = steps.find((step) => step.draft && step.updatedAt > Date.now() - 14 * 86_400_000 && (step.status === "verified" || step.status === "committed"));
-      const activeStep = steps.find((step) => step.status === "planned");
-      let openRun: { id: string; status: AiRunStatus } | undefined;
-      if (activeStep) {
-        const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", activeStep.runPublicId)).unique();
-        if (run && !isTerminalRunStatus(run.status as AiRunStatus) && canReadRun(actor, run)) openRun = { id: run.publicId, status: run.status as AiRunStatus };
+      return await memberBriefResult(ctx, actor, port, memberId, entitled);
+    }
+
+    case "ai.member.headlines": {
+      requirePermission(actor, "members.read");
+      const entitled = await port.entitledModules(ctx, actor);
+      const blocked = toolBlocked(TOOLS["member.context"]!, await authorityInput(ctx, actor, "member_context", entitled));
+      if (blocked) return { available: false, reason: blocked } satisfies AiMemberHeadlinesResult;
+      const ids = (Array.isArray(input.memberIds) ? input.memberIds : []).map(text).filter(Boolean).slice(0, 25);
+      const items: Array<{ memberId: string; fact: AiMessage }> = [];
+      for (const memberId of [...new Set(ids)]) {
+        try {
+          const result = await memberBriefResult(ctx, actor, port, memberId, entitled);
+          const fact = result.available ? listRowFact(result.brief) : undefined;
+          if (fact) items.push({ memberId, fact });
+        } catch {
+          // Outside the reader's scope: left out, never confirmed.
+        }
       }
-      const brief = buildMemberBrief({
-        context: facts.context,
-        attendance: facts.attendance,
-        memories,
-        activeFreeze: facts.activeFreeze,
-        classOptions: facts.classOptions,
-        today,
-        now: new Date().toISOString(),
-        extraction: extractionBlocked ? { available: false, reason: extractionBlocked } : { available: true },
-        ...(openRun ? { openRun } : {}),
-      });
-      return {
-        available: true,
-        brief,
-        ...(draftStep?.draft ? { preparedDraft: { ...draftStep.draft, runId: draftStep.runPublicId, preparedAt: new Date(draftStep.updatedAt).toISOString() } } : {}),
-      } satisfies AiMemberBriefResult;
+      return { available: true, items } satisfies AiMemberHeadlinesResult;
     }
 
     case "ai.collections.prepare": {

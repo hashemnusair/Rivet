@@ -43,6 +43,7 @@ test.describe("RIVET assistance", () => {
     await page.goto("/crm/queues?view=renewals");
     await expect(page.getByTestId("follow-up-results")).toBeVisible();
     await expect(page.getByTestId("prepare-follow-ups")).toHaveCount(0);
+    await expect(page.getByTestId("renewal-row-headline")).toHaveCount(0);
   });
 
   test("prepares renewal follow-ups that are saved, explained and still there after leaving the page", async ({ page }) => {
@@ -63,6 +64,8 @@ test.describe("RIVET assistance", () => {
     await expect(panel.getByText("Test mode: prepared by RIVET's test reader, not a live model.")).toBeVisible();
     const runId = new URL(page.url()).searchParams.get("run");
     expect(runId).toBeTruthy();
+    // Each visible row carries its member's one-line brief.
+    await expect(page.getByTestId("follow-up-results").getByTestId("renewal-row-headline").first()).toBeVisible();
 
     // Leaving the list and coming back on the client keeps the same run.
     await page.getByRole("button", { name: /At risk/i }).first().click();

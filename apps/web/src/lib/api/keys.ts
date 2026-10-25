@@ -4,6 +4,7 @@ export const qk = {
   aiSettings: ["ai", "settings"] as const,
   aiPlatformStatus: ["ai", "platformStatus"] as const,
   aiOutcomes: ["ai", "outcomes"] as const,
+  aiHeadlines: (memberIds: string[]) => ["ai", "headlines", memberIds.join(",")] as const,
   memberBrief: (memberId: string) => ["ai", "brief", memberId] as const,
   aiRun: (runId: string) => ["ai", "run", runId] as const,
   aiRuns: (params?: unknown) => ["ai", "runs", params] as const,

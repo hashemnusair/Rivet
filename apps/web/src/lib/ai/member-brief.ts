@@ -207,3 +207,13 @@ export function buildMemberBrief(input: MemberBriefInput): AiMemberBrief {
     source: input.source ?? "rules",
   };
 }
+
+/** Facts a renewal list row already shows (end date, last contact); a row line adds something else. */
+const ROW_ALREADY_SHOWS = new Set(["aiWork.brief.endsIn", "aiWork.brief.endedAgo", "aiWork.brief.lastContact", "aiWork.brief.gapNoContact"]);
+
+/** The most useful brief fact for a list row that the row does not already show, attention first. */
+export function listRowFact(brief: Pick<AiMemberBrief, "lines">): AiMessage | undefined {
+  const candidates = brief.lines.filter((line) => !ROW_ALREADY_SHOWS.has(line.message.key));
+  return (candidates.find((line) => line.tone === "attention") ?? candidates[0])?.message;
+}
+

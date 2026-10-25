@@ -162,6 +162,19 @@ describe("member context beside the contact action", () => {
     await expect(sales.query(api.domain.query, op("ai.member.brief", { memberId: "m-foreign-omar" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
     await expect(sales.query(api.domain.query, op("ai.member.brief", { memberId: "m-omar" }, { organizationId: FOREIGN_ORG }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
+
+  it("gives each visible list row its headline and silently leaves out members outside the reader's scope", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    const result = await sales.query(api.domain.query, op("ai.member.headlines", { memberIds: ["m-huda", "m-omar", "m-foreign-omar", "m-huda"] })) as { available: boolean; items: Array<{ memberId: string; fact: { key: string } }> };
+    expect(result.available).toBe(true);
+    expect(result.items.map((item) => item.memberId).every((id) => id === "m-huda" || id === "m-omar")).toBe(true);
+    expect(result.items.some((item) => item.memberId === "m-foreign-omar")).toBe(false);
+    expect(result.items.length).toBeGreaterThan(0);
+    // The row already shows the end date and last contact; the line adds something else.
+    expect(result.items.every((item) => item.fact.key.startsWith("aiWork.brief.") && !["aiWork.brief.endsIn", "aiWork.brief.endedAgo", "aiWork.brief.lastContact"].includes(item.fact.key))).toBe(true);
+  });
 });
 
 describe("Prepare follow-ups saves and verifies real tasks", () => {
