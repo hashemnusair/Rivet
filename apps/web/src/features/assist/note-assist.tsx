@@ -42,14 +42,14 @@ export function NoteAssist({
   onApplyFollowUp: (date: string, time?: string) => void;
   onRememberChange: (remember: NoteAssistRemember) => void;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const format = useFormat();
   const errorText = useAiErrorText();
   const [extraction, setExtraction] = useState<AiNoteExtraction | undefined>();
   const [failure, setFailure] = useState<string | undefined>();
   const [used, setUsed] = useState<Set<string>>(new Set());
   const [remember, setRemember] = useState<NoteAssistRemember>({});
-  const read = useApiMutation((api, text: string) => api.extractContactNote({ ...(subject === "member" ? { memberId } : { leadId }), note: text, noteAt: new Date().toISOString() }), {
+  const read = useApiMutation((api, text: string) => api.extractContactNote({ ...(subject === "member" ? { memberId } : { leadId }), note: text, noteAt: new Date().toISOString(), locale: locale === "ar" ? "ar" : "en" }), {
     onSuccess: (result) => {
       if (result.ok) {
         setExtraction(result.extraction);

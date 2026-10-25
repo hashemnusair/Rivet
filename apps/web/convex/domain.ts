@@ -71,6 +71,7 @@ import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, 
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
+import { dropModelCache } from "./aiPolicy";
 import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
 import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
 import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
@@ -8627,6 +8628,9 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, titleMessage: systemMessage("communicationCompletion.timeline.memberMerged", { memberNumber: stringValue(mergedValue.memberNumber) }), body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
     const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
     mergeAuditReference = stringValue(audit.publicId);
+    // Kept assistant readings about either record are dropped with the merge.
+    await dropModelCache(ctx, actor.organization._id, { type: "member", id: survivingMemberId });
+    await dropModelCache(ctx, actor.organization._id, { type: "member", id: mergedMemberId });
   }
 
   const resolutionValue = { id: caseId, status: resolution, reasons: current.reasons, confidence: current.confidence, primaryMemberId: primary.id, candidateMemberId: candidate.id, survivingMemberId, reason, correlationId: actor.correlationId, mergeAuditReference, createdAt: now, updatedAt: now };
@@ -10707,6 +10711,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.delete(asset._id);
       }));
       await ctx.db.delete(record._id);
+      await dropModelCache(ctx, actor.organization._id, { type: "member", id: record.publicId });
       return undefined;
     }
     case "members.note": {
@@ -12603,6 +12608,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
       const beforeStatus = organizationUserStatus(user, membership);
       const afterStatus = organizationUserStatus(user, nextMembershipValues);
+      // Access changed: no kept assistant reading may be served under the old access.
+      await dropModelCache(ctx, actor.organization._id);
       await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.access_deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Organization access deactivated" : "Organization access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: beforeStatus, membershipActive: membership.active }, after: { role, status: afterStatus, membershipActive: nextActive } });
       const updated = await ctx.db.get(user._id);
       const nextMembership = await ctx.db.get(membership._id);
@@ -12659,6 +12666,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!Number.isSafeInteger(discountLimitMinor) || discountLimitMinor < 0) domainError("VALIDATION_ERROR", "Discount limit must be a non-negative integer amount.", { correlationId: actor.correlationId });
       const updated = { permissions: requestedPermissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor, updatedAt: Date.now() };
       await ctx.db.patch(current._id, updated);
+      await dropModelCache(ctx, actor.organization._id);
       await insertAudit(ctx, actor, { category: "users", action: "role.permissions_change", entityType: "role", entityId: publicOrganizationId(actor.organization), entityLabel: current.label, summary: `Permissions updated for the ${current.label} role`, before: { permissions: current.permissions.length, discountLimit: current.discountLimitMinor }, after: { permissions: updated.permissions.length, discountLimit: updated.discountLimitMinor } });
       return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: rolePermissions(role, updated.permissions, updated.catalogVersion), catalogVersion: updated.catalogVersion, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
     }

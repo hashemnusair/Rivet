@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -219,6 +219,157 @@ describe("reading a contact note into fields", () => {
         expect(next.fetchSpy).not.toHaveBeenCalled();
       });
     });
+  });
+});
+
+describe("reusing a live reading of the same note (AI-1.9)", () => {
+  const extracted = { outcome: { value: "answered_call_back", evidence: "call tomorrow evening" }, followUpPhrase: { phrase: "tomorrow evening", evidence: "call tomorrow evening" }, travelUntilPhrase: null, renewalInterest: null, preferredContactTime: null, topics: ["callback"] };
+  const reply = () => new Response(JSON.stringify({ id: "msg_cache", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [{ type: "text", text: JSON.stringify(extracted) }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 400, output_tokens: 60 } }), { status: 200, headers: { "content-type": "application/json" } });
+  const callNote = "No answer, call tomorrow evening";
+  type Reading = { ok: true; extraction: { followUp?: { value: { date: string; time?: string } }; outcome?: { value: string } } } | { ok: false; reason: string };
+
+  async function harness(budgetMicros = "5000000") {
+    vi.stubEnv("RIVET_AI_MODE", "live");
+    vi.stubEnv("RIVET_AI_PROTOCOL", "anthropic_messages");
+    vi.stubEnv("RIVET_AI_MODEL", "claude-sonnet-5-5");
+    vi.stubEnv("RIVET_AI_API_KEY", SECRET);
+    vi.stubEnv("RIVET_AI_PROCESSING_APPROVED", "member_data");
+    vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", budgetMicros);
+    const fetchSpy = vi.fn(async () => reply());
+    vi.stubGlobal("fetch", fetchSpy);
+    const t = convexTest(schema, modules);
+    await seed(t, true);
+    const read = async (input: Record<string, unknown> = {}, subject = "clerk-prep-sales") => await t.withIdentity({ subject }).action(api.aiActions.prepare, prepare({ memberId: "prep-member", note: callNote, ...input })) as Reading;
+    const usage = async () => await t.run(async (ctx) => await ctx.db.query("aiUsage").collect());
+    const kept = async () => await t.run(async (ctx) => await ctx.db.query("aiModelCache").collect());
+    return { t, fetchSpy, read, usage, kept };
+  }
+
+  it("serves a repeated reading from the kept answer: no call, no new spend, same fields", async () => {
+    const { fetchSpy, read, usage, kept } = await harness();
+    const first = await read();
+    const second = await read();
+    expect(first).toMatchObject({ ok: true, extraction: { outcome: { value: "answered_call_back" }, followUp: { value: { date: "2026-10-23", time: "18:00" } } } });
+    expect(second).toEqual(first);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect((await usage()).map((row) => row.costMicros)).toEqual([1_400]);
+    expect((await kept()).map((row) => [row.subjectType, row.subjectId, row.hits, row.costMicros])).toEqual([["member", "prep-member", 1, 1_400]]);
+    // The kept row holds a validated answer, never the key.
+    expect(JSON.stringify(await kept())).not.toContain(SECRET);
+  });
+
+  it("still serves a kept answer when the month's budget is used up, but makes no new call", async () => {
+    const { fetchSpy, read } = await harness("1400");
+    expect((await read()).ok).toBe(true);
+    expect((await read()).ok).toBe(true);
+    expect(await read({ note: "No answer, call on Monday" })).toEqual({ ok: false, reason: "budget_exhausted" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("computes dates again for the current time when it reuses an answer", async () => {
+    vi.setSystemTime(new Date("2026-10-22T20:55:00.000Z")); // 23:55 in Amman
+    const { fetchSpy, read } = await harness();
+    const before = await read({ noteAt: "2026-10-22T20:55:00.000Z" });
+    vi.setSystemTime(new Date("2026-10-22T21:05:00.000Z")); // 00:05 the next day
+    const after = await read({ noteAt: "2026-10-22T21:05:00.000Z" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(before).toMatchObject({ ok: true, extraction: { followUp: { value: { date: "2026-10-23" } } } });
+    expect(after).toMatchObject({ ok: true, extraction: { followUp: { value: { date: "2026-10-24" } } } });
+  });
+
+  it("makes a new call when the note, the reader's language, the member record or the reader's access differs", async () => {
+    const { t, fetchSpy, read } = await harness();
+    await read();
+    await read({ note: "No answer, call tomorrow evening please" });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    await read({ locale: "ar" });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      const member = (await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", org._id).eq("entityType", "member").eq("publicId", "prep-member")).unique())!;
+      await ctx.db.patch(member._id, { updatedAt: member.updatedAt + 1 });
+    });
+    await read();
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    await t.run(async (ctx) => {
+      const user = (await ctx.db.query("users").collect()).find((row) => row.authSubject === "clerk-prep-sales")!;
+      const membership = (await ctx.db.query("organizationMemberships").collect()).find((row) => row.userId === user._id)!;
+      await ctx.db.patch(membership._id, { branchScope: "all" });
+    });
+    await read();
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+  });
+
+  it("rechecks the reader's access before serving a kept answer", async () => {
+    const { t, fetchSpy, read } = await harness();
+    expect((await read()).ok).toBe(true);
+    await t.run(async (ctx) => {
+      const user = (await ctx.db.query("users").collect()).find((row) => row.authSubject === "clerk-prep-sales")!;
+      const membership = (await ctx.db.query("organizationMemberships").collect()).find((row) => row.userId === user._id)!;
+      await ctx.db.patch(membership._id, { role: "trainer" });
+    });
+    await expect(read()).rejects.toThrow(/access/i);
+    // Another gym's reader never reaches the kept answer.
+    await expect(read({ memberId: "prep-foreign-member" })).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops kept answers when roles change or the member is deleted, and lets them expire", async () => {
+    const { t, fetchSpy, read, kept } = await harness();
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      const owner = await ctx.db.insert("users", { publicId: "prep-owner", authSubject: "clerk-prep-owner", email: "owner@prep.example", fullName: "Prep Owner", platformAdmin: false, status: "active", createdAt: Date.now(), updatedAt: Date.now() });
+      const branch = (await ctx.db.query("branches").collect()).find((row) => row.organizationId === org._id)!;
+      await ctx.db.insert("organizationMemberships", { organizationId: org._id, userId: owner, role: "owner", branchIds: [branch._id], branchScope: "all", active: true, createdAt: Date.now(), updatedAt: Date.now() });
+      await ctx.db.insert("roleDefinitions", { organizationId: org._id, role: "trainer", label: "Trainer", description: "Coaches members", permissions: ["members.read"], discountLimitMinor: 0, isSystem: true, createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    const owner = t.withIdentity({ subject: "clerk-prep-owner" });
+    const ownerOp = (operation: string, input: Record<string, unknown>) => ({ operation, input, organizationId: ORG, activeBranchId: MAIN, correlationId: "cor-prep-owner" });
+    await read();
+    expect(await kept()).toHaveLength(1);
+    await owner.mutation(api.domain.mutate, ownerOp("roles.update", { role: "trainer", permissions: ["members.read"] }));
+    expect(await kept()).toHaveLength(0);
+    await read();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(await kept()).toHaveLength(1);
+    await owner.mutation(api.domain.mutate, ownerOp("members.archive", { memberId: "prep-member", reason: "Left the gym" }));
+    await owner.mutation(api.domain.mutate, ownerOp("members.delete", { memberId: "prep-member", reason: "Asked to be removed", confirmation: "Omar Haddad" }));
+    expect(await kept()).toHaveLength(0);
+    // Expiry: a kept answer older than the window is neither served nor kept.
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      await ctx.db.insert("aiModelCache", { organizationId: org._id, key: "extract_contact_note:old", task: "extract_contact_note", subjectType: "member", subjectId: "someone", promptVersion: "v", model: "m", answer: extracted, costMicros: 1, hits: 0, createdAt: Date.now() - 20 * 60_000, expiresAt: Date.now() - 5 * 60_000 });
+    });
+    expect(await t.mutation(internal.aiActions.expireModelAnswers, {})).toBe(1);
+    expect(await kept()).toHaveLength(0);
+  });
+
+  it("drops kept answers about both records when duplicates are merged", async () => {
+    const { t, read, kept } = await harness();
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      const branch = (await ctx.db.query("branches").collect()).find((row) => row.organizationId === org._id)!;
+      const owner = await ctx.db.insert("users", { publicId: "prep-owner", authSubject: "clerk-prep-owner", email: "owner@prep.example", fullName: "Prep Owner", platformAdmin: false, status: "active", createdAt: Date.now(), updatedAt: Date.now() });
+      await ctx.db.insert("organizationMemberships", { organizationId: org._id, userId: owner, role: "owner", branchIds: [branch._id], branchScope: "all", active: true, createdAt: Date.now(), updatedAt: Date.now() });
+      await ctx.db.insert("domainRecords", { organizationId: org._id, entityType: "member", publicId: "prep-member-copy", branchId: branch._id, memberPublicId: "prep-member-copy", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "prep-member-copy", fullName: "Omar Haddad", phone: "+962790000001", homeBranchId: MAIN, status: "active", preferredLanguage: "en" } });
+    });
+    await read();
+    await read({ memberId: "prep-member-copy" });
+    expect((await kept()).map((row) => row.subjectId).sort()).toEqual(["prep-member", "prep-member-copy"]);
+    const owner = t.withIdentity({ subject: "clerk-prep-owner" });
+    const ownerOp = (operation: string, input: Record<string, unknown>) => ({ operation, input, organizationId: ORG, activeBranchId: MAIN, correlationId: "cor-prep-owner" });
+    const cases = await owner.query(api.domain.query, ownerOp("duplicates.list", { status: "open" })) as { items: Array<{ id: string; primary: { id: string; version: string }; candidate: { id: string; version: string } }> };
+    const pair = cases.items[0]!;
+    await owner.mutation(api.domain.mutate, ownerOp("duplicates.merge", { caseId: pair.id, survivingMemberId: pair.primary.id, mergedMemberId: pair.candidate.id, primaryVersion: pair.primary.version, candidateVersion: pair.candidate.version, reason: "Same person, two records" }));
+    expect(await kept()).toHaveLength(0);
+  });
+
+  it("keeps nothing in test mode, where readings are free", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "fixture");
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ memberId: "prep-member", note: callNote }));
+    expect(await t.run(async (ctx) => await ctx.db.query("aiModelCache").collect())).toHaveLength(0);
   });
 });
 

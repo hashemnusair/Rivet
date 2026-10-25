@@ -74,6 +74,19 @@ export async function platformAvailable(ctx: ReadCtx, organizationId: Id<"organi
   return Boolean((await availabilityFor(ctx, organizationId))?.available);
 }
 
+/**
+ * Drop reusable model answers (AI-1.9): for one subject after a merge or
+ * deletion, or for the whole gym after a permission change. Keys already
+ * change with record versions and access; this removes the words they hold.
+ */
+export async function dropModelCache(ctx: MutationCtx, organizationId: Id<"organizations">, subject?: { type: "member" | "lead"; id: string }): Promise<number> {
+  const rows = subject
+    ? await ctx.db.query("aiModelCache").withIndex("by_organization_subject", (q) => q.eq("organizationId", organizationId).eq("subjectType", subject.type).eq("subjectId", subject.id)).take(500)
+    : await ctx.db.query("aiModelCache").withIndex("by_organization_key", (q) => q.eq("organizationId", organizationId)).take(2_000);
+  for (const row of rows) await ctx.db.delete(row._id);
+  return rows.length;
+}
+
 /** Recorded model spend this month for a gym, and for one run when named. */
 export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organizations">, runPublicId?: string): Promise<{ monthMicros: number; runMicros?: number }> {
   const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now()))).collect();

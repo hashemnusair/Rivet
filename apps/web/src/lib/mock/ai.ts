@@ -392,7 +392,7 @@ export class MockAiEngine {
     return { available: true, brief, ...(draftStep?.step.draft ? { preparedDraft: { ...draftStep.step.draft, runId: draftStep.run.id, preparedAt: draftStep.step.updatedAt } } : {}) };
   }
 
-  extractNote(input: { memberId?: string; leadId?: string; note: string; noteAt?: string }): AiExtractNoteResult {
+  extractNote(input: { memberId?: string; leadId?: string; note: string; noteAt?: string; locale?: "en" | "ar" }): AiExtractNoteResult {
     const subject = input.leadId ? "lead" : "member";
     this.requireHumanPermission(subject === "lead" ? "crm.write" : "members.write");
     if (subject === "member") this.host.memberFollowUpContext(input.memberId ?? "");

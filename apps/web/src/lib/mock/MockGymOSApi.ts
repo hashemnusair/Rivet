@@ -4509,7 +4509,7 @@ export class MockGymOSApi implements GymOSApi {
   setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.respond(() => this.ai.setPlatformStop(input, this.actor().name)); }
   getPlatformAiAvailability(): Promise<AI.AiPlatformAvailability> { return this.respond(() => this.ai.platformAvailability()); }
   setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<AI.AiGymAvailability> { return this.respond(() => this.ai.setPlatformAvailability(input, this.actor().name)); }
-  extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
+  extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string; locale?: "en" | "ar" }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }
   startAiRun(input: AI.StartAiRunInput): Promise<AI.AiRunView> { return this.respond(() => this.ai.startRun(input)); }

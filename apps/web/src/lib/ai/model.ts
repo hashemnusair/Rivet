@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AiAdapterMode, AiErrorCategory, AiNoteExtraction, AiRunRevision, AiSourceKind, MemberFilterInterpretation } from "./contracts";
 
 export type { MemberFilterInterpretation } from "./contracts";
-import { extractNoteDeterministic, normalizeModelNoteOutput, NOTE_EXTRACTION_PROMPT_VERSION } from "./note-extraction";
+import { extractNoteDeterministic, modelNoteOutputSchema, normalizeModelNoteOutput, NOTE_EXTRACTION_PROMPT_VERSION, type ModelNoteOutput } from "./note-extraction";
 import { normalizeNoteText } from "./relative-dates";
 
 /**
@@ -176,6 +176,12 @@ export interface ModelTaskResult {
   source: AiSourceKind;
   promptVersion: string;
   usage: { inputTokens?: number; outputTokens?: number; costMicros?: number };
+  /**
+   * The provider's answer after schema validation, before RIVET's own date
+   * and evidence work, for tasks whose answer may be reused (AI-1.9). Reusing
+   * it runs that work again against the current note and time.
+   */
+  answer?: ModelNoteOutput;
 }
 
 export interface ModelTaskFailure {
@@ -359,7 +365,7 @@ export function normalizeLiveOutput(task: ModelTask, raw: unknown, usage: ModelT
     case "extract_contact_note": {
       const normalized = normalizeModelNoteOutput(raw, { ...task, source: "live" });
       if ("error" in normalized) return malformed;
-      return { ok: true, output: { kind: task.kind, extraction: normalized.extraction }, source: "live", promptVersion, usage };
+      return { ok: true, output: { kind: task.kind, extraction: normalized.extraction }, source: "live", promptVersion, usage, answer: modelNoteOutputSchema.parse(raw) };
     }
     case "draft_followup_message": {
       const parsed = z.object({ text: z.string().trim().min(1).max(700) }).strict().safeParse(raw);

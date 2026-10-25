@@ -112,6 +112,7 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "aiProposals", index: "by_organization_status" },
   { table: "aiMemories", index: "by_organization_subject" },
   { table: "aiArtifacts", index: "by_organization_public_id" },
+  { table: "aiModelCache", index: "by_organization_key" },
   { table: "aiUsage", index: "by_organization_month" },
   { table: "aiFeedback", index: "by_organization" },
 ];

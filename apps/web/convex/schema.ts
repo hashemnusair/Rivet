@@ -2254,6 +2254,29 @@ export default defineSchema({
     .index("by_organization_kind", ["organizationId", "kind", "createdAt"])
     .index("by_expires", ["expiresAt"]),
 
+  // Validated provider answers reused for a short window (AI-1.9), so a
+  // repeated reading of the same note is not paid for twice. The key covers
+  // the gym, subject and its version, the reader's access, language and the
+  // prompt/model; entries are dropped on merge, deletion or permission change
+  // and expire within minutes because they hold words from an unsaved note.
+  aiModelCache: defineTable({
+    organizationId: v.id("organizations"),
+    key: v.string(),
+    task: v.string(),
+    subjectType: v.union(v.literal("member"), v.literal("lead")),
+    subjectId: v.string(),
+    promptVersion: v.string(),
+    model: v.string(),
+    answer: v.any(),
+    costMicros: v.number(),
+    hits: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_key", ["organizationId", "key"])
+    .index("by_organization_subject", ["organizationId", "subjectType", "subjectId"])
+    .index("by_expires", ["expiresAt"]),
+
   // Safe operational traces: versions, timings, counts and categories only.
   aiUsage: defineTable({
     organizationId: v.id("organizations"),

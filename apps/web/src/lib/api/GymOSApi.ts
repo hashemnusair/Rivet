@@ -1561,7 +1561,7 @@ export interface GymOSApi {
   /** Platform operators: which gyms may use assistance at all. No gym is available until one is made available here. */
   getPlatformAiAvailability(): Promise<import("@/lib/ai/contracts").AiPlatformAvailability>;
   setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<import("@/lib/ai/contracts").AiGymAvailability>;
-  extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
+  extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string; locale?: "en" | "ar" }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
   interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;
   startAiRun(input: import("@/lib/ai/contracts").StartAiRunInput): Promise<import("@/lib/ai/contracts").AiRunView>;
