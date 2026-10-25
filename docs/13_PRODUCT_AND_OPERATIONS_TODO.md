@@ -223,10 +223,9 @@ staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.
 Exit: single-member and batch journeys pass with real domain mutations in isolated
 staging; interruption/retry does not duplicate tasks; no false send/contact claim;
 English/Arabic/phone interactions pass. **Status: implemented locally; the exit is not
-met until AI-2.7 isolated staging runs.** AI-2.1 (connected item per member in the list
-rows) is partly done: the selected-member panel shows the brief headline.
+met until AI-2.7 isolated staging runs.**
 
-- [ ] **AI-2.1 One connected renewal opportunity per member** in the existing renewal
+- [x] **AI-2.1 One connected renewal opportunity per member** *(Implemented locally in the renewal list: one row per membership as before, each with the member's most useful brief fact the row lacks; full brief with sources in the selected panel; order unchanged. The Today queue is unchanged.)* in the existing renewal
   list/Today surfaces, with supporting facts and source links; complete, stable list
   preserved; mandatory work never hidden by ranking.
 - [x] **AI-2.2 Prepared message and truthful manual handoff.** *(Drafts in member language from approved catalogue text; WhatsApp handoff opens the draft and records only `whatsapp_opened`.)* Editable draft in the
