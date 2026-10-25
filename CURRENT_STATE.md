@@ -22,7 +22,8 @@ decisions (`7f503745`).
 
 - Shared pure contracts in `apps/web/src/lib/ai/`: `contracts.ts`, `capabilities.ts`
   (tool/playbook registry, authority intersection, param schemas), `model.ts`
-  (off/fixture/live adapter, `openai_chat_json` protocol unverified, member-data gate),
+  (off/fixture/live adapter, `openai_chat_json` protocol unverified, member-data gate;
+  `anthropic_messages` added in checkpoint 5),
   `note-extraction.ts` + `relative-dates.ts` (bilingual note → fields, dates resolved
   by RIVET against note time/gym timezone, ambiguity alternatives, injection flag),
   `member-brief.ts`, `renewal-batch.ts`.
@@ -116,6 +117,47 @@ evidence only; no provider, staging or live evidence.
   defects" in docs/13 (export delegation principal, rolled-back expiry write, empty
   page-header wrappers that broke a Linux visual test, Arabic date and filter readings).
 
+**Checkpoint 5 — Claude connection and the live evaluation command (25 October
+2026).** Implemented locally and tested against stubbed transports only. No key was
+used, no live call was made, and nothing was deployed.
+
+- AI-1.4: protocol `anthropic_messages` calls the Claude Messages API with Anthropic's
+  official SDK (`@anthropic-ai/sdk`) from `convex/aiModelCall.ts`. It uses structured
+  outputs with per-task JSON schemas and low effort, sends no sampling settings, never
+  retries, and turns SDK logging off. The base URL defaults to the Claude API. Request,
+  schemas and reply parsing are in `src/lib/ai/model.ts`
+  (`buildAnthropicRequest`, `TASK_SCHEMAS`, `parseAnthropicResponse`). Replies pass
+  the same validation as before, now shared by both protocols (`normalizeLiveOutput`).
+- AI-1.5 defect fixed: live calls recorded no cost, so the caps could never trip after
+  real spend. Every billed reply is now priced from `MODEL_PRICES_MICROS_PER_MTOK` or
+  the price variables, including refused, cut-off and rejected replies. Live mode is
+  not ready without a price.
+- AI-5.2: `pnpm ai:eval:live` (`src/lib/ai/evals/evaluate-live.test.ts`,
+  `src/lib/ai/evals/live.ts`) scores the held-out note, filter and revision cases
+  through the production `callModel`. It uses a $1 default spend limit and reports
+  failures, cost and p50/p95 latency to
+  `apps/web/test-results/ai-eval/live-report.json`. It is skipped in `pnpm test`.
+  The runner is tested offline (`live.test.ts`): it gives the same scores as the
+  deterministic harness, stops at the limit, and counts failed calls as unanswered,
+  never as fabrications.
+- Tests: `src/lib/ai/model-anthropic.test.ts` (13). `convex/ai.prepare.test.ts` now
+  runs in a server-like environment and adds three Claude journeys through the real
+  SDK: request shape and key only in the auth header; priced usage; no retry;
+  rate limit, timeout, cut-off and refusal; and the budget stopping after real spend.
+  The Convex bundle check (esbuild, browser platform as Convex uses) found no
+  Node-only imports.
+- Setup for a key holder: docs/12 "Connecting Claude with a key holder's API key".
+  Decision: docs/09 "Claude connection".
+- Gates for this checkpoint: frozen install; `pnpm test` (2,568 Vitest tests in 405
+  files passed; 3 skipped: the 2 existing opt-in benchmarks and the opt-in live
+  evaluation; plus 14 repository safety tests); `pnpm ai:eval` (figures unchanged, all
+  minimums met); `pnpm typecheck`; `pnpm convex:typecheck`; `pnpm lint`; plain
+  `pnpm build`; `pnpm audit --prod`; Arabic lock; `git diff --check`; credential-free
+  codegen (the worktree-local backend accepted the functions bundle with the SDK; no
+  `_generated` diff). `pnpm ai:eval:live` without a key fails at its first check, as
+  intended. Playwright was not rerun: no browser-facing code changed (`model.ts` gains
+  a type-only SDK import).
+
 **Final local gates (this publication):** frozen install; `pnpm test` (2,549 Vitest
 tests in 403 files passed, 2 existing opt-in benchmarks skipped, plus 14 repository
 safety tests); `pnpm ai:eval` (all minimums met); `pnpm typecheck`;
@@ -128,7 +170,8 @@ the full Playwright suite (252 passed, 14 existing conditional skips, 0 failed o
 **Still open (not blocked by code):** AI-0.1 inventory review (Hashem/Elias); AI-0.7
 provider, data-processing, budget, packaging and pilot decisions; AI-1.4 real endpoint
 evidence; AI-1.9 model-output cache; AI-2.7 and AI-5.6 isolated staging and live pilot
-(separate authorization); AI-5.2 live evaluation (needs an endpoint). Nothing was
+(separate authorization); AI-5.2 live evaluation (command built; needs a key holder to
+run `pnpm ai:eval:live`). Nothing was
 deployed, merged into main, activated or run against a live tenant.
 
 Read first: docs/13 AI section (status and gaps), docs/09 AI decisions (runtime, keys,

@@ -77,17 +77,47 @@ production; leaving them unset keeps AI off.
 | Variable | Local mock preview / CI | Isolated dev Convex (test) | Production Convex | Vercel / Next.js |
 | --- | --- | --- | --- | --- |
 | `RIVET_AI_MODE` | Mock adapter only; Convex tests set `fixture` in-process | `fixture` first, `live` only for an approved endpoint test | Unset (off) until a separately authorized release | Never |
-| `RIVET_AI_PROTOCOL` | — | `openai_chat_json` only after the supplied endpoint's contract is verified | Unset | Never |
-| `RIVET_AI_API_KEY` | — | Entered by Hashem in the dashboard; never in Git, shell, logs or chat | Unset | Never (`NEXT_PUBLIC_` forbidden) |
-| `RIVET_AI_BASE_URL`, `RIVET_AI_MODEL` | — | Dashboard | Unset | Never |
+| `RIVET_AI_PROTOCOL` | — | `anthropic_messages` for Claude; `openai_chat_json` only for another endpoint whose contract is verified | Unset | Never |
+| `RIVET_AI_API_KEY` | Live evaluation only: git-ignored `apps/web/.env.ai-eval.local`, created by the key holder | Entered by the key holder (Hashem or Elias) in the dashboard; never in Git, shell, logs or chat | Unset | Never (`NEXT_PUBLIC_` forbidden) |
+| `RIVET_AI_MODEL` | — | `claude-sonnet-5-5` | Unset | Never |
+| `RIVET_AI_BASE_URL` | — | Unset for `anthropic_messages` (defaults to `https://api.anthropic.com`); required https URL for `openai_chat_json` | Unset | Never |
+| `RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK`, `RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK` | — | Only for a model missing from the price table in `src/lib/ai/model.ts` (Claude Sonnet 5.5, Opus 5.5 and Haiku 5.5 are listed); live mode is not ready without a price | Unset | Never |
 | `RIVET_AI_PROCESSING_APPROVED` | — | Unset (synthetic data only) until processing terms are approved; then `member_data` | Unset | Never |
 | `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS` | — | Optional | Unset | Never |
-| `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | **Required for any live call**: the approved per-gym monthly budget in micro-units of the provider's billing currency; unset means live mode spends nothing | Unset | Never |
+| `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | **Required for any live call**: the approved per-gym monthly budget in micro-units of the provider's billing currency (micro-dollars for Claude: `5000000` is $5); unset means live mode spends nothing | Unset | Never |
 
 Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
 never `convex env get`. The gym-level switch (Settings → Roles & access →
 Assistance), the platform stop and capability modes are stored in Convex tables and
 default to off.
+
+#### Connecting Claude with a key holder's API key
+
+Three steps, each needing the one before it. None touches production.
+
+1. **Measure, with no deployment.** The key holder creates
+   `apps/web/.env.ai-eval.local` in an editor with the single line
+   `RIVET_AI_API_KEY=` followed by the key (never through a shell command, chat or
+   commit; the file is git-ignored), then runs `pnpm ai:eval:live` from the repository
+   root. It sends the held-out reader cases (written for the evaluation, no real
+   member data) to Claude Sonnet 5.5 and stops at a $1 spend limit
+   (`RIVET_AI_EVAL_MAX_COST_MICROS`); a full run is about 60 short calls. It prints
+   the scores, cost and latency and writes
+   `apps/web/test-results/ai-eval/live-report.json`. Record the result in
+   CURRENT_STATE and in the pilot record below. `RIVET_AI_MODEL` and
+   `RIVET_AI_TIMEOUT_MS` may be set in the same file to compare models or timeouts.
+2. **Isolated development deployment** (`fleet-otter-621`; deploying this branch's
+   functions there needs Hashem's explicit approval). In the Convex dashboard for that
+   deployment only, under Settings → Environment Variables: `RIVET_AI_MODE=live`,
+   `RIVET_AI_PROTOCOL=anthropic_messages`, `RIVET_AI_MODEL=claude-sonnet-5-5`,
+   `RIVET_AI_MAX_MONTHLY_COST_MICROS` (for example `5000000`), and `RIVET_AI_API_KEY`
+   pasted by the key holder. Set `RIVET_AI_PROCESSING_APPROVED=member_data` only
+   while that deployment holds synthetic records; until then reading notes and
+   drafting stay blocked and only list filters reach Claude. Then turn assistance on
+   for the seeded gym (Settings → Roles & access → Assistance, including external
+   processing). Check names with `pnpm convex:env:names`, never values.
+3. **Production** stays unset (off) until the AI-0.7 decisions in docs/09 are made
+   and a separate release is authorized.
 
 AI implementation must use a separate feature worktree and an isolated test
 backend/identity environment. Verify every connected target before preview tests;
@@ -133,7 +163,7 @@ Ordinary workflows never depend on assistance.
 | Capabilities enabled and their modes | |
 | Tenants and branches activated | |
 | Deterministic evaluation report (set, date, result) | |
-| Live provider evaluation report (set, sample sizes, result), or "not run" | |
+| Live provider evaluation report (`pnpm ai:eval:live`: set, sample sizes, cost, p95 latency, result), or "not run" | |
 | Provider data-handling approval and `RIVET_AI_PROCESSING_APPROVED` state | |
 | Per-run and monthly budget caps | |
 | Incident owner and stop owner (names) | |

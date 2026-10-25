@@ -192,7 +192,7 @@ staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.
   failure/compensation. Tools wrap existing domain operations; no direct table writes
   by agents and no success inferred from timeline text. Versioned playbooks name goal,
   permitted tools, context and completion checks.
-- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live, `openai_chat_json` contract tested against a stubbed provider; real endpoint evidence pending Hashem.)* Modes `off` (default),
+- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live with two protocols. `anthropic_messages` calls Claude through Anthropic's official SDK and is tested through that SDK with a stubbed transport; `openai_chat_json` is tested against a stubbed provider. Live mode needs a known price so every billed reply is counted. Real endpoint evidence pending: `pnpm ai:eval:live` with a key, then the isolated development deployment.)* Modes `off` (default),
   `fixture` (deterministic, non-production) and `live` (explicit protocol, key, base
   URL and model in the isolated Convex deployment). Strict output validation,
   timeouts, malformed/refusal handling, minimized context, member-data gate, versioned
@@ -356,13 +356,13 @@ journeys in `apps/web/e2e/ai-assist.spec.ts` and the ordinary forms perform, not
 
 Exit: live evidence for the exact released scope, known limitations, effective stop
 controls, cost headroom, incident ownership and a repeatable improvement process.
-**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); AI-5.2 and AI-5.6 need a
-provider endpoint and separate authorization and are not started.**
+**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); the AI-5.2 command is
+built but not run (needs a key); AI-5.6 needs separate authorization and is not started.**
 
-- [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 50/58 fields (86.2%; en 10/12, ar 6/12 cases), filters 13/16 cases, revisions 10/10, cash matching 8/8, lead decisions 8/8, filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
+- [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 58/66 fields (87.9%; en 12/14, ar 8/14 cases, including four code-switched notes), filters 13/16 cases, revisions 10/10, machine matching 12/12, cash matching 8/8, lead decisions 8/8, filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
   and sample size, run in CI and as a documented command.
-- [ ] **AI-5.2 Opt-in live provider evaluation** (synthetic fixtures only until data
-  handling is approved); pending endpoint.
+- [ ] **AI-5.2 Opt-in live provider evaluation** *(Command built, not run: `pnpm ai:eval:live` sends the held-out note, filter and revision cases through the production model call, scores them with the same harness and minimums, and reports cost, failures and latency, with a $1 default spend limit. The runner is tested offline; no live result exists until a key holder runs it.)* (synthetic fixtures only until data
+  handling is approved); pending a key.
 - [x] **AI-5.3 Instrumentation and outcome measures** *(Implemented locally: owner-visible monthly summary of runs, saved tasks and their later outcome, proposal decisions, corrections, model calls/latency/cost and feedback. "Unnecessary contacts" and suggestion dismissals are not measured yet: the product records neither, so they stay open in AI-4.10.)*: usage, latency, cost, task
   completion, corrections, dismissals, unnecessary contacts; owner-visible summary.
 - [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Rehearsed locally only, not on a hosted deployment.)*: global/tenant/capability/run
@@ -437,6 +437,11 @@ Recorded as found during implementation; each entry names its subitem and eviden
   existing browser tests pin its height and keyboard order, so any new section row
   overflows it. Assistance lives under Roles & access with no row of its own
   (`dd0fe056`); the next new settings section needs a deliberate rail design decision.
+- **Fixed (AI-1.5, found while connecting Claude):** live calls recorded tokens but no
+  cost, so the monthly and per-run caps could never trip after real spend, and a reply
+  RIVET rejected recorded no usage at all. Every billed reply, including refused, cut-off
+  and rejected ones, is now priced, and live mode is not ready without a price
+  (`convex/aiModelCall.ts`, `convex/ai.prepare.test.ts`).
 - No milestone is complete. Current status per subitem is above; evidence and
   remaining work are in CURRENT_STATE.
 

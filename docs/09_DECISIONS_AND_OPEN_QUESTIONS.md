@@ -66,10 +66,29 @@ production and never with `NEXT_PUBLIC_`. A Next.js `apps/web/.env.local` file d
 not configure Convex actions; it is not needed for AI and should not hold the key.
 Additional server-only names introduced by the adapter: `RIVET_AI_MODE`
 (`off` default, `fixture`, `live`), `RIVET_AI_PROTOCOL` (the explicitly declared wire
-protocol; only `openai_chat_json` is implemented and it is unverified until a real
-endpoint is supplied), `RIVET_AI_PROCESSING_APPROVED` (must be exactly `member_data`
+protocol: `anthropic_messages` or `openai_chat_json`, both unverified until a real
+endpoint is used), `RIVET_AI_PROCESSING_APPROVED` (must be exactly `member_data`
 before any member personal data is sent to a live provider), `RIVET_AI_TIMEOUT_MS`
 and budget caps. Production leaves `RIVET_AI_MODE` unset, which means off.
+
+**Claude connection (implementation decision, 25 October 2026).** Hashem and Elias
+plan to try Claude Sonnet 5.5 with Elias's Claude API account. Claude is the candidate
+provider, not yet the approved production provider (open decisions below).
+`anthropic_messages` calls the Messages API with Anthropic's official TypeScript SDK
+from the Convex action, rather than through a compatibility layer. Each task sends
+the same safety rules and minimized input as before, constrains the reply with
+structured outputs (the task's JSON schema), and asks for low effort, so short
+reading tasks usually skip thinking. RIVET still validates every reply as before. No
+sampling settings or thinking switches are sent. The SDK never retries and its
+logging is off. A refusal becomes `model_refused`, and the person carries on by hand.
+Server-side fallback to another model is not enabled: for Claude Sonnet 5.5 it only
+retries cyber and AI-development declines, which gym tasks should not trigger, and it
+would bill a second model. This can be revisited if the live evaluation shows
+refusals. Spend is computed from published per-token prices: Sonnet 5.5 at $2/$10,
+Opus 5.5 at $4/$20 and Haiku 5.5 at $0.10/$0.50 per million input/output tokens.
+Deployment price variables cover any other model. Every billed reply counts, including
+rejected ones, and live mode is not ready without a price. For Claude, budget
+variables are in micro-dollars. The default evaluation model is Claude Sonnet 5.5.
 
 **Fixture mode.** `fixture` uses deterministic bilingual rules for extraction,
 drafting and request interpretation so contracts, UI and evaluations work without a
@@ -113,7 +132,7 @@ autonomous under this policy; they stay with a person through the existing appro
 
 | Decision | Owner | Current default in code |
 | --- | --- | --- |
-| Model provider/endpoint and its actual API contract | Hashem | `RIVET_AI_MODE` unset (off); fixture for local/CI |
+| Model provider/endpoint and its actual API contract | Hashem | `RIVET_AI_MODE` unset (off); fixture for local/CI. Claude (`anthropic_messages`, Sonnet 5.5) is implemented as the candidate; not approved for production |
 | Provider data processing, retention and region; member-data approval | Hashem (with counsel as needed) | Member data never sent to a live provider unless `RIVET_AI_PROCESSING_APPROVED=member_data` and the gym enabled external processing |
 | Pilot budgets in currency (per run, per gym per month) | Hashem | Code caps exist but stay unset/zero-spend; live calls refuse when a cost is reported without a configured budget |
 | Basic/Pro AI packaging, allowances and pricing | Hashem/Elias | No entitlement change; AI off by default per gym |
