@@ -1,3 +1,4 @@
+import type { AiNoteExtraction, AiRunRevision, MemberFilterInterpretation } from "../contracts";
 import { investigateCashDifference, recomputeExpectedCash, shouldPrepareVarianceReview, type CashCandidateKind, type CashShiftFacts, type CashShiftTransaction } from "../cash-difference";
 import { memberFilterPlan } from "../list-filters";
 import { interpretFiltersDeterministic, interpretRevisionDeterministic } from "../model";
@@ -11,8 +12,27 @@ import { EVAL_MACHINES, MACHINE_CASES, EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_C
  * runs without a provider, network or credentials, so it runs in CI and as
  * `pnpm ai:eval`. Language readers are scored per field with fabrication
  * counted separately; rule-based decisions must be exactly right. The live
- * provider evaluation (AI-5.2) is a separate opt-in command.
+ * provider evaluation (AI-5.2) is a separate opt-in command that scores the
+ * same held-out reader cases through the real model call
+ * (`evaluate-live.test.ts`, `pnpm ai:eval:live`).
  */
+
+/**
+ * The three language readers a model can stand in for. `undefined` means the
+ * reader gave no answer (a failed live call): scored as missing, never as a
+ * fabrication, and counted in `unanswered`.
+ */
+export interface LanguageReaders {
+  note: (item: NoteCase) => AiNoteExtraction | undefined;
+  filters: (item: FilterCase) => MemberFilterInterpretation | undefined;
+  revision: (item: RevisionCase) => AiRunRevision | undefined;
+}
+
+export const DETERMINISTIC_READERS: LanguageReaders = {
+  note: (item) => extractNoteDeterministic({ note: item.note, noteAt: NOTE_AT, timezone: TIMEZONE, subject: "member" }),
+  filters: (item) => interpretFiltersDeterministic({ kind: "interpret_filters", surface: "members", text: item.text, branches: EVAL_BRANCHES }),
+  revision: (item) => interpretRevisionDeterministic({ kind: "interpret_revision", text: item.text, candidates: REVISION_CANDIDATES, today: "2026-10-22" }),
+};
 
 export interface TaskReport {
   task: string;
@@ -24,6 +44,8 @@ export interface TaskReport {
   fields?: { scored: number; correct: number };
   /** A value produced where the note or request gave none. */
   fabrications: number;
+  /** Cases the reader gave no answer for (live calls that failed). */
+  unanswered?: number;
   minimum: { metric: "field_accuracy" | "case_accuracy"; value: number; fabrications: 0 };
   failures: Array<{ id: string; detail: string }>;
   meetsMinimum: boolean;
@@ -34,7 +56,7 @@ export interface EvalReport {
   set: string;
   /** The earlier set, used to find and fix defects; reported, never gating. */
   developmentSet: string;
-  reader: "deterministic";
+  reader: "deterministic" | "live";
   ranAt: string;
   tasks: TaskReport[];
   development: TaskReport[];
@@ -70,11 +92,18 @@ function finishReport(report: TaskReport): TaskReport {
   return report;
 }
 
-function evaluateNotes(cases: NoteCase[]): TaskReport {
+function unanswered(report: TaskReport, id: string): void {
+  report.unanswered = (report.unanswered ?? 0) + 1;
+  report.failures.push({ id, detail: "no answer from the reader" });
+}
+
+export function evaluateNotes(cases: NoteCase[], read: LanguageReaders["note"] = DETERMINISTIC_READERS.note): TaskReport {
   const report = emptyReport("note_extraction", "reader", { metric: "field_accuracy", value: MINIMUMS.note_extraction, fabrications: 0 });
   for (const item of cases) {
-    const result = extractNoteDeterministic({ note: item.note, noteAt: NOTE_AT, timezone: TIMEZONE, subject: "member" });
-    const actual: Record<string, unknown> = {
+    const result = read(item);
+    if (!result) unanswered(report, item.id);
+    // No answer leaves every field missing: wrong where a value was expected, never a fabrication.
+    const actual: Record<string, unknown> = result ? {
       outcome: result.outcome?.value ?? null,
       followUpDate: result.followUp?.value.date ?? null,
       followUpTime: result.followUp?.value.time,
@@ -82,11 +111,11 @@ function evaluateNotes(cases: NoteCase[]): TaskReport {
       renewalInterest: result.renewalInterest?.value ?? null,
       preferredContactTime: result.preferredContactTime?.value ?? null,
       ignoredInstructions: result.ignoredInstructions,
-    };
+    } : {};
     let casePassed = true;
     for (const [field, expected] of Object.entries(item.expect)) {
       const got = actual[field];
-      const ok = Array.isArray(expected) ? expected.includes(got as never) : got === expected;
+      const ok = result !== undefined && (Array.isArray(expected) ? expected.includes(got as never) : got === expected);
       report.fields!.scored += 1;
       if (ok) report.fields!.correct += 1;
       else {
@@ -100,10 +129,15 @@ function evaluateNotes(cases: NoteCase[]): TaskReport {
   return finishReport(report);
 }
 
-function evaluateFilters(cases: FilterCase[]): TaskReport {
+export function evaluateFilters(cases: FilterCase[], read: LanguageReaders["filters"] = DETERMINISTIC_READERS.filters): TaskReport {
   const report = emptyReport("filter_interpretation", "reader", { metric: "case_accuracy", value: MINIMUMS.filter_interpretation, fabrications: 0 });
   for (const item of cases) {
-    const result = interpretFiltersDeterministic({ kind: "interpret_filters", surface: "members", text: item.text, branches: EVAL_BRANCHES });
+    const result = read(item);
+    if (!result) {
+      unanswered(report, item.id);
+      tally(report, item.language, false);
+      continue;
+    }
     const problems: string[] = [];
     const keys = ["membership", "expiringWithinDays", "notVisitedForDays", "owes", "branchId"] as const;
     if (item.expect.unrecognisedOnly) {
@@ -132,10 +166,16 @@ function evaluateFilters(cases: FilterCase[]): TaskReport {
   return finishReport(report);
 }
 
-function evaluateRevisions(cases: RevisionCase[]): TaskReport {
+export function evaluateRevisions(cases: RevisionCase[], read: LanguageReaders["revision"] = DETERMINISTIC_READERS.revision): TaskReport {
   const report = emptyReport("revision_interpretation", "reader", { metric: "case_accuracy", value: MINIMUMS.revision_interpretation, fabrications: 0 });
   for (const item of cases) {
-    const result = interpretRevisionDeterministic({ kind: "interpret_revision", text: item.text, candidates: REVISION_CANDIDATES, today: "2026-10-22" });
+    const result = read(item);
+    if (!result) {
+      report.fields!.scored += 1;
+      unanswered(report, item.id);
+      tally(report, item.language, false);
+      continue;
+    }
     const expected = item.expect;
     let ok = result.kind === expected.kind;
     if (ok && expected.kind === "time_of_day" && result.kind === "time_of_day") ok = result.value === expected.value;
@@ -257,12 +297,15 @@ export function formatReport(report: EvalReport): string {
   const describe = (task: TaskReport, gating: boolean) => {
     const languages = Object.entries(task.byLanguage).map(([language, bucket]) => `${language} ${bucket.passed}/${bucket.cases}`).join(", ");
     const fields = task.fields ? ` · fields ${task.fields.correct}/${task.fields.scored} (${percent(task.fields.scored ? task.fields.correct / task.fields.scored : 0)})` : "";
-    lines.push(`${gating ? (task.meetsMinimum ? "PASS" : "FAIL") : "INFO"} ${task.task}: cases ${task.passedCases}/${task.cases}${languages ? ` (${languages})` : ""}${fields} · fabrications ${task.fabrications}${gating ? ` · minimum ${task.minimum.metric} ≥ ${percent(task.minimum.value)}` : ""}`);
+    const missing = task.unanswered ? ` · unanswered ${task.unanswered}` : "";
+    lines.push(`${gating ? (task.meetsMinimum ? "PASS" : "FAIL") : "INFO"} ${task.task}: cases ${task.passedCases}/${task.cases}${languages ? ` (${languages})` : ""}${fields} · fabrications ${task.fabrications}${missing}${gating ? ` · minimum ${task.minimum.metric} ≥ ${percent(task.minimum.value)}` : ""}`);
     for (const failure of task.failures) lines.push(`    ${failure.id}: ${failure.detail}`);
   };
   for (const task of report.tasks) describe(task, true);
-  lines.push(`Development set ${report.developmentSet} (used to fix readers; not gating):`);
-  for (const task of report.development) describe(task, false);
+  if (report.development.length) {
+    lines.push(`Development set ${report.developmentSet} (used to fix readers; not gating):`);
+    for (const task of report.development) describe(task, false);
+  }
   lines.push(report.meetsMinimums ? "All minimums met." : "Some minimums are not met.");
   return lines.join("\n");
 }

@@ -17,7 +17,8 @@
     "typecheck": "pnpm --filter web typecheck",
     "test": "pnpm --filter web test",
     "test:e2e": "pnpm --filter web test:e2e",
-    "ai:eval": "pnpm --filter web ai:eval"
+    "ai:eval": "pnpm --filter web ai:eval",
+    "ai:eval:live": "pnpm --filter web ai:eval:live"
   },
   "packageManager": "pnpm@11.20.0",
   "engines": {

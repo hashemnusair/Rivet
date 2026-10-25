@@ -1,3 +1,4 @@
+import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type { AiAdapterMode, AiErrorCategory, AiNoteExtraction, AiRunRevision, AiSourceKind, MemberFilterInterpretation } from "./contracts";
 
@@ -8,12 +9,35 @@ import { normalizeNoteText } from "./relative-dates";
 /**
  * The one replaceable model boundary. Convex actions call `runModelTask`; the
  * browser never does. Nothing here assumes a provider: `live` requires an
- * explicitly declared protocol, and the only implemented protocol stays
- * unverified until a real endpoint is supplied and tested.
+ * explicitly declared protocol, a key, a model and a known price.
  */
 
-export type AiProtocol = "openai_chat_json";
-export const SUPPORTED_PROTOCOLS: readonly AiProtocol[] = ["openai_chat_json"];
+/**
+ * `anthropic_messages` is the native Claude Messages API through Anthropic's
+ * official SDK; `openai_chat_json` is a generic chat-completions endpoint.
+ */
+export type AiProtocol = "openai_chat_json" | "anthropic_messages";
+export const SUPPORTED_PROTOCOLS: readonly AiProtocol[] = ["openai_chat_json", "anthropic_messages"];
+
+/** The Claude API, used when the deployment names the native protocol without a base URL. */
+export const ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com";
+
+/**
+ * Published per-token prices in micro-units of US dollars per million tokens
+ * (Claude API first-party rates, checked 25 October 2026). Thinking tokens bill
+ * as output. Any other model needs both price variables set, or live mode is
+ * not ready: spend must be countable for the budget caps to work.
+ */
+export const MODEL_PRICES_MICROS_PER_MTOK: Readonly<Record<string, { input: number; output: number }>> = {
+  "claude-sonnet-5-5": { input: 2_000_000, output: 10_000_000 },
+  "claude-opus-5-5": { input: 4_000_000, output: 20_000_000 },
+  "claude-haiku-5-5": { input: 100_000, output: 500_000 },
+};
+
+/** Cost of one call in micro-dollars, rounded up so spend is never under-counted. */
+export function callCostMicros(usage: { inputTokens?: number; outputTokens?: number }, price: { input: number; output: number }): number {
+  return Math.ceil(((usage.inputTokens ?? 0) * price.input + (usage.outputTokens ?? 0) * price.output) / 1_000_000);
+}
 
 export interface AiAdapterConfig {
   mode: AiAdapterMode;
@@ -26,6 +50,8 @@ export interface AiAdapterConfig {
   memberDataApproved: boolean;
   maxRunCostMicros?: number;
   maxMonthlyCostMicros?: number;
+  /** Price per million tokens, from the table or the deployment's price variables. */
+  price?: { input: number; output: number };
   ready: boolean;
   reason?: AiErrorCategory;
 }
@@ -57,8 +83,11 @@ export function resolveAdapterConfig(env: Record<string, string | undefined>): A
   if (mode === "off") return { ...base, reason: "ai_off" };
   if (mode === "fixture") return { ...base, ready: true };
   const protocol = (env.RIVET_AI_PROTOCOL ?? "").trim() as AiProtocol;
-  const baseUrl = (env.RIVET_AI_BASE_URL ?? "").trim();
+  const baseUrl = (env.RIVET_AI_BASE_URL ?? "").trim() || (protocol === "anthropic_messages" ? ANTHROPIC_DEFAULT_BASE_URL : "");
   const model = (env.RIVET_AI_MODEL ?? "").trim();
+  const inputPrice = positiveInteger(env.RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK);
+  const outputPrice = positiveInteger(env.RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK);
+  const price = inputPrice && outputPrice ? { input: inputPrice, output: outputPrice } : MODEL_PRICES_MICROS_PER_MTOK[model];
   let validUrl = false;
   try {
     const url = new URL(baseUrl);
@@ -66,12 +95,13 @@ export function resolveAdapterConfig(env: Record<string, string | undefined>): A
   } catch {
     validUrl = false;
   }
-  const ready = SUPPORTED_PROTOCOLS.includes(protocol) && base.hasKey && validUrl && model.length > 0;
+  const ready = SUPPORTED_PROTOCOLS.includes(protocol) && base.hasKey && validUrl && model.length > 0 && Boolean(price);
   return {
     ...base,
     ...(SUPPORTED_PROTOCOLS.includes(protocol) ? { protocol } : {}),
     ...(validUrl ? { baseUrl } : {}),
     ...(model ? { model } : {}),
+    ...(price ? { price } : {}),
     ready,
     ...(ready ? {} : { reason: "model_unavailable" as const }),
   };
@@ -152,6 +182,8 @@ export interface ModelTaskFailure {
   ok: false;
   category: AiErrorCategory;
   promptVersion: string;
+  /** Tokens a provider billed for a reply RIVET then rejected; they still count toward spend. */
+  usage?: ModelTaskResult["usage"];
 }
 
 // ---------------------------------------------------------------------------
@@ -270,14 +302,19 @@ const TASK_INSTRUCTIONS: Record<ModelTask["kind"], string> = {
   interpret_filters: "Schema: {membership?: active|expiring|expired|frozen|none, expiringWithinDays?, notVisitedForDays?, owes?, branchId?, unrecognised: string[]}. Use only branch ids from the input.",
 };
 
-export function buildLiveRequest(task: ModelTask, config: Pick<AiAdapterConfig, "model">): { path: string; body: Record<string, unknown> } {
-  const input = task.kind === "extract_contact_note"
+/** The minimized input a provider sees for a task, whichever protocol carries it. */
+function taskInput(task: ModelTask): Record<string, unknown> {
+  return task.kind === "extract_contact_note"
     ? { note: task.note.slice(0, 2_000), subject: task.subject }
     : task.kind === "draft_followup_message"
       ? { language: task.language, firstName: task.firstName, gymName: task.gymName, baseText: task.baseText, allowedFacts: task.allowedFacts }
       : task.kind === "interpret_revision"
         ? { text: task.text.slice(0, 300), candidates: task.candidates }
         : { text: task.text.slice(0, 300), surface: task.surface, branches: task.branches };
+}
+
+export function buildLiveRequest(task: ModelTask, config: Pick<AiAdapterConfig, "model">): { path: string; body: Record<string, unknown> } {
+  const input = taskInput(task);
   return {
     path: "/chat/completions",
     body: {
@@ -311,22 +348,29 @@ export function parseLiveResponse(task: ModelTask, body: unknown): ModelTaskResu
     return { ok: false, category: "model_malformed", promptVersion };
   }
   const usage = { inputTokens: envelope.data.usage?.prompt_tokens, outputTokens: envelope.data.usage?.completion_tokens };
+  return normalizeLiveOutput(task, raw, usage);
+}
+
+/** Validate a provider's JSON for a task; the same checks apply whichever protocol produced it. */
+export function normalizeLiveOutput(task: ModelTask, raw: unknown, usage: ModelTaskResult["usage"]): ModelTaskResult | ModelTaskFailure {
+  const promptVersion = PROMPT_VERSIONS[task.kind];
+  const malformed: ModelTaskFailure = { ok: false, category: "model_malformed", promptVersion, usage };
   switch (task.kind) {
     case "extract_contact_note": {
       const normalized = normalizeModelNoteOutput(raw, { ...task, source: "live" });
-      if ("error" in normalized) return { ok: false, category: "model_malformed", promptVersion };
+      if ("error" in normalized) return malformed;
       return { ok: true, output: { kind: task.kind, extraction: normalized.extraction }, source: "live", promptVersion, usage };
     }
     case "draft_followup_message": {
       const parsed = z.object({ text: z.string().trim().min(1).max(700) }).strict().safeParse(raw);
-      if (!parsed.success) return { ok: false, category: "model_malformed", promptVersion };
+      if (!parsed.success) return malformed;
       // Money, links and phone numbers are never introduced by a draft.
-      if (/(\d+[.,]\d{2,3}\s*(jod|د\.أ|dinar))|https?:\/\/|\+?\d{8,}/iu.test(parsed.data.text) && !/(\d+[.,]\d{2,3}\s*(jod|د\.أ|dinar))|https?:\/\/|\+?\d{8,}/iu.test(task.baseText)) return { ok: false, category: "model_malformed", promptVersion };
+      if (/(\d+[.,]\d{2,3}\s*(jod|د\.أ|dinar))|https?:\/\/|\+?\d{8,}/iu.test(parsed.data.text) && !/(\d+[.,]\d{2,3}\s*(jod|د\.أ|dinar))|https?:\/\/|\+?\d{8,}/iu.test(task.baseText)) return malformed;
       return { ok: true, output: { kind: task.kind, language: task.language, text: parsed.data.text }, source: "live", promptVersion, usage };
     }
     case "interpret_revision": {
       const parsed = z.object({ kind: z.enum(["time_of_day", "exclude_member", "owner", "unsupported"]), value: z.enum(["morning", "afternoon", "evening"]).optional(), candidateId: z.string().optional() }).strict().safeParse(raw);
-      if (!parsed.success) return { ok: false, category: "model_malformed", promptVersion };
+      if (!parsed.success) return malformed;
       const candidate = parsed.data.candidateId ? task.candidates.find((item) => item.id === parsed.data.candidateId) : undefined;
       const revision: AiRunRevision = parsed.data.kind === "time_of_day" && parsed.data.value
         ? { kind: "time_of_day", value: parsed.data.value }
@@ -339,14 +383,95 @@ export function parseLiveResponse(task: ModelTask, body: unknown): ModelTaskResu
     }
     case "interpret_filters": {
       const parsed = z.object({ membership: z.enum(["active", "expiring", "expired", "frozen", "none"]).optional(), expiringWithinDays: z.number().int().min(1).max(365).optional(), notVisitedForDays: z.number().int().min(1).max(365).optional(), owes: z.boolean().optional(), branchId: z.string().optional(), unrecognised: z.array(z.string().max(200)).max(5).default([]) }).strict().safeParse(raw);
-      if (!parsed.success) return { ok: false, category: "model_malformed", promptVersion };
+      if (!parsed.success) return malformed;
       const branchId = parsed.data.branchId && task.branches.some((branch) => branch.id === parsed.data.branchId) ? parsed.data.branchId : undefined;
       return { ok: true, output: { kind: task.kind, filters: { ...parsed.data, branchId } }, source: "live", promptVersion, usage };
     }
   }
 }
 
-/** Gate a task before any provider call. Returns the reason it may not run, if any. */
+// Native Claude Messages API. Structured outputs constrain the reply to the
+// task's JSON schema; RIVET still validates it with the same checks as above.
+// Every field is required and absent values are null, as structured outputs
+// expect; nulls are dropped before validation where the contract is optional.
+
+const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
+const strictObject = (properties: Record<string, unknown>) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+const evidenced = (key: "value" | "phrase", values?: readonly string[]) => nullable(strictObject({ [key]: values ? { type: "string", enum: values } : { type: "string" }, evidence: { type: "string" } }));
+
+export const TASK_SCHEMAS: Record<ModelTask["kind"], Record<string, unknown>> = {
+  extract_contact_note: strictObject({
+    outcome: evidenced("value", ["no_answer", "answered_interested", "answered_not_interested", "answered_call_back", "wrong_number", "whatsapp_sent"]),
+    followUpPhrase: evidenced("phrase"),
+    travelUntilPhrase: evidenced("phrase"),
+    renewalInterest: evidenced("value", ["interested", "not_interested", "undecided"]),
+    preferredContactTime: evidenced("value", ["morning", "afternoon", "evening"]),
+    topics: { type: "array", items: { type: "string", enum: ["callback", "travel", "complaint", "price", "schedule", "injury", "renewal"] } },
+  }),
+  draft_followup_message: strictObject({ text: { type: "string" } }),
+  interpret_revision: strictObject({
+    kind: { type: "string", enum: ["time_of_day", "exclude_member", "owner", "unsupported"] },
+    value: nullable({ type: "string", enum: ["morning", "afternoon", "evening"] }),
+    candidateId: nullable({ type: "string" }),
+  }),
+  interpret_filters: strictObject({
+    membership: nullable({ type: "string", enum: ["active", "expiring", "expired", "frozen", "none"] }),
+    expiringWithinDays: nullable({ type: "integer" }),
+    notVisitedForDays: nullable({ type: "integer" }),
+    owes: nullable({ type: "boolean" }),
+    branchId: nullable({ type: "string" }),
+    unrecognised: { type: "array", items: { type: "string" } },
+  }),
+};
+
+/** Replies are a few hundred tokens; this leaves room for brief thinking at low effort. */
+const ANTHROPIC_MAX_TOKENS = 2_048;
+
+export function buildAnthropicRequest(task: ModelTask, config: Pick<AiAdapterConfig, "model">): Anthropic.MessageCreateParamsNonStreaming {
+  return {
+    model: config.model ?? "",
+    max_tokens: ANTHROPIC_MAX_TOKENS,
+    system: `${SYSTEM_RULES} ${TASK_INSTRUCTIONS[task.kind]}`,
+    messages: [{ role: "user", content: JSON.stringify(taskInput(task)) }],
+    // Short reading and drafting tasks: low effort skips thinking on most of them.
+    output_config: { effort: "low", format: { type: "json_schema", schema: TASK_SCHEMAS[task.kind] } },
+  };
+}
+
+const anthropicEnvelope = z.object({
+  content: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()),
+  stop_reason: z.string().nullable(),
+  usage: z.object({
+    input_tokens: z.number().int().nonnegative(),
+    output_tokens: z.number().int().nonnegative(),
+    cache_creation_input_tokens: z.number().int().nonnegative().nullable().optional(),
+    cache_read_input_tokens: z.number().int().nonnegative().nullable().optional(),
+  }).passthrough(),
+}).passthrough();
+
+/** Map a Messages API reply to a validated task output, or a safe failure category. */
+export function parseAnthropicResponse(task: ModelTask, body: unknown): ModelTaskResult | ModelTaskFailure {
+  const promptVersion = PROMPT_VERSIONS[task.kind];
+  const envelope = anthropicEnvelope.safeParse(body);
+  if (!envelope.success) return { ok: false, category: "model_malformed", promptVersion };
+  const { content, stop_reason: stopReason, usage: raw } = envelope.data;
+  // Cached input is counted at the full input rate so spend is never under-counted.
+  const usage = { inputTokens: raw.input_tokens + (raw.cache_creation_input_tokens ?? 0) + (raw.cache_read_input_tokens ?? 0), outputTokens: raw.output_tokens };
+  if (stopReason === "refusal") return { ok: false, category: "model_refused", promptVersion, usage };
+  if (stopReason !== "end_turn") return { ok: false, category: "model_malformed", promptVersion, usage };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content.filter((block) => block.type === "text").map((block) => block.text ?? "").join(""));
+  } catch {
+    return { ok: false, category: "model_malformed", promptVersion, usage };
+  }
+  const optionalContract = task.kind === "interpret_revision" || task.kind === "interpret_filters";
+  const output = optionalContract && parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? Object.fromEntries(Object.entries(parsed).filter(([, value]) => value !== null))
+    : parsed;
+  return normalizeLiveOutput(task, output, usage);
+}
+
 /**
  * Spend gate before a live model call. No approved monthly budget means no
  * spend; reaching the gym's monthly cap or the run's cap stops further calls.
@@ -359,6 +484,7 @@ export function budgetBlocked(config: Pick<AiAdapterConfig, "mode" | "maxMonthly
   return undefined;
 }
 
+/** Gate a task before any provider call. Returns the reason it may not run, if any. */
 export function modelTaskBlocked(task: ModelTask, config: AiAdapterConfig, tenant: { externalProcessing: boolean }): AiErrorCategory | undefined {
   if (config.mode === "off") return "ai_off";
   if (config.mode === "fixture") return undefined;

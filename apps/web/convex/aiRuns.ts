@@ -128,7 +128,8 @@ export const tick = internalAction({
           promptVersion: outcome.promptVersion,
           latencyMs: outcome.latencyMs,
           outcome: outcome.ok ? "ok" : outcome.category === "model_timeout" ? "timeout" : outcome.category === "model_malformed" ? "malformed" : outcome.category === "model_refused" ? "refused" : "unavailable",
-          ...(outcome.ok ? { inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens, costMicros: outcome.usage.costMicros } : { errorCategory: outcome.category }),
+          ...(outcome.usage ? { inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens, costMicros: outcome.usage.costMicros } : {}),
+          ...(outcome.ok ? {} : { errorCategory: outcome.category }),
           ...(config.model ? { model: config.model } : {}),
         });
         modelOutput = { subjectId: result.subjectId, result: outcome.ok ? outcome.output : { failed: outcome.category } };

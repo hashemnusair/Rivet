@@ -101,7 +101,8 @@ export const prepare = action({
       promptVersion: outcome.promptVersion,
       latencyMs: outcome.latencyMs,
       outcome: outcome.ok ? "ok" : outcome.category === "model_timeout" ? "timeout" : outcome.category === "model_malformed" ? "malformed" : outcome.category === "model_refused" ? "refused" : "unavailable",
-      ...(outcome.ok ? { inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens, costMicros: outcome.usage.costMicros } : { errorCategory: outcome.category }),
+      ...(outcome.usage ? { inputTokens: outcome.usage.inputTokens, outputTokens: outcome.usage.outputTokens, costMicros: outcome.usage.costMicros } : {}),
+      ...(outcome.ok ? {} : { errorCategory: outcome.category }),
       ...(config.model ? { model: config.model } : {}),
     });
     if (!outcome.ok) return { ok: false, reason: outcome.category };
