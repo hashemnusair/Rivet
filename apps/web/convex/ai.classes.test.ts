@@ -36,6 +36,9 @@ async function seed(t: TestConvex<typeof schema>): Promise<void> {
       await rec("membership", `ms-${id}`, { memberId: id, planId: "plan-all", homeBranchId: MAIN, startDate: "2026-09-01", endDate: "2026-12-31" }, id);
     }
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: "execute", externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "cls-platform-operator", authSubject: "clerk-cls-platform-operator", email: "operator@cls.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
   });
   const owner = t.withIdentity({ subject: "clerk-cls-owner" });
   // Friday 23 October: evening mixed spin with one spot; women-only morning yoga.

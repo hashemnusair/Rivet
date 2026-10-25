@@ -105,6 +105,7 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "entryPasses", index: "by_organization_public_id" },
   { table: "sequenceCounters", index: "by_organization_key" },
   { table: "aiSettings", index: "by_organization" },
+  { table: "aiAvailability", index: "by_organization" },
   { table: "aiGrants", index: "by_organization" },
   { table: "aiRuns", index: "by_organization" },
   { table: "aiRunSteps", index: "by_organization_run" },

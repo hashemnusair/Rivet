@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import PlatformAssistancePage from "@/app/platform/assistance/page";
@@ -9,6 +9,11 @@ import { PlatformReviewBrief } from "./platform-review-brief";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => ({}), usePathname: () => "/platform", useSearchParams: () => new URLSearchParams() }));
 
 afterEach(() => resetApiForTests());
+
+// Radix Select uses pointer capture and scrolling that jsdom does not provide.
+HTMLElement.prototype.hasPointerCapture = () => false;
+HTMLElement.prototype.releasePointerCapture = () => undefined;
+HTMLElement.prototype.scrollIntoView = () => undefined;
 
 const pending = { id: "app-1", gymName: "Northline Strength", gymAddress: "", email: "owner@northline.example", contactNumber: "0791234567", plan: "Enterprise", status: "pending" };
 const earlier = { ...pending, id: "app-0", gymName: "Northline", gymAddress: "Amman", plan: "Pro", status: "rejected" };
@@ -28,6 +33,33 @@ describe("platform review preparation", () => {
     expect(brief).toHaveTextContent("You make the decision.");
     await user.click(screen.getByRole("button", { name: "decide" }));
     await waitFor(() => expect(screen.queryByTestId("platform-review-brief")).not.toBeInTheDocument());
+  });
+
+  it("makes a gym available only with a reason, shows who did it and why, and removes it the same way", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<PlatformAssistancePage />);
+    const panel = await screen.findByTestId("platform-assistance-availability");
+    expect(await within(panel).findByTestId("platform-assistance-none")).toHaveTextContent("No gym can use assistance yet.");
+    const make = within(panel).getByTestId("platform-assistance-make-available");
+    expect(make).toBeDisabled();
+    const { organization } = await api.getSession();
+    await user.click(within(panel).getByRole("combobox", { name: "Gym" }));
+    await user.click(await screen.findByRole("option", { name: organization.name }));
+    expect(make).toBeDisabled();
+    await user.type(within(panel).getByTestId("platform-assistance-availability-reason"), "Pilot gym");
+    await user.click(make);
+    const row = await within(panel).findByTestId("platform-assistance-gym");
+    expect(row).toHaveTextContent(organization.name);
+    expect(row).toHaveTextContent("Pilot gym");
+    expect((await api.getAiSettings()).platformAvailable).toBe(true);
+    const remove = within(row).getByTestId("platform-assistance-remove");
+    expect(remove).toBeDisabled();
+    await user.type(within(panel).getByTestId("platform-assistance-availability-reason"), "Pilot ended");
+    await user.click(remove);
+    expect(await within(panel).findByTestId("platform-assistance-none")).toBeInTheDocument();
+    expect((await api.getAiSettings()).platformAvailable).toBe(false);
+    vi.unstubAllGlobals();
   });
 
   it("stops assistance for every gym only with a reason, and hides the brief while stopped", async () => {

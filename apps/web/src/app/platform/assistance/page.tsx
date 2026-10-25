@@ -9,15 +9,17 @@ import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
+import { PlatformAvailability } from "@/features/assist/platform-availability";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 
 /**
- * The platform-wide stop for RIVET assistance. Stopping takes effect at the
- * next step of any running work in every gym; ordinary workflows are not
- * affected. Every change needs a reason and is recorded in the platform audit.
+ * The platform-wide stop for RIVET assistance, and which gyms may use it.
+ * Stopping takes effect at the next step of any running work in every gym;
+ * ordinary workflows are not affected. Every change needs a reason and is
+ * recorded in the platform audit.
  */
 export default function PlatformAssistancePage() {
   const { t, isolate } = useLocale();
@@ -33,7 +35,7 @@ export default function PlatformAssistancePage() {
   return (
     <PlatformPage className="space-y-5" data-testid="platform-assistance">
       <PageHeader title={t("aiWork.platformControl.title")} description={t("aiWork.platformControl.description")} />
-      <div className="max-w-3xl">
+      <div className="max-w-3xl space-y-5">
         <PlatformPanel aria-labelledby="platform-assistance-status">
           <PlatformPanelHeader id="platform-assistance-status" title={t("aiWork.platformControl.statusTitle")} />
           <div className="space-y-4 px-4 py-4 sm:px-5">
@@ -57,6 +59,7 @@ export default function PlatformAssistancePage() {
             ) : null}
           </div>
         </PlatformPanel>
+        <PlatformAvailability />
       </div>
     </PlatformPage>
   );

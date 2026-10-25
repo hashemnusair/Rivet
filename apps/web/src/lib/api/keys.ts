@@ -3,6 +3,7 @@ export const qk = {
   session: ["session"] as const,
   aiSettings: ["ai", "settings"] as const,
   aiPlatformStatus: ["ai", "platformStatus"] as const,
+  aiPlatformAvailability: ["ai", "platformAvailability"] as const,
   aiOutcomes: ["ai", "outcomes"] as const,
   aiHeadlines: (memberIds: string[]) => ["ai", "headlines", memberIds.join(",")] as const,
   memberBrief: (memberId: string) => ["ai", "brief", memberId] as const,

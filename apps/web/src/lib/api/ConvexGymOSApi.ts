@@ -359,6 +359,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getAiOutcomeSummary(): Promise<AI.AiOutcomeSummary> { return this.query("ai.outcomes.summary", {}); }
   getPlatformAiStatus(): Promise<AI.AiPlatformStatus> { return this.query("ai.platform.status", {}); }
   setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.mutate("ai.platform.stop", input); }
+  getPlatformAiAvailability(): Promise<AI.AiPlatformAvailability> { return this.query("ai.platform.availability", {}); }
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<AI.AiGymAvailability> { return this.mutate("ai.platform.availability.set", input); }
   extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.prepareWithAi("extract_note", input); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.prepareWithAi("interpret_revision", input); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.prepareWithAi("interpret_filters", input); }

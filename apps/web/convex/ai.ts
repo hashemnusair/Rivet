@@ -19,12 +19,14 @@ import {
   aiSettingsFor,
   artifactView,
   authorityInput,
+  availabilityFor,
   canControlRun,
   canReadRun,
   GLOBAL_CONTROL_KEY,
   memoryView,
   monthKey,
   newAiPublicId,
+  platformAvailable,
   proposalView,
   runView,
   settingsView,
@@ -39,6 +41,8 @@ import {
   type AiMemberBriefResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  type AiGymAvailability,
+  type AiPlatformAvailability,
   type AiPlatformStatus,
   type AiOutcomeSummary,
   type AiMemberHeadlinesResult,
@@ -156,6 +160,18 @@ function requireHuman(actor: ActorContext): void {
   if (actor.delegation) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
 }
 
+async function availabilityView(ctx: ReadCtx, organization: Doc<"organizations">, row: Doc<"aiAvailability"> | null, names: Map<string, string>): Promise<AiGymAvailability> {
+  const key = row ? String(row.changedByUserId) : "";
+  if (row && !names.has(key)) names.set(key, (await ctx.db.get(row.changedByUserId))?.fullName ?? "");
+  return {
+    organizationId: publicOrganizationId(organization),
+    name: organization.name,
+    status: organization.status,
+    available: Boolean(row?.available),
+    ...(row ? { reason: row.reason, changedAt: new Date(row.changedAt).toISOString(), changedByName: names.get(key) ?? "" } : {}),
+  };
+}
+
 export { nextStandingSlot } from "../src/lib/ai/schedule";
 
 // ---------------------------------------------------------------------------
@@ -204,6 +220,18 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
     const control = await ctx.db.query("aiControls").withIndex("by_key", (q) => q.eq("key", GLOBAL_CONTROL_KEY)).unique();
     const changedBy = control?.changedByUserId ? await ctx.db.get(control.changedByUserId) : null;
     return { adapterMode: adapterConfig().mode, stopped: Boolean(control?.stopped), ...(control?.reason ? { reason: control.reason } : {}), ...(control ? { changedAt: new Date(control.changedAt).toISOString() } : {}), ...(changedBy ? { changedByName: changedBy.fullName } : {}) } satisfies AiPlatformStatus;
+  }
+  if (operation === "ai.platform.availability") {
+    // Operators only: gym names and statuses, plus whether each may use assistance. No gym data is read.
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const organizations = await ctx.db.query("organizations").take(1_000);
+    const names = new Map<string, string>();
+    const gyms: AiGymAvailability[] = [];
+    for (const organization of organizations) {
+      const row = await availabilityFor(ctx, organization._id);
+      gyms.push(await availabilityView(ctx, organization, row, names));
+    }
+    return { gyms: gyms.sort((left, right) => Number(right.available) - Number(left.available) || left.name.localeCompare(right.name)) } satisfies AiPlatformAvailability;
   }
   const actor = await requireActor(ctx, request);
   switch (operation) {
@@ -395,6 +423,14 @@ async function scheduleTick(ctx: MutationCtx, run: { publicId: string; organizat
   await ctx.scheduler.runAfter(delayMs, internal.aiRuns.tick, { organizationId: run.organizationId, runPublicId: run.publicId });
 }
 
+/** Queued and running work for one gym stops at its next step; whatever it already saved stays reported. */
+async function requestStopForGym(ctx: MutationCtx, organizationId: Id<"organizations">, byUserId: Id<"users">, now: number): Promise<void> {
+  for (const status of ["queued", "running"] as const) {
+    const active = await ctx.db.query("aiRuns").withIndex("by_organization_status", (q) => q.eq("organizationId", organizationId).eq("status", status)).take(100);
+    for (const run of active) await ctx.db.patch(run._id, { cancelRequestedAt: now, cancelRequestedByUserId: byUserId, updatedAt: now });
+  }
+}
+
 /** Grant + run for one delegated job. Shared by user starts and standing-instruction slots. */
 export async function createRun(ctx: MutationCtx, actor: ActorContext, input: {
   playbook: AiPlaybookKey;
@@ -498,6 +534,26 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
     return { stopped, reason };
   }
 
+  if (operation === "ai.platform.availability.set") {
+    // Only a platform admin decides which gyms may use assistance; a gym owner cannot.
+    const admin = await requirePlatformAdmin(ctx, request.correlationId);
+    const available = input.available === true;
+    const reason = text(input.reason).slice(0, 300);
+    if (!reason) domainError("VALIDATION_ERROR", "A reason is required for this action.", { fieldErrors: { reason: ["Required"] }, correlationId: admin.correlationId });
+    const organization = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", text(input.organizationId))).unique();
+    if (!organization) domainError("NOT_FOUND", "Record not found.", { correlationId: admin.correlationId });
+    const existing = await availabilityFor(ctx, organization._id);
+    const names = new Map<string, string>();
+    if (Boolean(existing?.available) === available) return await availabilityView(ctx, organization, existing, names);
+    const now = Date.now();
+    if (existing) await ctx.db.patch(existing._id, { available, reason, changedByUserId: admin.user._id, changedAt: now });
+    else await ctx.db.insert("aiAvailability", { organizationId: organization._id, available, reason, changedByUserId: admin.user._id, changedAt: now });
+    // Removing availability stops that gym's work at its next step, like the gym's own switch.
+    if (!available) await requestStopForGym(ctx, organization._id, admin.user._id, now);
+    await ctx.db.insert("platformAuditEvents", { publicId: newAiPublicId("audit"), actorUserId: admin.user._id, actorPublicId: publicUserId(admin.user), actorName: admin.user.fullName, action: available ? "ai.gym.available" : "ai.gym.unavailable", entityType: "organization", entityPublicId: publicOrganizationId(organization), entityLabel: organization.name, summary: available ? `Made RIVET assistance available for ${organization.name}` : `Removed RIVET assistance for ${organization.name}`, reason, before: { available: Boolean(existing?.available) }, after: { available }, correlationId: admin.correlationId, occurredAt: now });
+    return await availabilityView(ctx, organization, await availabilityFor(ctx, organization._id), names);
+  }
+
   const actor = await requireActor(ctx, request);
   requireHuman(actor);
   switch (operation) {
@@ -513,18 +569,16 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
         capabilityModes[key] = mode as AiTenantMode;
       }
       const externalProcessing = typeof input.externalProcessing === "boolean" ? input.externalProcessing : current?.externalProcessing ?? false;
+      // Until RIVET makes assistance available for this gym, the owner can only keep it off.
+      const turningOn = tenantMode !== "off" || (externalProcessing && !current?.externalProcessing);
+      if (turningOn && !(await platformAvailable(ctx, actor.organization._id))) domainError("FEATURE_NOT_AVAILABLE", "RIVET has not made assistance available for this gym.", { correlationId: actor.correlationId, details: { reason: "not_available" } });
       const now = Date.now();
       const next = { tenantMode, capabilityModes, externalProcessing, revision: (current?.revision ?? 0) + 1, updatedByUserId: actor.user._id, updatedAt: now };
       if (current) await ctx.db.patch(current._id, next);
       else await ctx.db.insert("aiSettings", { organizationId: actor.organization._id, ...next });
       await port.insertAudit(ctx, actor, { category: "settings", action: "ai.settings.update", entityType: "ai_settings", entityId: publicOrganizationId(actor.organization), entityLabel: actor.organization.name, summary: `RIVET assistance set to ${tenantMode}`, reason: text(input.reason) || undefined, before: current ? { tenantMode: current.tenantMode, externalProcessing: current.externalProcessing, capabilityModes: current.capabilityModes } : undefined, after: { tenantMode, externalProcessing, capabilityModes } });
       // Turning assistance off stops queued and running work at its next step.
-      if (tenantMode === "off") {
-        for (const status of ["queued", "running"] as const) {
-          const active = await ctx.db.query("aiRuns").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", status)).take(100);
-          for (const run of active) await ctx.db.patch(run._id, { cancelRequestedAt: now, cancelRequestedByUserId: actor.user._id, updatedAt: now });
-        }
-      }
+      if (tenantMode === "off") await requestStopForGym(ctx, actor.organization._id, actor.user._id, now);
       return await settingsView(ctx, actor);
     }
 

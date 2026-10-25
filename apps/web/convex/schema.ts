@@ -2072,6 +2072,16 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_organization", ["organizationId"]),
 
+  // Gyms RIVET lets use assistance, set by a platform admin with a reason.
+  // No row means not available: the default for every gym.
+  aiAvailability: defineTable({
+    organizationId: v.id("organizations"),
+    available: v.boolean(),
+    reason: v.string(),
+    changedByUserId: v.id("users"),
+    changedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
   // Platform-wide stop. Not tenant data: no organizationId.
   aiControls: defineTable({
     key: v.string(),

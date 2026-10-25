@@ -25,6 +25,9 @@ async function seed(t: TestConvex<typeof schema>, externalProcessing = false) {
     await ctx.db.insert("domainRecords", { organizationId: org, entityType: "settings", publicId: "settings", createdAt: now, updatedAt: now, data: { id: "settings", operationalPolicies: {} } });
     await ctx.db.insert("domainRecords", { organizationId: org, entityType: "member", publicId: "prep-member", branchId: main, memberPublicId: "prep-member", createdAt: now, updatedAt: now, data: { id: "prep-member", fullName: "Omar Haddad", phone: "+962790000001", homeBranchId: MAIN, status: "active", preferredLanguage: "en" } });
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: "execute", externalProcessing, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "prep-platform-operator", authSubject: "clerk-prep-platform-operator", email: "operator@prep.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
     const foreign = await ctx.db.insert("organizations", { publicId: "prep-foreign", name: "Other", slug: "other", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
     await ctx.db.insert("domainRecords", { organizationId: foreign, entityType: "member", publicId: "prep-foreign-member", memberPublicId: "prep-foreign-member", createdAt: now, updatedAt: now, data: { id: "prep-foreign-member", fullName: "Omar Haddad", status: "active" } });
   });
@@ -80,6 +83,24 @@ describe("reading a contact note into fields", () => {
     await seed(t, true);
     expect(await t.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ memberId: "prep-member", note }))).toEqual({ ok: false, reason: "data_policy" });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("reads nothing for a gym RIVET has not made available, even with an approved live endpoint", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "live");
+    vi.stubEnv("RIVET_AI_PROTOCOL", "anthropic_messages");
+    vi.stubEnv("RIVET_AI_MODEL", "claude-sonnet-5-5");
+    vi.stubEnv("RIVET_AI_API_KEY", SECRET);
+    vi.stubEnv("RIVET_AI_PROCESSING_APPROVED", "member_data");
+    vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", "5000000");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const t = convexTest(schema, modules);
+    await seed(t, true);
+    await t.run(async (ctx) => { for (const row of await ctx.db.query("aiAvailability").collect()) await ctx.db.delete(row._id); });
+    expect(await t.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ memberId: "prep-member", note }))).toEqual({ ok: false, reason: "tenant_off" });
+    expect(await t.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ surface: "members", text: "members who owe money" }, "interpret_filters"))).toEqual({ ok: false, reason: "tenant_off" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(await t.run(async (ctx) => await ctx.db.query("aiUsage").collect())).toHaveLength(0);
   });
 
   describe("with an approved live endpoint", () => {

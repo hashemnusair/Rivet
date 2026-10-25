@@ -7,6 +7,7 @@ import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import type { MockDb } from "@/lib/mock/store";
 import { AiRunPanel } from "./run-panel";
 import { AssistanceSettingsSection } from "./assistance-settings-section";
+import { AssistanceLink } from "./assistance-link";
 import { NaturalMemberFilters } from "./natural-filters";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => ({}), usePathname: () => "/", useSearchParams: () => new URLSearchParams() }));
@@ -21,7 +22,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** A platform admin makes the preview gym available first; until then its owner cannot turn assistance on. */
+async function makeAvailable(api: MockGymOSApi) {
+  const session = await api.getSession();
+  await api.setPlatformAiAvailability({ organizationId: session.organization.id, available: true, reason: "Test gym" });
+}
+
 async function enable(api: MockGymOSApi, mode: "prepare" | "execute" = "execute") {
+  await makeAvailable(api);
   const settings = await api.getAiSettings();
   await api.updateAiSettings({ tenantMode: mode, expectedRevision: settings.revision });
 }
@@ -169,9 +177,21 @@ describe("natural-language member filters", () => {
 });
 
 describe("Settings → Assistance", () => {
+  it("stays hidden for a gym RIVET has not made available", async () => {
+    await renderWithApp(<><AssistanceLink /><AssistanceSettingsSection /></>);
+    expect(await screen.findByTestId("assistance-settings-unavailable")).toHaveTextContent("RIVET has not made assistance available for your gym yet.");
+    expect(screen.queryByTestId("assistance-link")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("assistance-mode-execute")).not.toBeInTheDocument();
+  });
+
+  it("shows the way in once the gym is available", async () => {
+    await renderWithApp(<AssistanceLink />, { prepare: makeAvailable });
+    expect(await screen.findByTestId("assistance-link")).toHaveTextContent("Now: Off");
+  });
+
   it("lets an owner choose what RIVET may do and saves it", async () => {
     const user = userEvent.setup();
-    const { api } = await renderWithApp(<AssistanceSettingsSection />);
+    const { api } = await renderWithApp(<AssistanceSettingsSection />, { prepare: makeAvailable });
     expect(await screen.findByTestId("assistance-settings")).toBeInTheDocument();
     expect(screen.getByTestId("assistance-provider")).toHaveTextContent("Test mode");
     await user.click(screen.getByTestId("assistance-mode-execute"));

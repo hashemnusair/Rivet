@@ -145,6 +145,7 @@ Ordinary workflows never depend on assistance.
 | Stop | Who | Effect | Rehearsal (real Convex functions) |
 | --- | --- | --- | --- |
 | Platform stop (`aiControls` key `global`) | Platform admin at `/platform/assistance` (from the account page), `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step | `convex/ai.delegation.test.ts` "platform-wide stop" |
+| Gym availability removed (`aiAvailability`) | Platform admin at `/platform/assistance` → "Gyms that can use assistance", `ai.platform.availability.set` with reason (platform audit `ai.gym.available` / `ai.gym.unavailable`) | That gym only: every assistance gate reads it as off, its Settings → Assistance is hidden, running work stops at the next step; its own saved choices are kept and apply again only if a platform admin makes it available again. No gym is available by default, and its owner cannot turn assistance on until it is | "stops that gym's running work at the next step when availability is removed", "reads a gym without availability as off at every gate" |
 | Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary | "turns assistance off mid-run" |
 | One capability off | Owner | Only that capability's runs stop | "only that capability is turned off" |
 | Run cancel | Requester, owner or manager | Stops at the next step; reports what was saved | "stops at the next step when cancelled" |

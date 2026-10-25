@@ -22,7 +22,14 @@ afterEach(async () => {
   await api.resetDemo();
 });
 
+/** A platform admin makes the preview gym available first; until then its owner cannot turn assistance on. */
+async function makeAvailable(): Promise<void> {
+  const session = await api.getSession();
+  await api.setPlatformAiAvailability({ organizationId: session.organization.id, available: true, reason: "Test gym" });
+}
+
 async function enable(mode: "prepare" | "execute" = "execute"): Promise<void> {
+  await makeAvailable();
   const settings = await api.getAiSettings();
   await api.updateAiSettings({ tenantMode: mode, expectedRevision: settings.revision });
 }
@@ -42,6 +49,26 @@ describe("preview assistance", () => {
     await expect(api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "request-0001" })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
     await enable("prepare");
     await expect(api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "request-0002" })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+  });
+
+  it("keeps assistance off until RIVET makes the gym available, and removing it stops running work", async () => {
+    expect(await api.getAiSettings()).toMatchObject({ platformAvailable: false, tenantMode: "off" });
+    let settings = await api.getAiSettings();
+    await expect(api.updateAiSettings({ tenantMode: "prepare", expectedRevision: settings.revision })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    await expect(api.updateAiSettings({ externalProcessing: true, expectedRevision: settings.revision })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
+    const session = await api.getSession();
+    await expect(api.setPlatformAiAvailability({ organizationId: session.organization.id, available: true, reason: " " })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(await api.setPlatformAiAvailability({ organizationId: session.organization.id, available: true, reason: "Pilot gym" })).toMatchObject({ available: true, reason: "Pilot gym" });
+    settings = await api.getAiSettings();
+    await api.updateAiSettings({ tenantMode: "execute", expectedRevision: settings.revision });
+    api.setBehavior({ latencyMs: 1 });
+    const started = await api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "request-availability" });
+    await api.setPlatformAiAvailability({ organizationId: session.organization.id, available: false, reason: "Incident drill" });
+    expect((await settled(started.id)).status).toBe("cancelled");
+    // The gym's own choice is kept, but nothing can run and the settings say why.
+    expect(await api.getAiSettings()).toMatchObject({ platformAvailable: false, tenantMode: "execute" });
+    expect((await api.getAiSettings()).capabilities.every((item) => !item.available)).toBe(true);
+    await expect(api.startAiRun({ playbook: "renewal_followups", params: { bucket: "expiring" }, requestKey: "request-availability-2" })).rejects.toMatchObject({ code: "FEATURE_NOT_AVAILABLE" });
   });
 
   it("prepares follow-ups, verifies saved tasks and never duplicates them", async () => {

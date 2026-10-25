@@ -62,6 +62,8 @@ describe("member import", () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     const user = userEvent.setup();
     await renderWithApp(<MemberImportPage />, { branchId: BRANCH_ABD, prepare: async (api) => {
+      // A platform admin makes the preview gym available before its owner turns assistance on.
+      await api.setPlatformAiAvailability({ organizationId: (await api.getSession()).organization.id, available: true, reason: "Test gym" });
       const settings = await api.getAiSettings();
       await api.updateAiSettings({ tenantMode: "prepare", expectedRevision: settings.revision });
     } });

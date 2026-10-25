@@ -408,6 +408,25 @@ export interface AiPlatformStatus {
   changedByName?: string;
 }
 
+/**
+ * Whether RIVET lets one gym use assistance at all. No gym is available until
+ * a platform admin makes it available with a reason; until then the gym's own
+ * switch cannot turn assistance on, and every assistance gate reads it as off.
+ */
+export interface AiGymAvailability {
+  organizationId: string;
+  name: string;
+  status: string;
+  available: boolean;
+  reason?: string;
+  changedAt?: string;
+  changedByName?: string;
+}
+
+export interface AiPlatformAvailability {
+  gyms: AiGymAvailability[];
+}
+
 /** What RIVET did for a gym this month and how it turned out (AI-5.3). Counts only; no content. */
 export interface AiOutcomeSummary {
   month: string;
@@ -455,6 +474,8 @@ export interface AiSettingsView {
   /** Plain reason when the deployment cannot use a provider (no key, unverified protocol, stopped). */
   adapterReason?: AiErrorCategory;
   globalStop: boolean;
+  /** RIVET has made assistance available for this gym; otherwise every capability is off and the settings stay hidden. */
+  platformAvailable: boolean;
   tenantMode: AiTenantMode;
   externalProcessing: boolean;
   memberDataApproved: boolean;
@@ -512,6 +533,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.collections.prepare",
   "ai.classes.options",
   "ai.platform.status",
+  "ai.platform.availability",
   "ai.outcomes.summary",
   "ai.member.headlines",
 ] as const;
@@ -533,6 +555,7 @@ export const AI_MUTATION_OPERATIONS = [
   "ai.memory.revoke",
   "ai.feedback.record",
   "ai.platform.stop",
+  "ai.platform.availability.set",
 ] as const;
 
 export type AiQueryOperation = (typeof AI_QUERY_OPERATIONS)[number];

@@ -40,6 +40,9 @@ async function seed(t: TestConvex<typeof schema>): Promise<void> {
     await lead("lead-lost", { fullName: "Sami Aziz", stage: "lost", nextFollowUpAt: "2026-10-19T09:00:00.000Z" });
     await lead("lead-later", { fullName: "Hala Nasser", stage: "contacted", nextFollowUpAt: "2026-10-25T09:00:00.000Z" });
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: "execute", externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "sales-platform-operator", authSubject: "clerk-sales-platform-operator", email: "operator@sales.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
   });
 }
 

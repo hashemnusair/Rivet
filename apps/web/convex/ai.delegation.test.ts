@@ -5,8 +5,9 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import { delegatedRequest, requireActor } from "./security";
 import { executeDomainMutation } from "./domain";
-import { GLOBAL_CONTROL_KEY } from "./aiPolicy";
+import { GLOBAL_CONTROL_KEY, memberCapabilityOn } from "./aiPolicy";
 import { LEASE_MS } from "./aiPolicy";
+import { DEFAULT_RUN_LIMITS } from "../src/lib/ai/contracts";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -65,7 +66,12 @@ async function seed(t: Harness, options: { aiMode?: "off" | "prepare" | "execute
     await record("task", "task-rami-existing", { type: "renewal_call", title: "Call Rami Khalil about membership renewal", ownerId: "ai-sales2", dueAt: "2026-10-23T07:00:00.000Z", priority: "normal", status: "open", memberId: "m-rami", subjectName: "Rami Khalil", createdById: "ai-sales2", createdAt: "2026-10-20T07:00:00.000Z" }, { memberPublicId: "m-rami" });
     await ctx.db.insert("classSessions", { organizationId: org, publicId: "class-evening-spin", branchId: main, name: "Evening spin", dayOfWeek: 1, startMinute: 18 * 60 + 30, durationMinutes: 45, capacity: 12, status: "scheduled", roster: [], createdAt: now, updatedAt: now } as never);
     await ctx.db.insert("aiMemories", { organizationId: org, publicId: "memory-tariq-travel", kind: "staff_statement", topic: "travel", subjectType: "member", subjectId: "m-tariq", branchId: main, text: "Travelling until Sunday", effectiveFrom: "2026-10-20", effectiveUntil: "2026-10-25", status: "active", provenance: { sourceKind: "staff_explicit", recordedByUserId: sales.id, recordedAt: now }, revision: 1, createdAt: now, updatedAt: now });
-    if (options.aiMode && options.aiMode !== "off") await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: options.aiMode, externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    if (options.aiMode && options.aiMode !== "off") {
+      await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: options.aiMode, externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+      // RIVET has made assistance available for this gym; without it every gate reads as off.
+      const platformOperator = await ctx.db.insert("users", { publicId: "ai-platform-operator", authSubject: "clerk-ai-platform-operator", email: "platform@ledger.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
+    }
     // A second gym with a member of the same name, which must never be visible.
     const foreign = await ctx.db.insert("organizations", { publicId: FOREIGN_ORG, name: "Other Gym", slug: "other-gym", status: "active", timezone: "Asia/Amman", currency: "JOD", createdAt: now, updatedAt: now });
     const foreignBranch = await ctx.db.insert("branches", { organizationId: foreign, publicId: "foreign-main", name: "Main", code: "MAIN", active: true, status: "active", createdAt: now, updatedAt: now });
@@ -525,5 +531,103 @@ describe("platform assistance controls", () => {
     expect(await operator.query(api.domain.query, status)).toMatchObject({ stopped: true, reason: "Incident drill", changedByName: "Operator Lina" });
     // The gym sees assistance stopped everywhere.
     expect(await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get"))).toMatchObject({ globalStop: true });
+  });
+});
+
+describe("platform availability per gym", () => {
+  async function operator(t: Harness) {
+    await t.run(async (ctx) => { await ctx.db.insert("users", { publicId: "ai-operator", authSubject: "clerk-ai-operator", email: "operator@rivet.example", fullName: "Operator Lina", platformAdmin: true, status: "active", createdAt: Date.now(), updatedAt: Date.now() }); });
+    return t.withIdentity({ subject: "clerk-ai-operator" });
+  }
+  const availability = (organizationId: string, available: boolean, reason: string) => ({ operation: "ai.platform.availability.set", input: { organizationId, available, reason }, correlationId: "cor-availability" });
+  const listAvailability = { operation: "ai.platform.availability", input: {}, correlationId: "cor-availability-list" };
+  const notAvailable = { data: expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE", details: { reason: "not_available" } }) };
+  type Gym = { organizationId: string; name: string; available: boolean; reason?: string; changedByName?: string };
+
+  it("keeps every gym unavailable by default, so its owner can only keep assistance off", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    expect(await owner.query(api.domain.query, op("ai.settings.get"))).toMatchObject({ platformAvailable: false, tenantMode: "off" });
+    for (const input of [{ tenantMode: "prepare" }, { tenantMode: "execute" }, { externalProcessing: true }, { tenantMode: "prepare", externalProcessing: true }]) {
+      await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { ...input, expectedRevision: 0 }))).rejects.toMatchObject(notAvailable);
+    }
+    await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 0, reason: "Keeping it off" }))).resolves.toMatchObject({ tenantMode: "off", platformAvailable: false });
+    expect(await t.run(async (ctx) => (await ctx.db.query("aiSettings").collect()).map((row) => [row.tenantMode, row.externalProcessing]))).toEqual([["off", false]]);
+  });
+
+  it("lets only a platform admin change availability, always with a reason, and records each change", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    await expect(owner.query(api.domain.query, listAvailability)).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    await expect(owner.mutation(api.domain.mutate, availability(ORG, true, "Owner wants it"))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    const admin = await operator(t);
+    expect(((await admin.query(api.domain.query, listAvailability)) as { gyms: Gym[] }).gyms.map((gym) => [gym.organizationId, gym.available])).toEqual([[ORG, false], [FOREIGN_ORG, false]]);
+    await expect(admin.mutation(api.domain.mutate, availability(ORG, true, "  "))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    await expect(admin.mutation(api.domain.mutate, availability("no-such-gym", true, "Pilot"))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    expect(await admin.mutation(api.domain.mutate, availability(ORG, true, "Pilot gym"))).toMatchObject({ organizationId: ORG, available: true, reason: "Pilot gym", changedByName: "Operator Lina" });
+    // Asking again changes nothing and records nothing.
+    await admin.mutation(api.domain.mutate, availability(ORG, true, "Pilot gym again"));
+    const audits = await t.run(async (ctx) => await ctx.db.query("platformAuditEvents").collect());
+    expect(audits.map((row) => [row.action, row.entityPublicId, row.reason, row.actorName])).toEqual([["ai.gym.available", ORG, "Pilot gym", "Operator Lina"]]);
+    // Now the owner may turn it on.
+    await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "prepare", externalProcessing: true, expectedRevision: 0 }))).resolves.toMatchObject({ platformAvailable: true, tenantMode: "prepare", externalProcessing: true });
+  });
+
+  it("makes only the chosen gym available", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const foreign = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", FOREIGN_ORG)).unique())!;
+      const branch = (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", foreign._id)).collect())[0]!;
+      const user = await ctx.db.insert("users", { publicId: "foreign-owner", authSubject: "clerk-foreign-owner", email: "owner@other.example", fullName: "Other Owner", platformAdmin: false, status: "active", createdAt: Date.now(), updatedAt: Date.now() });
+      await ctx.db.insert("organizationMemberships", { organizationId: foreign._id, userId: user, role: "owner", branchIds: [branch._id], branchScope: "all", active: true, createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    const admin = await operator(t);
+    await admin.mutation(api.domain.mutate, availability(ORG, true, "Pilot gym"));
+    const foreignOwner = t.withIdentity({ subject: "clerk-foreign-owner" });
+    const foreignOp = (operation: string, input: Record<string, unknown> = {}) => ({ operation, input, correlationId: "cor-foreign", organizationId: FOREIGN_ORG });
+    expect(await foreignOwner.query(api.domain.query, foreignOp("ai.settings.get"))).toMatchObject({ platformAvailable: false });
+    await expect(foreignOwner.mutation(api.domain.mutate, foreignOp("ai.settings.update", { tenantMode: "prepare", expectedRevision: 0 }))).rejects.toMatchObject(notAvailable);
+    await expect(t.withIdentity({ subject: "clerk-ai-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "prepare", expectedRevision: 0 }))).resolves.toMatchObject({ platformAvailable: true });
+  });
+
+  it("reads a gym without availability as off at every gate, even with its own settings left on", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("aiAvailability").collect())[0]!;
+      await ctx.db.patch(row._id, { available: false, reason: "Taken off the pilot" });
+      await ctx.db.insert("aiGrants", { organizationId: ids.org, publicId: "standing-due", kind: "standing", playbook: "renewal_followups", playbookVersion: "renewal-followups.v1", grantorUserId: ids.owner, ownerUserId: ids.owner, tools: ["renewal.candidates", "member.context", "task.create_followup"], params: { bucket: "expiring", owner: "me", requestKey: "standing-due-key" }, limits: DEFAULT_RUN_LIMITS, schedule: { weekdays: [0, 1, 2, 3, 4, 5, 6], time: "08:00" }, status: "active", revision: 1, nextRunAt: Date.now() - 60_000, createdAt: Date.now(), updatedAt: Date.now() });
+    });
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    expect(await sales.query(api.domain.query, op("ai.member.brief", { memberId: "m-omar" }, { activeBranchId: MAIN }))).toEqual({ available: false, reason: "tenant_off" });
+    await expect(startRun(t)).rejects.toMatchObject({ data: expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE", details: { reason: "tenant_off" } }) });
+    const settings = await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get")) as { platformAvailable: boolean; tenantMode: string; capabilities: Array<{ available: boolean; effective: string }> };
+    expect(settings).toMatchObject({ platformAvailable: false, tenantMode: "execute" });
+    expect(settings.capabilities.every((item) => !item.available && item.effective === "off")).toBe(true);
+    expect(await t.run(async (ctx) => await memberCapabilityOn(ctx, ids.org, "member_class_finder"))).toBe(false);
+    // A due standing instruction skips its slot instead of starting work.
+    expect(await t.mutation(internal.aiRuns.dispatchStanding, {})).toBe(0);
+    expect(await t.run(async (ctx) => (await ctx.db.query("aiRuns").collect()).length)).toBe(0);
+  });
+
+  it("stops that gym's running work at the next step when availability is removed", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const admin = await operator(t);
+    const started = await startRun(t);
+    const args = { organizationId: ids.org, runPublicId: started.id };
+    const lease = await t.mutation(internal.aiRuns.acquireLease, args);
+    await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! });
+    expect(await admin.mutation(api.domain.mutate, availability(ORG, false, "Incident drill"))).toMatchObject({ available: false, reason: "Incident drill" });
+    expect(await t.mutation(internal.aiRuns.advance, { ...args, leaseToken: lease.token! })).toEqual({ done: true });
+    expect((await getRun(t, started.id, "clerk-ai-owner")).status).toBe("cancelled");
+    expect(await tasksOf(t, "m-huda")).toHaveLength(0);
+    expect((await t.run(async (ctx) => await ctx.db.query("platformAuditEvents").collect())).map((row) => [row.action, row.reason])).toEqual([["ai.gym.unavailable", "Incident drill"]]);
+    // The gym's own choice is kept; it simply cannot run, and ordinary work carries on.
+    expect(await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get"))).toMatchObject({ platformAvailable: false, tenantMode: "execute" });
+    await expect(t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("tasks.list", { status: "open", pageSize: 5 }))).resolves.toBeTruthy();
   });
 });

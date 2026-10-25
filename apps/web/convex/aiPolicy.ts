@@ -65,6 +65,15 @@ export async function aiSettingsFor(ctx: ReadCtx, organizationId: Id<"organizati
   return await ctx.db.query("aiSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
 }
 
+export async function availabilityFor(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<Doc<"aiAvailability"> | null> {
+  return await ctx.db.query("aiAvailability").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+}
+
+/** Whether RIVET has made assistance available for this gym. No row means no: the default for every gym. */
+export async function platformAvailable(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<boolean> {
+  return Boolean((await availabilityFor(ctx, organizationId))?.available);
+}
+
 /** Recorded model spend this month for a gym, and for one run when named. */
 export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organizations">, runPublicId?: string): Promise<{ monthMicros: number; runMicros?: number }> {
   const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now()))).collect();
@@ -76,13 +85,13 @@ export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organization
 
 /**
  * Whether a member-facing capability is on for a gym: deployment not off, no
- * platform stop, gym assistance on and the capability not turned off. Used
- * by member surfaces, which never see staff settings themselves.
+ * platform stop, the gym available, gym assistance on and the capability not
+ * turned off. Used by member surfaces, which never see staff settings themselves.
  */
 export async function memberCapabilityOn(ctx: ReadCtx, organizationId: Id<"organizations">, capability: AiCapabilityKey): Promise<boolean> {
   if (adapterConfig().mode === "off" || (await globalStopped(ctx)).stopped) return false;
-  const settings = await aiSettingsFor(ctx, organizationId);
-  return effectiveCapabilityMode(tenantModeOf(settings), settings?.capabilityModes?.[capability], capability) !== "off";
+  const [settings, available] = await Promise.all([aiSettingsFor(ctx, organizationId), platformAvailable(ctx, organizationId)]);
+  return effectiveCapabilityMode(tenantModeOf(settings, available), settings?.capabilityModes?.[capability], capability) !== "off";
 }
 
 export async function globalStopped(ctx: ReadCtx): Promise<{ stopped: boolean; reason?: string }> {
@@ -90,22 +99,23 @@ export async function globalStopped(ctx: ReadCtx): Promise<{ stopped: boolean; r
   return { stopped: Boolean(row?.stopped), reason: row?.reason };
 }
 
-export function tenantModeOf(settings: AiSettingsDoc | null): AiTenantMode {
-  return settings?.tenantMode ?? "off";
+/** The gym's effective mode: what it chose, or off while RIVET has not made assistance available to it. */
+export function tenantModeOf(settings: AiSettingsDoc | null, available: boolean): AiTenantMode {
+  return available ? settings?.tenantMode ?? "off" : "off";
 }
 
-export function capabilityModeOf(settings: AiSettingsDoc | null, capability: AiCapabilityKey): AiTenantMode {
-  return effectiveCapabilityMode(tenantModeOf(settings), settings?.capabilityModes?.[capability], capability);
+export function capabilityModeOf(settings: AiSettingsDoc | null, capability: AiCapabilityKey, available: boolean): AiTenantMode {
+  return effectiveCapabilityMode(tenantModeOf(settings, available), settings?.capabilityModes?.[capability], capability);
 }
 
 /** Inputs to the pure authority intersection for one actor right now. */
 export async function authorityInput(ctx: ReadCtx, actor: ActorContext, capability: AiCapabilityKey, entitledModules: readonly string[]): Promise<Omit<AuthorityInput, "grantTools" | "grantActive">> {
-  const [settings, stop] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx)]);
+  const [settings, stop, available] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx), platformAvailable(ctx, actor.organization._id)]);
   return {
     adapterMode: adapterConfig().mode,
     globalStop: stop.stopped,
-    tenantMode: tenantModeOf(settings),
-    capabilityMode: capabilityModeOf(settings, capability),
+    tenantMode: tenantModeOf(settings, available),
+    capabilityMode: capabilityModeOf(settings, capability, available),
     actorPermissions: actor.permissions,
     entitledModules,
   };
@@ -120,23 +130,26 @@ async function userName(ctx: ReadCtx, userId: Id<"users"> | undefined, cache: Ma
 
 export async function settingsView(ctx: ReadCtx, actor: ActorContext): Promise<AiSettingsView> {
   const config = adapterConfig();
-  const [settings, stop] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx)]);
+  const [settings, stop, available] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx), platformAvailable(ctx, actor.organization._id)]);
   const now = Date.now();
   const usageRows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", monthKey(now))).take(5_000);
   const runs = await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", Date.parse(`${monthKey(now)}-01T00:00:00.000Z`))).take(2_000);
-  const tenantMode = tenantModeOf(settings);
+  // The gym's own choice is shown as saved; what can run uses the effective mode.
+  const tenantMode = settings?.tenantMode ?? "off";
+  const effectiveMode = tenantModeOf(settings, available);
   const names = new Map<string, string>();
   return {
     adapterMode: config.mode,
     adapterReady: config.ready,
     ...(config.reason ? { adapterReason: config.reason } : {}),
     globalStop: stop.stopped,
+    platformAvailable: available,
     tenantMode,
     externalProcessing: settings?.externalProcessing ?? false,
     memberDataApproved: config.memberDataApproved,
     capabilities: CAPABILITY_KEYS.map((key) => {
       const own = settings?.capabilityModes?.[key];
-      const effective = effectiveCapabilityMode(tenantMode, own, key);
+      const effective = effectiveCapabilityMode(effectiveMode, own, key);
       return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: config.mode !== "off" && !stop.stopped && effective !== "off" };
     }),
     usage: {

@@ -16,6 +16,43 @@ async function enterOwner(page: Page) {
   await expect(page).not.toHaveURL(/\/login/);
 }
 
+async function enterPlatformAdmin(page: Page) {
+  await page.goto("/login/admin");
+  await page.getByRole("button", { name: /Open platform console/i }).click();
+  await expect(page).toHaveURL(/\/platform$/);
+}
+
+async function signOut(page: Page) {
+  await page.getByRole("button", { name: /^(Sign out|تسجيل الخروج)$/ }).first().click();
+  await expect(page).toHaveURL(/\/login$/);
+}
+
+/** No gym can use assistance until a platform admin makes it available, so each journey starts there. */
+async function changeGymAvailability(page: Page, available: boolean, reason: string) {
+  await enterPlatformAdmin(page);
+  await page.goto("/platform/assistance");
+  const panel = page.getByTestId("platform-assistance-availability");
+  if (available) {
+    await expect(panel.getByTestId("platform-assistance-none")).toBeVisible();
+    await panel.getByRole("combobox").click();
+    await page.getByRole("option").first().click();
+    await panel.getByTestId("platform-assistance-availability-reason").fill(reason);
+    await panel.getByTestId("platform-assistance-make-available").click();
+    await expect(panel.getByTestId("platform-assistance-gym")).toHaveCount(1);
+  } else {
+    await expect(panel.getByTestId("platform-assistance-gym")).toHaveCount(1);
+    await panel.getByTestId("platform-assistance-availability-reason").fill(reason);
+    await panel.getByTestId("platform-assistance-remove").click();
+    await expect(panel.getByTestId("platform-assistance-none")).toBeVisible();
+  }
+  await signOut(page);
+}
+
+async function enterAvailableOwner(page: Page) {
+  await changeGymAvailability(page, true, "Preview pilot gym");
+  await enterOwner(page);
+}
+
 async function turnOnAssistance(page: Page, mode: "Prepare only" | "Prepare and save work" | "تجهيز العمل وحفظه") {
   await page.goto("/settings?section=assistance");
   const section = page.getByTestId("assistance-settings");
@@ -46,9 +83,39 @@ test.describe("RIVET assistance", () => {
     await expect(page.getByTestId("renewal-row-headline")).toHaveCount(0);
   });
 
-  test("prepares renewal follow-ups that are saved, explained and still there after leaving the page", async ({ page }) => {
+  test("stays hidden from a gym until RIVET makes it available, and stops again when that is removed", async ({ page }) => {
     const errors = collectConsoleErrors(page);
     await enterOwner(page);
+    await page.goto("/settings?section=roles");
+    await expect(page.getByRole("heading", { name: "Roles & access" }).first()).toBeVisible();
+    await expect(page.getByTestId("assistance-link")).toHaveCount(0);
+    await page.goto("/settings?section=assistance");
+    await expect(page.getByTestId("assistance-settings-unavailable")).toContainText("RIVET has not made assistance available for your gym yet.");
+    await expect(page.getByTestId("assistance-mode-execute")).toHaveCount(0);
+    await signOut(page);
+
+    await enterAvailableOwner(page);
+    await page.goto("/settings?section=roles");
+    await expect(page.getByTestId("assistance-link")).toContainText("Now: Off");
+    await turnOnAssistance(page, "Prepare and save work");
+    await page.goto("/crm/queues?view=renewals");
+    await expect(page.getByTestId("prepare-follow-ups")).toBeVisible();
+    await signOut(page);
+
+    // Removing availability hides assistance again; the gym's ordinary work is unchanged.
+    await changeGymAvailability(page, false, "Pilot paused");
+    await enterOwner(page);
+    await page.goto("/crm/queues?view=renewals");
+    await expect(page.getByTestId("follow-up-results")).toBeVisible();
+    await expect(page.getByTestId("prepare-follow-ups")).toHaveCount(0);
+    await page.goto("/settings?section=roles");
+    await expect(page.getByTestId("assistance-link")).toHaveCount(0);
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
+  test("prepares renewal follow-ups that are saved, explained and still there after leaving the page", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
     await page.goto("/crm/queues?view=renewals");
     const prepare = page.getByTestId("prepare-follow-ups");
@@ -81,7 +148,7 @@ test.describe("RIVET assistance", () => {
   });
 
   test("reads a contact note into fields and keeps the original note", async ({ page }) => {
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare only");
     await page.goto("/crm/queues?view=renewals");
     await page.getByTestId("follow-up-results").getByRole("button").filter({ hasText: /ends \d/i }).first().click();
@@ -101,7 +168,7 @@ test.describe("RIVET assistance", () => {
 
   test("prepares a report with checked totals and a shift handover in their own pages", async ({ page }) => {
     const errors = collectConsoleErrors(page);
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
     await page.goto("/reports");
     await page.getByTestId("prepare-report").click();
@@ -125,7 +192,7 @@ test.describe("RIVET assistance", () => {
 
   test("looks into a cash difference and says plainly when nothing recorded matches it", async ({ page }) => {
     const errors = collectConsoleErrors(page);
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
     // The seeded Abdoun drawer closed 7.000 short and is waiting for approval.
     await page.goto("/payments/shifts?branch=10000000-0000-4a00-8a00-000000000002");
@@ -145,7 +212,7 @@ test.describe("RIVET assistance", () => {
 
   test("prepares lead follow-ups from the pipeline with drafts a person sends", async ({ page }) => {
     const errors = collectConsoleErrors(page);
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
     await page.goto("/crm/pipeline");
     await page.getByTestId("prepare-lead-follow-ups").click();
@@ -163,7 +230,7 @@ test.describe("RIVET assistance", () => {
   });
 
   test("turns a plain request into the members list's own filters", async ({ page }) => {
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare only");
     await page.goto("/members");
     const filters = page.getByTestId("natural-filters");
@@ -179,7 +246,7 @@ test.describe("RIVET assistance", () => {
 
   test("prepares an unsaved collections call list beside the owes-money filter", async ({ page }) => {
     const errors = collectConsoleErrors(page);
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare only");
     await page.goto("/members?membership=outstanding");
     const panel = page.getByTestId("collection-calls");
@@ -193,7 +260,7 @@ test.describe("RIVET assistance", () => {
 
   test("finds a class a member can take and books it through the roster rules", async ({ page }) => {
     const errors = collectConsoleErrors(page);
-    await enterOwner(page);
+    await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
     await page.goto("/members?membership=active");
     await page.getByTestId("member-filters").waitFor();
@@ -213,6 +280,7 @@ test.describe("RIVET assistance", () => {
 
   test("works in Arabic on a phone without horizontal scrolling", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
+    await changeGymAvailability(page, true, "Preview pilot gym");
     const encoded = encodeURIComponent(JSON.stringify({ version: 1, locale: "ar", owner: null, pending: "ai-assist" }));
     await page.context().addCookies([
       { name: "rivet_locale", value: "ar", domain: "localhost", path: "/" },

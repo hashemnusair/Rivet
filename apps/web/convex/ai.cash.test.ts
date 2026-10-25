@@ -47,6 +47,9 @@ async function seed(t: TestConvex<typeof schema>, options: { cardAmount?: number
     await rec("payment", "cash-pay-1", { branchId: MAIN, shiftId: "cash-shift", type: "payment", status: "completed", method: "cash", amount: { amount: 20_000, currency: "JOD" }, receiptId: "cash-receipt-1", receiptNumber: "R-0001", occurredAt: "2026-10-22T08:00:00.000Z" });
     await rec("payment", "cash-pay-2", { branchId: MAIN, shiftId: "cash-shift", type: "payment", status: "completed", method: "card", amount: { amount: options.cardAmount ?? 5_000, currency: "JOD" }, receiptId: "cash-receipt-2", receiptNumber: "R-0002", occurredAt: "2026-10-22T09:15:00.000Z" });
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: "execute", externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "cash-platform-operator", authSubject: "clerk-cash-platform-operator", email: "operator@cash.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
     return { org, owner };
   });
 }

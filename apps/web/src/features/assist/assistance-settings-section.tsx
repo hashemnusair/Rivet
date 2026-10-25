@@ -145,6 +145,16 @@ export function AssistanceSettingsSection() {
   if (settings.isLoading && !settings.data) return <Skeleton className="h-48 w-full" />;
   if (settings.isError || !settings.data || !draft) return <ErrorState title={t("aiWork.error.internal")} onRetry={() => void settings.refetch()} />;
   const data = settings.data;
+  // Reached only by a direct link: the controls stay hidden until RIVET makes assistance available for this gym.
+  if (!data.platformAvailable) {
+    return (
+      <SettingsSection title={t("aiWork.settings.title")} testId="assistance-settings-unavailable">
+        <SettingsPanel>
+          <p className="text-[13px] text-ink-2">{t("aiWork.settings.notAvailable")}</p>
+        </SettingsPanel>
+      </SettingsSection>
+    );
+  }
   return (
     <SettingsSection title={t("aiWork.settings.title")} description={t("aiWork.settings.description")} testId="assistance-settings">
       <SettingsPanel>

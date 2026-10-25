@@ -44,6 +44,9 @@ async function seed(t: TestConvex<typeof schema>, tenantMode: "prepare" | "off" 
     await charge("ch-6", "due-today", main, "2026-11-30", 5_000);
     await rec("payment", "pay-1", main, { memberId: "long-overdue", type: "payment", status: "completed", method: "cash", amount: { amount: 20_000, currency: "JOD" }, receiptId: "rc-1", receiptNumber: "R-0101", occurredAt: "2026-08-01T09:00:00.000Z" }, "long-overdue");
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode, externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "col-platform-operator", authSubject: "clerk-col-platform-operator", email: "operator@col.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
   });
 }
 

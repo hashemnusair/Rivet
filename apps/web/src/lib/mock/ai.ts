@@ -22,6 +22,8 @@ import {
   type AiInterpretFiltersResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  type AiGymAvailability,
+  type AiPlatformAvailability,
   type AiPlatformStatus,
   type AiOutcomeSummary,
   type AiMemberHeadlinesResult,
@@ -106,7 +108,12 @@ export interface MockAiHost {
   classOptionFacts(memberId: string, from: string, to: string): { enabled: boolean; facts: ClassOptionFacts[] };
   /** The existing staff roster add; returns the member's booking status afterwards. */
   bookClass(occurrenceKey: string, memberId: string): string | undefined;
+  /** Gyms the platform console lists, for choosing which may use assistance. */
+  platformOrganizations(): Array<{ id: string; name: string; status: string }>;
+  platformAudit(input: { action: string; entityId: string; entityLabel: string; summary: string; reason: string; before: Record<string, unknown>; after: Record<string, unknown> }): void;
 }
+
+type MockAvailability = { available: boolean; reason: string; changedAt: string; changedByName: string };
 
 interface MockProposal {
   id: string;
@@ -184,6 +191,8 @@ const PREVIEW_SETTINGS_KEY = "rivet.preview.assistance";
 export class MockAiEngine {
   private tenantMode: AiTenantMode = "off";
   private platformStop?: { stopped: boolean; reason: string; changedAt: string; changedByName: string };
+  /** Gyms RIVET made assistance available for, by organization id. None by default, as on the server. */
+  private readonly availability = new Map<string, MockAvailability>();
   private externalProcessing = false;
   private capabilityModes: Partial<Record<AiCapabilityKey, AiTenantMode>> = {};
   private revision = 0;
@@ -215,11 +224,14 @@ export class MockAiEngine {
     try {
       const raw = typeof window === "undefined" ? null : window.sessionStorage.getItem(PREVIEW_SETTINGS_KEY);
       if (!raw) return;
-      const saved = JSON.parse(raw) as { tenantMode?: AiTenantMode; externalProcessing?: boolean; capabilityModes?: MockAiEngine["capabilityModes"]; revision?: number };
+      const saved = JSON.parse(raw) as { tenantMode?: AiTenantMode; externalProcessing?: boolean; capabilityModes?: MockAiEngine["capabilityModes"]; revision?: number; availability?: Record<string, MockAvailability> };
       if (saved.tenantMode && AI_TENANT_MODES.includes(saved.tenantMode)) this.tenantMode = saved.tenantMode;
       this.externalProcessing = saved.externalProcessing === true;
       this.capabilityModes = saved.capabilityModes ?? {};
       this.revision = Number(saved.revision) || 0;
+      for (const [organizationId, row] of Object.entries(saved.availability ?? {})) {
+        if (row && typeof row.available === "boolean") this.availability.set(organizationId, { available: row.available, reason: String(row.reason ?? ""), changedAt: String(row.changedAt ?? ""), changedByName: String(row.changedByName ?? "") });
+      }
     } catch {
       // Storage can be unavailable; the preview then starts with assistance off.
     }
@@ -227,7 +239,7 @@ export class MockAiEngine {
 
   private savePreviewSettings(): void {
     try {
-      if (typeof window !== "undefined") window.sessionStorage.setItem(PREVIEW_SETTINGS_KEY, JSON.stringify({ tenantMode: this.tenantMode, externalProcessing: this.externalProcessing, capabilityModes: this.capabilityModes, revision: this.revision }));
+      if (typeof window !== "undefined") window.sessionStorage.setItem(PREVIEW_SETTINGS_KEY, JSON.stringify({ tenantMode: this.tenantMode, externalProcessing: this.externalProcessing, capabilityModes: this.capabilityModes, revision: this.revision, availability: Object.fromEntries(this.availability) }));
     } catch {
       // Not persisted; the in-memory value still applies.
     }
@@ -241,12 +253,17 @@ export class MockAiEngine {
   // Policy
   // ---------------------------------------------------------------------------
 
+  /** This gym's effective mode: off until RIVET makes assistance available for it, as on the server. */
+  private get effectiveTenantMode(): AiTenantMode {
+    return this.availability.get(this.host.db.organization.id)?.available ? this.tenantMode : "off";
+  }
+
   private authority(capability: AiCapabilityKey): Omit<AuthorityInput, "grantTools" | "grantActive"> {
     return {
       adapterMode: "fixture",
       globalStop: this.platformStop?.stopped ?? false,
-      tenantMode: this.tenantMode,
-      capabilityMode: effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability),
+      tenantMode: this.effectiveTenantMode,
+      capabilityMode: effectiveCapabilityMode(this.effectiveTenantMode, this.capabilityModes[capability], capability),
       actorPermissions: this.host.permissions(),
       entitledModules: this.host.entitledModules(),
     };
@@ -261,12 +278,13 @@ export class MockAiEngine {
       adapterMode: "fixture",
       adapterReady: true,
       globalStop: this.platformStop?.stopped ?? false,
+      platformAvailable: Boolean(this.availability.get(this.host.db.organization.id)?.available),
       tenantMode: this.tenantMode,
       externalProcessing: this.externalProcessing,
       memberDataApproved: false,
       capabilities: CAPABILITY_KEYS.map((key) => {
         const own = this.capabilityModes[key];
-        const effective = effectiveCapabilityMode(this.tenantMode, own, key);
+        const effective = effectiveCapabilityMode(this.effectiveTenantMode, own, key);
         return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: effective !== "off" && !this.platformStop?.stopped };
       }),
       usage: { monthModelCalls: 0, monthCostMicros: 0, monthRuns: this.runs.size },
@@ -279,15 +297,17 @@ export class MockAiEngine {
   updateSettings(input: UpdateAiSettingsInput): AiSettingsView {
     this.requireHumanPermission("settings.manage");
     if (input.expectedRevision !== this.revision) throw ApiError.of(ERR.CONFLICT, "This record changed. Refresh and try again.");
-    if (input.tenantMode !== undefined) {
-      if (!AI_TENANT_MODES.includes(input.tenantMode)) throw ApiError.of(ERR.VALIDATION, "Choose off, prepare or execute.");
-      this.tenantMode = input.tenantMode;
-    }
-    if (typeof input.externalProcessing === "boolean") this.externalProcessing = input.externalProcessing;
-    for (const [key, mode] of Object.entries(input.capabilities ?? {})) {
+    if (input.tenantMode !== undefined && !AI_TENANT_MODES.includes(input.tenantMode)) throw ApiError.of(ERR.VALIDATION, "Choose off, prepare or execute.");
+    const nextMode = input.tenantMode ?? this.tenantMode;
+    const turningOn = nextMode !== "off" || (input.externalProcessing === true && !this.externalProcessing);
+    if (turningOn && !this.availability.get(this.host.db.organization.id)?.available) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "RIVET has not made assistance available for this gym.", { details: { reason: "not_available" } });
+    const capabilities = Object.entries(input.capabilities ?? {});
+    for (const [key, mode] of capabilities) {
       if (!CAPABILITY_KEYS.includes(key as AiCapabilityKey) || !mode || !AI_TENANT_MODES.includes(mode)) throw ApiError.of(ERR.VALIDATION, "Check the details and try again.");
-      this.capabilityModes[key as AiCapabilityKey] = mode;
     }
+    this.tenantMode = nextMode;
+    if (typeof input.externalProcessing === "boolean") this.externalProcessing = input.externalProcessing;
+    for (const [key, mode] of capabilities) this.capabilityModes[key as AiCapabilityKey] = mode!;
     this.revision += 1;
     this.updatedAt = Date.now();
     this.updatedByName = this.host.actor().name;
@@ -408,7 +428,7 @@ export class MockAiEngine {
   /** Member-facing capability switch, as the member portal sees it. */
   memberCapabilityOn(capability: AiCapabilityKey): boolean {
     if (this.platformStop?.stopped) return false;
-    return effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability) !== "off";
+    return effectiveCapabilityMode(this.effectiveTenantMode, this.capabilityModes[capability], capability) !== "off";
   }
 
   /** The month's outcomes, counted the way the server counts them. */
@@ -445,6 +465,33 @@ export class MockAiEngine {
     if (!reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.", { fieldErrors: { reason: ["Required"] } });
     this.platformStop = { stopped: input.stopped, reason, changedAt: new Date().toISOString(), changedByName: byName };
     return { stopped: input.stopped, reason };
+  }
+
+  private availabilityView(organization: { id: string; name: string; status: string }): AiGymAvailability {
+    const row = this.availability.get(organization.id);
+    return { organizationId: organization.id, name: organization.name, status: organization.status, available: Boolean(row?.available), ...(row ? { reason: row.reason, changedAt: row.changedAt, changedByName: row.changedByName } : {}) };
+  }
+
+  platformAvailability(): AiPlatformAvailability {
+    const gyms = this.host.platformOrganizations().map((organization) => this.availabilityView(organization));
+    return { gyms: gyms.sort((left, right) => Number(right.available) - Number(left.available) || left.name.localeCompare(right.name)) };
+  }
+
+  /** A platform admin makes a gym available, or removes it, with a reason; removal stops its running work at the next step. */
+  setPlatformAvailability(input: { organizationId: string; available: boolean; reason: string }, byName: string): AiGymAvailability {
+    const reason = input.reason.trim().slice(0, 300);
+    if (!reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.", { fieldErrors: { reason: ["Required"] } });
+    const organization = this.host.platformOrganizations().find((item) => item.id === input.organizationId);
+    if (!organization) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    const before = Boolean(this.availability.get(organization.id)?.available);
+    if (before === input.available) return this.availabilityView(organization);
+    this.availability.set(organization.id, { available: input.available, reason, changedAt: new Date().toISOString(), changedByName: byName });
+    this.savePreviewSettings();
+    if (!input.available && organization.id === this.host.db.organization.id) {
+      for (const run of this.runs.values()) if (!isTerminalRunStatus(run.status)) run.cancelRequested = true;
+    }
+    this.host.platformAudit({ action: input.available ? "ai.gym.available" : "ai.gym.unavailable", entityId: organization.id, entityLabel: organization.name, summary: input.available ? `Made RIVET assistance available for ${organization.name}` : `Removed RIVET assistance for ${organization.name}`, reason, before: { available: before }, after: { available: input.available } });
+    return this.availabilityView(organization);
   }
 
   prepareCollections(branchId: string | undefined): AiCollectionsResult {

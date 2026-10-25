@@ -586,7 +586,7 @@ type PageParams = { page?: number; pageSize?: number; sort?: string; search?: st
 type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
 
 type MockPlatformAuditEvent = PlatformGymActivity & {
-  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects" | "platform_setting" | "platform_promo" | "platform_invoice";
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects" | "platform_setting" | "platform_promo" | "platform_invoice" | "organization";
   entityPublicId: string;
   entityLabel: string;
   reason: string;
@@ -971,6 +971,11 @@ export class MockGymOSApi implements GymOSApi {
         return updated.roster.find((entry) => entry.memberId === memberId && ["booked", "waitlisted"].includes(entry.status))?.status;
       },
       reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
+      platformOrganizations: () => [
+        { id: this.db.organization.id, name: this.db.organization.name, status: this.db.organization.status },
+        ...[...this.provisionedTenants.values()].map((tenant) => ({ id: tenant.organization.id, name: tenant.organization.name, status: tenant.organization.status })),
+      ],
+      platformAudit: (input) => { this.recordPlatformAudit({ action: input.action, entityType: "organization", entityPublicId: input.entityId, entityLabel: input.entityLabel, summary: input.summary, reason: input.reason, before: input.before, after: input.after }); },
     });
   }
 
@@ -4502,6 +4507,8 @@ export class MockGymOSApi implements GymOSApi {
   getAiOutcomeSummary(): Promise<AI.AiOutcomeSummary> { return this.respond(() => { this.require("settings.manage"); return this.ai.outcomeSummary(); }); }
   getPlatformAiStatus(): Promise<AI.AiPlatformStatus> { return this.respond(() => this.ai.platformStatus()); }
   setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.respond(() => this.ai.setPlatformStop(input, this.actor().name)); }
+  getPlatformAiAvailability(): Promise<AI.AiPlatformAvailability> { return this.respond(() => this.ai.platformAvailability()); }
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<AI.AiGymAvailability> { return this.respond(() => this.ai.setPlatformAvailability(input, this.actor().name)); }
   extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }

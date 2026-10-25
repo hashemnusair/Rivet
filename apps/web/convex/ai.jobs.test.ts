@@ -36,6 +36,9 @@ async function seed(t: TestConvex<typeof schema>): Promise<{ org: Id<"organizati
     await rec("payment", "jobs-refund-1", { memberId: "jobs-member", branchId: MAIN, type: "refund", status: "completed", method: "cash", amount: { amount: -5_000, currency: "JOD" }, occurredAt: "2026-10-07T09:00:00.000Z" }, "jobs-member");
     await rec("task", "jobs-task", { type: "follow_up", title: "Call Lina", ownerId: "jobs-sales", dueAt: "2026-10-22T10:00:00.000Z", priority: "normal", status: "open", memberId: "jobs-member", subjectName: "Lina Haddad", createdById: "jobs-sales", createdAt: "2026-10-20T07:00:00.000Z" }, "jobs-member");
     await ctx.db.insert("aiSettings", { organizationId: org, tenantMode: "execute", externalProcessing: false, capabilityModes: {}, revision: 1, updatedAt: now });
+    // RIVET has made assistance available for this gym; without it every gate reads as off.
+    const platformOperator = await ctx.db.insert("users", { publicId: "jobs-platform-operator", authSubject: "clerk-jobs-platform-operator", email: "operator@jobs.example", fullName: "Platform Operator", platformAdmin: true, status: "active", createdAt: now, updatedAt: now });
+    await ctx.db.insert("aiAvailability", { organizationId: org, available: true, reason: "Test gym", changedByUserId: platformOperator, changedAt: now });
     return { org, main };
   });
 }

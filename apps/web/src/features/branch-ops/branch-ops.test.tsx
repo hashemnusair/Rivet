@@ -41,6 +41,8 @@ describe("describe what you found", () => {
     const user = userEvent.setup();
     const onFileIssue = vi.fn();
     await renderWithApp(<IntakeProbe onFileIssue={onFileIssue} />, { role: "owner", prepare: async (api) => {
+      // A platform admin makes the preview gym available before its owner turns assistance on.
+      await api.setPlatformAiAvailability({ organizationId: (await api.getSession()).organization.id, available: true, reason: "Test gym" });
       const settings = await api.getAiSettings();
       await api.updateAiSettings({ tenantMode: "prepare", expectedRevision: settings.revision });
       stash("branch", await equipmentBranch(api));

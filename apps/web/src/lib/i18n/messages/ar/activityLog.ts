@@ -84,6 +84,8 @@ export const activityLog: typeof EnglishActivityLog = {
     aiMemoryRevoke: "إيقاف استخدام ملاحظة في المتابعات",
     aiGlobalStop: "إيقاف المساعدة لجميع الأندية",
     aiGlobalResume: "استئناف المساعدة لجميع الأندية",
+    aiGymAvailable: "إتاحة المساعدة لنادٍ",
+    aiGymUnavailable: "إيقاف إتاحة المساعدة لنادٍ",
     bulkMembersAddTags: "إضافة وسوم إلى الأعضاء",
     bulkMembersRemoveTags: "إزالة وسوم من الأعضاء",
     bulkMembersAssignBranch: "نقل أعضاء إلى فرع",

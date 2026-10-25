@@ -1553,11 +1553,14 @@ export interface GymOSApi {
   prepareCollections(query: { branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiCollectionsResult>;
   /** Classes the member could be booked into this week (AI-4.5); computed on read. */
   getClassOptions(query: { memberId: UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<import("@/lib/ai/contracts").AiClassOptionsResult>;
-  /** Platform operators: the platform-wide assistance switch. */
   /** Owner: what RIVET did this month and how it turned out. */
   getAiOutcomeSummary(): Promise<import("@/lib/ai/contracts").AiOutcomeSummary>;
+  /** Platform operators: the platform-wide assistance switch. */
   getPlatformAiStatus(): Promise<import("@/lib/ai/contracts").AiPlatformStatus>;
   setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }>;
+  /** Platform operators: which gyms may use assistance at all. No gym is available until one is made available here. */
+  getPlatformAiAvailability(): Promise<import("@/lib/ai/contracts").AiPlatformAvailability>;
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<import("@/lib/ai/contracts").AiGymAvailability>;
   extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
   interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;

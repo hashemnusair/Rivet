@@ -84,6 +84,8 @@ export const activityLog = {
     aiMemoryRevoke: "Note no longer used for follow-ups",
     aiGlobalStop: "Assistance stopped for every gym",
     aiGlobalResume: "Assistance resumed for every gym",
+    aiGymAvailable: "Assistance made available for a gym",
+    aiGymUnavailable: "Assistance removed for a gym",
     bulkMembersAddTags: "Tags added to members",
     bulkMembersRemoveTags: "Tags taken off members",
     bulkMembersAssignBranch: "Members moved to a branch",
