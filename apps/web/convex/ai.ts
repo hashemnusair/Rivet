@@ -38,6 +38,7 @@ import {
   type AiMemberBriefResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  type AiPlatformStatus,
   type AiPlaybookKey,
   type AiRunRevision,
   type AiRunStatus,
@@ -158,6 +159,13 @@ export { nextStandingSlot } from "../src/lib/ai/schedule";
 // ---------------------------------------------------------------------------
 
 export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs, port: AiDomainPort): Promise<unknown> {
+  if (operation === "ai.platform.status") {
+    // Operators only; no tenant actor is involved and no gym data is read.
+    await requirePlatformAdmin(ctx, request.correlationId);
+    const control = await ctx.db.query("aiControls").withIndex("by_key", (q) => q.eq("key", GLOBAL_CONTROL_KEY)).unique();
+    const changedBy = control?.changedByUserId ? await ctx.db.get(control.changedByUserId) : null;
+    return { adapterMode: adapterConfig().mode, stopped: Boolean(control?.stopped), ...(control?.reason ? { reason: control.reason } : {}), ...(control ? { changedAt: new Date(control.changedAt).toISOString() } : {}), ...(changedBy ? { changedByName: changedBy.fullName } : {}) } satisfies AiPlatformStatus;
+  }
   const actor = await requireActor(ctx, request);
   switch (operation) {
     case "ai.settings.get":

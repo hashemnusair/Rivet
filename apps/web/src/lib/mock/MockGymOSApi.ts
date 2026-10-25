@@ -4498,6 +4498,8 @@ export class MockGymOSApi implements GymOSApi {
   getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
   prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.respond(() => this.ai.prepareCollections(query.branchId ?? this.db.session.activeBranchId)); }
   getClassOptions(query: { memberId: T.UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<AI.AiClassOptionsResult> { return this.respond(() => this.ai.classOptions(query.memberId, query.timeOfDay)); }
+  getPlatformAiStatus(): Promise<AI.AiPlatformStatus> { return this.respond(() => this.ai.platformStatus()); }
+  setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.respond(() => this.ai.setPlatformStop(input, this.actor().name)); }
   extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
   interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }

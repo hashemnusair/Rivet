@@ -497,3 +497,21 @@ describe("staff statements are bounded and attributable", () => {
     await expect(desk.mutation(api.domain.mutate, op("ai.memory.record", { subjectId: "m-omar", topic: "travel", effectiveUntil: "2026-10-26" }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
 });
+
+describe("platform assistance controls", () => {
+  it("lets only RIVET operators read and change the platform stop, with a reason and a name", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    await t.run(async (ctx) => { await ctx.db.insert("users", { publicId: "ai-operator", authSubject: "clerk-ai-operator", email: "operator@rivet.example", fullName: "Operator Lina", platformAdmin: true, status: "active", createdAt: Date.now(), updatedAt: Date.now() }); });
+    const status = { operation: "ai.platform.status", input: {}, correlationId: "cor-platform-status" };
+    await expect(t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, status)).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    const operator = t.withIdentity({ subject: "clerk-ai-operator" });
+    expect(await operator.query(api.domain.query, status)).toMatchObject({ adapterMode: "fixture", stopped: false });
+    await expect(operator.mutation(api.domain.mutate, { operation: "ai.platform.stop", input: { stopped: true, reason: "" }, correlationId: "cor-platform-stop-0" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    await operator.mutation(api.domain.mutate, { operation: "ai.platform.stop", input: { stopped: true, reason: "Incident drill" }, correlationId: "cor-platform-stop-1" });
+    expect(await operator.query(api.domain.query, status)).toMatchObject({ stopped: true, reason: "Incident drill", changedByName: "Operator Lina" });
+    // The gym sees assistance stopped everywhere.
+    expect(await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get"))).toMatchObject({ globalStop: true });
+  });
+});
+

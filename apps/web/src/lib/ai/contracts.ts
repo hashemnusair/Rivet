@@ -399,6 +399,15 @@ export type AiClassOptionsResult =
   | { available: true; options: import("./class-finder").ClassOption[]; excluded: Partial<Record<import("./class-finder").ClassExclusion, number>>; canBook: boolean }
   | { available: false; reason: AiErrorCategory | "classes_paused" };
 
+/** The platform-wide assistance switch, for RIVET operators only. */
+export interface AiPlatformStatus {
+  adapterMode: AiAdapterMode;
+  stopped: boolean;
+  reason?: string;
+  changedAt?: string;
+  changedByName?: string;
+}
+
 export interface AiArtifactView {
   id: string;
   kind: "management_report" | "shift_handover" | "cash_difference";
@@ -484,6 +493,7 @@ export const AI_QUERY_OPERATIONS = [
   "ai.memories.list",
   "ai.collections.prepare",
   "ai.classes.options",
+  "ai.platform.status",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [

@@ -20,6 +20,7 @@ import type { GymApplicationStatus, PlatformGymApplication, ProvisionGymInput, R
 import { cn } from "@/lib/utils/cn";
 import { money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { isQuotedPlan } from "../../../../convex/planCatalogue";
+import { PlatformReviewBrief } from "@/features/assist/platform-review-brief";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 
 type Filter = "all" | GymApplicationStatus;
@@ -375,6 +376,7 @@ export default function PlatformApplicationsPage() {
               {selected && !loading ? (
                 <ApplicationDetail
                   application={selected}
+                  allApplications={applications}
                   tab={activeTab}
                   onTabChange={(next) => { setChosenTab(next); setParams({ tab: next }); }}
                   onBack={() => setParams({ application: undefined })}
@@ -405,7 +407,7 @@ export default function PlatformApplicationsPage() {
  * without scrolling: who applied, the decision, and (once approved) the
  * gym's workspace. Every tab stays mounted, only hidden.
  */
-function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNote, quote, setQuote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; tab: ApplicationTab; onTabChange: (tab: ApplicationTab) => void; onBack: () => void; note: string; setNote: (value: string) => void; quote: string; setQuote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
+function ApplicationDetail({ application, allApplications, tab, onTabChange, onBack, note, setNote, quote, setQuote, busyDecision, busyNote, busyProvisioning, refreshing, onReview, onSaveNote, onProvision, onRefresh }: { application: PlatformGymApplication; allApplications: readonly PlatformGymApplication[]; tab: ApplicationTab; onTabChange: (tab: ApplicationTab) => void; onBack: () => void; note: string; setNote: (value: string) => void; quote: string; setQuote: (value: string) => void; busyDecision?: ReviewGymApplicationInput["decision"]; busyNote: boolean; busyProvisioning: boolean; refreshing: boolean; onReview: (decision: ReviewGymApplicationInput["decision"]) => Promise<void>; onSaveNote: () => Promise<void>; onProvision: () => void; onRefresh: () => void }) {
   const t = useT();
   const f = useFormat();
   const { isolate } = useLocale();
@@ -464,6 +466,7 @@ function ApplicationDetail({ application, tab, onTabChange, onBack, note, setNot
 
         <TabsContent value="decision" forceMount hidden={tab !== "decision"} className={panelClass}>
           <div className="max-w-3xl space-y-6">
+            <PlatformReviewBrief application={application} all={allApplications} />
             {finalized ? <div className={cn("flex items-start gap-3 rounded-md border p-4 text-[12.5px]", application.status === "approved" ? "border-success/30 bg-success-bg text-success-deep" : "border-danger/30 bg-danger-bg text-danger")}><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden /><div><strong>{application.status === "approved" ? t("platformConsole.applications.applicationApproved") : t("platformConsole.applications.applicationRejected")}</strong><p className="mt-1 leading-relaxed opacity-90">{application.reviewedBy ? t("platformConsole.applications.decisionBy", { name: isolate(application.reviewedBy), date: f.dateTime(application.reviewedAt ?? application.updatedAt) }) : t("platformConsole.applications.decisionRecorded")} {application.reviewNotificationStatus === "sent" ? t("platformConsole.applications.ownerNotified") : application.reviewNotificationStatus === "failed" ? t("platformConsole.applications.decisionSavedEmailFailed") : t("platformConsole.applications.ownerEmailNotConfigured")} {application.status === "rejected" ? ` ${t("platformConsole.applications.rejectionFinal")}` : ""}</p></div></div> : null}
             <section>
               <Field label={t("platformConsole.applications.reviewNotes")} hint={t("platformConsole.applications.reviewNotesHint")}>

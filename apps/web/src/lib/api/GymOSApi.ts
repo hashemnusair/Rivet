@@ -1551,6 +1551,9 @@ export interface GymOSApi {
   prepareCollections(query: { branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiCollectionsResult>;
   /** Classes the member could be booked into this week (AI-4.5); computed on read. */
   getClassOptions(query: { memberId: UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<import("@/lib/ai/contracts").AiClassOptionsResult>;
+  /** Platform operators: the platform-wide assistance switch. */
+  getPlatformAiStatus(): Promise<import("@/lib/ai/contracts").AiPlatformStatus>;
+  setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }>;
   extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
   interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
   interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;

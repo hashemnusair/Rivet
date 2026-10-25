@@ -22,6 +22,7 @@ import {
   type AiInterpretFiltersResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  type AiPlatformStatus,
   type AiInterpretRevisionResult,
   type AiMemberBriefResult,
   type AiMemoryView,
@@ -179,6 +180,7 @@ const PREVIEW_SETTINGS_KEY = "rivet.preview.assistance";
 
 export class MockAiEngine {
   private tenantMode: AiTenantMode = "off";
+  private platformStop?: { stopped: boolean; reason: string; changedAt: string; changedByName: string };
   private externalProcessing = false;
   private capabilityModes: Partial<Record<AiCapabilityKey, AiTenantMode>> = {};
   private revision = 0;
@@ -239,7 +241,7 @@ export class MockAiEngine {
   private authority(capability: AiCapabilityKey): Omit<AuthorityInput, "grantTools" | "grantActive"> {
     return {
       adapterMode: "fixture",
-      globalStop: false,
+      globalStop: this.platformStop?.stopped ?? false,
       tenantMode: this.tenantMode,
       capabilityMode: effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability),
       actorPermissions: this.host.permissions(),
@@ -255,14 +257,14 @@ export class MockAiEngine {
     return {
       adapterMode: "fixture",
       adapterReady: true,
-      globalStop: false,
+      globalStop: this.platformStop?.stopped ?? false,
       tenantMode: this.tenantMode,
       externalProcessing: this.externalProcessing,
       memberDataApproved: false,
       capabilities: CAPABILITY_KEYS.map((key) => {
         const own = this.capabilityModes[key];
         const effective = effectiveCapabilityMode(this.tenantMode, own, key);
-        return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: effective !== "off" };
+        return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: effective !== "off" && !this.platformStop?.stopped };
       }),
       usage: { monthModelCalls: 0, monthCostMicros: 0, monthRuns: this.runs.size },
       revision: this.revision,
@@ -385,7 +387,19 @@ export class MockAiEngine {
 
   /** Member-facing capability switch, as the member portal sees it. */
   memberCapabilityOn(capability: AiCapabilityKey): boolean {
+    if (this.platformStop?.stopped) return false;
     return effectiveCapabilityMode(this.tenantMode, this.capabilityModes[capability], capability) !== "off";
+  }
+
+  platformStatus(): AiPlatformStatus {
+    return { adapterMode: "fixture", stopped: this.platformStop?.stopped ?? false, ...(this.platformStop ? { reason: this.platformStop.reason, changedAt: this.platformStop.changedAt, changedByName: this.platformStop.changedByName } : {}) };
+  }
+
+  setPlatformStop(input: { stopped: boolean; reason: string }, byName: string): { stopped: boolean; reason: string } {
+    const reason = input.reason.trim();
+    if (!reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.", { fieldErrors: { reason: ["Required"] } });
+    this.platformStop = { stopped: input.stopped, reason, changedAt: new Date().toISOString(), changedByName: byName };
+    return { stopped: input.stopped, reason };
   }
 
   prepareCollections(branchId: string | undefined): AiCollectionsResult {
