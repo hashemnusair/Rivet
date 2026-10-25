@@ -81,4 +81,3 @@ export function memberClassSuggestions<T extends { startMinuteLocal: number; can
     .sort((left, right) => left.startsAt.localeCompare(right.startsAt))
     .slice(0, limit);
 }
-

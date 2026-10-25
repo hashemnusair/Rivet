@@ -128,4 +128,3 @@ describe("lead follow-up preparation", () => {
     await expect(t.withIdentity({ subject: "clerk-sales-rep" }).query(api.domain.query, op("ai.outcomes.summary"))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
 });
-

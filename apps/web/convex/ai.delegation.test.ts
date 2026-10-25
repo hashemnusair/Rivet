@@ -527,4 +527,3 @@ describe("platform assistance controls", () => {
     expect(await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get"))).toMatchObject({ globalStop: true });
   });
 });
-

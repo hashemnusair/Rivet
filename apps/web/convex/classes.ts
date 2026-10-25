@@ -1239,4 +1239,3 @@ export async function classBookingStatusFor(ctx: ReadContext, actor: ActorContex
   const rows = await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id).eq("memberPublicId", memberId)).collect();
   return rows.filter((row) => ACTIVE_BOOKING_STATUSES.has(row.status)).sort((left, right) => right.updatedAt - left.updatedAt)[0]?.status;
 }
-

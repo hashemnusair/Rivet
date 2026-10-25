@@ -216,4 +216,3 @@ export function listRowFact(brief: Pick<AiMemberBrief, "lines">): AiMessage | un
   const candidates = brief.lines.filter((line) => !ROW_ALREADY_SHOWS.has(line.message.key));
   return (candidates.find((line) => line.tone === "attention") ?? candidates[0])?.message;
 }
-
