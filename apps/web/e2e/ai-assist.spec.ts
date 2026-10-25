@@ -295,6 +295,8 @@ test.describe("RIVET assistance", () => {
     await expect(panel).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
     await expect(panel.getByTestId("ai-run-stage")).toHaveText("جاهز");
     await expect(panel.getByTestId("ai-run-counts")).toContainText("تم إنشاؤها");
+    // The calls RIVET saved read in Arabic, though each task keeps its stored English title too.
+    await expect(panel.getByTestId("ai-run-results").getByText(/^الاتصال بـ .+ بشأن تجديد الاشتراك/).first()).toBeVisible();
     expect(await noHorizontalOverflow(page)).toBe(true);
   });
 });

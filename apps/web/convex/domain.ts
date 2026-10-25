@@ -1536,6 +1536,7 @@ export async function followUpRelatedTasks(ctx: ReadContext, actor: ActorContext
       id: stringValue(task.id),
       type: stringValue(task.type, "general"),
       title: stringValue(task.title),
+      ...(preparedTaskTitleMessage(task.titleMessage) ? { titleMessage: task.titleMessage as SystemMessage } : {}),
       ownerId: optionalString(task.ownerId),
       ownerName: stringValue(task.ownerName, "Unassigned"),
       dueAt: stringValue(task.dueAt),
@@ -8249,6 +8250,11 @@ async function createMemberMembershipSaleMutation(ctx: MutationCtx, actor: Actor
   return { member: await toMemberDetail(ctx, actor, data(member.data)), sale };
 }
 
+/** A task-title descriptor RIVET wrote, or nothing: only renderable `communicationCompletion.tasks.*` descriptors are kept. */
+function preparedTaskTitleMessage(value: unknown): SystemMessage | undefined {
+  return isRenderableSystemMessage(value) && value.key.startsWith("communicationCompletion.tasks.") ? value : undefined;
+}
+
 async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requirePermission(actor, "crm.write");
   const ownerId = recordId(input.ownerId);
@@ -8261,8 +8267,10 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   // Only a delegated actor can mark a task as prepared by RIVET; clients cannot claim that origin.
   const aiContext = actor.delegation ? data(input.aiContext) : {};
   const origin = actor.delegation ? { origin: { kind: "ai_run", runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId }, ...(optionalString(aiContext.purpose) ? { aiContext: { purpose: stringValue(aiContext.purpose), membershipId: optionalString(aiContext.membershipId), topic: optionalString(aiContext.topic) } } : {}) } : {};
-  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}), ...origin }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  // A translatable title rides beside the stored English only for a title RIVET itself wrote.
+  const titleMessage = actor.delegation ? preparedTaskTitleMessage(input.titleMessage) : undefined;
+  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ...(titleMessage ? { titleMessage } : {}), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}), ...origin }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: titleMessage ? { message: titleMessage } : stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
 
@@ -11882,7 +11890,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "task", recordId(input.taskId));
       const value = data(record.data);
       const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: stringValue(input.outcome), completedAt: isoNow() });
-      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      const storedTitleMessage = preparedTaskTitleMessage(value.titleMessage);
+      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: storedTitleMessage ? { message: storedTitleMessage } : stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await toTask(ctx, actor, updated);
     }
     case "leads.complete_sale": {
@@ -13121,6 +13130,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         kind: "follow_up",
         priority: overdueTask && stringValue(task.priority) === "high" ? "urgent" : overdueTask ? "high" : stringValue(task.priority) === "high" ? "high" : "normal",
         title: stringValue(task.title),
+        ...(preparedTaskTitleMessage(task.titleMessage) ? { titleMessage: task.titleMessage } : {}),
         detail: `${stringValue(task.subjectName)} · ${stringValue(task.ownerName)}`,
         subjectName: stringValue(task.subjectName),
         subject: task.leadId ? { kind: "lead", id: stringValue(task.leadId) } : task.memberId ? { kind: "member", id: stringValue(task.memberId) } : undefined,

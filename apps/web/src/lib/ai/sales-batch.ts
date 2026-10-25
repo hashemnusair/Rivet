@@ -1,5 +1,6 @@
 import type { AiExclusionReason } from "./contracts";
 import { stableHash } from "./note-extraction";
+import { systemMessage, type SystemMessage } from "../i18n/system-messages";
 
 /**
  * Lead follow-up preparation shared by the Convex playbook and the preview
@@ -59,7 +60,11 @@ export function leadOperationKey(organizationId: string, leadId: string, nextFol
   return `lead-followup:${stableHash(`${organizationId}|${leadId}|${nextFollowUpAt ?? "none"}`)}`;
 }
 
-/** Stored in English like other system-created task titles. */
+/** Stored in English like other system-created task titles; the descriptor beside it shows each reader their language. */
 export function leadTaskTitle(leadName: string): string {
   return `Follow up with ${leadName}`;
+}
+
+export function leadTaskTitleMessage(leadName: string): SystemMessage {
+  return systemMessage("communicationCompletion.tasks.leadFollowUp", { name: leadName });
 }

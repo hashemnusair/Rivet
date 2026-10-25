@@ -238,6 +238,8 @@ export interface AiRunResultRef {
   id: string;
   href?: string;
   label: string;
+  /** The label as a descriptor (a task RIVET prepared), shown in the reader's language; `label` stays the stored English. */
+  labelMessage?: import("../i18n/system-messages").SystemMessage;
   subjectName?: string;
 }
 

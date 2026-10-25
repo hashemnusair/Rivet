@@ -3,13 +3,14 @@ import type { MutationCtx } from "./_generated/server";
 import { publicOrganizationId, publicUserId, type ActorContext, type RequestArgs } from "./security";
 import { adapterConfig, monthKey, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
 import type { RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
-import { evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle } from "../src/lib/ai/renewal-batch";
+import { evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, renewalTaskTitleMessage } from "../src/lib/ai/renewal-batch";
 import { modelTaskBlocked, runFixtureTask, type DraftFollowUpTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import type { AiErrorCategory, AiExclusionReason, AiRunExclusion, AiRunResultRef, AiRunRevision, AiRunStatus } from "../src/lib/ai/contracts";
 import { addDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
 import { composeHandover, composeManagementReport, ledgerTotals } from "../src/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "../src/lib/ai/cash-difference";
-import { evaluateLeadCandidate, leadIsDue, leadOperationKey, leadTaskTitle, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
+import { evaluateLeadCandidate, leadIsDue, leadOperationKey, leadTaskTitle, leadTaskTitleMessage, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
+import { isRenderableSystemMessage, systemMessage, type SystemMessage } from "../src/lib/i18n/system-messages";
 import { CLASS_FINDER_DAYS, classExclusion, type ClassOptionFacts } from "../src/lib/ai/class-finder";
 import type { AdvanceResult } from "./aiRuns";
 
@@ -65,14 +66,14 @@ async function recordFixtureUsage(ctx: MutationCtx, run: AiRunDoc, task: string,
 }
 
 /** Whether the task id recorded under an operation key still exists, and is open. */
-async function priorTaskState(ctx: MutationCtx, run: AiRunDoc, operation: string, key: string): Promise<{ taskId: string; open: boolean; title: string } | undefined> {
+async function priorTaskState(ctx: MutationCtx, run: AiRunDoc, operation: string, key: string): Promise<{ taskId: string; open: boolean; title: string; titleMessage?: SystemMessage } | undefined> {
   const prior = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", run.organizationId).eq("operation", operation).eq("key", key)).unique();
   if (!prior) return undefined;
   const taskId = text(record(prior.result).taskId);
   const task = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", run.organizationId).eq("entityType", "task").eq("publicId", taskId)).unique();
   if (!task) return undefined;
   const value = record(task.data);
-  return { taskId, open: text(value.status) === "open" || !value.status, title: text(value.title) };
+  return { taskId, open: text(value.status) === "open" || !value.status, title: text(value.title), ...(isRenderableSystemMessage(value.titleMessage) ? { titleMessage: value.titleMessage } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,8 +135,10 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
   if (decision.decision === "link" || prior) {
     const taskId = decision.decision === "link" ? decision.taskId : prior!.taskId;
     const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
-    await recordStep(ctx, run, { seq, tool: "task.create_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", reason: "has_open_followup", resultRef: resultRef("task", taskId, title, { href: memberHref, subjectName: subject.name }) });
-    return await advance({ counts: { ...run.counts, linked: run.counts.linked + 1 }, resultRefs: [...run.resultRefs, resultRef("task", taskId, title, { href: memberHref, subjectName: subject.name })] });
+    const labelMessage = decision.decision === "link" ? undefined : prior!.titleMessage;
+    const ref = resultRef("task", taskId, title, { href: memberHref, subjectName: subject.name, ...(labelMessage ? { labelMessage } : {}) });
+    await recordStep(ctx, run, { seq, tool: "task.create_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", reason: "has_open_followup", resultRef: ref });
+    return await advance({ counts: { ...run.counts, linked: run.counts.linked + 1 }, resultRefs: [...run.resultRefs, ref] });
   }
 
   // A write: the run's own limit, then the tool's authority, both checked now.
@@ -175,9 +178,11 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
   const ownerId = ownerRevision?.ownerId ?? (params.owner === "assigned" && facts.assignedSalespersonId ? facts.assignedSalespersonId : publicUserId(actor.user));
   const dueAt = localDateTimeToISO(decision.dueDate, decision.dueTime, timezone);
   const title = renewalTaskTitle(facts.memberName, decision.topic);
+  const titleMessage = renewalTaskTitleMessage(facts.memberName, decision.topic);
   const created = record(await env.executeMutation("tasks.create", {
     type: "renewal_call",
     title,
+    titleMessage,
     ownerId,
     dueAt,
     priority: facts.membershipEndDate <= addDays(today, 3) ? "high" : "normal",
@@ -192,7 +197,7 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
     throw new Error("Saved follow-up did not match what was requested.");
   }
   await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.task.create_followup", key: operationKey, requestHash: `${run.publicId}:${subject.id}`, result: { taskId, runId: run.publicId }, createdAt: now, expiresAt: now + 400 * 86_400_000 });
-  const ref = resultRef("task", taskId, title, { href: memberHref, subjectName: subject.name });
+  const ref = resultRef("task", taskId, title, { href: memberHref, subjectName: subject.name, labelMessage: titleMessage });
   await recordStep(ctx, run, { seq, tool: "task.create_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", resultRef: ref, ...(draft ? { draft } : {}) });
   return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
 }
@@ -255,7 +260,8 @@ async function salesFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Promi
   if (decision.decision === "link" || prior) {
     const taskId = decision.decision === "link" ? decision.taskId : prior!.taskId;
     const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
-    const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name });
+    const labelMessage = decision.decision === "link" ? undefined : prior!.titleMessage;
+    const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name, ...(labelMessage ? { labelMessage } : {}) });
     await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", reason: "has_open_followup", resultRef: ref });
     return await advance({ counts: { ...run.counts, linked: run.counts.linked + 1 }, resultRefs: [...run.resultRefs, ref] });
   }
@@ -271,7 +277,8 @@ async function salesFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Promi
   }
   const ownerId = params.owner === "me" || !facts.ownerId ? publicUserId(actor.user) : facts.ownerId;
   const title = leadTaskTitle(facts.leadName);
-  const created = record(await env.executeMutation("tasks.create", { type: "follow_up", title, ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, aiContext: { purpose: "lead" } }, env.toolRequest("task.create_lead_followup", seq)));
+  const titleMessage = leadTaskTitleMessage(facts.leadName);
+  const created = record(await env.executeMutation("tasks.create", { type: "follow_up", title, titleMessage, ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, aiContext: { purpose: "lead" } }, env.toolRequest("task.create_lead_followup", seq)));
   const taskId = text(created.id);
   const persisted = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", run.organizationId).eq("entityType", "task").eq("publicId", taskId)).unique();
   const saved = record(persisted?.data);
@@ -279,7 +286,7 @@ async function salesFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Promi
     throw new Error("Saved lead follow-up did not match what was requested.");
   }
   await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.task.create_lead_followup", key: operationKey, requestHash: `${run.publicId}:${subject.id}`, result: { taskId, runId: run.publicId }, createdAt: now, expiresAt: now + 90 * 86_400_000 });
-  const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name });
+  const ref = resultRef("task", taskId, title, { href: leadHref, subjectName: subject.name, labelMessage: titleMessage });
   await recordStep(ctx, run, { seq, tool: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, operationKey, status: "verified", resultRef: ref, ...(facts.draft ? { draft: facts.draft } : {}) });
   return await advance({ counts: { ...run.counts, created: run.counts.created + 1, prepared: run.counts.prepared + (facts.draft ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + 1 }, resultRefs: [...run.resultRefs, ref] });
 }
@@ -480,16 +487,17 @@ async function shiftHandoverStep(ctx: MutationCtx, env: PlaybookStepEnv): Promis
   const prior = await priorTaskState(ctx, run, "ai.task.assign_handover", operationKey);
   let ref: AiRunResultRef;
   if (prior) {
-    ref = resultRef("task", prior.taskId, prior.title, { href: "/crm/queues" });
+    ref = resultRef("task", prior.taskId, prior.title, { href: "/crm/queues", ...(prior.titleMessage ? { labelMessage: prior.titleMessage } : {}) });
     await recordStep(ctx, run, { seq: 2, tool: "task.assign_handover", operationKey, status: "verified", reason: "has_open_followup", resultRef: ref });
   } else {
     const title = `Read the handover for ${date}`;
-    const created = record(await env.executeMutation("tasks.create", { type: "general", title, ownerId: params.assigneeId, dueAt: new Date(now + 2 * 3_600_000).toISOString(), priority: "normal", aiContext: { purpose: "handover" } }, env.toolRequest("task.assign_handover", 2)));
+    const titleMessage = systemMessage("communicationCompletion.tasks.readHandover", { date: { date } });
+    const created = record(await env.executeMutation("tasks.create", { type: "general", title, titleMessage, ownerId: params.assigneeId, dueAt: new Date(now + 2 * 3_600_000).toISOString(), priority: "normal", aiContext: { purpose: "handover" } }, env.toolRequest("task.assign_handover", 2)));
     const taskId = text(created.id);
     const persisted = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", run.organizationId).eq("entityType", "task").eq("publicId", taskId)).unique();
     if (!persisted || record(persisted.data).ownerId !== params.assigneeId || record(record(persisted.data).origin).runId !== run.publicId) throw new Error("Saved handover task did not match what was requested.");
     await ctx.db.insert("idempotencyRecords", { organizationId: run.organizationId, operation: "ai.task.assign_handover", key: operationKey, requestHash: run.publicId, result: { taskId }, createdAt: now, expiresAt: now + 30 * 86_400_000 });
-    ref = resultRef("task", taskId, title, { href: "/crm/queues" });
+    ref = resultRef("task", taskId, title, { href: "/crm/queues", labelMessage: titleMessage });
     await recordStep(ctx, run, { seq: 2, tool: "task.assign_handover", operationKey, status: "verified", resultRef: ref });
   }
   await ctx.db.patch(run._id, { resultRefs: [...run.resultRefs, ref], counts: { ...run.counts, created: run.counts.created + (prior ? 0 : 1), linked: run.counts.linked + (prior ? 1 : 0) }, budget: { ...run.budget, writes: run.budget.writes + (prior ? 0 : 1) }, updatedAt: now });

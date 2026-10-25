@@ -2296,6 +2296,8 @@ export interface Task {
   relatedTaskTitle?: string;
   /** Set by the server only when delegated work created the task; clients cannot claim it. */
   origin?: { kind: "ai_run"; runId: string; grantId: string };
+  /** The title as a descriptor, for tasks RIVET prepared; `title` stays the stored English. Older tasks have none. */
+  titleMessage?: SystemMessage;
   aiContext?: { purpose: string; membershipId?: string; topic?: string };
 }
 
@@ -3383,6 +3385,8 @@ export interface TodayQueueItem {
   kind: TodayQueueKind;
   priority: TodayQueuePriority;
   title: string;
+  /** The title as a descriptor (a task RIVET prepared); `title` stays the stored English. */
+  titleMessage?: SystemMessage;
   detail: string;
   href: string;
   action: TodayQueueAction;

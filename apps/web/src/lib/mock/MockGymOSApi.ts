@@ -915,7 +915,7 @@ export class MockGymOSApi implements GymOSApi {
         if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Task owner not found.");
         const task: T.Task = { ...input, id: mockUuid(), organizationId: this.db.organization.id, ownerName: owner.name, subjectName: member?.fullName ?? lead?.fullName ?? "—", status: "open", createdById: this.actor().id, createdAt: nowISO() };
         this.db.tasks.push(task);
-        if (member) this.activity({ memberId: member.id, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: task.title }), actorId: this.actor().id, actorName: this.actor().name, meta: { delegationRunId: input.origin.runId, delegationGrantId: input.origin.grantId, delegationTool: "task.create_followup" } });
+        if (member) this.activity({ memberId: member.id, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: task.titleMessage ? { message: task.titleMessage } : task.title }), actorId: this.actor().id, actorName: this.actor().name, meta: { delegationRunId: input.origin.runId, delegationGrantId: input.origin.grantId, delegationTool: "task.create_followup" } });
         return task;
       },
       audit: (input) => { this.audit({ category: "ai", action: input.action, entityType: "ai", entityId: input.entityId, entityLabel: input.entityLabel, summary: input.summary }); },
@@ -5656,6 +5656,7 @@ export class MockGymOSApi implements GymOSApi {
             kind: "follow_up",
             priority: overdue && task.priority === "high" ? "urgent" : overdue ? "high" : task.priority === "high" ? "high" : "normal",
             title: task.title,
+            ...(task.titleMessage ? { titleMessage: task.titleMessage } : {}),
             detail: `${task.subjectName} · ${task.ownerName}`,
             subjectName: task.subjectName,
             subject: task.leadId ? { kind: "lead", id: task.leadId } : task.memberId ? { kind: "member", id: task.memberId } : undefined,
@@ -8265,7 +8266,7 @@ export class MockGymOSApi implements GymOSApi {
           memberId: task.memberId,
           type: "task_completed",
           title: `Task completed: ${task.title}`,
-          titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.title }),
+          titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.titleMessage ? { message: task.titleMessage } : task.title }),
           body: input.outcome,
           actorId: this.actor().id,
           actorName: this.actor().name,

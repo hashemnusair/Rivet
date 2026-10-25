@@ -51,11 +51,12 @@ import {
 } from "@/lib/ai/contracts";
 import { buildMemberBrief, listRowFact, type MemberAttendance } from "@/lib/ai/member-brief";
 import { runFixtureTask } from "@/lib/ai/model";
-import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
+import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, renewalTaskTitleMessage, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
+import { systemMessage } from "@/lib/i18n/system-messages";
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
 import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
-import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
+import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, leadTaskTitleMessage, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "@/lib/ai/collections";
 import { CLASS_FINDER_DAYS, classExclusion, classOptions, type ClassOptionFacts, type ClassTimeOfDay } from "@/lib/ai/class-finder";
 import { addDays, diffDays, localDateTimeToISO, partsInTimeZone } from "@/lib/utils/dates";
@@ -86,7 +87,7 @@ export interface MockAiHost {
   renewalQueue(query: { branchId?: string; bucket: "expiring" | "expired"; days?: number }): T.RenewalQueueItem[];
   snoozedUntil(memberId: string): string | undefined;
   classSessions(): Array<{ branchId: string; startMinute?: number; status?: string }>;
-  createTask(input: Omit<T.Task, "id" | "organizationId" | "ownerName" | "subjectName" | "createdById" | "createdAt" | "status"> & { origin: NonNullable<T.Task["origin"]>; aiContext?: T.Task["aiContext"] }): T.Task;
+  createTask(input: Omit<T.Task, "id" | "organizationId" | "ownerName" | "subjectName" | "createdById" | "createdAt" | "status"> & { origin: NonNullable<T.Task["origin"]>; aiContext?: T.Task["aiContext"]; titleMessage: NonNullable<T.Task["titleMessage"]> }): T.Task;
   audit(input: { action: string; entityId: string; entityLabel: string; summary: string }): void;
   /** Simulated time between steps; zero in tests that remove preview latency. */
   stepDelayMs?(): number;
@@ -676,12 +677,12 @@ export class MockAiEngine {
     const priorId = this.operationKeys.get(key);
     const prior = priorId ? this.host.db.tasks.find((task) => task.id === priorId && task.status === "open") : undefined;
     if (prior) {
-      run.results.push({ kind: "task", id: prior.id, label: prior.title, href: "/crm/queues" });
+      run.results.push({ kind: "task", id: prior.id, label: prior.title, href: "/crm/queues", ...(prior.titleMessage ? { labelMessage: prior.titleMessage } : {}) });
       run.counts.linked += 1;
     } else {
-      const task = this.host.createTask({ type: "general", title: `Read the handover for ${date}`, ownerId: params.assigneeId!, dueAt: new Date(Date.now() + 2 * 3_600_000).toISOString(), priority: "normal", origin: { kind: "ai_run", runId: run.id, grantId: run.grantId }, aiContext: { purpose: "handover" } });
+      const task = this.host.createTask({ type: "general", title: `Read the handover for ${date}`, titleMessage: systemMessage("communicationCompletion.tasks.readHandover", { date: { date } }), ownerId: params.assigneeId!, dueAt: new Date(Date.now() + 2 * 3_600_000).toISOString(), priority: "normal", origin: { kind: "ai_run", runId: run.id, grantId: run.grantId }, aiContext: { purpose: "handover" } });
       this.operationKeys.set(key, task.id);
-      run.results.push({ kind: "task", id: task.id, label: task.title, href: "/crm/queues" });
+      run.results.push({ kind: "task", id: task.id, label: task.title, href: "/crm/queues", ...(task.titleMessage ? { labelMessage: task.titleMessage } : {}) });
       run.counts.created += 1;
       run.writes += 1;
     }
@@ -895,7 +896,8 @@ export class MockAiEngine {
     if (decision.decision === "link" || prior) {
       const taskId = decision.decision === "link" ? decision.taskId : prior!.id;
       const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
-      const ref: AiRunResultRef = { kind: "task", id: taskId, label: title, href: leadHref, subjectName: subject.name };
+      const labelMessage = decision.decision === "link" ? undefined : prior!.titleMessage;
+      const ref: AiRunResultRef = { kind: "task", id: taskId, label: title, href: leadHref, subjectName: subject.name, ...(labelMessage ? { labelMessage } : {}) };
       run.steps.push({ id: mockUuid(), seq, capability: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", reason: "has_open_followup", resultRef: ref, updatedAt: stamp });
       run.counts.linked += 1;
       run.results.push(ref);
@@ -905,9 +907,9 @@ export class MockAiEngine {
     const writeBlocked = toolBlocked(TOOLS["task.create_lead_followup"]!, { ...this.authority("sales_followups"), grantTools: grant.tools, grantActive: true });
     if (writeBlocked) return this.finish(run, run.counts.created + run.counts.linked > 0 ? "partially_completed" : "failed", writeBlocked === "permission_denied" ? "authority_revoked" : writeBlocked);
     const ownerId = params.owner === "me" || !facts.ownerId ? run.ownerId : facts.ownerId;
-    const task = this.host.createTask({ type: "follow_up", title: leadTaskTitle(facts.leadName), ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, origin: { kind: "ai_run", runId: run.id, grantId: grant.id }, aiContext: { purpose: "lead" } });
+    const task = this.host.createTask({ type: "follow_up", title: leadTaskTitle(facts.leadName), titleMessage: leadTaskTitleMessage(facts.leadName), ownerId, dueAt: decision.dueAt, priority: decision.priority, leadId: subject.id, origin: { kind: "ai_run", runId: run.id, grantId: grant.id }, aiContext: { purpose: "lead" } });
     this.operationKeys.set(key, task.id);
-    const ref: AiRunResultRef = { kind: "task", id: task.id, label: task.title, href: leadHref, subjectName: subject.name };
+    const ref: AiRunResultRef = { kind: "task", id: task.id, label: task.title, href: leadHref, subjectName: subject.name, ...(task.titleMessage ? { labelMessage: task.titleMessage } : {}) };
     run.steps.push({ id: mockUuid(), seq, capability: "task.create_lead_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", resultRef: ref, ...(facts.draft ? { draft: facts.draft } : {}), updatedAt: stamp });
     run.counts.created += 1;
     if (facts.draft) run.counts.prepared += 1;
@@ -965,7 +967,8 @@ export class MockAiEngine {
     if (decision.decision === "link" || prior) {
       const taskId = decision.decision === "link" ? decision.taskId : prior!.id;
       const title = decision.decision === "link" ? decision.taskTitle : prior!.title;
-      const ref: AiRunResultRef = { kind: "task", id: taskId, label: title, href: memberHref, subjectName: subject.name };
+      const labelMessage = decision.decision === "link" ? undefined : prior!.titleMessage;
+      const ref: AiRunResultRef = { kind: "task", id: taskId, label: title, href: memberHref, subjectName: subject.name, ...(labelMessage ? { labelMessage } : {}) };
       run.steps.push({ id: mockUuid(), seq, capability: "task.create_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", reason: "has_open_followup", resultRef: ref, updatedAt: stamp() });
       run.counts.linked += 1;
       run.results.push(ref);
@@ -987,6 +990,7 @@ export class MockAiEngine {
     const task = this.host.createTask({
       type: "renewal_call",
       title: renewalTaskTitle(facts.memberName, decision.topic),
+      titleMessage: renewalTaskTitleMessage(facts.memberName, decision.topic),
       ownerId,
       dueAt: localDateTimeToISO(decision.dueDate, decision.dueTime, this.host.timezone()),
       priority: diffDays(today, facts.membershipEndDate) <= 3 ? "high" : "normal",
@@ -998,7 +1002,7 @@ export class MockAiEngine {
     const saved = this.host.db.tasks.find((item) => item.id === task.id);
     if (!saved || saved.memberId !== subject.id || saved.status !== "open" || saved.origin?.runId !== run.id) throw ApiError.of("INTERNAL_ERROR", "Saved follow-up did not match what was requested.");
     this.operationKeys.set(key, task.id);
-    const ref: AiRunResultRef = { kind: "task", id: task.id, label: task.title, href: memberHref, subjectName: subject.name };
+    const ref: AiRunResultRef = { kind: "task", id: task.id, label: task.title, href: memberHref, subjectName: subject.name, ...(task.titleMessage ? { labelMessage: task.titleMessage } : {}) };
     run.steps.push({ id: mockUuid(), seq, capability: "task.create_followup", subjectId: subject.id, subjectName: subject.name, status: "verified", resultRef: ref, ...(draft ? { draft } : {}), updatedAt: stamp() });
     run.counts.created += 1;
     if (draft) run.counts.prepared += 1;

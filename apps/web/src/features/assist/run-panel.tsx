@@ -13,6 +13,7 @@ import { qk } from "@/lib/api/keys";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
 import type { TKey } from "@/lib/i18n/core";
 import { useLocale } from "@/lib/i18n/provider";
+import { useTaskTitle } from "@/lib/i18n/use-task-title";
 import { cn } from "@/lib/utils/cn";
 import { useAiErrorText, useAiMessage } from "./ai-message";
 import { PLAYBOOKS } from "@/lib/ai/capabilities";
@@ -75,6 +76,7 @@ function ReviseRun({ run }: { run: AiRunView }) {
 
 export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () => void }) {
   const { t } = useLocale();
+  const taskTitle = useTaskTitle();
   const present = useAiMessage();
   const errorText = useAiErrorText();
   const invalidate = useInvalidate();
@@ -117,7 +119,7 @@ export function AiRunDetails({ run, onClose }: { run: AiRunView; onClose?: () =>
                   <li key={`${result.kind}-${result.id}`} className="text-[12.5px]">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="font-medium text-ink" dir="auto">{result.kind === "export" ? t("aiWork.report.export") : result.subjectName ?? result.label}</span>
-                      {result.kind !== "export" ? <span className="text-ink-3" dir="auto">{result.label}</span> : null}
+                      {result.kind !== "export" ? <span className="text-ink-3" dir="auto">{taskTitle({ title: result.label, titleMessage: result.labelMessage })}</span> : null}
                       {result.href ? <Link href={result.href} className="text-[12px] text-ink-3 underline decoration-line-3 underline-offset-2 hover:text-ink">{t("aiWork.run.open")}</Link> : null}
                     </div>
                     {draft ? (

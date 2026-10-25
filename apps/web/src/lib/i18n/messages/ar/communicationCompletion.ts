@@ -412,6 +412,13 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
     defaultDraft: "مرحبًا {name}، معك {gym}. نتواصل معك للمتابعة، ويمكن الرد هنا في أي وقت مناسب.",
   },
 
+  tasks: {
+    renewalCall: "الاتصال بـ {name} بشأن تجديد الاشتراك",
+    renewalCallEveningClasses: "الاتصال بـ {name} بشأن تجديد الاشتراك · السؤال عن الحصص الجماعية المسائية",
+    leadFollowUp: "متابعة {name}",
+    readHandover: "قراءة ملاحظات التسليم ليوم {date}",
+  },
+
   values: {
     channel: { whatsapp: "واتساب", sms: "SMS", email: "البريد الإلكتروني", manual: "التسليم اليدوي", staff_task: "مهمة اتصال لفريق العمل" },
   },

@@ -373,6 +373,14 @@ export const communicationCompletion = {
     defaultDraft: "Hi {name}, this is {gym}. Just following up with you — reply here whenever it suits you.",
   },
 
+  /** Titles of tasks RIVET prepares; the task keeps its stored English title as well. */
+  tasks: {
+    renewalCall: "Call {name} about membership renewal",
+    renewalCallEveningClasses: "Call {name} about membership renewal · ask about evening classes",
+    leadFollowUp: "Follow up with {name}",
+    readHandover: "Read the handover for {date}",
+  },
+
   values: {
     channel: { whatsapp: "WhatsApp", sms: "SMS", email: "email", manual: "manual delivery", staff_task: "staff call task" },
   },

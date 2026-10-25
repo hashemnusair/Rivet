@@ -3,6 +3,7 @@ import { addDays, diffDays } from "../utils/dates";
 import { mentionsEveningClasses } from "./member-brief";
 import type { AiExclusionReason, AiRunRevision } from "./contracts";
 import { TIME_OF_DAY_CLOCK, type TimeOfDay } from "./relative-dates";
+import { systemMessage, type SystemMessage } from "../i18n/system-messages";
 
 /**
  * The "Prepare follow-ups" decision for one member, shared by the Convex
@@ -90,6 +91,11 @@ export function evaluateRenewalCandidate(facts: RenewalCandidateFacts, policy: R
 /** The stored task title. Task titles are stored in English, like other system-created tasks. */
 export function renewalTaskTitle(memberName: string, topic?: "evening_classes"): string {
   return topic === "evening_classes" ? `Call ${memberName} about membership renewal · ask about evening classes` : `Call ${memberName} about membership renewal`;
+}
+
+/** The same title as a descriptor, so each reader sees it in their own language beside the stored English. */
+export function renewalTaskTitleMessage(memberName: string, topic?: "evening_classes"): SystemMessage {
+  return systemMessage(topic === "evening_classes" ? "communicationCompletion.tasks.renewalCallEveningClasses" : "communicationCompletion.tasks.renewalCall", { name: memberName });
 }
 
 /**

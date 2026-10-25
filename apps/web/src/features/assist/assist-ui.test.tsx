@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +10,9 @@ import { AiRunPanel } from "./run-panel";
 import { AssistanceSettingsSection } from "./assistance-settings-section";
 import { AssistanceLink } from "./assistance-link";
 import { NaturalMemberFilters } from "./natural-filters";
+import { MemberTasksPanel } from "@/features/members/member-tabs";
+import { LocaleProvider } from "@/lib/i18n/provider";
+import { systemMessage } from "@/lib/i18n/system-messages";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), useParams: () => ({}), usePathname: () => "/", useSearchParams: () => new URLSearchParams() }));
 
@@ -210,5 +214,31 @@ describe("Settings → Assistance", () => {
     await user.click(within(outcomes).getByText(/This month: what RIVET did/));
     expect(within(outcomes).getByText(/1 started · 1 ready/)).toBeInTheDocument();
     expect(within(outcomes).getByText(/saved · \d+ done · \d+ still open/)).toBeInTheDocument();
+  });
+});
+
+/** Mounts its children on a click, after a test has added preview records the session load would otherwise reseed. */
+function Deferred({ children }: { children: () => React.ReactNode }) {
+  const [shown, setShown] = useState(false);
+  return shown ? <>{children()}</> : <button type="button" onClick={() => setShown(true)}>show</button>;
+}
+
+describe("titles of tasks RIVET prepared", () => {
+  it("shows a prepared task in the reader's language and an older task exactly as it was saved", async () => {
+    const user = userEvent.setup();
+    let memberId = "";
+    const { api } = await renderWithApp(<LocaleProvider initialLocale="ar"><Deferred>{() => <MemberTasksPanel memberId={memberId} />}</Deferred></LocaleProvider>);
+    const db = (api as unknown as { db: MockDb }).db;
+    const member = db.members.find((item) => item.status === "active")!;
+    memberId = member.id;
+    const owner = db.users[0]!;
+    const base = { organizationId: db.organization.id, ownerId: owner.id, ownerName: owner.name, dueAt: new Date(Date.now() + 3_600_000).toISOString(), priority: "normal" as const, status: "open" as const, memberId: member.id, subjectName: member.fullName, createdById: owner.id, createdAt: new Date().toISOString() };
+    db.tasks.push(
+      { ...base, id: "task-prepared", type: "renewal_call", title: `Call ${member.fullName} about membership renewal`, titleMessage: systemMessage("communicationCompletion.tasks.renewalCall", { name: member.fullName }), origin: { kind: "ai_run", runId: "run-1", grantId: "grant-1" } },
+      { ...base, id: "task-older", type: "renewal_call", title: `Call ${member.fullName} about membership renewal · old`, origin: { kind: "ai_run", runId: "run-0", grantId: "grant-0" } },
+    );
+    await user.click(screen.getByRole("button", { name: "show" }));
+    expect(await screen.findByText(/^الاتصال بـ .+ بشأن تجديد الاشتراك$/)).toBeInTheDocument();
+    expect(screen.getByText(/about membership renewal · old$/)).toBeInTheDocument();
   });
 });

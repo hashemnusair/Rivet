@@ -80,8 +80,8 @@ async function seed(t: Harness, options: { aiMode?: "off" | "prepare" | "execute
   });
 }
 
-type RunView = { id: string; status: string; counts: Record<string, number>; exclusions: Array<{ subjectId: string; reason: string }>; results: Array<{ kind: string; id: string; subjectName?: string }>; steps: Array<{ subjectId?: string; status: string; reason?: string; draft?: { language: string; text: string } }>; committedEffects: number; errorCategory?: string; allowed: Record<string, boolean> };
-type TaskRow = { id: string; memberId?: string; type: string; status: string; dueAt: string; ownerId?: string; title: string; origin?: { kind: string; runId: string }; aiContext?: { purpose: string; membershipId?: string; topic?: string }; outcome?: string };
+type RunView = { id: string; status: string; counts: Record<string, number>; exclusions: Array<{ subjectId: string; reason: string }>; results: Array<{ kind: string; id: string; subjectName?: string; labelMessage?: { key: string } }>; steps: Array<{ subjectId?: string; status: string; reason?: string; draft?: { language: string; text: string } }>; committedEffects: number; errorCategory?: string; allowed: Record<string, boolean> };
+type TaskRow = { id: string; memberId?: string; type: string; status: string; dueAt: string; ownerId?: string; title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; origin?: { kind: string; runId: string }; aiContext?: { purpose: string; membershipId?: string; topic?: string }; outcome?: string };
 
 async function tasksOf(t: Harness, memberId: string, status = "open"): Promise<TaskRow[]> {
   return (await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("tasks.list", { memberId, status, pageSize: 50 })) as { items: TaskRow[] }).items;
@@ -200,6 +200,9 @@ describe("Prepare follow-ups saves and verifies real tasks", () => {
     expect(omarTask).toMatchObject({ type: "renewal_call", title: "Call Omar Haddad about membership renewal · ask about evening classes", ownerId: "ai-sales", origin: { kind: "ai_run", runId: run.id }, aiContext: { purpose: "renewal", membershipId: "m-omar-term", topic: "evening_classes" } });
     // Omar usually visits in the evening: the call is planned for 18:00 in Amman today.
     expect(omarTask?.dueAt).toBe("2026-10-22T15:00:00.000Z");
+    // The stored English title has a descriptor beside it, so each reader sees it in their own language.
+    expect(omarTask?.titleMessage).toEqual({ key: "communicationCompletion.tasks.renewalCallEveningClasses", params: { name: "Omar Haddad" } });
+    expect(run.results.find((item) => item.subjectName === "Omar Haddad")).toMatchObject({ labelMessage: { key: "communicationCompletion.tasks.renewalCallEveningClasses" } });
     const omarStep = run.steps.find((step) => step.subjectId === "m-omar");
     expect(omarStep?.draft?.language).toBe("en");
     expect(omarStep?.draft?.text).toContain("We have evening classes that may suit you");
@@ -629,5 +632,24 @@ describe("platform availability per gym", () => {
     // The gym's own choice is kept; it simply cannot run, and ordinary work carries on.
     expect(await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.settings.get"))).toMatchObject({ platformAvailable: false, tenantMode: "execute" });
     await expect(t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("tasks.list", { status: "open", pageSize: 5 }))).resolves.toBeTruthy();
+  });
+});
+
+describe("task titles RIVET prepares", () => {
+  it("keeps a translatable title only on tasks delegated work saved; a person cannot claim one", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    const created = await owner.mutation(api.domain.mutate, op("tasks.create", { type: "follow_up", title: "Call Lina about her plan", titleMessage: { key: "communicationCompletion.tasks.renewalCall", params: { name: "Someone else" } }, ownerId: "ai-owner", dueAt: "2026-10-23T09:00:00.000Z", memberId: "m-lina" }, { activeBranchId: MAIN })) as TaskRow;
+    expect(created.title).toBe("Call Lina about her plan");
+    expect(created.titleMessage).toBeUndefined();
+    // Completing a prepared task names it in the timeline through the same descriptor.
+    const started = await startRun(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const [omarTask] = await tasksOf(t, "m-omar");
+    expect((await getRun(t, started.id)).status).toBe("completed");
+    await owner.mutation(api.domain.mutate, op("tasks.complete", { taskId: omarTask!.id, outcome: "Called" }, { activeBranchId: MAIN }));
+    const timeline = await t.run(async (ctx) => (await ctx.db.query("domainRecords").collect()).filter((row) => row.entityType === "timeline").map((row) => row.data as { type: string; titleMessage?: { params?: Record<string, unknown> } }));
+    expect(timeline.find((event) => event.type === "task_completed")?.titleMessage?.params?.title).toEqual({ message: { key: "communicationCompletion.tasks.renewalCallEveningClasses", params: { name: "Omar Haddad" } } });
   });
 });
