@@ -394,6 +394,9 @@ export interface AiProposalView {
 }
 
 /** What happened to one prepared change in "approve all"; anything but `approved` saved nothing for it. */
+/** The most prepared changes approved together in one step. */
+export const AI_APPROVE_ALL_MAX = 20;
+
 export type AiApproveAllOutcome = "approved" | "no_longer_matched" | "already_decided" | "expired" | "changed" | "no_access" | "not_found" | "not_saved";
 
 export interface AiApproveAllResult {

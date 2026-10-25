@@ -42,6 +42,7 @@ import {
   type AiRunStepView,
   type AiRunView,
   type AiArtifactView,
+  AI_APPROVE_ALL_MAX,
   type AiApproveAllOutcome,
   type AiApproveAllResult,
   type AiSettingsView,
@@ -831,7 +832,7 @@ export class MockAiEngine {
    */
   approveProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): AiApproveAllResult {
     this.readableRun(input.runId);
-    const items = [...new Map(input.proposals.filter((item) => item.proposalId).map((item) => [item.proposalId, item])).values()].slice(0, 20);
+    const items = [...new Map(input.proposals.filter((item) => item.proposalId).map((item) => [item.proposalId, item])).values()].slice(0, AI_APPROVE_ALL_MAX);
     if (!items.length) throw ApiError.of(ERR.VALIDATION, "Choose the changes to approve.");
     const results = items.map((item): AiApproveAllResult["results"][number] => {
       const proposal = this.proposals.get(item.proposalId);

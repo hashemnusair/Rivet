@@ -41,6 +41,7 @@ import {
   type AiMemberBriefResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  AI_APPROVE_ALL_MAX,
   type AiApproveAllOutcome,
   type AiApproveAllResult,
   type AiGymAvailability,
@@ -852,7 +853,7 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       requireHuman(actor);
       const run = await runByPublicId(ctx, actor, text(input.runId));
       const requested = (Array.isArray(input.proposals) ? input.proposals : []).map(record).map((item) => ({ proposalId: text(item.proposalId), changesetHash: text(item.changesetHash) })).filter((item) => item.proposalId);
-      const items = [...new Map(requested.map((item) => [item.proposalId, item])).values()].slice(0, 20);
+      const items = [...new Map(requested.map((item) => [item.proposalId, item])).values()].slice(0, AI_APPROVE_ALL_MAX);
       if (!items.length) domainError("VALIDATION_ERROR", "Choose the changes to approve.", { correlationId: actor.correlationId });
       const results: AiApproveAllResult["results"] = [];
       for (const item of items) {

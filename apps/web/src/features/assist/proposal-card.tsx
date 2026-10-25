@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
-import type { AiApproveAllResult, AiProposalView } from "@/lib/ai/contracts";
+import { AI_APPROVE_ALL_MAX, type AiApproveAllResult, type AiProposalView } from "@/lib/ai/contracts";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
@@ -120,8 +120,9 @@ export function AiProposals({ runId }: { runId: string }) {
   if (query.isError) return <ErrorState layout="section" onRetry={() => query.refetch()} />;
   const proposals = query.data ?? [];
   if (proposals.length === 0) return null;
-  // Grouped approval only when the reader may approve two or more that are still waiting.
-  const approvable = proposals.filter((proposal) => proposal.status === "pending" && proposal.allowed.approve);
+  // Grouped approval only when the reader may approve two or more that are still waiting,
+  // and never more than the server takes in one step, so the count on the button is what runs.
+  const approvable = proposals.filter((proposal) => proposal.status === "pending" && proposal.allowed.approve).slice(0, AI_APPROVE_ALL_MAX);
   return (
     <div className="space-y-2" data-testid="ai-proposals">
       <p className="context-label">{t("aiWork.proposal.title")}</p>
