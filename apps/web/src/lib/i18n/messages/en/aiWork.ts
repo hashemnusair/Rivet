@@ -389,6 +389,7 @@ export const aiWork = {
       expired: "One expired before it was approved. Prepare it again if it is still needed.",
       changed: "One changed after you reviewed it. Review it again.",
       no_access: "One needs access you do not have.",
+      not_available: "Assistance is stopped or turned off for this work, so one was not approved.",
       not_found: "One is no longer available.",
       not_saved: "One could not be saved, so nothing was changed for it.",
     },

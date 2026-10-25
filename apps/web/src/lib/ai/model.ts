@@ -319,6 +319,9 @@ function taskInput(task: ModelTask): Record<string, unknown> {
         : { text: task.text.slice(0, 300), surface: task.surface, branches: task.branches };
 }
 
+/** The longest reply RIVET accepts on either protocol, so one reply's cost has a ceiling. */
+const MAX_REPLY_TOKENS = 2_048;
+
 export function buildLiveRequest(task: ModelTask, config: Pick<AiAdapterConfig, "model">): { path: string; body: Record<string, unknown> } {
   const input = taskInput(task);
   return {
@@ -326,6 +329,7 @@ export function buildLiveRequest(task: ModelTask, config: Pick<AiAdapterConfig, 
     body: {
       model: config.model,
       temperature: 0,
+      max_tokens: MAX_REPLY_TOKENS,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: `${SYSTEM_RULES} ${TASK_INSTRUCTIONS[task.kind]}` },
@@ -335,26 +339,29 @@ export function buildLiveRequest(task: ModelTask, config: Pick<AiAdapterConfig, 
   };
 }
 
+const liveUsage = z.object({ usage: z.object({ prompt_tokens: z.number().int().nonnegative().optional(), completion_tokens: z.number().int().nonnegative().optional() }).partial() });
 const liveEnvelope = z.object({
   choices: z.array(z.object({ message: z.object({ content: z.string().nullable().optional(), refusal: z.string().nullable().optional() }) })).min(1),
-  usage: z.object({ prompt_tokens: z.number().int().nonnegative().optional(), completion_tokens: z.number().int().nonnegative().optional() }).partial().optional(),
 });
 
 /** Map a provider response body to a validated task output, or a safe failure category. */
 export function parseLiveResponse(task: ModelTask, body: unknown): ModelTaskResult | ModelTaskFailure {
   const promptVersion = PROMPT_VERSIONS[task.kind];
+  // A reply is billed whatever it says, so its usage is read first and kept on every failure.
+  const reported = liveUsage.safeParse(body);
+  const usage = reported.success ? { inputTokens: reported.data.usage.prompt_tokens, outputTokens: reported.data.usage.completion_tokens } : undefined;
+  const failure = (category: "model_malformed" | "model_refused"): ModelTaskFailure => ({ ok: false, category, promptVersion, ...(usage ? { usage } : {}) });
   const envelope = liveEnvelope.safeParse(body);
-  if (!envelope.success) return { ok: false, category: "model_malformed", promptVersion };
+  if (!envelope.success) return failure("model_malformed");
   const message = envelope.data.choices[0]!.message;
-  if (message.refusal) return { ok: false, category: "model_refused", promptVersion };
+  if (message.refusal) return failure("model_refused");
   let raw: unknown;
   try {
     raw = JSON.parse(message.content ?? "");
   } catch {
-    return { ok: false, category: "model_malformed", promptVersion };
+    return failure("model_malformed");
   }
-  const usage = { inputTokens: envelope.data.usage?.prompt_tokens, outputTokens: envelope.data.usage?.completion_tokens };
-  return normalizeLiveOutput(task, raw, usage);
+  return normalizeLiveOutput(task, raw, usage ?? { inputTokens: undefined, outputTokens: undefined });
 }
 
 /** Validate a provider's JSON for a task; the same checks apply whichever protocol produced it. */
@@ -431,12 +438,10 @@ export const TASK_SCHEMAS: Record<ModelTask["kind"], Record<string, unknown>> = 
 };
 
 /** Replies are a few hundred tokens; this leaves room for brief thinking at low effort. */
-const ANTHROPIC_MAX_TOKENS = 2_048;
-
 export function buildAnthropicRequest(task: ModelTask, config: Pick<AiAdapterConfig, "model">): Anthropic.MessageCreateParamsNonStreaming {
   return {
     model: config.model ?? "",
-    max_tokens: ANTHROPIC_MAX_TOKENS,
+    max_tokens: MAX_REPLY_TOKENS,
     system: `${SYSTEM_RULES} ${TASK_INSTRUCTIONS[task.kind]}`,
     messages: [{ role: "user", content: JSON.stringify(taskInput(task)) }],
     // Short reading and drafting tasks: low effort skips thinking on most of them.
@@ -495,6 +500,9 @@ export function modelTaskBlocked(task: ModelTask, config: AiAdapterConfig, tenan
   if (config.mode === "off") return "ai_off";
   if (config.mode === "fixture") return undefined;
   if (!config.ready) return "model_unavailable";
-  if (taskContainsMemberData(task) && !(config.memberDataApproved && tenant.externalProcessing)) return "data_policy";
+  // Nothing a person typed leaves RIVET unless the gym allows it: a filter request
+  // can name a member too. Notes and member details also need RIVET's approval.
+  if (!tenant.externalProcessing) return "data_policy";
+  if (taskContainsMemberData(task) && !config.memberDataApproved) return "data_policy";
   return undefined;
 }

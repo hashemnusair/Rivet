@@ -31,7 +31,7 @@ const prepareArgs = {
 /** Where a live note reading may be kept and found again (AI-1.9); `answer` is set when a fresh one is already kept. */
 type CacheSlot = { key: string; subjectType: "member" | "lead"; subjectId: string; answer?: unknown };
 
-type Prepared = { blocked: AiErrorCategory } | { task: ModelTask; organizationId: Id<"organizations">; capability: string; cache?: CacheSlot };
+type Prepared = { blocked: AiErrorCategory } | { task: ModelTask; organizationId: Id<"organizations">; capability: string; cache?: CacheSlot; runPublicId?: string };
 
 export type PrepareResult = AiExtractNoteResult | AiInterpretRevisionResult | AiInterpretFiltersResult;
 
@@ -102,8 +102,9 @@ export const prepareContext = internalQuery({
       const staff = await aiDomainPort.staffMembers(ctx, actor);
       const remaining = run.plannedSubjects.slice(run.cursor);
       const task: ModelTask = { kind: "interpret_revision", text: text(input.text).slice(0, 300), candidates: [...remaining.map((subject) => ({ id: subject.id, name: subject.name, kind: "member" as const })), ...staff.map((person) => ({ id: person.id, name: person.name, kind: "staff" as const }))], today: aiDomainPort.tenantToday(actor) };
-      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false }) ?? budgetBlocked(config, await spentMicros(ctx, actor.organization._id));
-      return gated ? { blocked: gated } : { task, organizationId: actor.organization._id, capability: "followup_batch" };
+      // A correction is part of its run, so the run's own spend cap applies to it too.
+      const gated = modelTaskBlocked(task, config, { externalProcessing: settings?.externalProcessing ?? false }) ?? budgetBlocked(config, await spentMicros(ctx, actor.organization._id, run.publicId));
+      return gated ? { blocked: gated } : { task, organizationId: actor.organization._id, capability: "followup_batch", runPublicId: run.publicId };
     }
     const surface = input.surface === "leads" ? "leads" : "members";
     if (!actor.permissions.includes(surface === "leads" ? "crm.read" : "members.read")) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
@@ -164,6 +165,7 @@ export const prepare = action({
     const outcome = await callModel(prepared.task, config);
     await ctx.runMutation(internal.aiRuns.recordUsage, {
       organizationId: prepared.organizationId,
+      ...(prepared.runPublicId ? { runPublicId: prepared.runPublicId } : {}),
       task: prepared.task.kind,
       source: config.mode === "live" ? "live" : "fixture",
       promptVersion: outcome.promptVersion,

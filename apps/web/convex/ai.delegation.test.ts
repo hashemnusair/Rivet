@@ -380,6 +380,38 @@ describe("Prepare follow-ups saves and verifies real tasks", () => {
     expect((await tasksOf(t, "m-rami")).map((task) => task.id)).toEqual(["task-rami-existing"]);
   });
 
+  it("charges a live correction reading to its run, so the run's own spend cap stops it", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const started = await startRun(t);
+    await t.run(async (ctx) => { for (const row of await ctx.db.query("aiSettings").collect()) await ctx.db.patch(row._id, { externalProcessing: true }); });
+    vi.stubEnv("RIVET_AI_MODE", "live");
+    vi.stubEnv("RIVET_AI_PROTOCOL", "openai_chat_json");
+    vi.stubEnv("RIVET_AI_API_KEY", "test-key-not-real");
+    vi.stubEnv("RIVET_AI_BASE_URL", "https://provider.example/v1");
+    vi.stubEnv("RIVET_AI_MODEL", "test-model");
+    vi.stubEnv("RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK", "1000000");
+    vi.stubEnv("RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK", "2000000");
+    vi.stubEnv("RIVET_AI_PROCESSING_APPROVED", "member_data");
+    vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", "5000000");
+    vi.stubEnv("RIVET_AI_MAX_RUN_COST_MICROS", "300");
+    // 120 input and 40 output tokens: 200 micro-dollars a reading.
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ kind: "time_of_day", value: "evening" }) } }], usage: { prompt_tokens: 120, completion_tokens: 40 } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      const ask = async () => await t.withIdentity({ subject: "clerk-ai-sales" }).action(api.aiActions.prepare, { operation: "interpret_revision", input: { runId: started.id, text: "Only the evening members" }, organizationId: ORG, activeBranchId: MAIN, correlationId: "cor-ai-revision-live" });
+      expect(await ask()).toMatchObject({ ok: true, kind: "interpret_revision", revision: { kind: "time_of_day", value: "evening" } });
+      expect(await ask()).toMatchObject({ ok: true });
+      expect(await t.run(async (ctx) => (await ctx.db.query("aiUsage").collect()).map((row) => [row.runPublicId, row.costMicros]))).toEqual([[started.id, 200], [started.id, 200]]);
+      expect(((await getRun(t, started.id)) as RunView & { budget: { costMicros: number } }).budget).toMatchObject({ costMicros: 400 });
+      // 400 spent against a 300 cap: the run asks nothing more.
+      expect(await ask()).toEqual({ ok: false, reason: "budget_exhausted" });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("applies a revision to the remaining members without redoing finished work", async () => {
     const t = convexTest(schema, modules);
     const ids = await seed(t, { aiMode: "execute" });
@@ -451,6 +483,90 @@ describe("delegated principals can only narrow authority", () => {
     await expect(t.run(async (ctx) => {
       await requireActor(ctx, delegatedRequest({ organizationId: ORG, activeBranchId: MAIN }, { userId: ids.sales, organizationId: ids.org, allowedPermissions: ["crm.read"], runPublicId: "run-x", grantPublicId: "grant-x", tool: "t" }));
     })).rejects.toMatchObject({ data: expect.objectContaining({ code: "UNAUTHENTICATED" }) });
+  });
+});
+
+describe("work stays within the branches a person covers", () => {
+  async function northManager(t: Harness, ids: Ids) {
+    await t.run(async (ctx) => {
+      const now = NOW.getTime();
+      const north = (await ctx.db.query("branches").collect()).find((branch) => branch.publicId === NORTH)!;
+      const id = await ctx.db.insert("users", { publicId: "ai-manager-north", authSubject: "clerk-ai-manager-north", email: "manager-north@ledger.example", fullName: "North Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: ids.org, userId: id, role: "manager", branchIds: [north._id], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+    });
+    return t.withIdentity({ subject: "clerk-ai-manager-north" });
+  }
+
+  it("files a branch-limited person's work under their branch even when no branch is sent, and keeps gym-wide work for people who cover every branch", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    const own = await sales.mutation(api.domain.mutate, op("ai.run.start", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" }, requestKey: "renewal-no-branch-1" })) as RunView & { branchId?: string };
+    expect(own.branchId).toBe(MAIN);
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    const gymWide = await owner.mutation(api.domain.mutate, op("ai.run.start", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" }, requestKey: "renewal-gym-wide-1" })) as RunView & { branchId?: string };
+    expect(gymWide.branchId).toBeUndefined();
+    const manager = await northManager(t, ids);
+    for (const runId of [own.id, gymWide.id]) {
+      await expect(manager.query(api.domain.query, op("ai.run.get", { runId }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+      await expect(manager.mutation(api.domain.mutate, op("ai.run.cancel", { runId }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    }
+    // Another branch-limited person in the same branch still needs the playbook's own access, and sees nothing gym-wide.
+    await expect(t.withIdentity({ subject: "clerk-ai-sales2" }).query(api.domain.query, op("ai.run.get", { runId: gymWide.id }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    expect((await owner.query(api.domain.query, op("ai.run.get", { runId: own.id }))) as RunView).toMatchObject({ id: own.id });
+  });
+
+  it("shows owners and managers only the repeating work of their branches, and lets them change only that", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      for (const [publicId, branchPublicId] of [["standing-main", MAIN], ["standing-gym", undefined]] as const) {
+        await ctx.db.insert("aiGrants", { organizationId: ids.org, publicId, kind: "standing", playbook: "renewal_followups", playbookVersion: "renewal-followups.v1", grantorUserId: ids.owner, ownerUserId: ids.owner, ...(branchPublicId ? { branchPublicId } : {}), tools: ["renewal.candidates", "member.context", "task.create_followup"], params: { bucket: "expiring", owner: "me", requestKey: `${publicId}-key` }, limits: DEFAULT_RUN_LIMITS, schedule: { weekdays: [0, 1, 2, 3, 4], time: "09:00" }, status: "active", revision: 1, nextRunAt: now + 86_400_000, createdAt: now, updatedAt: now });
+      }
+    });
+    const manager = await northManager(t, ids);
+    expect(await manager.query(api.domain.query, op("ai.standing.list", {}, { activeBranchId: NORTH }))).toEqual([]);
+    for (const standingId of ["standing-main", "standing-gym"]) {
+      await expect(manager.mutation(api.domain.mutate, op("ai.standing.revoke", { standingId }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    }
+    expect(((await t.withIdentity({ subject: "clerk-ai-owner" }).query(api.domain.query, op("ai.standing.list"))) as Array<{ id: string }>).map((item) => item.id).sort()).toEqual(["standing-gym", "standing-main"]);
+  });
+});
+
+describe("what can repeat on a schedule", () => {
+  it("repeats only work that covers each day as it comes, never a fixed report period or date", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    const schedule = { weekdays: [0], time: "08:00" };
+    await expect(owner.mutation(api.domain.mutate, op("ai.standing.create", { playbook: "management_report", params: { from: "2026-10-01", to: "2026-10-21" }, schedule, requestKey: "standing-report-1", previewDigest: "x" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: "This work cannot repeat on a schedule." }) });
+    await expect(owner.mutation(api.domain.mutate, op("ai.standing.create", { playbook: "shift_handover", params: { date: "2026-10-22" }, schedule, requestKey: "standing-handover-1", previewDigest: "x" }, { activeBranchId: MAIN }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", message: "Repeating work uses each day's own date." }) });
+  });
+
+  it("returns a person's own instruction on a retry, never a colleague's with the same request key", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const create = async (subject: string) => {
+      const who = t.withIdentity({ subject });
+      const preview = await who.query(api.domain.query, op("ai.standing.preview", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" } }, { activeBranchId: MAIN })) as { digest: string };
+      return await who.mutation(api.domain.mutate, op("ai.standing.create", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" }, schedule: { weekdays: [0], time: "09:00" }, requestKey: "shared-standing-key", previewDigest: preview.digest }, { activeBranchId: MAIN })) as { id: string };
+    };
+    const first = await create("clerk-ai-sales");
+    expect((await create("clerk-ai-sales")).id).toBe(first.id);
+    expect((await create("clerk-ai-sales2")).id).not.toBe(first.id);
+  });
+});
+
+describe("assistance settings for staff", () => {
+  it("shows spend and the budget only to people who manage the gym's settings", async () => {
+    vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", "5000000");
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "execute" });
+    const view = async (subject: string) => (await t.withIdentity({ subject }).query(api.domain.query, op("ai.settings.get", {}, { activeBranchId: MAIN })) as { usage: Record<string, number> }).usage;
+    expect(await view("clerk-ai-owner")).toMatchObject({ monthCostMicros: 0, monthModelCalls: 0, monthRuns: 0 });
+    const staff = await view("clerk-ai-sales");
+    expect(staff).toEqual({ monthRuns: 0 });
   });
 });
 
@@ -557,6 +673,16 @@ describe("platform availability per gym", () => {
     }
     await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 0, reason: "Keeping it off" }))).resolves.toMatchObject({ tenantMode: "off", platformAvailable: false });
     expect(await t.run(async (ctx) => (await ctx.db.query("aiSettings").collect()).map((row) => [row.tenantMode, row.externalProcessing]))).toEqual([["off", false]]);
+  });
+
+  it("lets the owner of a gym no longer available keep or lower its saved choices, but not raise them", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, { aiMode: "prepare" });
+    await t.run(async (ctx) => { for (const row of await ctx.db.query("aiAvailability").collect()) await ctx.db.patch(row._id, { available: false }); });
+    const owner = t.withIdentity({ subject: "clerk-ai-owner" });
+    await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "execute", expectedRevision: 1 }))).rejects.toMatchObject(notAvailable);
+    await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "prepare", capabilityModes: { followup_batch: "off" }, expectedRevision: 1 }))).resolves.toMatchObject({ tenantMode: "prepare", platformAvailable: false });
+    await expect(owner.mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 2 }))).resolves.toMatchObject({ tenantMode: "off" });
   });
 
   it("lets only a platform admin change availability, always with a reason, and records each change", async () => {
@@ -676,6 +802,22 @@ describe("dismissed suggestions and contacts later marked not needed (AI-5.3)", 
     const records = await t.run(async (ctx) => ({ audits: (await ctx.db.query("auditEvents").collect()).map((row) => row.action), timeline: (await ctx.db.query("domainRecords").collect()).filter((row) => row.entityType === "timeline").map((row) => row.data as { titleMessage?: { key: string } }) }));
     expect(records.audits.filter((action) => action === "ai.contact.unnecessary")).toHaveLength(1);
     expect(records.timeline.some((event) => event.titleMessage?.key === "communicationCompletion.timeline.taskNotNeeded")).toBe(true);
+  });
+
+  it("lets only people who can see the run mark a prepared task with no member or lead as not needed", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const started = await startRun(t);
+    await t.run(async (ctx) => {
+      const now = NOW.getTime();
+      const north = (await ctx.db.query("branches").collect()).find((branch) => branch.publicId === NORTH)!;
+      const id = await ctx.db.insert("users", { publicId: "ai-sales-north", authSubject: "clerk-ai-sales-north", email: "sales-north@ledger.example", fullName: "North Sales", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: ids.org, userId: id, role: "sales", branchIds: [north._id], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+      // Like a "read the handover" task: no member or lead, so no branch of its own.
+      await ctx.db.insert("domainRecords", { organizationId: ids.org, entityType: "task", publicId: "task-handover-read", createdAt: now, updatedAt: now, data: { id: "task-handover-read", organizationId: ORG, type: "general", title: "Read the handover for 2026-10-22", ownerId: "ai-sales", status: "open", origin: { kind: "ai_run", runId: started.id } } });
+    });
+    await expect(t.withIdentity({ subject: "clerk-ai-sales-north" }).mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: "task-handover-read" }, { activeBranchId: NORTH }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    expect(await t.withIdentity({ subject: "clerk-ai-sales" }).mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: "task-handover-read" }, { activeBranchId: MAIN }))).toMatchObject({ closed: true });
   });
 
   it("refuses tasks people created themselves, staff without the access and records outside their scope", async () => {

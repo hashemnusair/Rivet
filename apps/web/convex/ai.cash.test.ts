@@ -106,6 +106,64 @@ describe("cash-difference investigation", () => {
     expect(notices.filter((row) => row.kind === "ai_proposal").map((row) => row.recipientUserId)).toEqual([managerId]);
   });
 
+  it("keeps a manager limited to another branch away from this branch's run and its prepared change", async () => {
+    const t = convexTest(schema, modules);
+    const { org } = await seed(t);
+    await t.run(async (ctx) => {
+      const now = NOW.getTime();
+      const other = await ctx.db.insert("branches", { organizationId: org, publicId: "cash-other", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now });
+      const id = await ctx.db.insert("users", { publicId: "cash-other-manager", authSubject: "clerk-cash-other-manager", email: "other@cash.example", fullName: "cash-other-manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: org, userId: id, role: "manager", branchIds: [other], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+    });
+    const run = await investigate(t, "clerk-cash-owner", "cash-shift", "cash-request-scope");
+    const [proposal] = await proposalsFor(t, "clerk-cash-manager", run.id);
+    const elsewhere = (operation: string, input: Record<string, unknown>) => ({ operation, input, correlationId: `cor-cash-other-${operation}`, organizationId: ORG, activeBranchId: "cash-other" });
+    const other = t.withIdentity({ subject: "clerk-cash-other-manager" });
+    await expect(other.query(api.domain.query, elsewhere("ai.run.get", { runId: run.id }))).rejects.toThrow(/Record not found/);
+    expect(await other.query(api.domain.query, elsewhere("ai.proposals.list", { runId: run.id }))).toEqual([]);
+    await expect(other.mutation(api.domain.mutate, elsewhere("ai.proposal.decide", { proposalId: proposal!.id, decision: "reject", changesetHash: proposal!.changesetHash }))).rejects.toThrow(/Record not found/);
+    await expect(other.mutation(api.domain.mutate, elsewhere("ai.proposals.approve_all", { runId: run.id, proposals: [{ proposalId: proposal!.id, changesetHash: proposal!.changesetHash }] }))).rejects.toThrow(/Record not found/);
+    expect((await proposalsFor(t, "clerk-cash-manager", run.id))[0]!.status).toBe("pending");
+  });
+
+  it("approves nothing once assistance is stopped, turned off or no longer available, but still lets a person reject", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const run = await investigate(t, "clerk-cash-owner", "cash-shift", "cash-request-stops");
+    const [proposal] = await proposalsFor(t, "clerk-cash-manager", run.id);
+    const manager = t.withIdentity({ subject: "clerk-cash-manager" });
+    const approve = () => manager.mutation(api.domain.mutate, op("ai.proposal.decide", { proposalId: proposal!.id, decision: "approve", changesetHash: proposal!.changesetHash }));
+    // RIVET removes the gym's availability: the change can no longer be approved, and the card says so.
+    await t.run(async (ctx) => { for (const row of await ctx.db.query("aiAvailability").collect()) await ctx.db.patch(row._id, { available: false }); });
+    await expect(approve()).rejects.toMatchObject({ data: expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE" }) });
+    expect((await proposalsFor(t, "clerk-cash-manager", run.id))[0]!.allowed).toEqual({ approve: false, reject: true });
+    const together = await manager.mutation(api.domain.mutate, op("ai.proposals.approve_all", { runId: run.id, proposals: [{ proposalId: proposal!.id, changesetHash: proposal!.changesetHash }] })) as { approved: number; results: Array<{ outcome: string }> };
+    expect(together).toMatchObject({ approved: 0, results: [{ outcome: "not_available" }] });
+    // Available again, but the gym turned assistance off: still no approval.
+    await t.run(async (ctx) => { for (const row of await ctx.db.query("aiAvailability").collect()) await ctx.db.patch(row._id, { available: true }); });
+    await t.withIdentity({ subject: "clerk-cash-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 1 }));
+    await expect(approve()).rejects.toMatchObject({ data: expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE" }) });
+    // The platform stop applies too.
+    await t.withIdentity({ subject: "clerk-cash-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "execute", expectedRevision: 2 }));
+    await t.run(async (ctx) => { await ctx.db.insert("aiControls", { key: "global", stopped: true, reason: "Incident", changedAt: Date.now() }); });
+    await expect(approve()).rejects.toMatchObject({ data: expect.objectContaining({ code: "FEATURE_NOT_AVAILABLE" }) });
+    expect(await shiftStatus(t)).toBe("pending");
+    // Rejecting is still possible, so the waiting change can be cleared.
+    const rejected = await manager.mutation(api.domain.mutate, op("ai.proposal.decide", { proposalId: proposal!.id, decision: "reject", changesetHash: proposal!.changesetHash })) as Proposal;
+    expect(rejected.status).toBe("rejected");
+  });
+
+  it("refuses to look into a drawer from another branch than the one the work was started in", async () => {
+    const t = convexTest(schema, modules);
+    const { org } = await seed(t);
+    await t.run(async (ctx) => { const now = NOW.getTime(); await ctx.db.insert("branches", { organizationId: org, publicId: "cash-other", name: "Other", code: "OTHER", active: true, status: "active", createdAt: now, updatedAt: now }); });
+    const started = await t.withIdentity({ subject: "clerk-cash-owner" }).mutation(api.domain.mutate, { ...op("ai.run.start", { playbook: "cash_difference", params: { shiftId: "cash-shift" }, requestKey: "cash-request-elsewhere" }), activeBranchId: "cash-other" }) as Run;
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const run = await t.withIdentity({ subject: "clerk-cash-owner" }).query(api.domain.query, { ...op("ai.run.get", { runId: started.id }), activeBranchId: "cash-other" }) as Run;
+    expect(run).toMatchObject({ status: "failed", errorCategory: "validation" });
+    expect(await t.run(async (ctx) => await ctx.db.query("aiProposals").collect())).toHaveLength(0);
+  });
+
   it("puts the waiting approval on the approver's Today list in place of the drawer's own item", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

@@ -62,7 +62,8 @@ async function recordStep(ctx: MutationCtx, run: AiRunDoc, step: Omit<Doc<"aiRun
 
 async function recordFixtureUsage(ctx: MutationCtx, run: AiRunDoc, task: string, promptVersion: string): Promise<void> {
   const now = Date.now();
-  await ctx.db.insert("aiUsage", { organizationId: run.organizationId, runPublicId: run.publicId, task, capability: task, source: "fixture", promptVersion, latencyMs: 0, costMicros: 0, outcome: "ok", month: monthKey(now), createdAt: now });
+  const timezone = (await ctx.db.get(run.organizationId))?.timezone ?? "Asia/Amman";
+  await ctx.db.insert("aiUsage", { organizationId: run.organizationId, runPublicId: run.publicId, task, capability: task, source: "fixture", promptVersion, latencyMs: 0, costMicros: 0, outcome: "ok", month: monthKey(now, timezone), createdAt: now });
 }
 
 /** Whether the task id recorded under an operation key still exists, and is open. */
@@ -533,6 +534,12 @@ async function cashDifferenceStep(ctx: MutationCtx, env: PlaybookStepEnv): Promi
     await env.finish("failed", "validation");
     return { done: true };
   }
+  // The work belongs to the drawer's branch: who may see and approve its change follows that branch.
+  if (run.branchPublicId && run.branchPublicId !== facts.branchId) {
+    await env.finish("failed", "validation");
+    return { done: true };
+  }
+  if (!run.branchPublicId) await ctx.db.patch(run._id, { branchPublicId: facts.branchId });
   const investigation = investigateCashDifference(facts);
   const composed = composeCashDifference(facts, investigation);
   const artifactId = await saveArtifact(ctx, run, {

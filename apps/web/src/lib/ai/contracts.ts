@@ -397,7 +397,7 @@ export interface AiProposalView {
 /** The most prepared changes approved together in one step. */
 export const AI_APPROVE_ALL_MAX = 20;
 
-export type AiApproveAllOutcome = "approved" | "no_longer_matched" | "already_decided" | "expired" | "changed" | "no_access" | "not_found" | "not_saved";
+export type AiApproveAllOutcome = "approved" | "no_longer_matched" | "already_decided" | "expired" | "changed" | "no_access" | "not_available" | "not_found" | "not_saved";
 
 export interface AiApproveAllResult {
   runId: string;
@@ -500,7 +500,8 @@ export interface AiSettingsView {
   externalProcessing: boolean;
   memberDataApproved: boolean;
   capabilities: Array<{ key: AiCapabilityKey; mode: AiTenantMode; effective: AiTenantMode; available: boolean }>;
-  usage: { monthModelCalls: number; monthCostMicros: number; monthRuns: number; budgetMicros?: number };
+  /** Spend and the budget are present only for people who manage the gym's settings. */
+  usage: { monthRuns: number; monthModelCalls?: number; monthCostMicros?: number; budgetMicros?: number };
   revision: number;
   updatedAt?: string;
   updatedByName?: string;

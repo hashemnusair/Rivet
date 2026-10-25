@@ -4,6 +4,8 @@ import type { ActorContext } from "./security";
 import { domainError, publicBranchId, publicUserId } from "./security";
 import { CAPABILITY_KEYS, effectiveCapabilityMode, PLAYBOOKS, type AuthorityInput } from "../src/lib/ai/capabilities";
 import { resolveAdapterConfig, type AiAdapterConfig } from "../src/lib/ai/model";
+import { localDateOf } from "../src/lib/analytics/operational-reports";
+import { artifactSectionReadable } from "../src/lib/ai/jobs";
 import type {
   AiArtifactView,
   AiCapabilityKey,
@@ -57,8 +59,14 @@ export function newAiPublicId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-export function monthKey(timestamp: number): string {
-  return new Date(timestamp).toISOString().slice(0, 7);
+/** The gym's own calendar month of a moment ("YYYY-MM"): budgets and summaries roll over at local midnight. */
+export function monthKey(timestamp: number, timezone: string): string {
+  return localDateOf(new Date(timestamp).toISOString(), timezone).slice(0, 7);
+}
+
+/** A moment safely before a gym-local month starts; filter what it returns with `monthKey`. */
+export function monthLowerBound(month: string): number {
+  return Date.parse(`${month}-01T00:00:00.000Z`) - 14 * 3_600_000;
 }
 
 export async function aiSettingsFor(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<AiSettingsDoc | null> {
@@ -89,7 +97,8 @@ export async function dropModelCache(ctx: MutationCtx, organizationId: Id<"organ
 
 /** Recorded model spend this month for a gym, and for one run when named. */
 export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organizations">, runPublicId?: string): Promise<{ monthMicros: number; runMicros?: number }> {
-  const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now()))).collect();
+  const timezone = (await ctx.db.get(organizationId))?.timezone ?? "Asia/Amman";
+  const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now(), timezone))).collect();
   return {
     monthMicros: rows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
     ...(runPublicId ? { runMicros: rows.filter((row) => row.runPublicId === runPublicId).reduce((sum, row) => sum + (row.costMicros ?? 0), 0) } : {}),
@@ -145,8 +154,10 @@ export async function settingsView(ctx: ReadCtx, actor: ActorContext): Promise<A
   const config = adapterConfig();
   const [settings, stop, available] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx), platformAvailable(ctx, actor.organization._id)]);
   const now = Date.now();
-  const usageRows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", monthKey(now))).take(5_000);
-  const runs = await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", Date.parse(`${monthKey(now)}-01T00:00:00.000Z`))).take(2_000);
+  const month = monthKey(now, actor.organization.timezone);
+  const usageRows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", month)).take(5_000);
+  const runs = (await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthLowerBound(month))).take(2_000))
+    .filter((run) => monthKey(run.createdAt, actor.organization.timezone) === month);
   // The gym's own choice is shown as saved; what can run uses the effective mode.
   const tenantMode = settings?.tenantMode ?? "off";
   const effectiveMode = tenantModeOf(settings, available);
@@ -166,10 +177,13 @@ export async function settingsView(ctx: ReadCtx, actor: ActorContext): Promise<A
       return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: config.mode !== "off" && !stop.stopped && effective !== "off" };
     }),
     usage: {
-      monthModelCalls: usageRows.filter((row) => row.source === "live").length,
-      monthCostMicros: usageRows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
       monthRuns: runs.length,
-      ...(config.maxMonthlyCostMicros ? { budgetMicros: config.maxMonthlyCostMicros } : {}),
+      // Spend and the budget are for people who manage the gym's settings.
+      ...(actor.permissions.includes("settings.manage") ? {
+        monthModelCalls: usageRows.filter((row) => row.source === "live").length,
+        monthCostMicros: usageRows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
+        ...(config.maxMonthlyCostMicros ? { budgetMicros: config.maxMonthlyCostMicros } : {}),
+      } : {}),
     },
     revision: settings?.revision ?? 0,
     ...(settings ? { updatedAt: new Date(settings.updatedAt).toISOString(), updatedByName: await userName(ctx, settings.updatedByUserId, names) } : {}),
@@ -177,21 +191,44 @@ export async function settingsView(ctx: ReadCtx, actor: ActorContext): Promise<A
   };
 }
 
-/** Who may read a run: the requester, the accountable owner, or staff with the playbook's read access in scope. */
+/**
+ * Whether work belonging to a branch (or to the whole gym, with no branch) is
+ * in this person's scope, whatever their role. Gym-wide work is only for people
+ * who cover every branch.
+ */
+export function branchInScope(actor: ActorContext, branchPublicId: string | undefined): boolean {
+  if (actor.branchScope === "all") return true;
+  if (!branchPublicId) return false;
+  return Boolean(actor.branch && publicBranchId(actor.branch) === branchPublicId);
+}
+
+/** The branch new work belongs to: the one asked for, the active one, or a branch-limited person's only branch. */
+export async function workBranchPublicId(ctx: ReadCtx, actor: ActorContext, requested?: string): Promise<string | undefined> {
+  if (requested) return requested;
+  if (actor.branch) return publicBranchId(actor.branch);
+  if (actor.branchScope === "selected" && actor.branchIds.length === 1) return publicBranchId(await ctx.db.get(actor.branchIds[0]!)) || undefined;
+  return undefined;
+}
+
+function runBranchInScope(actor: ActorContext, run: AiRunDoc): boolean {
+  return branchInScope(actor, run.branchPublicId);
+}
+
+/** Who may read a run: the requester, the accountable owner, or, in its branch, owners, managers and staff with the playbook's read access. */
 export function canReadRun(actor: ActorContext, run: AiRunDoc): boolean {
   if (run.requestedByUserId === actor.user._id || run.ownerUserId === actor.user._id) return true;
+  if (!runBranchInScope(actor, run)) return false;
   if (actor.role === "owner" || actor.role === "manager") return true;
   const playbook = PLAYBOOKS[run.playbook as AiPlaybookKey];
   if (!playbook) return false;
   const readPermission = playbook.startPermissions[0];
-  if (!readPermission || !actor.permissions.includes(readPermission)) return false;
-  if (!run.branchPublicId || actor.branchScope === "all") return true;
-  return Boolean(actor.branch && publicBranchId(actor.branch) === run.branchPublicId);
+  return Boolean(readPermission && actor.permissions.includes(readPermission));
 }
 
 export function canControlRun(actor: ActorContext, run: AiRunDoc): boolean {
   if (actor.delegation) return false;
-  return run.requestedByUserId === actor.user._id || run.ownerUserId === actor.user._id || actor.role === "owner" || actor.role === "manager";
+  if (run.requestedByUserId === actor.user._id || run.ownerUserId === actor.user._id) return true;
+  return (actor.role === "owner" || actor.role === "manager") && runBranchInScope(actor, run);
 }
 
 export async function runView(ctx: ReadCtx, actor: ActorContext, run: AiRunDoc, options: { includeSteps?: boolean } = {}): Promise<AiRunView> {
@@ -311,7 +348,7 @@ export async function activeMemories(ctx: ReadCtx, organizationId: Id<"organizat
   return views;
 }
 
-export async function proposalView(ctx: ReadCtx, actor: ActorContext, proposal: Doc<"aiProposals">): Promise<AiProposalView> {
+export async function proposalView(ctx: ReadCtx, actor: ActorContext, proposal: Doc<"aiProposals">, options: { approvalBlocked?: boolean } = {}): Promise<AiProposalView> {
   const names = new Map<string, string>();
   const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", proposal.organizationId).eq("publicId", proposal.runPublicId)).unique();
   const pending = proposal.status === "pending" && proposal.expiresAt > Date.now();
@@ -330,16 +367,19 @@ export async function proposalView(ctx: ReadCtx, actor: ActorContext, proposal: 
     expiresAt: new Date(proposal.expiresAt).toISOString(),
     ...(proposal.decidedByUserId ? { decidedByName: await userName(ctx, proposal.decidedByUserId, names) } : {}),
     ...(proposal.invalidationReason ? { invalidationReason: proposal.invalidationReason as AiErrorCategory } : {}),
-    allowed: { approve: mayDecide && Boolean(run), reject: mayDecide },
+    // A stop, removed availability or a turned-off capability leaves only rejecting.
+    allowed: { approve: mayDecide && Boolean(run) && !options.approvalBlocked, reject: mayDecide },
   };
 }
 
 export async function artifactView(ctx: ReadCtx, actor: ActorContext, artifact: Doc<"aiArtifacts">): Promise<AiArtifactView> {
   if (artifact.expiresAt <= Date.now()) domainError("NOT_FOUND", "This prepared work has expired. Prepare it again.", { correlationId: actor.correlationId });
   if (artifact.requiredPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
-  if (artifact.branchId && actor.branchScope === "selected" && !actor.branchIds.includes(artifact.branchId)) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  // Gym-wide prepared work is only for people who cover every branch.
+  if (actor.branchScope === "selected" && (!artifact.branchId || !actor.branchIds.includes(artifact.branchId))) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
   const branch = artifact.branchId ? await ctx.db.get(artifact.branchId) : null;
   const content = (artifact.content ?? {}) as Pick<AiArtifactView, "sections" | "verification" | "coverage" | "titleParams">;
+  const readable = (key: string) => artifactSectionReadable(artifact.kind, key, actor.permissions);
   return {
     id: artifact.publicId,
     kind: artifact.kind,
@@ -349,8 +389,8 @@ export async function artifactView(ctx: ReadCtx, actor: ActorContext, artifact: 
     createdAt: new Date(artifact.createdAt).toISOString(),
     expiresAt: new Date(artifact.expiresAt).toISOString(),
     runId: artifact.runPublicId,
-    sections: content.sections ?? [],
+    sections: (content.sections ?? []).filter((section) => readable(section.key)),
     verification: content.verification ?? { verified: false, checks: [] },
-    coverage: content.coverage ?? [],
+    coverage: (content.coverage ?? []).filter((item) => readable(item.key)),
   };
 }

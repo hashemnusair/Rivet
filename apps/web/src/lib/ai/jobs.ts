@@ -98,6 +98,21 @@ export interface HandoverInputs {
   shift?: Data | null;
 }
 
+/**
+ * Parts of prepared work drawn from a source that needs more than the work's
+ * own access. The handover goes to the next person on shift, so a reader who
+ * lacks that source's access sees the rest without it.
+ */
+export const ARTIFACT_SECTION_PERMISSIONS: Partial<Record<"management_report" | "shift_handover" | "cash_difference", Record<string, string>>> = {
+  shift_handover: { followUps: "crm.read", cash: "reconciliation.open_shift" },
+};
+
+/** Whether a reader with these permissions may see a section (or its coverage line) of prepared work. */
+export function artifactSectionReadable(kind: keyof typeof ARTIFACT_SECTION_PERMISSIONS, key: string, permissions: readonly string[]): boolean {
+  const needed = ARTIFACT_SECTION_PERMISSIONS[kind]?.[key];
+  return !needed || permissions.includes(needed);
+}
+
 export function composeHandover(inputs: HandoverInputs, params: { date: string; branchId: string }): Composed {
   const sections: AiArtifactSection[] = [];
   const coverage: Composed["coverage"] = [];

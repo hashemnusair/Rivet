@@ -1957,6 +1957,9 @@ export const aiDomainPort: AiDomainPort = {
     const task = data(record.data);
     const origin = data(task.origin);
     if (stringValue(origin.kind) !== "ai_run") domainError("VALIDATION_ERROR", "Only work RIVET prepared can be marked as not needed.", { correlationId: actor.correlationId });
+    // Only from work the person can see: a task with no member or lead has no branch of its own, its run does.
+    const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(origin.runId))).unique();
+    if (!run || !canReadRun(actor, run)) domainError("NOT_FOUND", "Record not found.", { correlationId: actor.correlationId });
     let closed = false;
     if (stringValue(task.status, "open") === "open") {
       await patchRecord(ctx, actor, record, { status: "cancelled", outcome: "Not needed", completedAt: isoNow() });

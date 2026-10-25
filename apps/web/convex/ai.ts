@@ -20,17 +20,20 @@ import {
   artifactView,
   authorityInput,
   availabilityFor,
+  branchInScope,
   canControlRun,
   canReadRun,
   GLOBAL_CONTROL_KEY,
   memoryView,
   monthKey,
+  monthLowerBound,
   newAiPublicId,
   platformAvailable,
   proposalView,
   runView,
   settingsView,
   standingView,
+  workBranchPublicId,
   type AiRunDoc,
 } from "./aiPolicy";
 import { CAPABILITY_KEYS, parsePlaybookParams, PLAYBOOKS, playbookBlocked, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
@@ -44,6 +47,7 @@ import {
   AI_APPROVE_ALL_MAX,
   type AiApproveAllOutcome,
   type AiApproveAllResult,
+  type AiErrorCategory,
   type AiGymAvailability,
   type AiPlatformAvailability,
   type AiProposalView,
@@ -148,6 +152,8 @@ const PROPOSAL_EXECUTORS: Record<string, {
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
+
+const TENANT_MODE_RANK: Record<AiTenantMode, number> = { off: 0, prepare: 1, execute: 2 };
 
 function record(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Data) : {};
@@ -316,9 +322,9 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
     case "ai.outcomes.summary": {
       requirePermission(actor, "settings.manage");
       const now = Date.now();
-      const month = monthKey(now);
-      const monthStart = Date.parse(`${month}-01T00:00:00.000Z`);
-      const runs = await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthStart)).take(1000);
+      const month = monthKey(now, actor.organization.timezone);
+      const runs = (await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthLowerBound(month))).take(1000))
+        .filter((run) => monthKey(run.createdAt, actor.organization.timezone) === month);
       const preparedTaskIds: string[] = [];
       for (const run of runs) {
         const steps = await ctx.db.query("aiRunSteps").withIndex("by_organization_run", (q) => q.eq("organizationId", actor.organization._id).eq("runPublicId", run.publicId)).collect();
@@ -336,10 +342,11 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
         else if (status === "open") tasks.open += 1;
         else tasks.closedOther += 1;
       }
-      const proposals = (await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((row) => row.proposedAt >= monthStart);
+      const inMonth = (at: number) => monthKey(at, actor.organization.timezone) === month;
+      const proposals = (await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id)).collect()).filter((row) => inMonth(row.proposedAt));
       const usage = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", month)).collect();
       const live = usage.filter((row) => row.source === "live");
-      const feedback = (await ctx.db.query("aiFeedback").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthStart)).collect());
+      const feedback = (await ctx.db.query("aiFeedback").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthLowerBound(month))).collect()).filter((row) => inMonth(row.createdAt));
       const rated = (rating: Doc<"aiFeedback">["rating"]) => feedback.filter((row) => row.rating === rating).length;
       const count = (status: string) => runs.filter((run) => run.status === status).length;
       return {
@@ -385,7 +392,8 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
     case "ai.standing.list": {
       const rows = await ctx.db.query("aiGrants").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(200);
       const managers = actor.role === "owner" || actor.role === "manager";
-      const visible = rows.filter((grant) => grant.kind === "standing" && grant.status !== "revoked" && (managers || grant.ownerUserId === actor.user._id || grant.grantorUserId === actor.user._id));
+      // Owners and managers see the repeating work of the branches they cover; everyone sees their own.
+      const visible = rows.filter((grant) => grant.kind === "standing" && grant.status !== "revoked" && (grant.ownerUserId === actor.user._id || grant.grantorUserId === actor.user._id || (managers && branchInScope(actor, grant.branchPublicId))));
       return await Promise.all(visible.map((grant) => standingView(ctx, grant)));
     }
 
@@ -408,10 +416,12 @@ export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, req
         ? await ctx.db.query("aiProposals").withIndex("by_organization_run", (q) => q.eq("organizationId", actor.organization._id).eq("runPublicId", runId)).take(50)
         : await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "pending")).take(50);
       const views = [];
+      const blockedByTool = new Map<string, boolean>();
       for (const proposal of rows) {
         const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposal.runPublicId)).unique();
         if (!run || !canReadRun(actor, run)) continue;
-        views.push(await proposalView(ctx, actor, proposal));
+        if (!blockedByTool.has(proposal.tool)) blockedByTool.set(proposal.tool, Boolean(await proposalApprovalBlocked(ctx, actor, port, proposal)));
+        views.push(await proposalView(ctx, actor, proposal, { approvalBlocked: blockedByTool.get(proposal.tool) }));
       }
       return views;
     }
@@ -534,8 +544,20 @@ function validRevision(raw: unknown, run: AiRunDoc, staff: Array<{ id: string; n
 
 type ProposalRefusal = Exclude<AiApproveAllOutcome, "approved" | "no_longer_matched" | "not_saved">;
 
-/** The checks before any decision on a prepared change, for this person, now. */
-async function decidableProposal(ctx: MutationCtx, actor: ActorContext, proposalId: string, changesetHash: string, runId?: string): Promise<{ proposal: Doc<"aiProposals">; run: AiRunDoc } | { refusal: ProposalRefusal }> {
+/**
+ * Whether RIVET may carry out a prepared change for this person now. The stops,
+ * the gym's availability and mode, the capability switch and the tool's own
+ * access all apply, exactly as when the change was prepared.
+ */
+async function proposalApprovalBlocked(ctx: ReadCtx, actor: ActorContext, port: AiDomainPort, proposal: Doc<"aiProposals">): Promise<AiErrorCategory | undefined> {
+  const tool = TOOLS[proposal.tool];
+  if (!tool) return "validation";
+  return toolBlocked(tool, await authorityInput(ctx, actor, tool.capability, await port.entitledModules(ctx, actor)));
+}
+
+/** The checks before any decision on a prepared change, for this person, now. Rejecting stays open under a stop. */
+async function decidableProposal(ctx: MutationCtx, actor: ActorContext, port: AiDomainPort, proposalId: string, changesetHash: string, options: { runId?: string; approving: boolean }): Promise<{ proposal: Doc<"aiProposals">; run: AiRunDoc } | { refusal: ProposalRefusal }> {
+  const runId = options.runId;
   const proposal = await ctx.db.query("aiProposals").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposalId)).unique();
   if (!proposal || (runId !== undefined && proposal.runPublicId !== runId)) return { refusal: "not_found" };
   const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposal.runPublicId)).unique();
@@ -545,6 +567,10 @@ async function decidableProposal(ctx: MutationCtx, actor: ActorContext, proposal
   // The view already reads an elapsed proposal as expired; nothing is written for it.
   if (proposal.expiresAt <= Date.now()) return { refusal: "expired" };
   if (changesetHash !== proposal.changesetHash) return { refusal: "changed" };
+  if (options.approving) {
+    const blocked = await proposalApprovalBlocked(ctx, actor, port, proposal);
+    if (blocked) return { refusal: blocked === "permission_denied" ? "no_access" : "not_available" };
+  }
   return { proposal, run };
 }
 
@@ -556,6 +582,7 @@ function refuseProposalDecision(actor: ActorContext, refusal: ProposalRefusal): 
     case "already_decided": domainError("CONFLICT", "This change was already decided.", options);
     case "expired": domainError("CONFLICT", "This prepared change expired. Prepare it again.", options);
     case "changed": domainError("CONFLICT", "This record changed. Refresh and try again.", options);
+    case "not_available": domainError("FEATURE_NOT_AVAILABLE", "This work is turned off for your gym.", options);
   }
 }
 
@@ -589,7 +616,7 @@ async function approveCheckedProposal(ctx: MutationCtx, actor: ActorContext, por
 export async function approveProposalForBatch(ctx: MutationCtx, request: RequestArgs, port: AiDomainPort, input: { runId: string; proposalId: string; changesetHash: string }): Promise<{ outcome: AiApproveAllOutcome; subjectLabel?: string }> {
   const actor = await requireActor(ctx, request);
   requireHuman(actor);
-  const checked = await decidableProposal(ctx, actor, input.proposalId, input.changesetHash, input.runId);
+  const checked = await decidableProposal(ctx, actor, port, input.proposalId, input.changesetHash, { runId: input.runId, approving: true });
   if ("refusal" in checked) return { outcome: checked.refusal };
   const { outcome } = await approveCheckedProposal(ctx, actor, port, request, checked.proposal, checked.run);
   return { outcome, subjectLabel: checked.proposal.subjectLabel };
@@ -645,7 +672,8 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       }
       const externalProcessing = typeof input.externalProcessing === "boolean" ? input.externalProcessing : current?.externalProcessing ?? false;
       // Until RIVET makes assistance available for this gym, the owner can only keep it off.
-      const turningOn = tenantMode !== "off" || (externalProcessing && !current?.externalProcessing);
+      // Keeping or lowering a saved choice is fine; only raising it, or allowing external processing, is refused.
+      const turningOn = TENANT_MODE_RANK[tenantMode] > TENANT_MODE_RANK[current?.tenantMode ?? "off"] || (externalProcessing && !current?.externalProcessing);
       if (turningOn && !(await platformAvailable(ctx, actor.organization._id))) domainError("FEATURE_NOT_AVAILABLE", "RIVET has not made assistance available for this gym.", { correlationId: actor.correlationId, details: { reason: "not_available" } });
       const now = Date.now();
       const next = { tenantMode, capabilityModes, externalProcessing, revision: (current?.revision ?? 0) + 1, updatedByUserId: actor.user._id, updatedAt: now };
@@ -668,7 +696,8 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       const entitled = await port.entitledModules(ctx, actor);
       const blocked = playbookBlocked(definition, await authorityInput(ctx, actor, definition.capability, entitled));
       if (blocked) domainError(blocked === "permission_denied" ? "FORBIDDEN" : "FEATURE_NOT_AVAILABLE", blocked === "permission_denied" ? "You do not have access to this action. Ask your gym owner." : "This work is turned off for your gym.", { correlationId: actor.correlationId, details: { reason: blocked } });
-      const branchPublicId = text(input.branchId) || (actor.branch ? publicBranchId(actor.branch) : undefined);
+      // A branch-limited person's work always belongs to one of their branches, never to the whole gym.
+      const branchPublicId = await workBranchPublicId(ctx, actor, text(input.branchId) || undefined);
       if (branchPublicId) {
         const branch = await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", branchPublicId)).unique();
         assertBranchAccess(actor, branch);
@@ -744,6 +773,8 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       if (!definition?.standingAllowed) domainError("VALIDATION_ERROR", "This work cannot repeat on a schedule.", { correlationId: actor.correlationId });
       const parsed = parsePlaybookParams(playbook, input.params);
       if (!parsed.ok) domainError("VALIDATION_ERROR", "Check the details and try again.", { correlationId: actor.correlationId });
+      // Repeating work covers each day as it comes; a fixed date would repeat the same day.
+      if (record(parsed.params).date !== undefined) domainError("VALIDATION_ERROR", "Repeating work uses each day's own date.", { correlationId: actor.correlationId });
       const scheduleInput = record(input.schedule);
       const weekdays = Array.isArray(scheduleInput.weekdays) ? [...new Set(scheduleInput.weekdays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort() : [];
       const time = text(scheduleInput.time);
@@ -753,12 +784,13 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       if (blocked) domainError("FEATURE_NOT_AVAILABLE", "This work is turned off for your gym.", { correlationId: actor.correlationId, details: { reason: blocked } });
       const requestKey = text(input.requestKey);
       if (requestKey.length < 8) domainError("VALIDATION_ERROR", "A valid request key is required.", { correlationId: actor.correlationId });
-      const branchPublicId = text(input.branchId) || (actor.branch ? publicBranchId(actor.branch) : undefined);
+      const branchPublicId = await workBranchPublicId(ctx, actor, text(input.branchId) || undefined);
       if (branchPublicId) assertBranchAccess(actor, await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", branchPublicId)).unique());
       // Enabling a recurring grant is deliberate: the caller must have seen the current preview.
       const preview = await port.previewPlaybook(ctx, actor, playbook, parsed.params, branchPublicId ? { ...request, activeBranchId: branchPublicId } : request);
       if (text(input.previewDigest) !== preview.digest) domainError("CONFLICT", "The preview changed. Review it again before turning this on.", { correlationId: actor.correlationId, details: { reason: "preview_changed" } });
-      const existing = (await ctx.db.query("aiGrants").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(200)).find((grant) => grant.kind === "standing" && record(grant.params).requestKey === requestKey);
+      // A retry returns the same person's instruction; someone else's key never does.
+      const existing = (await ctx.db.query("aiGrants").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).order("desc").take(200)).find((grant) => grant.kind === "standing" && grant.grantorUserId === actor.user._id && record(grant.params).requestKey === requestKey);
       if (existing) return await standingView(ctx, existing);
       const limitsInput = record(input.limits);
       const limits = { ...definition.limits, ...(Number.isInteger(limitsInput.maxWrites) && Number(limitsInput.maxWrites) >= 1 && Number(limitsInput.maxWrites) <= definition.limits.maxWrites ? { maxWrites: Number(limitsInput.maxWrites) } : {}) };
@@ -794,7 +826,7 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
     case "ai.standing.transfer": {
       const grant = await grantByPublicId(ctx, actor, text(input.standingId));
       const managers = actor.role === "owner" || actor.role === "manager";
-      if (grant.kind !== "standing" || !(managers || grant.ownerUserId === actor.user._id)) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
+      if (grant.kind !== "standing" || !(grant.ownerUserId === actor.user._id || (managers && branchInScope(actor, grant.branchPublicId)))) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
       if (grant.status === "revoked") domainError("CONFLICT", "This instruction was already turned off.", { correlationId: actor.correlationId });
       const now = Date.now();
       let patch: Partial<Doc<"aiGrants">> = {};
@@ -836,7 +868,7 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       requireHuman(actor);
       const decision = text(input.decision);
       if (decision !== "approve" && decision !== "reject") domainError("VALIDATION_ERROR", "Choose approve or reject.", { correlationId: actor.correlationId });
-      const checked = await decidableProposal(ctx, actor, text(input.proposalId), text(input.changesetHash));
+      const checked = await decidableProposal(ctx, actor, port, text(input.proposalId), text(input.changesetHash), { approving: decision === "approve" });
       if ("refusal" in checked) refuseProposalDecision(actor, checked.refusal);
       const { proposal, run } = checked;
       if (decision === "reject") {

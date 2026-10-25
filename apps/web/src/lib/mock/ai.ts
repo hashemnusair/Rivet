@@ -58,7 +58,7 @@ import { runFixtureTask } from "@/lib/ai/model";
 import { composeRenewalFacts, evaluateRenewalCandidate, renewalOperationKey, renewalTaskTitle, renewalTaskTitleMessage, type RenewalMemberFacts } from "@/lib/ai/renewal-batch";
 import { systemMessage } from "@/lib/i18n/system-messages";
 import { nextStandingSlot, previewDigest } from "@/lib/ai/schedule";
-import { composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
+import { artifactSectionReadable, composeHandover, composeManagementReport, type HandoverInputs, type ReportInputs } from "@/lib/ai/jobs";
 import { composeCashDifference, investigateCashDifference, shouldPrepareVarianceReview, varianceReviewProposal, type CashShiftFacts } from "@/lib/ai/cash-difference";
 import { evaluateLeadCandidate, leadOperationKey, leadTaskTitle, leadTaskTitleMessage, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
 import { COLLECTION_LIST_LIMIT, prepareCollectionItem, rankCollections, type CollectionItem, type CollectionMemberFacts } from "@/lib/ai/collections";
@@ -308,7 +308,9 @@ export class MockAiEngine {
     if (input.expectedRevision !== this.revision) throw ApiError.of(ERR.CONFLICT, "This record changed. Refresh and try again.");
     if (input.tenantMode !== undefined && !AI_TENANT_MODES.includes(input.tenantMode)) throw ApiError.of(ERR.VALIDATION, "Choose off, prepare or execute.");
     const nextMode = input.tenantMode ?? this.tenantMode;
-    const turningOn = nextMode !== "off" || (input.externalProcessing === true && !this.externalProcessing);
+    // Keeping or lowering a saved choice is fine; only raising it, or allowing external processing, is refused.
+    const rank = { off: 0, prepare: 1, execute: 2 } as const;
+    const turningOn = rank[nextMode] > rank[this.tenantMode] || (input.externalProcessing === true && !this.externalProcessing);
     if (turningOn && !this.availability.get(this.host.db.organization.id)?.available) throw ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "RIVET has not made assistance available for this gym.", { details: { reason: "not_available" } });
     const capabilities = Object.entries(input.capabilities ?? {});
     for (const [key, mode] of capabilities) {
@@ -443,16 +445,18 @@ export class MockAiEngine {
   /** The month's outcomes, counted the way the server counts them. */
   outcomeSummary(): AiOutcomeSummary {
     const now = Date.now();
-    const month = new Date(now).toISOString().slice(0, 7);
-    const monthStart = Date.parse(`${month}-01T00:00:00.000Z`);
-    const runs = [...this.runs.values()].filter((run) => run.createdAt >= monthStart);
+    // The gym's own calendar month, as on the server.
+    const timezone = this.host.timezone();
+    const monthOf = (at: number) => partsInTimeZone(new Date(at), timezone).date.slice(0, 7);
+    const month = monthOf(now);
+    const runs = [...this.runs.values()].filter((run) => monthOf(run.createdAt) === month);
     const prepared = runs.flatMap((run) => run.steps.filter((step) => step.status === "verified" && step.resultRef?.kind === "task" && step.reason !== "has_open_followup").map((step) => step.resultRef!.id));
     const tasks = { prepared: prepared.length, done: 0, open: 0, closedOther: 0 };
     for (const id of prepared) {
       const status = this.host.db.tasks.find((task) => task.id === id)?.status ?? "open";
       if (status === "completed") tasks.done += 1; else if (status === "open") tasks.open += 1; else tasks.closedOther += 1;
     }
-    const proposals = [...this.proposals.values()].filter((item) => item.proposedAt >= monthStart);
+    const proposals = [...this.proposals.values()].filter((item) => monthOf(item.proposedAt) === month);
     const count = (status: AiRunStatus) => runs.filter((run) => run.status === status).length;
     return {
       month,
@@ -528,17 +532,20 @@ export class MockAiEngine {
   // Runs
   // ---------------------------------------------------------------------------
 
+  // Matches the server: outside the person's branches a run is out of scope, whatever their role.
   private canRead(run: MockRun): boolean {
     const actor = this.host.actor();
     if (run.requestedById === actor.id || run.ownerId === actor.id) return true;
+    if (!this.host.branchVisible(run.branchId)) return false;
     if (this.host.role() === "owner" || this.host.role() === "manager") return true;
     const permission = PLAYBOOKS[run.playbook].startPermissions[0];
-    return Boolean(permission && this.host.permissions().includes(permission) && this.host.branchVisible(run.branchId));
+    return Boolean(permission && this.host.permissions().includes(permission));
   }
 
   private canControl(run: MockRun): boolean {
     const actor = this.host.actor();
-    return run.requestedById === actor.id || run.ownerId === actor.id || this.host.role() === "owner" || this.host.role() === "manager";
+    if (run.requestedById === actor.id || run.ownerId === actor.id) return true;
+    return (this.host.role() === "owner" || this.host.role() === "manager") && this.host.branchVisible(run.branchId);
   }
 
   private readableRun(runId: string): MockRun {
@@ -769,8 +776,14 @@ export class MockAiEngine {
       expiresAt: new Date(proposal.expiresAt).toISOString(),
       ...(proposal.decidedByName ? { decidedByName: proposal.decidedByName } : {}),
       ...(proposal.invalidationReason ? { invalidationReason: proposal.invalidationReason } : {}),
-      allowed: { approve: mayDecide, reject: mayDecide },
+      // A stop, removed availability or a turned-off capability leaves only rejecting, as on the server.
+      allowed: { approve: mayDecide && !this.approvalBlocked(proposal), reject: mayDecide },
     };
+  }
+
+  private approvalBlocked(proposal: { tool: string }): AiErrorCategory | undefined {
+    const tool = TOOLS[proposal.tool];
+    return tool ? toolBlocked(tool, this.authority(tool.capability)) : "validation";
   }
 
   /** Prepared changes this reader may approve, for Today as well as the bell (AI-3.7); none while the work's capability cannot run. */
@@ -800,6 +813,8 @@ export class MockAiEngine {
     if (proposal.status !== "pending") throw ApiError.of(ERR.CONFLICT, "This change was already decided.");
     if (proposal.expiresAt <= Date.now()) throw ApiError.of(ERR.CONFLICT, "This prepared change expired. Prepare it again.");
     if (input.changesetHash !== proposal.changesetHash) throw ApiError.of(ERR.CONFLICT, "This record changed. Refresh and try again.");
+    const blocked = input.decision === "approve" ? this.approvalBlocked(proposal) : undefined;
+    if (blocked) throw blocked === "permission_denied" ? ApiError.of(ERR.FORBIDDEN, "You do not have access to this action. Ask your gym owner.") : ApiError.of(ERR.FEATURE_NOT_AVAILABLE, "This work is turned off for your gym.", { details: { reason: blocked } });
     const actor = this.host.actor();
     if (input.decision === "reject") {
       Object.assign(proposal, { status: "rejected", decidedByName: actor.name });
@@ -837,7 +852,8 @@ export class MockAiEngine {
     const results = items.map((item): AiApproveAllResult["results"][number] => {
       const proposal = this.proposals.get(item.proposalId);
       if (!proposal || proposal.runId !== input.runId) return { proposalId: item.proposalId, outcome: "not_found" };
-      const refusal: AiApproveAllOutcome | undefined = !this.host.permissions().includes(proposal.requiredPermission) ? "no_access" : proposal.status !== "pending" ? "already_decided" : proposal.expiresAt <= Date.now() ? "expired" : item.changesetHash !== proposal.changesetHash ? "changed" : undefined;
+      const blocked = this.approvalBlocked(proposal);
+      const refusal: AiApproveAllOutcome | undefined = !this.host.permissions().includes(proposal.requiredPermission) ? "no_access" : proposal.status !== "pending" ? "already_decided" : proposal.expiresAt <= Date.now() ? "expired" : item.changesetHash !== proposal.changesetHash ? "changed" : blocked ? (blocked === "permission_denied" ? "no_access" : "not_available") : undefined;
       if (refusal) return { proposalId: proposal.id, subjectLabel: proposal.subjectLabel, outcome: refusal };
       try {
         const decided = this.decideProposal({ proposalId: proposal.id, decision: "approve", changesetHash: item.changesetHash });
@@ -867,7 +883,8 @@ export class MockAiEngine {
     if (artifact.requiredPermissions.some((permission) => !this.host.permissions().includes(permission))) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this action. Ask your gym owner.");
     if (artifact.branchId && !this.host.branchVisible(artifact.branchId)) throw ApiError.of(ERR.FORBIDDEN, "You do not have access to this branch.");
     const { requiredPermissions: _required, ...view } = artifact;
-    return view;
+    const readable = (key: string) => artifactSectionReadable(artifact.kind, key, this.host.permissions());
+    return { ...view, sections: view.sections.filter((section) => readable(section.key)), coverage: view.coverage.filter((item) => readable(item.key)) };
   }
 
   private finish(run: MockRun, status: AiRunStatus, category?: AiErrorCategory): void {
@@ -1295,6 +1312,8 @@ export class MockAiEngine {
     if (!definition?.standingAllowed) throw ApiError.of(ERR.VALIDATION, "This work cannot repeat on a schedule.");
     const parsed = parsePlaybookParams(input.playbook, input.params);
     if (!parsed.ok) throw ApiError.of(ERR.VALIDATION, "Check the details and try again.");
+    // Repeating work covers each day as it comes; a fixed date would repeat the same day.
+    if ((parsed.params as { date?: unknown }).date !== undefined) throw ApiError.of(ERR.VALIDATION, "Repeating work uses each day's own date.");
     const weekdays = [...new Set(input.schedule.weekdays.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort();
     if (!weekdays.length || !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.schedule.time)) throw ApiError.of(ERR.VALIDATION, "Choose at least one day and a time.");
     const blocked = playbookBlocked(definition, this.authority(definition.capability));

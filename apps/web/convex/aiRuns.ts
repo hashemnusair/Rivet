@@ -187,7 +187,8 @@ export const recordUsage = internalMutation({
   },
   handler: async (ctx, args): Promise<null> => {
     const now = Date.now();
-    await ctx.db.insert("aiUsage", { ...args, capability: args.task, month: monthKey(now), createdAt: now });
+    const timezone = (await ctx.db.get(args.organizationId))?.timezone ?? "Asia/Amman";
+    await ctx.db.insert("aiUsage", { ...args, capability: args.task, month: monthKey(now, timezone), createdAt: now });
     if (args.runPublicId) {
       const run = await loadRun(ctx, args.organizationId, args.runPublicId);
       if (run) await ctx.db.patch(run._id, { budget: { ...run.budget, modelCalls: run.budget.modelCalls + (args.source === "live" ? 1 : 0), costMicros: run.budget.costMicros + (args.costMicros ?? 0), inputTokens: run.budget.inputTokens + (args.inputTokens ?? 0), outputTokens: run.budget.outputTokens + (args.outputTokens ?? 0) } });

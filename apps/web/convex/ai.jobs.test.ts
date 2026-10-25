@@ -118,6 +118,26 @@ describe("next-shift handover", () => {
     expect((await t.withIdentity({ subject: "clerk-jobs-owner" }).query(api.domain.query, op("tasks.list", { status: "open", ownerId: "jobs-desk", pageSize: 20 })) as { items: unknown[] }).items).toHaveLength(1);
   });
 
+  it("leaves out the parts a reader has no access to, such as follow-ups and the open drawer for a trainer", async () => {
+    const t = convexTest(schema, modules);
+    const { org, main } = await seed(t);
+    await t.run(async (ctx) => {
+      const now = NOW.getTime();
+      const id = await ctx.db.insert("users", { publicId: "jobs-trainer", authSubject: "clerk-jobs-trainer", email: "jobs-trainer@jobs.example", fullName: "jobs-trainer", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: org, userId: id, role: "trainer", branchIds: [main], branchScope: "selected", active: true, createdAt: now, updatedAt: now });
+    });
+    const run = await startAndFinish(t, "clerk-jobs-owner", "shift_handover", {}, "handover-request-trainer");
+    const artifactId = run.results.find((ref) => ref.kind === "artifact")!.id;
+    const read = async (subject: string) => await t.withIdentity({ subject }).query(api.domain.query, op("ai.artifact.get", { artifactId })) as Artifact;
+    const owner = await read("clerk-jobs-owner");
+    expect(owner.sections.map((section) => section.key)).toEqual(expect.arrayContaining(["followUps", "cash"]));
+    const trainer = await read("clerk-jobs-trainer");
+    expect(trainer.sections.map((section) => section.key)).not.toContain("followUps");
+    expect(trainer.sections.map((section) => section.key)).not.toContain("cash");
+    expect(trainer.coverage.map((item) => item.key)).not.toEqual(expect.arrayContaining(["followUps"]));
+    expect(trainer.coverage.map((item) => item.key)).not.toEqual(expect.arrayContaining(["cash"]));
+  });
+
   it("shows missing sources plainly for a receptionist instead of pretending they are empty", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
+import { monthKey } from "./aiPolicy";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
 const modules = import.meta.glob("./**/*.ts");
@@ -85,6 +86,25 @@ describe("reading a contact note into fields", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("sends a typed filter request only once the gym allows it, since it can name a member", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "live");
+    vi.stubEnv("RIVET_AI_PROTOCOL", "anthropic_messages");
+    vi.stubEnv("RIVET_AI_MODEL", "claude-sonnet-5-5");
+    vi.stubEnv("RIVET_AI_API_KEY", SECRET);
+    vi.stubEnv("RIVET_AI_MAX_MONTHLY_COST_MICROS", "5000000");
+    // RIVET has not approved member data; filters need only the gym's own consent.
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ id: "msg_f", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [{ type: "text", text: JSON.stringify({ owes: true, unrecognised: [] }) }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 100, output_tokens: 10 } }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const refused = convexTest(schema, modules);
+    await seed(refused, false);
+    expect(await refused.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ surface: "members", text: "Ahmad 0791234567 who owes" }, "interpret_filters"))).toEqual({ ok: false, reason: "data_policy" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const allowed = convexTest(schema, modules);
+    await seed(allowed, true);
+    expect(await allowed.withIdentity({ subject: "clerk-prep-sales" }).action(api.aiActions.prepare, prepare({ surface: "members", text: "members who owe money" }, "interpret_filters"))).toMatchObject({ ok: true, kind: "interpret_filters", filters: { owes: true } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("reads nothing for a gym RIVET has not made available, even with an approved live endpoint", async () => {
     vi.stubEnv("RIVET_AI_MODE", "live");
     vi.stubEnv("RIVET_AI_PROTOCOL", "anthropic_messages");
@@ -138,6 +158,12 @@ describe("reading a contact note into fields", () => {
     }
     const completion = (content: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: typeof content === "string" ? content : JSON.stringify(content) } }], usage: { prompt_tokens: 120, completion_tokens: 40 } }), { status: 200 });
 
+    it("rolls the month's budget over at the gym's local midnight, not at UTC midnight", () => {
+      // 00:30 on 1 November in Amman is still 31 October in UTC.
+      expect(monthKey(Date.parse("2026-10-31T21:30:00.000Z"), "Asia/Amman")).toBe("2026-11");
+      expect(monthKey(Date.parse("2026-10-31T20:30:00.000Z"), "Asia/Amman")).toBe("2026-10");
+    });
+
     it("spends nothing without an approved monthly budget, and stops once the month's budget is used", async () => {
       const unbudgeted = await liveHarness(async () => completion({}), {});
       expect(unbudgeted.result).toEqual({ ok: false, reason: "budget_exhausted" });
@@ -166,6 +192,19 @@ describe("reading a contact note into fields", () => {
       expect((await liveHarness(async () => completion("not json at all"))).result).toEqual({ ok: false, reason: "model_malformed" });
       expect((await liveHarness(async () => completion({ outcome: { value: "refund_member", evidence: "x" }, topics: [] }))).result).toEqual({ ok: false, reason: "model_malformed" });
       expect((await liveHarness(async () => new Response(JSON.stringify({ choices: [{ message: { content: null, refusal: "I can't help" } }] }), { status: 200 }))).result).toEqual({ ok: false, reason: "model_refused" });
+    });
+
+    it("counts the billed tokens of a refused or cut-off reply, and bounds the reply's length", async () => {
+      const billed = { usage: { prompt_tokens: 900, completion_tokens: 40 } };
+      const refused = await liveHarness(async () => new Response(JSON.stringify({ choices: [{ message: { content: null, refusal: "no" } }], ...billed }), { status: 200 }));
+      expect(refused.result).toEqual({ ok: false, reason: "model_refused" });
+      // 900 input tokens at 1 and 40 output tokens at 2 micro-dollars each.
+      expect(refused.usage[0]).toMatchObject({ outcome: "refused", inputTokens: 900, outputTokens: 40, costMicros: 980 });
+      const cutOff = await liveHarness(async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"outcome":' } }], ...billed }), { status: 200 }));
+      expect(cutOff.result).toEqual({ ok: false, reason: "model_malformed" });
+      expect(cutOff.usage[0]).toMatchObject({ outcome: "malformed", costMicros: 980 });
+      const [, init] = cutOff.fetchSpy.mock.calls[0]! as unknown as [string, RequestInit];
+      expect(JSON.parse(String(init.body)).max_tokens).toBe(2_048);
     });
 
     describe("through the Claude Messages API", () => {
