@@ -22,9 +22,17 @@ async function enterPlatformAdmin(page: Page) {
   await expect(page).toHaveURL(/\/platform$/);
 }
 
+/** Platform console: the sign-out button sits in the console header. */
 async function signOut(page: Page) {
   await page.getByRole("button", { name: /^(Sign out|تسجيل الخروج)$/ }).first().click();
   await expect(page).toHaveURL(/\/login$/);
+}
+
+/** Gym workspace: sign-out of the demo persona is in the account menu. */
+async function signOutOfWorkspace(page: Page) {
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: "Sign out of demo" }).click();
+  await expect(page).toHaveURL(/\/login/);
 }
 
 /** No gym can use assistance until a platform admin makes it available, so each journey starts there. */
@@ -92,7 +100,7 @@ test.describe("RIVET assistance", () => {
     await page.goto("/settings?section=assistance");
     await expect(page.getByTestId("assistance-settings-unavailable")).toContainText("RIVET has not made assistance available for your gym yet.");
     await expect(page.getByTestId("assistance-mode-execute")).toHaveCount(0);
-    await signOut(page);
+    await signOutOfWorkspace(page);
 
     await enterAvailableOwner(page);
     await page.goto("/settings?section=roles");
@@ -100,7 +108,7 @@ test.describe("RIVET assistance", () => {
     await turnOnAssistance(page, "Prepare and save work");
     await page.goto("/crm/queues?view=renewals");
     await expect(page.getByTestId("prepare-follow-ups")).toBeVisible();
-    await signOut(page);
+    await signOutOfWorkspace(page);
 
     // Removing availability hides assistance again; the gym's ordinary work is unchanged.
     await changeGymAvailability(page, false, "Pilot paused");
@@ -218,6 +226,79 @@ test.describe("RIVET assistance", () => {
     await expect(artifact.getByTestId("ai-artifact-section-candidates")).toContainText("RIVET cannot see the cash drawer.");
     // Nothing to approve: RIVET prepares an approval only for an exact match.
     await expect(panel.getByTestId("ai-proposal")).toHaveCount(0);
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
+  test("brings a prepared cash approval to Today and approves it from there", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterAvailableOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    // One client-side session from here: the preview keeps records made here only until a full page load.
+    await page.goto("/members?membership=outstanding");
+    await page.getByTestId("member-filters").waitFor();
+    await page.locator('main a[href^="/members/"]:not([href^="/members/duplicates"]):not([href^="/members/import"]):not([href^="/members/new"])').filter({ visible: true }).first().click();
+    await expect(page).toHaveURL(/\/members\/[^/?]+/);
+    // A cash payment of 7.300: no other recorded payment, or pair of payments, makes that amount.
+    await page.getByTestId("collect-outstanding").click();
+    const collect = page.getByRole("dialog", { name: "Collect payment" });
+    await collect.getByTestId("payment-amount").fill("7.300");
+    await collect.getByTestId("payment-method").click();
+    await page.getByRole("option", { name: "Cash", exact: true }).click();
+    await collect.getByTestId("confirm-payment").click();
+    await expect(collect).toBeHidden();
+    const receipt = page.getByRole("dialog", { name: "Cash collected" });
+    await expect(receipt).toContainText("7.300");
+    // The receipt names the branch whose drawer took the cash: "{time} · {branch}".
+    const takenAt = (await receipt.getByText(/^Receipt /).locator("xpath=following-sibling::p[1]").textContent())!;
+    const branchName = takenAt.split(" · ").at(-1)!.trim();
+    await receipt.getByRole("button", { name: "Done" }).click();
+    await expect(receipt).toBeHidden();
+
+    // The drawer is closed 7.300 short: counted as if that cash never arrived.
+    await page.locator('aside[aria-label="Primary navigation"] a[href="/payments"]').click();
+    await page.locator('a[href="/payments/shifts"]').first().click();
+    await expect(page).toHaveURL(/\/payments\/shifts/);
+    const picker = page.getByRole("combobox", { name: "Branch" }).first();
+    if (!(await picker.textContent())?.includes(branchName)) {
+      await picker.click();
+      await page.getByRole("option", { name: branchName, exact: true }).click();
+    }
+    await page.getByTestId("close-shift").click();
+    const close = page.getByRole("dialog", { name: "Close shift" });
+    await expect(close.getByTestId("confirm-close-shift")).toBeEnabled();
+    const expectedText = (await close.getByTestId("variance-panel").textContent())!;
+    const expectedMinor = Math.round(Number(/expected[^\d]*([\d,.]+)/i.exec(expectedText)![1]!.replace(/,/g, "")) * 1000);
+    let left = expectedMinor - 7_300;
+    for (const [label, minor] of [["50", 50_000], ["20", 20_000], ["10", 10_000], ["5", 5_000], ["1", 1_000], ["0.5", 500], ["0.10", 100]] as const) {
+      const count = Math.floor(left / minor);
+      left -= count * minor;
+      if (count) await close.getByTestId(`denom-${label}`).fill(String(count));
+    }
+    expect(left).toBe(0);
+    await close.getByTestId("variance-explanation").fill("Counted twice; one cash payment is not in the drawer");
+    await close.getByTestId("confirm-close-shift").click();
+    await expect(close).toBeHidden();
+
+    await page.getByTestId("check-cash-difference").filter({ visible: true }).first().click();
+    const panel = page.getByTestId("ai-run-panel");
+    await expect(panel).toHaveAttribute("data-status", "completed", { timeout: 20_000 });
+    await expect(panel.getByTestId("ai-proposal")).toHaveCount(1);
+    // A single prepared change approves on its own; grouped approval is only for two or more.
+    await expect(panel.getByTestId("ai-proposals-approve-all-button")).toHaveCount(0);
+
+    // The approval waits on Today, in place of the drawer's own item, and opens the work that holds it.
+    await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Dashboard" }).click();
+    const waiting = page.locator('[data-item-id^="ai-proposal:"]');
+    await expect(waiting).toBeVisible({ timeout: 20_000 });
+    await expect(waiting).toContainText("A prepared change is waiting for approval");
+    await waiting.getByRole("link").first().click();
+    await expect(page).toHaveURL(/\/payments\/shifts\?run=/);
+    const proposal = page.getByTestId("ai-proposal");
+    await proposal.getByTestId("ai-proposal-approve").click();
+    await expect(proposal).toHaveAttribute("data-status", "executed");
+    await page.locator('aside[aria-label="Primary navigation"]').getByRole("link", { name: "Dashboard" }).click();
+    await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening)/ })).toBeVisible();
+    await expect(page.locator('[data-item-id^="ai-proposal:"]')).toHaveCount(0);
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
