@@ -3,7 +3,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, type MutationCtx } from "./_generated/server";
 import { delegatedRequest, publicBranchId, publicOrganizationId, requireActor, type ActorContext, type DelegationPrincipal, type RequestArgs } from "./security";
-import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, renewalFactsForMember } from "./domain";
+import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, notifyProposalWaiting, renewalFactsForMember } from "./domain";
 import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
 import { createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
@@ -63,8 +63,14 @@ export async function finishRun(ctx: MutationCtx, runId: Id<"aiRuns">, status: A
   await ctx.db.patch(run._id, { status, stage: STAGE_BY_STATUS[status] ?? run.stage, ...(category ? { errorCategory: category } : {}), leaseToken: undefined, leaseExpiresAt: undefined, completedAt: now, updatedAt: now });
   const effects = run.counts.created + run.counts.linked + run.resultRefs.length;
   const meaningful = status === "failed" || status === "partially_completed" || effects > 0;
+  // Linking work that was already open is not news; a new task, report or prepared change is.
+  const somethingNew = run.counts.created > 0 || run.resultRefs.some((ref) => ref.kind !== "task");
   // Scheduled checks with nothing new stay quiet; people hear about real results and real problems.
-  if (!meaningful || (run.trigger === "schedule" && status === "completed" && run.counts.created === 0 && run.resultRefs.length === 0)) return;
+  if (!meaningful || (run.trigger === "schedule" && status === "completed" && !somethingNew)) return;
+  if (run.resultRefs.some((ref) => ref.kind === "proposal")) {
+    const requester = await ctx.db.get(run.requestedByUserId);
+    await notifyProposalWaiting(ctx, { organizationId: run.organizationId, ...(run.branchPublicId ? { branchPublicId: run.branchPublicId } : {}), requesterName: requester?.fullName ?? "", href: originHref(run), dedupeKey: `ai-proposal:${run.publicId}`, excludeUserId: run.requestedByUserId });
+  }
   const title = status === "completed" ? "Prepared work is ready" : status === "cancelled" ? "Prepared work stopped" : status === "partially_completed" ? "Prepared work partly finished" : "Prepared work could not finish";
   const key = status === "completed" ? "aiRunCompleted" : status === "cancelled" ? "aiRunStopped" : status === "partially_completed" ? "aiRunPartly" : "aiRunFailed";
   await ctx.db.insert("operationalNotifications", {

@@ -97,6 +97,10 @@ describe("cash-difference investigation", () => {
     expect(proposal!.changes[1]!.to).toContain("R-0002");
     // The drawer is untouched until a person approves.
     expect(await shiftStatus(t)).toBe("pending");
+    // Managers hear that a decision is waiting; the requester gets the run notice instead.
+    const notices = await t.run(async (ctx) => await ctx.db.query("operationalNotifications").collect());
+    const managerId = await t.run(async (ctx) => (await ctx.db.query("users").collect()).find((user) => user.publicId === "cash-manager")!._id);
+    expect(notices.filter((row) => row.kind === "ai_proposal").map((row) => row.recipientUserId)).toEqual([managerId]);
   });
 
   it("approves through the existing review as the manager, with the prepared note as the reason", async () => {

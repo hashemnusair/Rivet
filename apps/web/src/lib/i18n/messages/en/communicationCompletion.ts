@@ -204,6 +204,8 @@ export const communicationCompletion = {
     aiRunStopped: "Prepared work stopped",
     aiRunFailed: "Prepared work could not finish",
     aiRunCounts: "Created: {created} · Already open: {linked} · Skipped: {skipped}",
+    aiProposalWaiting: "A prepared change is waiting for approval",
+    aiProposalFor: "Prepared by RIVET for {name}",
     applicationAwaitingReview: "Gym application awaiting review",
     paymentToConfirm: "Gym payment to confirm",
     provisioningNeedsCorrection: "Gym provisioning requires manual correction",

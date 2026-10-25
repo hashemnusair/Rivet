@@ -1782,6 +1782,16 @@ export async function leadFollowUpFactsFor(ctx: ReadContext, actor: ActorContext
   };
 }
 
+/**
+ * A prepared change is waiting: owners and managers who can see the branch
+ * hear about it on the bell, like a cash difference waiting for review. The
+ * person who asked RIVET already gets the run notification.
+ */
+export async function notifyProposalWaiting(ctx: MutationCtx, input: { organizationId: Id<"organizations">; branchPublicId?: string; requesterName: string; href: string; dedupeKey: string; excludeUserId: Id<"users"> }): Promise<void> {
+  const branch = input.branchPublicId ? await branchByPublicId(ctx, input.organizationId, input.branchPublicId) : null;
+  await notifyOrganizationRoles(ctx, { organizationId: input.organizationId, branchId: branch?._id, roles: ["owner", "manager"], kind: "ai_proposal", title: "A prepared change is waiting for approval", body: `Prepared by RIVET for ${input.requesterName}`, titleMessage: systemMessage("communicationCompletion.notifications.aiProposalWaiting"), bodyMessage: systemMessage("communicationCompletion.notifications.aiProposalFor", { name: input.requesterName }), href: input.href, dedupeKey: input.dedupeKey, excludeUserId: input.excludeUserId });
+}
+
 /** Current versions of the records a prepared change was bound to; a missing record reads as -1. */
 export async function aiSourceVersions(ctx: ReadContext, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]> {
   const versions: number[] = [];

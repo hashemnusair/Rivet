@@ -198,6 +198,8 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
     aiRunStopped: "توقّف العمل المُعدّ",
     aiRunFailed: "تعذّر إكمال العمل المُعدّ",
     aiRunCounts: "تم إنشاؤها: {created} · مفتوحة مسبقًا: {linked} · تم تخطّيها: {skipped}",
+    aiProposalWaiting: "تغيير مُعدّ بانتظار الاعتماد",
+    aiProposalFor: "أعدّه RIVET لـ {name}",
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
     paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",

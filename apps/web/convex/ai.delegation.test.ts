@@ -459,6 +459,28 @@ describe("standing instructions", () => {
   });
 });
 
+describe("completion and exception reporting", () => {
+  it("tells the person about new work once, and stays quiet when a scheduled run only finds work already open", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t, { aiMode: "execute" });
+    const sales = t.withIdentity({ subject: "clerk-ai-sales" });
+    const preview = await sales.query(api.domain.query, op("ai.standing.preview", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" } }, { activeBranchId: MAIN })) as { digest: string };
+    await sales.mutation(api.domain.mutate, op("ai.standing.create", { playbook: "renewal_followups", params: { bucket: "expiring", owner: "me" }, schedule: { weekdays: [0, 1, 2, 3, 4], time: "09:00" }, requestKey: "standing-quiet-1", previewDigest: preview.digest }, { activeBranchId: MAIN }));
+    const notices = async () => await t.run(async (ctx) => (await ctx.db.query("operationalNotifications").collect()).filter((row) => row.kind === "ai_run" && row.recipientUserId === ids.sales));
+    vi.setSystemTime(new Date("2026-10-25T06:01:00.000Z"));
+    await t.mutation(internal.aiRuns.dispatchStanding, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await notices()).toHaveLength(1);
+    // Monday: the same calls are still open, so the run links them and says nothing.
+    vi.setSystemTime(new Date("2026-10-26T06:01:00.000Z"));
+    expect(await t.mutation(internal.aiRuns.dispatchStanding, {})).toBe(1);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const runs = await sales.query(api.domain.query, op("ai.runs.list", { playbook: "renewal_followups" }, { activeBranchId: MAIN })) as Array<{ counts: { created: number; linked: number } }>;
+    expect(runs.some((run) => run.counts.created === 0 && run.counts.linked > 0)).toBe(true);
+    expect(await notices()).toHaveLength(1);
+  });
+});
+
 describe("staff statements are bounded and attributable", () => {
   it("records a travel statement with provenance, supersedes the previous one and refuses long or foreign entries", async () => {
     const t = convexTest(schema, modules);
