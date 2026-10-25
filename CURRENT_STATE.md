@@ -291,6 +291,29 @@ non-test Convex module at each ref:
   approval" Today item, only once a gym is available and its owner turned assistance
   on; and `leads.update` ignores a `doNotContact` field, which no older frontend sends.
 
+**Final local gates (checkpoint 6, on `8e3421eb`; the commit after it changes this
+file only):** from the worktree root, `pnpm install --frozen-lockfile` (up to date);
+`pnpm test` (2,633 Vitest tests in 407 files passed; 3 skipped: the 2 existing opt-in
+benchmarks and the opt-in live evaluation; plus 14 repository safety tests);
+`pnpm ai:eval` (held-out v2: note fields 58/66, 87.9%; filters 13/16; revisions 10/10;
+machine matching 12/12; cash matching 8/8; lead decisions 9/9; filter mapping 4/4;
+zero fabrications; all minimums met); `pnpm typecheck`; `pnpm convex:typecheck`;
+`pnpm lint` (secret-output audit passed, zero warnings); plain `pnpm build`;
+`pnpm audit --prod` (no known vulnerabilities); `python3 docs/arabic/verify-lock.py`
+(revision 607, 247 decisions); `git diff --check`. From `apps/web`:
+`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen --typecheck disable`
+then `git diff --exit-code -- convex/_generated` (no diff). This worktree had no local
+backend, so one was created first with `CONVEX_AGENT_MODE=anonymous npx convex dev
+--once` (local only, no account, no hosted target), with a placeholder
+`CLERK_FRONTEND_API_URL` set on that local deployment so the auth config loads; the
+`.env.local` selector it wrote was removed afterwards. The approved mock preview built
+with `NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright
+RIVET_DESIGN_PREVIEW=1 pnpm build`, then `PLAYWRIGHT_PORT=3241
+PLAYWRIGHT_SERVER_MODE=start npx playwright test`: 255 passed, 14 existing conditional
+skips, 0 failed or flaky (10.2 minutes), including all 13 journeys in
+`e2e/ai-assist.spec.ts`.
+
 **Final local gates (checkpoint 5 publication, historical):** frozen install; `pnpm test` (2,549 Vitest
 tests in 403 files passed, 2 existing opt-in benchmarks skipped, plus 14 repository
 safety tests); `pnpm ai:eval` (all minimums met); `pnpm typecheck`;
