@@ -120,6 +120,31 @@ describe("member visit history", () => {
     expect(within(referral).getByText("20")).toBeInTheDocument();
   });
 
+  it("suggests classes that fit only when the gym turned it on, and opens the chosen day to book as usual", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const user = userEvent.setup();
+    const base = await state.getCustomerClassExperience();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { unmount } = render(<QueryClientProvider client={queryClient}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
+    await user.click(screen.getByRole("tab", { name: "Classes" }));
+    await screen.findByRole("tablist", { name: "Classes views" });
+    expect(screen.queryByTestId("member-class-suggestions")).not.toBeInTheDocument();
+    unmount();
+
+    state.getCustomerClassExperience.mockResolvedValue({ ...base, assistance: { classSuggestions: true } });
+    const fresh = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={fresh}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider>);
+    await user.click(screen.getByRole("tab", { name: "Classes" }));
+    const panel = await screen.findByTestId("member-class-suggestions");
+    await user.click(within(panel).getByRole("button", { name: "Morning" }));
+    const suggestions = within(panel).getAllByTestId("member-class-suggestion");
+    expect(suggestions.map((item) => item.textContent)).toEqual([expect.stringContaining("Sunrise yoga")]);
+    await user.click(suggestions[0]!);
+    // The day view moves to that class; booking stays the member's own action.
+    expect(await screen.findByRole("button", { name: "Book class" })).toBeInTheDocument();
+    expect(state.bookCustomerClass).not.toHaveBeenCalled();
+  });
+
   it("shows the live class schedule and books through the member-owned operation", async () => {
     const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
     const user = userEvent.setup();

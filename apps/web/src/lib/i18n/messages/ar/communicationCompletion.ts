@@ -193,6 +193,13 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
   },
 
   notifications: {
+    aiRunCompleted: "العمل المُعدّ جاهز",
+    aiRunPartly: "اكتمل جزء من العمل المُعدّ",
+    aiRunStopped: "توقّف العمل المُعدّ",
+    aiRunFailed: "تعذّر إكمال العمل المُعدّ",
+    aiRunCounts: "تم إنشاؤها: {created} · مفتوحة مسبقًا: {linked} · تم تخطّيها: {skipped}",
+    aiProposalWaiting: "تغيير مُعدّ بانتظار الاعتماد",
+    aiProposalFor: "أعدّه RIVET لـ {name}",
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
     paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",
@@ -288,6 +295,9 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
     taskCreated: "مهمة: {title}",
     taskFollowOn: "متابعة للمهمة: {title}",
     taskCompleted: "اكتمل تنفيذ المهمة: {title}",
+    taskNotNeeded: "مهمة لم تعد مطلوبة: {title}",
+    leadDoNotContact: "طلب عدم التواصل معه",
+    leadContactAllowed: "يمكن التواصل معه مجددًا",
     taskContactCompleted: "تم تسجيل التواصل — {outcome}",
     tagsAdded: "تمت إضافة الوسوم: {tags}",
     tagsRemoved: "تمت إزالة الوسوم: {tags}",
@@ -403,6 +413,13 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
 
   whatsapp: {
     defaultDraft: "مرحبًا {name}، معك {gym}. نتواصل معك للمتابعة، ويمكن الرد هنا في أي وقت مناسب.",
+  },
+
+  tasks: {
+    renewalCall: "الاتصال بـ {name} بشأن تجديد الاشتراك",
+    renewalCallEveningClasses: "الاتصال بـ {name} بشأن تجديد الاشتراك · السؤال عن الحصص الجماعية المسائية",
+    leadFollowUp: "متابعة {name}",
+    readHandover: "قراءة ملاحظات التسليم ليوم {date}",
   },
 
   values: {

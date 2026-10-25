@@ -1,5 +1,345 @@
 # GymOS / RIVET current implementation state
 
+## AI-native implementation — implemented locally on `codex/ai-native-rivet`, 25 October 2026
+
+**Not released, not merged, no deployment.** Implementation of
+[docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate
+worktree `/Users/hashemnusair/Documents/gym-os-ai-native` on branch
+`codex/ai-native-rivet`, created from `origin/main` `80a83c7c` (CI passed all 11 jobs
+on that merge). The shared bug-fix checkout and its untracked files were not touched.
+The deployment hold (`apps/web/vercel.json` `git.deploymentEnabled: false`; Vercel
+Ignored Build Step `exit 0`) is unchanged.
+
+Work status lives only in docs/13 under AI-0 to AI-5. Decisions: docs/09 "AI-0
+runtime and model-call ownership" (Convex-native durable runs; model calls in Convex
+internal actions), "AI release decisions — Hashem, 25 October 2026", "AI
+implementation decisions", the "AI decision sheet" (proposed, awaiting Hashem/Elias)
+and "AI open decisions". Environment ownership and the production procedure: docs/12
+"AI environment ownership" and "AI release to production".
+
+Checkpoint 1: canonical breakdown, traceability map, capability inventory and
+decisions (`7f503745`).
+
+**Checkpoint 2 — AI-1/AI-2 foundation (historical; completed in checkpoint 3).**
+
+- Shared pure contracts in `apps/web/src/lib/ai/`: `contracts.ts`, `capabilities.ts`
+  (tool/playbook registry, authority intersection, param schemas), `model.ts`
+  (off/fixture/live adapter, `openai_chat_json` protocol unverified, member-data gate;
+  `anthropic_messages` added in checkpoint 5),
+  `note-extraction.ts` + `relative-dates.ts` (bilingual note → fields, dates resolved
+  by RIVET against note time/gym timezone, ambiguity alternatives, injection flag),
+  `member-brief.ts`, `renewal-batch.ts`.
+- Convex: AI tables in `schema.ts` (+ `tenantPurge` inventory); delegated principal in
+  `security.ts` (`delegatedRequest`, `deriveRequest`; refused inside signed-in calls;
+  permissions intersected with the grant; actor rebuilt from current records);
+  `ai.ts` (operations on the existing `domain.query/mutate` transport), `aiPolicy.ts`,
+  `aiRuns.ts` (lease/fencing worker, recovery and standing crons), `aiPlaybooks.ts`
+  (renewal follow-ups batch only), `aiModelCall.ts`; `domain.ts` gains fact loaders,
+  `aiDomainPort`, timeline/audit delegation attribution, task `origin` for delegated
+  writes only, and a transactional hook closing RIVET-prepared renewal calls on renewal.
+- Tests: `src/lib/ai/note-extraction.test.ts` (15) and `convex/ai.delegation.test.ts`
+  (21 pass, 1 skipped): off/prepare gating, brief facts/sources/gaps, cross-tenant and
+  branch denial, batch creates verified tasks with drafts and exclusions, repeat-start
+  and second-batch dedupe, crash-after-commit resume, lease fencing, cancel with
+  committed effects reported, revocation mid-run, tenant off mid-run, renewal stop,
+  revision without redoing work, takeover, grant narrowing. `tenantPurge.test.ts` passes.
+- **Correction:** the "known defect" recorded at `6d4c9efa` was a test error, not a
+  code defect: 22 October 2026 is a Thursday, so `nextSlot` correctly chose Sunday 25
+  October for a Sunday–Thursday 09:00 schedule. The test fixture labels and
+  expectations were corrected and the standing test re-enabled (`ai.delegation.test.ts`
+  22/22). The full suite then exposed missing Activity-log labels for the new AI
+  audit actions; English/Arabic labels were added.
+- Generated bindings are produced with a worktree-local anonymous Convex backend
+  (`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen` from `apps/web`,
+  selector kept in ignored `apps/web/.env.ai-local-backend.local`; no hosted target).
+
+**Checkpoint 3 — client contract, UI and browser verification (`ae457c4d`…`f257a890`).**
+
+- `GymOSApi` assistance methods; `ConvexGymOSApi` maps them to `ai.*` operations and
+  the `aiActions.prepare` action (model-backed preparation, authorized in an internal
+  query, model call outside transactions, safe usage trace). `MockGymOSApi` delegates
+  to `src/lib/mock/ai.ts`, an explicit preview engine using the same shared decision
+  code (`composeRenewalFacts`, `evaluateRenewalCandidate`, scheduling, authority).
+- UI (`src/features/assist/`): member brief in the contact dialog and renewal panel;
+  "Fill from note" with per-field use, ambiguity pickers, preserved staff edits and
+  post-save travel/call-time notes; "Prepare follow-ups" and a live run panel on the
+  renewals list (`?run=` keeps it across navigation; stop, take over, retry, short
+  corrections confirmed before applying); Settings → Assistance (gym mode, per-task
+  switches, external-processing consent, previewed repeating work). Assistance is
+  invisible while off. `aiWork` English/Arabic catalogue follows docs/arabic.
+- Tests added: `convex/ai.prepare.test.ts` (fixture reading, scope denial, member-data
+  gate, live protocol success/429/timeout/malformed/refusal, no key or note in traces),
+  `src/lib/api/ConvexGymOSApi.ai.test.ts`, `src/lib/mock/ai.test.ts`,
+  `src/features/assist/assist-ui.test.tsx`, `e2e/ai-assist.spec.ts` (4 journeys:
+  off state, batch survives leaving the list, note reading, Arabic phone without
+  overflow; no console errors).
+- Rendered-screen review found and fixed: renewed-definition mismatch, Arabic
+  catalogue not loaded for preview drafts, RadioGroup RTL direction (app-wide), English
+  zero plurals, brief source label. Stored task titles stay English (limitation).
+- Local gates at this checkpoint: full `pnpm test` — 2,461 Vitest tests passed in 386
+  files (2 existing opt-in benchmarks skipped) plus the repository safety tests,
+  `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint`, approved mock preview build,
+  `e2e/ai-assist.spec.ts` 4/4. Full Playwright suite, plain production build, audit
+  and Arabic lock are run before publication (see the publication record below).
+
+**Checkpoint 4 — remaining slices, evaluation and release documentation
+(`2514b311`…HEAD, 25 October 2026).** Implemented locally; deterministic and mock-browser
+evidence only; no provider, staging or live evidence.
+
+- AI-3.5/3.6: management report (money totals rechecked against the full payment
+  ledger, coverage gaps, financial-access recheck and 30-day expiry, optional payments
+  export through the existing job) and next-shift handover (gaps shown, one "read the
+  handover" task per person and day). `convex/aiPlaybooks.ts`, `src/lib/ai/jobs.ts`.
+- AI-3.4/4.1: cash-difference investigation (exact-amount matches only) and the first
+  bound proposal: approval rechecks record versions, re-derives the changeset from
+  current records and runs the existing variance review as the approver; delegated
+  work can never decide. `src/lib/ai/cash-difference.ts`, `convex/ai.ts`
+  (`PROPOSAL_EXECUTORS`), `src/features/assist/proposal-card.tsx`.
+- AI-3.7: run notices for new results and problems; scheduled runs that only find open
+  work stay quiet; owners/managers notified of waiting approvals.
+- AI-4.2 lead follow-ups (`sales-batch.ts`), AI-4.3 machine-problem intake
+  (`fault-triage.ts`), AI-4.4 import column/plan suggestions (`import-assist.ts`), AI-4.5
+  class finder with booking that rechecks the spot and never joins a waitlist
+  (`class-finder.ts`, `convex/classes.ts`), AI-4.6 members-list filters
+  (`list-filters.ts`), AI-4.7 member-portal "Classes that fit you", AI-4.8 platform
+  application brief and `/platform/assistance` stop page, AI-4.9 collections call list
+  (`collections.ts`). AI-4.10 lists everything not covered, with acceptance examples.
+- AI-2.1: each renewal row shows the member fact it lacked (`listRowFact`).
+- AI-1.5: spend caps before every live call; no approved monthly budget means no spend.
+- AI-5.1: `pnpm ai:eval` and the same gate in `pnpm test`; held-out v2 (written before
+  the reader fixes found by v1): note fields 58/66 (87.9%; en 12/14, ar 8/14 cases),
+  filters 13/16, revisions 10/10, machine matching 12/12, decision tasks exact, zero
+  fabrications. Protocol in docs/09.
+- AI-5.3: owner-visible monthly outcome summary. AI-5.4: every stop rehearsed with real
+  Convex functions. AI-5.5: release checks and pilot record template in docs/12.
+  AI-5.7: autonomy policy in docs/09.
+- Settings → Assistance lives under Roles & access (the settings rail is full and its
+  height and keyboard order are pinned by existing browser tests).
+- Defects found and fixed along the way are listed under "Discovered improvements and
+  defects" in docs/13 (export delegation principal, rolled-back expiry write, empty
+  page-header wrappers that broke a Linux visual test, Arabic date and filter readings).
+
+**Checkpoint 5 — Claude connection and the live evaluation command (25 October
+2026).** Implemented locally and tested against stubbed transports only. No key was
+used, no live call was made, and nothing was deployed.
+
+- AI-1.4: protocol `anthropic_messages` calls the Claude Messages API with Anthropic's
+  official SDK (`@anthropic-ai/sdk`) from `convex/aiModelCall.ts`. It uses structured
+  outputs with per-task JSON schemas and low effort, sends no sampling settings, never
+  retries, and turns SDK logging off. The base URL defaults to the Claude API. Request,
+  schemas and reply parsing are in `src/lib/ai/model.ts`
+  (`buildAnthropicRequest`, `TASK_SCHEMAS`, `parseAnthropicResponse`). Replies pass
+  the same validation as before, now shared by both protocols (`normalizeLiveOutput`).
+- AI-1.5 defect fixed: live calls recorded no cost, so the caps could never trip after
+  real spend. Every billed reply is now priced from `MODEL_PRICES_MICROS_PER_MTOK` or
+  the price variables, including refused, cut-off and rejected replies. Live mode is
+  not ready without a price.
+- AI-5.2: `pnpm ai:eval:live` (`src/lib/ai/evals/evaluate-live.test.ts`,
+  `src/lib/ai/evals/live.ts`) scores the held-out note, filter and revision cases
+  through the production `callModel`. It uses a $1 default spend limit and reports
+  failures, cost and p50/p95 latency to
+  `apps/web/test-results/ai-eval/live-report.json`. It is skipped in `pnpm test`.
+  The runner is tested offline (`live.test.ts`): it gives the same scores as the
+  deterministic harness, stops at the limit, and counts failed calls as unanswered,
+  never as fabrications.
+- Tests: `src/lib/ai/model-anthropic.test.ts` (13). `convex/ai.prepare.test.ts` now
+  runs in a server-like environment and adds three Claude journeys through the real
+  SDK: request shape and key only in the auth header; priced usage; no retry;
+  rate limit, timeout, cut-off and refusal; and the budget stopping after real spend.
+  The Convex bundle check (esbuild, browser platform as Convex uses) found no
+  Node-only imports.
+- Setup for a key holder: docs/12 "Connecting Claude with a key holder's API key".
+  Decision: docs/09 "Claude connection".
+- Gates for this checkpoint: frozen install; `pnpm test` (2,568 Vitest tests in 405
+  files passed; 3 skipped: the 2 existing opt-in benchmarks and the opt-in live
+  evaluation; plus 14 repository safety tests); `pnpm ai:eval` (figures unchanged, all
+  minimums met); `pnpm typecheck`; `pnpm convex:typecheck`; `pnpm lint`; plain
+  `pnpm build`; `pnpm audit --prod`; Arabic lock; `git diff --check`; credential-free
+  codegen (the worktree-local backend accepted the functions bundle with the SDK; no
+  `_generated` diff). `pnpm ai:eval:live` without a key fails at its first check, as
+  intended. Playwright was not rerun: no browser-facing code changed (`model.ts` gains
+  a type-only SDK import).
+
+**Checkpoint 6 — release blocker, live evaluation on the server, model-output
+cache, five gaps and the production procedure (25 October 2026,
+`cbe58830`…HEAD).** Done from a separate worktree on Elias's machine
+(`/Users/eliashreish/Rivet2/.claude/worktrees/rivet-ai-review-prep-2bc7d3`, branch
+`codex/ai-native-rivet`); Elias's own checkout and other branches were not touched.
+Hashem's decisions of 25 October 2026 (production acceptance on the disposable
+"Hashem Test" gym instead of staging; Claude Sonnet 5.5 through Elias's account; this
+pass = the plan plus five small gaps) are recorded in docs/09. Implemented locally;
+Convex-function, preview-adapter, component and mock-browser evidence only. No key
+was used, no live call was made, nothing was deployed, and no hosted environment
+variable, tenant, payment or message was changed.
+
+- **Platform availability per gym (release blocker, AI-1.10).** New `aiAvailability`
+  table (tenant data, in `tenantPurge`). No row means unavailable, so no gym can use
+  assistance by default. `ai.platform.availability` (list) and
+  `ai.platform.availability.set` (change, reason required) need a platform admin; each
+  change writes platform audit `ai.gym.available` / `ai.gym.unavailable`. `aiPolicy.ts`
+  reads an unavailable gym as off in every gate (`tenantModeOf`, `capabilityModeOf`,
+  `authorityInput`, member surfaces, `aiActions.prepare`, runs and standing work);
+  `ai.settings.update` refuses (`FEATURE_NOT_AVAILABLE`) to turn assistance or external
+  processing on; removal requests a stop for that gym's running work. UI: "Gyms that
+  can use assistance" on `/platform/assistance`
+  (`src/features/assist/platform-availability.tsx`); Settings → Roles & access →
+  Assistance and its link are hidden for an unavailable gym (a deep link explains
+  why). docs/12 stop table has the new row. Tests: `convex/ai.delegation.test.ts`
+  "platform availability per gym" (5: unavailable by default so the owner can only keep
+  it off; only a platform admin changes it, with a reason and an audit event; only the
+  chosen gym becomes available; every gate reads an unavailable gym as off; running work
+  stops at the next step on removal), `convex/ai.prepare.test.ts` (an unavailable gym
+  reads nothing even with a live endpoint), `src/lib/mock/ai.test.ts`,
+  `assist-ui.test.tsx`, `platform-assist.test.tsx`, browser journey "stays hidden from
+  a gym until RIVET makes it available, and stops again when that is removed". Every
+  existing AI test now makes its gym available first; no assertion was weakened.
+- **Server-side live evaluation (AI-5.2).** `convex/aiEvaluation.ts` `runLive`
+  (internal action) runs `runLiveEvaluation` with `callModel` and `adapterConfig()` in
+  the deployment; `ran: false` with a reason unless live mode is fully configured; $1
+  default limit, $5 ceiling; not charged to a gym; failure details that repeat a case
+  note are withheld and the development set is dropped. `convex/aiEvaluation.test.ts`
+  (node environment, convex-test, stubbed `fetch` through the real SDK): off and
+  incomplete configurations make no call; a full run returns scores and cost; the
+  limit and ceiling hold; the result has no key, prompt or note text. How Hashem runs
+  it: docs/12.
+- **Model-output cache (AI-1.9).** `src/lib/ai/model-cache.ts` (key), `aiModelCache`
+  table, `convex/aiActions.ts` (`keepModelAnswer`, `countModelAnswerReuse`,
+  `expireModelAnswers`), cron every 15 minutes, `aiPolicy.dropModelCache` called from
+  member merge and deletion and from role and staff-access changes in `domain.ts`.
+  Live note readings only; 15-minute TTL. `convex/ai.prepare.test.ts` "reusing a live
+  reading of the same note (AI-1.9)" (8): reuse makes no call, no new spend and the
+  same fields; it is still served with the month's budget used up; dates are computed
+  again for the current time; a different note, language, member record or reader
+  access makes a new call; access is rechecked before serving; role changes and member
+  deletion drop entries and entries expire; a merge drops both records' entries; test
+  mode keeps nothing. Gym and prompt/model version are in the key but have no test of
+  their own.
+- **Today card for a waiting proposal (rest of AI-3.7).** `domain.ts` Today queue adds
+  `ai-proposal:<id>` approval items for people with the required permission who can
+  read the run and see its branch, only while the capability can run, and drops that
+  drawer's own variance item. Tests: `convex/ai.cash.test.ts`,
+  `today-queue-copy.test.ts`, browser journey "brings a prepared cash approval to Today
+  and approves it from there".
+- **"Approve all" (rest of AI-3.4).** `ai.proposals.approve_all`: at most 20 distinct
+  proposals of one run, each through `internal.aiRuns.approveProposalStep` in its own
+  sub-transaction with the single-approval checks; outcomes per proposal; audit
+  `ai.proposals.approve_all`. UI in `proposal-card.tsx` (the button counts what one
+  step approves). Tests: `convex/ai.cash.test.ts` "approving grouped prepared changes
+  in one step" (4: all approved through the existing review; partial result reported
+  truthfully; unreviewed changes refused and only the unsaveable one rolled back; no
+  one without the access, and never delegated work), preview and
+  component tests. No playbook creates two proposals in one run yet, so the browser
+  journey covers the single case only.
+- **Dismissals and unnecessary contacts (rest of AI-5.3).** "Hide suggestions" records
+  a `dismissed` feedback row; "Not needed" on a call RIVET saved
+  (`ai.task.mark_unnecessary`, `crm.write`) closes it if open, marks the step, is
+  idempotent and audited (`ai.contact.unnecessary`), and is refused for tasks people
+  made. Monthly summary counts both. Tests in `ai.delegation.test.ts`, mock, component
+  and browser.
+- **Lead contact consent.** `leads.contact_preference` (`crm.write`; audit
+  `lead.do_not_contact` / `lead.contact_allowed`; lead timeline line); `leads.update`
+  strips `doNotContact`; `evaluateLeadCandidate` excludes such a lead with
+  "opted_out". UI on the lead's Contact panel (`src/features/crm/lead-contact-consent.tsx`).
+  Tests: `convex/ai.sales.test.ts` (2), `sales-batch.test.ts`, evaluation case l-09,
+  mock, component and browser journey "leaves out a lead who asked not to be
+  contacted, and says why".
+- **Localised prepared task titles.** New prepared tasks store `titleMessage`
+  (`communicationCompletion.tasks.*`) beside the English title, only for delegated
+  actors; task lists, member tabs, Today, the run panel and follow-up context render
+  it (`src/lib/i18n/use-task-title.ts`). Tests: `system-messages.test.ts`,
+  `ai.delegation.test.ts`, Arabic component and browser assertions.
+- English and Arabic text for all of the above follows docs/arabic (lock revision
+  607); new audit actions have Activity-log labels in both languages.
+- **Release procedure and decisions.** docs/12 "AI release to production" (backend
+  first, compatibility, frontend only when Hashem says, environment names and
+  values, server-side evaluation, Hashem Test journeys, stop rehearsals, pilot record,
+  rollback; states that main's undeployed billing and export fixes ship with it).
+  docs/09: Hashem's decisions, this pass's implementation decisions, and the AI-0.1 /
+  AI-0.7 decision sheet (every answer "proposed, awaiting Hashem/Elias").
+
+- **Review of the whole branch against main.** Two independent reviews (authorization
+  and tenancy; money, spend and secrets) and my own pass over the new screens found
+  real defects, all fixed with tests (`487d5eb7`, `683c6046`, `ef92590c`) and listed
+  under "Fixed (branch review, 25 October 2026)" in docs/13: uncounted billed replies
+  and unbounded replies on `openai_chat_json`; corrections not charged to their run;
+  a UTC budget month; typed requests sent without the gym's consent; owners and
+  managers limited to selected branches reaching other branches' runs, proposals and
+  repeating work; branch-limited work stored gym-wide; approvals still possible under
+  a stop or after removal; a cash approval prepared when several movements matched;
+  handover sections shown without their access; any `crm.write` user closing a
+  branchless handover task; repeating reports with frozen dates; another person's
+  request key returning their instruction; spend shown to every role; approve-all
+  offering more than one step approves. The rules this changes are in docs/09
+  ("Rules tightened by the branch review"). Remaining minor items are recorded as
+  open in docs/13. The key is only ever in the provider's auth header; the cache,
+  purge and the live evaluation's limits were checked and are sound.
+
+**Compatibility proof for the backend-first release (step b).** Compared HEAD with
+`origin/main` (`80a83c7c`) and with the production frontend's source `3ed7d3d2`
+(application source of the last production release `22e5157b`) by reading every
+non-test Convex module at each ref:
+
+- `convex/schema.ts`: +273 / −0 lines against both; new tables and optional fields
+  only, so existing documents still validate.
+- Public Convex functions: 18 at both refs, 19 on HEAD; none removed and no
+  argument validator or kind changed; the one addition is `aiActions:prepare`.
+- Domain operations: every operation name the older frontends call is still handled
+  (314 names from main's frontend, 313 from `3ed7d3d2`'s; 252 of each by a `case`
+  label, the other 62 and 61 by literal checks still present on HEAD); string `case`
+  labels in the Convex modules go from 309 to 355 with none removed.
+- Behaviour an older frontend can see: a possible "A prepared change is waiting for
+  approval" Today item, only once a gym is available and its owner turned assistance
+  on; and `leads.update` ignores a `doNotContact` field, which no older frontend sends.
+
+**Final local gates (checkpoint 6, on `8e3421eb`; the commit after it changes this
+file only):** from the worktree root, `pnpm install --frozen-lockfile` (up to date);
+`pnpm test` (2,633 Vitest tests in 407 files passed; 3 skipped: the 2 existing opt-in
+benchmarks and the opt-in live evaluation; plus 14 repository safety tests);
+`pnpm ai:eval` (held-out v2: note fields 58/66, 87.9%; filters 13/16; revisions 10/10;
+machine matching 12/12; cash matching 8/8; lead decisions 9/9; filter mapping 4/4;
+zero fabrications; all minimums met); `pnpm typecheck`; `pnpm convex:typecheck`;
+`pnpm lint` (secret-output audit passed, zero warnings); plain `pnpm build`;
+`pnpm audit --prod` (no known vulnerabilities); `python3 docs/arabic/verify-lock.py`
+(revision 607, 247 decisions); `git diff --check`. From `apps/web`:
+`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen --typecheck disable`
+then `git diff --exit-code -- convex/_generated` (no diff). This worktree had no local
+backend, so one was created first with `CONVEX_AGENT_MODE=anonymous npx convex dev
+--once` (local only, no account, no hosted target), with a placeholder
+`CLERK_FRONTEND_API_URL` set on that local deployment so the auth config loads; the
+`.env.local` selector it wrote was removed afterwards. The approved mock preview built
+with `NEXT_PUBLIC_DATA_MODE=mock NEXT_PUBLIC_RIVET_DEMO_AUTH=1
+NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS=preview NEXT_DIST_DIR=.next-playwright
+RIVET_DESIGN_PREVIEW=1 pnpm build`, then `PLAYWRIGHT_PORT=3241
+PLAYWRIGHT_SERVER_MODE=start npx playwright test`: 255 passed, 14 existing conditional
+skips, 0 failed or flaky (10.2 minutes), including all 13 journeys in
+`e2e/ai-assist.spec.ts`.
+
+**Final local gates (checkpoint 5 publication, historical):** frozen install; `pnpm test` (2,549 Vitest
+tests in 403 files passed, 2 existing opt-in benchmarks skipped, plus 14 repository
+safety tests); `pnpm ai:eval` (all minimums met); `pnpm typecheck`;
+`pnpm convex:typecheck`; `pnpm lint` (including the secret-output audit); plain
+`pnpm build`; `pnpm audit --prod` (no known vulnerabilities);
+`python3 docs/arabic/verify-lock.py` (revision 607, 247 decisions); `git diff --check`;
+credential-free codegen with no `_generated` diff; built mock preview with
+the full Playwright suite (252 passed, 14 existing conditional skips, 0 failed or flaky; the 11 AI journeys in `e2e/ai-assist.spec.ts` included).
+
+**Still open (not blocked by code):** the decisions in the docs/09 "AI decision sheet"
+(AI-0.1 inventory review; AI-0.7 data processing, budgets, packaging, owners), all
+proposed and awaiting Hashem/Elias; the production release and the Hashem Test
+acceptance in docs/12 (AI-2.7, AI-5.6), run by Hashem after the merge; the live
+evaluation on production (`aiEvaluation:runLive`, AI-5.2) and real endpoint evidence
+(AI-1.4), which need Elias's key there; the other AI-4.10 gaps; the minor review items
+in docs/13. Nothing was deployed, merged into main, activated or run against a live
+tenant.
+
+Read first: docs/12 "AI release to production" (what Hashem runs after the merge),
+docs/09 AI release decisions, implementation decisions and decision sheet, docs/13 AI
+section (status and gaps), docs/12 AI environment and release sections,
+`apps/web/convex/aiPolicy.ts` (availability, branch scope, budgets),
+`apps/web/convex/ai.ts`, `aiRuns.ts`, `aiPlaybooks.ts`, `apps/web/src/lib/ai/*`,
+`apps/web/src/lib/mock/ai.ts`, `apps/web/src/features/assist/*`,
+`apps/web/src/lib/ai/evals/*`, `apps/web/e2e/ai-assist.spec.ts`.
+
 ## Source-only merge preparation — 24 October 2026
 
 The billing/export branch at `2cb1519e` passed all 11 jobs in

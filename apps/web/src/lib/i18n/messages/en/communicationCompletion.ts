@@ -199,6 +199,13 @@ export const communicationCompletion = {
 
   /** System notification titles and bodies. */
   notifications: {
+    aiRunCompleted: "Prepared work is ready",
+    aiRunPartly: "Prepared work partly finished",
+    aiRunStopped: "Prepared work stopped",
+    aiRunFailed: "Prepared work could not finish",
+    aiRunCounts: "Created: {created} · Already open: {linked} · Skipped: {skipped}",
+    aiProposalWaiting: "A prepared change is waiting for approval",
+    aiProposalFor: "Prepared by RIVET for {name}",
     applicationAwaitingReview: "Gym application awaiting review",
     paymentToConfirm: "Gym payment to confirm",
     provisioningNeedsCorrection: "Gym provisioning requires manual correction",
@@ -290,6 +297,9 @@ export const communicationCompletion = {
     taskCreated: "Task: {title}",
     taskFollowOn: "Follow-on to: {title}",
     taskCompleted: "Task completed: {title}",
+    taskNotNeeded: "Task not needed: {title}",
+    leadDoNotContact: "Asked not to be contacted",
+    leadContactAllowed: "Contact allowed again",
     taskContactCompleted: "Contact logged — {outcome}",
     tagsAdded: "Tags added: {tags}",
     tagsRemoved: "Tags removed: {tags}",
@@ -364,6 +374,14 @@ export const communicationCompletion = {
   /** A staff member's own WhatsApp handoff: a draft in the recipient's language, sent by the person, never by RIVET. */
   whatsapp: {
     defaultDraft: "Hi {name}, this is {gym}. Just following up with you — reply here whenever it suits you.",
+  },
+
+  /** Titles of tasks RIVET prepares; the task keeps its stored English title as well. */
+  tasks: {
+    renewalCall: "Call {name} about membership renewal",
+    renewalCallEveningClasses: "Call {name} about membership renewal · ask about evening classes",
+    leadFollowUp: "Follow up with {name}",
+    readHandover: "Read the handover for {date}",
   },
 
   values: {

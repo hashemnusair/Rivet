@@ -1003,6 +1003,8 @@ export interface CustomerClassExperience {
   history: CustomerClassOccurrence[];
   noShowCount: number;
   profileCorrectionRequired: boolean;
+  /** Member-facing assistance the gym has turned on; absent means off. */
+  assistance?: { classSuggestions: boolean };
 }
 
 export interface ClassBookingResult {
@@ -2101,6 +2103,8 @@ export interface Lead {
   nextFollowUpAt?: ISODateTime;
   lostReason?: string;
   convertedMemberId?: UUID;
+  /** The lead asked not to be contacted; changed only through its own audited action. */
+  doNotContact?: { since: ISODateTime; byId: UUID; byName: string; reason?: string };
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -2292,6 +2296,11 @@ export interface Task {
   /** An explicit, accepted link to an existing open task about the same person; never inferred. */
   relatedTaskId?: UUID;
   relatedTaskTitle?: string;
+  /** Set by the server only when delegated work created the task; clients cannot claim it. */
+  origin?: { kind: "ai_run"; runId: string; grantId: string };
+  /** The title as a descriptor, for tasks RIVET prepared; `title` stays the stored English. Older tasks have none. */
+  titleMessage?: SystemMessage;
+  aiContext?: { purpose: string; membershipId?: string; topic?: string };
 }
 
 export interface CreateTaskInput {
@@ -3255,7 +3264,8 @@ export type AuditCategory =
   | "operations"
   | "accounting"
   | "users"
-  | "settings";
+  | "settings"
+  | "ai";
 
 export interface AuditEvent {
   id: UUID;
@@ -3377,6 +3387,8 @@ export interface TodayQueueItem {
   kind: TodayQueueKind;
   priority: TodayQueuePriority;
   title: string;
+  /** The title as a descriptor (a task RIVET prepared); `title` stays the stored English. */
+  titleMessage?: SystemMessage;
   detail: string;
   href: string;
   action: TodayQueueAction;

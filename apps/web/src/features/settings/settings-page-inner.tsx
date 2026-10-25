@@ -27,6 +27,8 @@ import { GymPublicProfileSection } from "@/features/settings/gym-public-profile-
 import { OperationalEmailSection } from "@/features/settings/operational-email-section";
 import { BrandKitSection } from "@/features/settings/brand-kit-section";
 import { ChecklistsSection } from "@/features/settings/checklists-section";
+import { AssistanceSettingsSection } from "@/features/assist/assistance-settings-section";
+import { useAiSettings } from "@/features/assist/use-assist";
 import { MyProfileSection } from "@/features/settings/my-profile-section";
 import { useUnsavedChanges } from "@/lib/providers/unsaved-changes-provider";
 import { usePermissions } from "@/lib/providers/app-providers";
@@ -44,6 +46,12 @@ interface SettingsEntry {
   keywords: string;
   /** The permission the section's own mutations require on the server. */
   permission?: string;
+  /**
+   * A section that lives under another rail row instead of adding its own, so
+   * the rail keeps its fixed height. Search, the phone picker and the parent
+   * section still reach it, and the parent row stays highlighted while open.
+   */
+  parent?: string;
   component: ComponentType;
 }
 
@@ -76,6 +84,7 @@ function settingsGroups(t: TFunction): SettingsGroup[] { return [
     entries: [
       { id: "users", label: t("settingsCore.text078"), keywords: t("settingsCore.text209"), permission: "users.manage", component: UsersSection },
       { id: "roles", label: t("settingsCore.text185"), keywords: t("settingsCore.text210"), permission: "users.manage", component: RolesSection },
+      { id: "assistance", label: t("aiWork.settings.title"), keywords: t("aiWork.settings.keywords"), permission: "settings.manage", parent: "roles", component: AssistanceSettingsSection },
     ],
   },
   {
@@ -123,11 +132,14 @@ export function SettingsPageInner() {
   const { requestNavigation } = useUnsavedChanges();
   const railRef = useRef<HTMLDivElement>(null);
 
+  // Assistance is offered only once RIVET has made it available for this gym.
+  const assistanceShown = Boolean(useAiSettings(can("settings.manage")).data?.platformAvailable);
+
   // Sections the signed-in role can actually save. The server enforces every
   // permission; the rail only avoids offering a section that would refuse.
   const visibleGroups = useMemo(
-    () => SETTINGS_GROUPS.map((group) => ({ ...group, entries: group.entries.filter((entry) => !entry.permission || can(entry.permission)) })).filter((group) => group.entries.length > 0),
-    [can, SETTINGS_GROUPS],
+    () => SETTINGS_GROUPS.map((group) => ({ ...group, entries: group.entries.filter((entry) => (!entry.permission || can(entry.permission)) && (entry.id !== "assistance" || assistanceShown)) })).filter((group) => group.entries.length > 0),
+    [can, SETTINGS_GROUPS, assistanceShown],
   );
   const visibleEntries = useMemo(() => visibleGroups.flatMap((group) => group.entries), [visibleGroups]);
   // Keep the existing owner landing section stable while staff roles without
@@ -177,7 +189,7 @@ export function SettingsPageInner() {
   };
 
   const navButton = (entry: SettingsEntry) => {
-    const isActive = entry.id === active.id;
+    const isActive = entry.id === active.id || (!filtered && entry.id === active.parent);
     return (
       <button
         key={entry.id}
@@ -221,7 +233,7 @@ export function SettingsPageInner() {
                       {group.entries.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}
                     </div>
                   ))}
-                  {!allowed ? <SelectItem value={active.id}>{active.label}</SelectItem> : null}
+                  {!visibleEntries.some((entry) => entry.id === active.id) ? <SelectItem value={active.id}>{active.label}</SelectItem> : null}
                 </SelectContent>
               </Select>
             </div>
@@ -262,7 +274,7 @@ export function SettingsPageInner() {
                 visibleGroups.map((group) => (
                   <div key={group.label}>
                     <ContextLabel className="mb-0.5 px-3">{group.label}</ContextLabel>
-                    <div className="space-y-0.5">{group.entries.map(navButton)}</div>
+                    <div className="space-y-0.5">{group.entries.filter((entry) => !entry.parent).map(navButton)}</div>
                   </div>
                 ))
               )}

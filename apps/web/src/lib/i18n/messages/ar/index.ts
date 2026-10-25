@@ -51,6 +51,7 @@ import { nav } from "./nav";
 import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
+import { aiWork } from "./aiWork";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
@@ -107,4 +108,5 @@ export const ar: Messages = {
   palette,
   renewFlow,
   shell,
+  aiWork,
 };

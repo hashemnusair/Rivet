@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils/cn";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 import { presentSystemText, type SystemTextContext } from "@/lib/i18n/system-messages";
+import { useTaskTitle } from "@/lib/i18n/use-task-title";
 import { followUpDeliveryDetailLabel, followUpDeliveryLabel, followUpOutcomeLabel, followUpStopReasonLabel, followUpSuppressionReasonLabel } from "@/features/followup/follow-up-labels";
 
 /**
@@ -86,6 +87,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 export function FollowUpContextPanel({ memberId, variant = "workspace", className }: { memberId: string; variant?: "workspace" | "renewal"; className?: string }) {
   const { t, isolate } = useLocale();
+  const taskTitle = useTaskTitle();
   const format = useFormat();
   const { context, isLoading, isError, refetch } = useMemberFollowUpContext(memberId);
   const [showAll, setShowAll] = useState(false);
@@ -161,7 +163,7 @@ export function FollowUpContextPanel({ memberId, variant = "workspace", classNam
           <p className="context-label">{t("memberProfile.shared.openTasks")}</p>
           <ul className="mt-1 space-y-1 text-[12.5px]">
             {context.relatedWork.map((task) => (
-              <li key={task.id}><span className="text-ink" dir="auto">{task.title}</span> <span className="text-ink-3">· <bdi>{task.ownerName}</bdi> · {t("memberProfile.relatedTask.due")} <RelativeText iso={task.dueAt} /></span>{task.relatedTaskTitle ? <span className="text-ink-3"> · {t("memberProfile.relatedTask.after", { title: isolate(task.relatedTaskTitle) })}</span> : null}</li>
+              <li key={task.id}><span className="text-ink" dir="auto">{taskTitle(task)}</span> <span className="text-ink-3">· <bdi>{task.ownerName}</bdi> · {t("memberProfile.relatedTask.due")} <RelativeText iso={task.dueAt} /></span>{task.relatedTaskTitle ? <span className="text-ink-3"> · {t("memberProfile.relatedTask.after", { title: isolate(task.relatedTaskTitle) })}</span> : null}</li>
             ))}
           </ul>
         </div>

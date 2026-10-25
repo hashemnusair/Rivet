@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/provider";
 
 
 import { Check, Lock, LockOpen, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
@@ -31,6 +31,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CloseShiftDialog, OpenShiftDialog } from "@/features/finance/shift-dialogs";
 import { FinanceNav } from "@/features/finance/finance-nav";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { AiRunPanel } from "@/features/assist/run-panel";
+import { CheckCashDifferenceButton, useAssistJobAvailable } from "@/features/assist/prepare-jobs";
+import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import type { AiRunView } from "@/lib/ai/contracts";
 
 export default function ShiftsPage() {
   return <Suspense><ShiftsWorkspace /></Suspense>;
@@ -44,6 +48,13 @@ function ShiftsWorkspace() {
   const invalidate = useInvalidate();
   const params = useSearchParams();
   const replaceParams = useReplaceSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  // A cash-difference investigation stays in the URL, so it survives a refresh like the drawer and day.
+  const runId = params.get("run");
+  const showRun = (run: AiRunView) => { const next = new URLSearchParams(params.toString()); next.set("run", run.id); replaceQueryInPlace(router, `${pathname}?${next}`); };
+  const canCheckCash = useAssistJobAvailable("cash_difference", "reconciliation.read");
+  const closeRun = () => { const next = new URLSearchParams(params.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname); };
   const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager";
   // Drawer branch, reconciliation date and history page live in the URL, so
   // a refresh or Back/Forward returns to the same drawer and day. A branch
@@ -279,6 +290,8 @@ function ShiftsWorkspace() {
         </section>
       </Gate>
 
+      {runId ? <AiRunPanel runId={runId} onClose={closeRun} /> : null}
+
       {/* History */}
       <section className="panel overflow-hidden">
         <header className="border-b border-line px-4 py-2.5">
@@ -300,6 +313,7 @@ function ShiftsWorkspace() {
               return <li key={shift.id} className="space-y-3 px-4 py-3.5">
                 <div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-semibold"><span className="tabular">{f.dateTime(shift.openedAt)}</span></p><p className="mt-0.5 text-[12px] text-ink-3">{t("salesWorkspace.openedByName", { name: isolate(shift.openedByName) })}</p></div>{shift.status === "open" ? <Badge variant="success" dot>{t("salesWorkspace.openState")}</Badge> : historyStatus === "variance_pending" ? <Badge variant="warning">{t("salesWorkspace.needsReview")}</Badge> : historyStatus === "variance_approved" ? <Badge variant="neutral">{t("salesWorkspace.differenceApproved")}</Badge> : historyStatus === "variance_rejected" ? <Badge variant="signal">{t("salesWorkspace.differenceRejected")}</Badge> : <Badge variant="outline">{t("salesWorkspace.noDifference")}</Badge>}</div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-[12.5px]"><div><dt className="text-ink-3">{t("salesWorkspace.startingCash")}</dt><dd className="mt-0.5"><MoneyText money={shift.openingFloat} /></dd></div><div><dt className="text-ink-3">{t("salesWorkspace.expected")}</dt><dd className="mt-0.5">{shift.expectedCash ? <MoneyText money={shift.expectedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("salesWorkspace.counted")}</dt><dd className="mt-0.5">{shift.countedCash ? <MoneyText money={shift.countedCash} /> : "—"}</dd></div><div><dt className="text-ink-3">{t("salesWorkspace.difference")}</dt><dd className={cn("mt-0.5", shift.variance && shift.variance.amount !== 0 && "font-semibold text-warning-deep")}>{shift.variance ? <MoneyText money={shift.variance} signed /> : "—"}</dd></div></dl>
+                {canCheckCash && shift.status === "closed" && shift.variance?.amount ? <div className="flex justify-end"><CheckCashDifferenceButton shiftId={shift.id} onStarted={showRun} /></div> : null}
                 {canReviewCashVariance(shift) ? <Gate permission="reconciliation.approve_variance"><div className="flex justify-end gap-2 border-t border-line pt-3"><Button variant="secondary" size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "rejected" })}><X /> {" "}{t("salesWorkspace.reject")}</Button><Button size="sm" onClick={() => setVarianceReview({ shiftId: shift.id, decision: "approved" })}><Check /> {" "}{t("salesWorkspace.approve")}</Button></div></Gate> : shift.varianceExplanation ? <p className="border-s-2 border-line-2 ps-3 text-[12px] text-ink-3">{shift.varianceExplanation}</p> : null}
               </li>;
             })}
@@ -344,6 +358,7 @@ function ShiftsWorkspace() {
                     ) : (
                       <Badge variant="outline">{t("salesWorkspace.noDifference")}</Badge>
                     )}
+                    {canCheckCash && s.status === "closed" && s.variance?.amount ? <div className="-ms-2 mt-0.5"><CheckCashDifferenceButton shiftId={s.id} onStarted={showRun} compact /></div> : null}
                   </TableCell>
                   <Gate permission="reconciliation.approve_variance">
                     <TableCell className="text-end">

@@ -4,6 +4,7 @@ import { paymentMethodLabel, roleLabel } from "@/lib/i18n/labels";
 import { useLocale, useT } from "@/lib/i18n/provider";
 
 import Link from "next/link";
+import { AssistanceLink } from "@/features/assist/assistance-link";
 import { Check, Pencil, Plus, UserPlus } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -855,6 +856,7 @@ export function RolesSection() {
           </div>
         </SettingsPanel>
       </div>
+      <AssistanceLink />
     </SettingsSection>
   );
 }

@@ -2,9 +2,11 @@
 
 Date: 24 October 2026, Asia/Amman.
 
-Status: **product direction requested by Hashem; implementation planned.**
-This document specifies new work. It does not claim that models, agents,
-provider connections, or the experiences below are implemented or released.
+Status: **product direction requested by Hashem; implementation in progress on
+the unreleased feature branch `codex/ai-native-rivet`.** This document specifies the
+work. It does not claim that models, agents, provider connections, or the
+experiences below are implemented or released; the canonical backlog (docs/13
+AI-0 to AI-5) and CURRENT_STATE record actual progress and evidence.
 
 ## 1. Product mandate
 

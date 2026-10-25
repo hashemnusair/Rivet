@@ -1307,6 +1307,8 @@ export interface GymOSApi {
   subscribeLead(leadId: UUID, onValue: (lead: LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void>;
   createLead(input: CreateLeadInput): Promise<LeadDetail>;
   updateLead(leadId: UUID, input: UpdateLeadInput): Promise<LeadDetail>;
+  /** Records that a lead asked not to be contacted, or may be contacted again; audited, and prepared calls leave the lead out. */
+  setLeadContactPreference(leadId: UUID, input: { doNotContact: boolean; reason?: string }): Promise<LeadDetail>;
   updateLeadContact(leadId: UUID, input: import("@/lib/domain/types").UpdateLeadContactInput): Promise<LeadDetail>;
   logContactAttempt(leadId: UUID, input: ContactAttemptInput): Promise<LeadDetail>;
   updateTrialBooking(
@@ -1541,6 +1543,52 @@ export interface GymOSApi {
   // Approvals
   listPendingApprovals(): Promise<import("@/lib/domain/types").AuditEvent[]>;
   reviewApproval(auditEventId: UUID, input: { decision: "approved" | "rejected"; note?: string }): Promise<void>;
+
+  // RIVET assistance and delegated work (docs/23). Convex authorizes every
+  // call; the mock simulates the same states with explicit fixtures.
+  getAiSettings(): Promise<import("@/lib/ai/contracts").AiSettingsView>;
+  updateAiSettings(input: import("@/lib/ai/contracts").UpdateAiSettingsInput): Promise<import("@/lib/ai/contracts").AiSettingsView>;
+  getMemberBrief(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemberBriefResult>;
+  /** The brief's first sentence for each visible member in a list; at most 25. */
+  getMemberHeadlines(memberIds: UUID[]): Promise<import("@/lib/ai/contracts").AiMemberHeadlinesResult>;
+  /** An unsaved collections call list for the displayed branch (AI-4.9). */
+  prepareCollections(query: { branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiCollectionsResult>;
+  /** Classes the member could be booked into this week (AI-4.5); computed on read. */
+  getClassOptions(query: { memberId: UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<import("@/lib/ai/contracts").AiClassOptionsResult>;
+  /** Owner: what RIVET did this month and how it turned out. */
+  getAiOutcomeSummary(): Promise<import("@/lib/ai/contracts").AiOutcomeSummary>;
+  /** Platform operators: the platform-wide assistance switch. */
+  getPlatformAiStatus(): Promise<import("@/lib/ai/contracts").AiPlatformStatus>;
+  setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }>;
+  /** Platform operators: which gyms may use assistance at all. No gym is available until one is made available here. */
+  getPlatformAiAvailability(): Promise<import("@/lib/ai/contracts").AiPlatformAvailability>;
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<import("@/lib/ai/contracts").AiGymAvailability>;
+  extractContactNote(input: { memberId?: UUID; leadId?: UUID; note: string; noteAt?: string; locale?: "en" | "ar" }): Promise<import("@/lib/ai/contracts").AiExtractNoteResult>;
+  interpretRunRevision(input: { runId: string; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretRevisionResult>;
+  interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<import("@/lib/ai/contracts").AiInterpretFiltersResult>;
+  startAiRun(input: import("@/lib/ai/contracts").StartAiRunInput): Promise<import("@/lib/ai/contracts").AiRunView>;
+  getAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  subscribeAiRun(runId: string, onValue: (run: import("@/lib/ai/contracts").AiRunView) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  listAiRuns(query: { playbook?: import("@/lib/ai/contracts").AiPlaybookKey; branchId?: UUID; limit?: number }): Promise<import("@/lib/ai/contracts").AiRunView[]>;
+  cancelAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  reviseAiRun(input: { runId: string; text: string; revision: import("@/lib/ai/contracts").AiRunRevision }): Promise<import("@/lib/ai/contracts").AiRunView>;
+  takeOverAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  retryAiRun(runId: string): Promise<import("@/lib/ai/contracts").AiRunView>;
+  listStandingInstructions(): Promise<import("@/lib/ai/contracts").AiStandingInstructionView[]>;
+  previewStandingInstruction(input: { playbook: import("@/lib/ai/contracts").AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: UUID }): Promise<import("@/lib/ai/contracts").AiStandingPreview>;
+  createStandingInstruction(input: import("@/lib/ai/contracts").CreateStandingInstructionInput & { previewDigest: string }): Promise<import("@/lib/ai/contracts").AiStandingInstructionView>;
+  updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: UUID; reason?: string }): Promise<import("@/lib/ai/contracts").AiStandingInstructionView>;
+  listAiProposals(query: { runId?: string }): Promise<import("@/lib/ai/contracts").AiProposalView[]>;
+  decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<import("@/lib/ai/contracts").AiProposalView>;
+  /** Approve several prepared changes in one run in one step; each is rechecked and the result says what happened to each. */
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<import("@/lib/ai/contracts").AiApproveAllResult>;
+  getAiArtifact(artifactId: string): Promise<import("@/lib/ai/contracts").AiArtifactView>;
+  listMemberMemories(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemoryView[]>;
+  recordMemberMemory(input: { memberId: UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<import("@/lib/ai/contracts").AiMemoryView>;
+  revokeMemberMemory(memoryId: string): Promise<void>;
+  recordAiFeedback(input: import("@/lib/ai/contracts").AiFeedbackInput): Promise<void>;
+  /** A contact RIVET prepared was not needed: closes the task if still open and counts it in the monthly summary. */
+  markAiTaskNotNeeded(input: { taskId: UUID; reason?: string }): Promise<{ taskId: UUID; closed: boolean; alreadyMarked: boolean }>;
 
   // Demo utilities
   resetDemo(): Promise<void>;

@@ -23,6 +23,7 @@ import {
   requirePermission,
   requirePlatformAdmin,
   requireReason,
+  deriveRequest,
   type ActorContext,
   type OrganizationRole,
   type StoredOrganizationRole,
@@ -68,9 +69,19 @@ import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, e
 import { pendingOnboardingFee } from "./onboardingBilling";
 import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
-import { buildMemberFollowUpContext, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
+import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
+import { authorityInput, canReadRun, dropModelCache } from "./aiPolicy";
+import { runOriginHref, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
+import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
+import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
+import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
+import type { CashShiftFacts } from "../src/lib/ai/cash-difference";
+import type { LeadFollowUpFacts } from "../src/lib/ai/sales-batch";
+import type { CollectionMemberFacts } from "../src/lib/ai/collections";
+import { consentForRenewalChannel } from "./renewalPolicy";
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "./messagingTemplates";
-import { classesMutation, classesQuery, customerClassesMutation, customerClassesQuery } from "./classes";
+import { classesMutation, classesQuery, classOptionFactsFor, customerClassesMutation, customerClassesQuery } from "./classes";
 import { analyticsQuery } from "./analyticsReports";
 import { checklistsMutation, checklistsQuery, checklistTodayQueueItems } from "./branchChecklists";
 import { accountingMutation, accountingQuery } from "./accounting";
@@ -1284,6 +1295,8 @@ async function insertTimeline(ctx: MutationCtx, actor: ActorContext, value: Data
     ...value,
     actorId: optionalString(value.actorId) ?? publicUserId(actor.user),
     actorName: optionalString(value.actorName) ?? actor.user.fullName,
+    // Delegated work names the accountable person and the run that acted for them.
+    ...(actor.delegation ? { meta: { ...data(value.meta), delegationRunId: actor.delegation.runPublicId, delegationGrantId: actor.delegation.grantPublicId, delegationTool: actor.delegation.tool } } : {}),
   };
   return await insertRecord(ctx, actor, "timeline", event, {
     branchId: optionalString(event.branchId) ?? optionalString(event.homeBranchId),
@@ -1337,6 +1350,7 @@ async function insertAudit(
     before: value.before,
     after: value.after,
     approvalStatus: value.approvalStatus,
+    ...(actor.delegation ? { details: { delegation: { runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId, tool: actor.delegation.tool } } } : {}),
     correlationId: actor.correlationId,
     occurredAt: Date.now(),
   };
@@ -1523,6 +1537,7 @@ export async function followUpRelatedTasks(ctx: ReadContext, actor: ActorContext
       id: stringValue(task.id),
       type: stringValue(task.type, "general"),
       title: stringValue(task.title),
+      ...(preparedTaskTitleMessage(task.titleMessage) ? { titleMessage: task.titleMessage as SystemMessage } : {}),
       ownerId: optionalString(task.ownerId),
       ownerName: stringValue(task.ownerName, "Unassigned"),
       dueAt: stringValue(task.dueAt),
@@ -1608,6 +1623,362 @@ export async function memberFollowUpContextData(ctx: ReadContext, actor: ActorCo
     now: Date.now(),
     organizationDefaultLanguage: actor.organization.defaultLanguage,
   });
+}
+
+// ---------------------------------------------------------------------------
+// RIVET assistance: domain facts for the AI layer (docs/23). These loaders
+// read through the same actor scope as every other operation; the AI layer
+// never reads domain tables directly for business facts.
+// ---------------------------------------------------------------------------
+
+function localHourOf(instant: string, timezone: string): number | undefined {
+  const parsed = Date.parse(instant);
+  if (!Number.isFinite(parsed)) return undefined;
+  try {
+    const hour = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(new Date(parsed));
+    return Number(hour);
+  } catch {
+    return undefined;
+  }
+}
+
+async function eveningClassOptions(ctx: ReadContext, actor: ActorContext, branchPublicId: string | undefined): Promise<MemberClassOptions | undefined> {
+  if (!branchPublicId) return undefined;
+  const branch = await branchByPublicId(ctx, actor.organization._id, branchPublicId);
+  if (!branch) return undefined;
+  const sessions = await ctx.db.query("classSessions").withIndex("by_branch", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id)).take(200);
+  // Weekly templates: each scheduled slot happens once in the next seven days.
+  const active = sessions.filter((session) => session.status !== "cancelled" && typeof session.startMinute === "number");
+  return {
+    branchName: branch.name,
+    eveningNext7Days: active.filter((session) => (session.startMinute ?? 0) >= 17 * 60).length,
+    morningNext7Days: active.filter((session) => (session.startMinute ?? 0) < 12 * 60).length,
+  };
+}
+
+async function memberCheckInSummary(ctx: ReadContext, actor: ActorContext, memberId: string, branchPublicId: string | undefined, today: string): Promise<{ attendance: MemberAttendance; localHours: number[] }> {
+  const timezone = actor.organization.timezone || TZ_FALLBACK;
+  const rows = (await ctx.db.query("domainRecords").withIndex("by_organization_member_type", (q) => q.eq("organizationId", actor.organization._id).eq("memberPublicId", memberId).eq("entityType", "checkIn")).collect()).filter((record) => inActorScope(actor, record));
+  const visits = rows.map((row) => ({ id: row.publicId, at: stringValue(data(row.data).occurredAt) })).filter((visit) => Number.isFinite(Date.parse(visit.at))).sort((left, right) => right.at.localeCompare(left.at));
+  const recentFrom = addDays(today, -28);
+  const priorFrom = addDays(today, -84);
+  let captured = visits.length > 0;
+  if (!captured && branchPublicId) {
+    // No visit for this member: absence is only meaningful if the branch records check-ins at all.
+    const branch = await branchByPublicId(ctx, actor.organization._id, branchPublicId);
+    if (branch) captured = Boolean(await ctx.db.query("domainRecords").withIndex("by_organization_branch_type_created", (q) => q.eq("organizationId", actor.organization._id).eq("branchId", branch._id).eq("entityType", "checkIn")).order("desc").first());
+  }
+  const localDate = (instant: string) => businessDate(instant, timezone);
+  const last = visits[0];
+  return {
+    attendance: {
+      captured,
+      ...(last ? { lastVisitAt: last.at, lastVisitId: last.id } : {}),
+      visitsLast28Days: visits.filter((visit) => localDate(visit.at) > recentFrom).length,
+      visitsPrior56Days: visits.filter((visit) => localDate(visit.at) > priorFrom && localDate(visit.at) <= recentFrom).length,
+    },
+    localHours: visits.filter((visit) => localDate(visit.at) > addDays(today, -60)).map((visit) => localHourOf(visit.at, timezone)).filter((hour): hour is number => hour !== undefined),
+  };
+}
+
+export async function memberBriefFacts(ctx: ReadContext, actor: ActorContext, memberId: string): Promise<MemberBriefFacts> {
+  const context = await memberFollowUpContextData(ctx, actor, memberId);
+  const memberRecord = await recordOf(ctx, actor, "member", memberId);
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const branchPublicId = optionalString(member.homeBranchId);
+  const { attendance } = await memberCheckInSummary(ctx, actor, memberId, branchPublicId, today);
+  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data));
+  const frozen = memberships.map((term) => data(term.activeFreeze)).find((freeze) => optionalString(freeze.startDate) && stringValue(freeze.startDate) <= today && (!optionalString(freeze.endDate) || stringValue(freeze.endDate) >= today) && stringValue(freeze.status, "active") !== "ended");
+  return {
+    context,
+    attendance,
+    ...(frozen ? { activeFreeze: { startDate: stringValue(frozen.startDate), ...(optionalString(frozen.endDate) ? { endDate: stringValue(frozen.endDate) } : {}) } } : {}),
+    classOptions: await eveningClassOptions(ctx, actor, branchPublicId),
+    ...(memberRecord.branchId ? { memberBranchId: memberRecord.branchId } : {}),
+  };
+}
+
+/**
+ * Current facts for one member's renewal follow-up, loaded inside the write
+ * transaction so a renewal, contact, freeze, opt-out or new task recorded a
+ * moment ago changes the decision. `membershipId` is the term the batch planned
+ * around; a successor for it means the member renewed. The composition is
+ * shared with the preview adapter (`composeRenewalFacts`).
+ */
+/**
+ * The recorded drawer story for one shift, for the cash-difference
+ * investigation: every payment and refund tied to the shift (voided ones
+ * included, marked as such), supplier cash and the stored close figures. Read
+ * only; branch scope and reconciliation access apply as for the shift list.
+ */
+export async function cashShiftFactsFor(ctx: ReadContext, actor: ActorContext, shiftId: string): Promise<CashShiftFacts> {
+  requirePermission(actor, "reconciliation.read");
+  const record = await recordOf(ctx, actor, "shift", shiftId);
+  const shift = data(record.data);
+  const transactions = (await paymentRecords(ctx, actor))
+    .filter((row) => data(row.data).shiftId === record.publicId)
+    .map((row) => {
+      const payment = data(row.data);
+      return {
+        id: row.publicId,
+        ...(optionalString(payment.receiptId) ? { receiptId: stringValue(payment.receiptId) } : {}),
+        ...(optionalString(payment.receiptNumber) ? { receiptNumber: stringValue(payment.receiptNumber) } : {}),
+        type: stringValue(payment.type),
+        method: stringValue(payment.method),
+        status: stringValue(payment.status),
+        amountMinor: Math.abs(amountOf(payment.amount)),
+        occurredAt: stringValue(payment.occurredAt),
+        ...(optionalString(payment.memberName) ? { memberName: stringValue(payment.memberName) } : {}),
+        updatedAt: row.updatedAt,
+      };
+    });
+  const supplierCash = await supplierCashShiftMovements(ctx, actor, record.publicId);
+  const closed = shift.status === "closed";
+  return {
+    shiftId: record.publicId,
+    branchId: stringValue(shift.branchId),
+    status: stringValue(shift.status),
+    openedAt: stringValue(shift.openedAt),
+    ...(optionalString(shift.closedAt) ? { closedAt: stringValue(shift.closedAt) } : {}),
+    ...(optionalString(shift.openedByName) ? { openedByName: stringValue(shift.openedByName) } : {}),
+    ...(optionalString(shift.closedById) ? { closedByName: (await userByPublicId(ctx, actor.organization._id, stringValue(shift.closedById)))?.fullName ?? "" } : {}),
+    currency: actor.organization.currency,
+    timezone: actor.organization.timezone || TZ_FALLBACK,
+    openingFloatMinor: amountOf(shift.openingFloat),
+    ...(closed ? { expectedCashMinor: amountOf(shift.expectedCash), countedCashMinor: amountOf(shift.countedCash), varianceMinor: amountOf(shift.variance) } : {}),
+    varianceApprovalStatus: stringValue(shift.varianceApprovalStatus, "none"),
+    ...(optionalString(shift.varianceExplanation) ? { varianceExplanation: stringValue(shift.varianceExplanation) } : {}),
+    supplierCashPaidMinor: supplierCash.paidMinor,
+    supplierCashReversedMinor: supplierCash.reversedMinor,
+    transactions,
+    updatedAt: record.updatedAt,
+  };
+}
+
+/**
+ * Recorded facts for one lead, reloaded inside the write transaction of a
+ * prepared lead follow-up. Null when the lead is outside the actor's scope.
+ */
+export async function leadFollowUpFactsFor(ctx: ReadContext, actor: ActorContext, leadId: string): Promise<LeadFollowUpFacts | null> {
+  requirePermission(actor, "crm.read");
+  let record: DomainRecord;
+  try {
+    record = await recordOf(ctx, actor, "lead", leadId);
+  } catch {
+    return null;
+  }
+  const lead = data(record.data);
+  const [summary] = await toLeadSummaries(ctx, actor, [lead]);
+  const openTasks = (await followUpRelatedTasks(ctx, actor, { leadId: record.publicId })).map((task) => ({ id: task.id, title: task.title }));
+  const fullName = stringValue(lead.fullName);
+  return {
+    leadId: record.publicId,
+    leadName: fullName,
+    stage: stringValue(lead.stage, "new"),
+    ...(optionalString(lead.branchId) ? { branchId: stringValue(lead.branchId) } : {}),
+    ...(optionalString(lead.ownerId) ? { ownerId: stringValue(lead.ownerId) } : {}),
+    ...(optionalString(lead.phone) ? { phone: stringValue(lead.phone) } : {}),
+    ...(optionalString(lead.nextFollowUpAt) ? { nextFollowUpAt: stringValue(lead.nextFollowUpAt) } : {}),
+    ...(optionalString(summary?.lastContactAt) ? { lastContactAt: stringValue(summary?.lastContactAt) } : {}),
+    ...(optionalString(lead.convertedMemberId) ? { convertedMemberId: stringValue(lead.convertedMemberId) } : {}),
+    ...(lead.doNotContact ? { doNotContact: true } : {}),
+    openTasks,
+    draft: followUpHandoffDraft({ fullName, preferredLanguage: lead.preferredLanguage }, actor.organization.name, actor.organization.defaultLanguage),
+  };
+}
+
+/**
+ * A prepared change is waiting: owners and managers who can see the branch
+ * hear about it on the bell, like a cash difference waiting for review. The
+ * person who asked RIVET already gets the run notification.
+ */
+export async function notifyProposalWaiting(ctx: MutationCtx, input: { organizationId: Id<"organizations">; branchPublicId?: string; requesterName: string; href: string; dedupeKey: string; excludeUserId: Id<"users"> }): Promise<void> {
+  const branch = input.branchPublicId ? await branchByPublicId(ctx, input.organizationId, input.branchPublicId) : null;
+  await notifyOrganizationRoles(ctx, { organizationId: input.organizationId, branchId: branch?._id, roles: ["owner", "manager"], kind: "ai_proposal", title: "A prepared change is waiting for approval", body: `Prepared by RIVET for ${input.requesterName}`, titleMessage: systemMessage("communicationCompletion.notifications.aiProposalWaiting"), bodyMessage: systemMessage("communicationCompletion.notifications.aiProposalFor", { name: input.requesterName }), href: input.href, dedupeKey: input.dedupeKey, excludeUserId: input.excludeUserId });
+}
+
+/**
+ * Members with collectible money still owed, with their last receipt and last
+ * recorded contact, for the unsaved collections call list. Read only; branch
+ * scope applies through the same record reads as the members list.
+ */
+export async function collectionFactsFor(ctx: ReadContext, actor: ActorContext, branchId: string | undefined, limit: number): Promise<{ facts: CollectionMemberFacts[]; considered: number }> {
+  requirePermission(actor, "members.read");
+  const today = tenantToday(actor);
+  const owedByMember = new Map<string, Array<{ id: string; dueDate: string; outstandingMinor: number }>>();
+  for (const record of await chargeRecords(ctx, actor)) {
+    const charge = data(record.data);
+    const outstandingMinor = collectibleOutstandingValue(charge, today);
+    const memberId = optionalString(charge.memberId);
+    if (!memberId || outstandingMinor <= 0) continue;
+    owedByMember.set(memberId, [...(owedByMember.get(memberId) ?? []), { id: record.publicId, dueDate: chargeDueDateValue(charge), outstandingMinor }]);
+  }
+  if (!owedByMember.size) return { facts: [], considered: 0 };
+  const members = (await recordsOf(ctx, actor, "member")).filter((record) => {
+    const member = data(record.data);
+    return owedByMember.has(record.publicId) && stringValue(member.status, "active") !== "archived" && (!branchId || stringValue(member.homeBranchId) === branchId);
+  });
+  // Read the expensive facts only for the people who will be shown: oldest and largest debts first.
+  const ranked = members.sort((left, right) => {
+    const a = owedByMember.get(left.publicId)!;
+    const b = owedByMember.get(right.publicId)!;
+    const oldest = (rows: typeof a) => rows.map((row) => row.dueDate).sort()[0]!;
+    return oldest(a).localeCompare(oldest(b)) || b.reduce((sum, row) => sum + row.outstandingMinor, 0) - a.reduce((sum, row) => sum + row.outstandingMinor, 0);
+  }).slice(0, limit);
+  const lastPaymentByMember = new Map<string, Data>();
+  for (const record of await paymentRecords(ctx, actor)) {
+    const payment = data(record.data);
+    const memberId = optionalString(payment.memberId);
+    if (!memberId || payment.type !== "payment" || payment.status === "voided") continue;
+    const prior = lastPaymentByMember.get(memberId);
+    if (!prior || stringValue(payment.occurredAt) > stringValue(prior.occurredAt)) lastPaymentByMember.set(memberId, payment);
+  }
+  const facts: CollectionMemberFacts[] = [];
+  for (const record of ranked) {
+    const member = data(record.data);
+    const contacts = (await recordsOfMemberIdentity(ctx, actor, record.publicId, "timeline")).map((row) => data(row.data)).filter((event) => ["call_attempt", "message"].includes(stringValue(event.type)));
+    const lastContactAt = contacts.map((event) => stringValue(event.occurredAt)).sort().at(-1);
+    const payment = lastPaymentByMember.get(record.publicId);
+    const consent = consentForRenewalChannel(member, "whatsapp");
+    const language = optionalString(member.preferredLanguage);
+    facts.push({
+      memberId: record.publicId,
+      memberName: stringValue(member.fullName),
+      ...(optionalString(member.phone) ? { phone: stringValue(member.phone) } : {}),
+      ...(language === "ar" || language === "en" ? { preferredLanguage: language } : {}),
+      charges: owedByMember.get(record.publicId)!,
+      ...(payment ? { lastPayment: { ...(optionalString(payment.receiptId) ? { receiptId: stringValue(payment.receiptId) } : {}), ...(optionalString(payment.receiptNumber) ? { receiptNumber: stringValue(payment.receiptNumber) } : {}), at: stringValue(payment.occurredAt), amountMinor: Math.abs(amountOf(payment.amount)) } } : {}),
+      ...(lastContactAt ? { lastContactAt } : {}),
+      optedOut: consent.status === "explicit_opt_out" || consent.channelOptedOut,
+    });
+  }
+  return { facts, considered: members.length };
+}
+
+/** Current versions of the records a prepared change was bound to; a missing record reads as -1. */
+export async function aiSourceVersions(ctx: ReadContext, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]> {
+  const versions: number[] = [];
+  for (const source of sources) {
+    const row = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", source.table).eq("publicId", source.id)).unique();
+    versions.push(row ? row.updatedAt : -1);
+  }
+  return versions;
+}
+
+export async function renewalFactsForMember(ctx: ReadContext, actor: ActorContext, memberId: string, membershipId: string | undefined): Promise<RenewalMemberFacts | null> {
+  let context: MemberFollowUpContext;
+  let memberRecord: DomainRecord;
+  try {
+    memberRecord = await recordOf(ctx, actor, "member", memberId);
+    context = await memberFollowUpContextData(ctx, actor, memberId);
+  } catch {
+    return null;
+  }
+  const member = data(memberRecord.data);
+  const today = tenantToday(actor);
+  const memberships = (await recordsOfMemberIdentity(ctx, actor, memberId, "membership")).map((row) => data(row.data)).map((term) => {
+    const freeze = data(term.activeFreeze);
+    return { id: stringValue(term.id), startDate: stringValue(term.startDate), endDate: stringValue(term.endDate), previousMembershipId: optionalString(term.previousMembershipId), cancelledAt: optionalString(term.cancelledAt), ...(term.activeFreeze ? { activeFreeze: { status: optionalString(freeze.status), startDate: optionalString(freeze.startDate), endDate: optionalString(freeze.endDate) } } : {}) };
+  });
+  const retention = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "retentionState").eq("publicId", `retention:${memberId}`)).unique();
+  const memories = (await ctx.db.query("aiMemories").withIndex("by_organization_subject", (q) => q.eq("organizationId", actor.organization._id).eq("subjectType", "member").eq("subjectId", memberId)).take(50)).map((row) => ({ topic: row.topic, status: row.status, effectiveUntil: row.effectiveUntil, text: row.text }));
+  const { localHours } = await memberCheckInSummary(ctx, actor, memberId, optionalString(member.homeBranchId), today);
+  const classOptions = await eveningClassOptions(ctx, actor, optionalString(member.homeBranchId));
+  return composeRenewalFacts({
+    context,
+    member: { status: optionalString(member.status), preferredLanguage: optionalString(member.preferredLanguage), assignedSalespersonId: optionalString(member.assignedSalespersonId), homeBranchId: optionalString(member.homeBranchId) },
+    memberships,
+    plannedMembershipId: membershipId,
+    snoozedUntil: retention ? optionalString(data(retention.data).snoozedUntil) : undefined,
+    memories,
+    localVisitHours: localHours,
+    eveningClassesNext7Days: classOptions?.eveningNext7Days ?? 0,
+    gymName: actor.organization.name,
+    gymDefaultLanguage: actor.organization.defaultLanguage,
+    today,
+  });
+}
+
+/** Active, accepted staff of the actor's gym, for owner/transfer choices. */
+async function aiStaffMembers(ctx: ReadContext, actor: ActorContext): Promise<Array<{ id: string; userId: Id<"users">; name: string; active: boolean }>> {
+  const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+  const staff = [];
+  for (const membership of memberships) {
+    if (!membership.active || !membershipInvitationAccepted(membership) || membership.role === "auditor") continue;
+    const user = await ctx.db.get(membership.userId);
+    if (!user || user.status === "deactivated" || user.status === "invited") continue;
+    staff.push({ id: publicUserId(user), userId: user._id, name: user.fullName, active: true });
+  }
+  return staff;
+}
+
+async function aiEntitledModules(ctx: ReadContext, actor: ActorContext): Promise<string[]> {
+  const access = await workspaceAccessData(ctx, actor);
+  const entitled = new Set(arrayValue(data(access.entitlements).entitledModules).map(String));
+  return arrayValue(data(access.preferences).enabledModules).map(String).filter((key) => entitled.has(key));
+}
+
+/** What a renewal batch would do right now, without writing anything (standing-instruction preview). */
+async function previewAiPlaybook(ctx: QueryCtx, actor: ActorContext, playbook: AiPlaybookKey, params: Record<string, string | number | boolean>, request: RequestArgs): Promise<{ subjects: Array<{ id: string; name: string; decision: string; reason?: string }>; digest: string }> {
+  if (playbook !== "renewal_followups") return { subjects: [], digest: previewDigest([]) };
+  const queue = data(await queryData(ctx, "renewal.queue", { bucket: params.bucket ?? "expiring", ...(params.days ? { days: params.days } : {}), page: 1, pageSize: 100 }, request));
+  const today = tenantToday(actor);
+  const subjects = [];
+  for (const item of arrayValue(queue.items).map(data).slice(0, 100)) {
+    const memberId = stringValue(data(item.member).id);
+    const facts = await renewalFactsForMember(ctx, actor, memberId, optionalString(data(item.membership).id));
+    if (!facts) continue;
+    const decision = evaluateRenewalCandidate(facts, { today, now: isoNow(), revisions: [] });
+    subjects.push({ id: memberId, name: facts.memberName, decision: decision.decision, ...(decision.decision === "exclude" ? { reason: decision.reason } : {}) });
+  }
+  return { subjects, digest: previewDigest(subjects) };
+}
+
+export const aiDomainPort: AiDomainPort = {
+  memberBriefFacts,
+  entitledModules: aiEntitledModules,
+  insertAudit: async (ctx, actor, value) => await insertAudit(ctx, actor, value),
+  scopedMember: async (ctx, actor, memberId) => {
+    const record = await recordOf(ctx, actor, "member", memberId);
+    const value = data(record.data);
+    return { publicId: record.publicId, fullName: stringValue(value.fullName), ...(optionalString(value.homeBranchId) ? { branchPublicId: stringValue(value.homeBranchId) } : {}) };
+  },
+  tenantToday,
+  previewPlaybook: previewAiPlaybook,
+  staffMembers: aiStaffMembers,
+  cashShiftFacts: cashShiftFactsFor,
+  collectionFacts: collectionFactsFor,
+  classOptionFacts: classOptionFactsFor,
+  sourceVersions: aiSourceVersions,
+  executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
+  closePreparedTaskAsNotNeeded: async (ctx, actor, taskId) => {
+    const record = await recordOf(ctx, actor, "task", taskId);
+    const task = data(record.data);
+    const origin = data(task.origin);
+    if (stringValue(origin.kind) !== "ai_run") domainError("VALIDATION_ERROR", "Only work RIVET prepared can be marked as not needed.", { correlationId: actor.correlationId });
+    // Only from work the person can see: a task with no member or lead has no branch of its own, its run does.
+    const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", stringValue(origin.runId))).unique();
+    if (!run || !canReadRun(actor, run)) domainError("NOT_FOUND", "Record not found.", { correlationId: actor.correlationId });
+    let closed = false;
+    if (stringValue(task.status, "open") === "open") {
+      await patchRecord(ctx, actor, record, { status: "cancelled", outcome: "Not needed", completedAt: isoNow() });
+      closed = true;
+      const titleMessage = preparedTaskTitleMessage(task.titleMessage);
+      if (task.memberId) await insertTimeline(ctx, actor, { memberId: stringValue(task.memberId), type: "task_completed", title: `Task not needed: ${stringValue(task.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskNotNeeded", { title: titleMessage ? { message: titleMessage } : stringValue(task.title) }), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+    }
+    const branchId = task.memberId ? optionalString(data((await recordOfOptional(ctx, actor, "member", stringValue(task.memberId)))?.data).homeBranchId) : task.leadId ? optionalString(data((await recordOfOptional(ctx, actor, "lead", stringValue(task.leadId)))?.data).branchId) : undefined;
+    return { runId: stringValue(origin.runId), title: stringValue(task.title), ...(branchId ? { branchId } : {}), closed };
+  },
+};
+
+/** The existing domain handlers, for the delegated-work executor. */
+export async function executeDomainQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  return await queryData(ctx, operation, input, request);
+}
+
+export async function executeDomainMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  return await mutationData(ctx, operation, input, request);
 }
 
 /** An explicit, accepted link from a new task to an existing open task about the same person; never inferred. */
@@ -5397,6 +5768,7 @@ function pinnedWorkspaceItemView(row: Doc<"pinnedWorkspaceItems">): Data {
 }
 
 async function queryData(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if ((AI_QUERY_OPERATIONS as readonly string[]).includes(operation)) return await aiQuery(ctx, operation, input, request, aiDomainPort);
   if (operation === "users.profile.get") {
     const actor = await requireActor(ctx, request);
     return { id: publicUserId(actor.user), name: actor.user.fullName, email: actor.user.email, phone: actor.user.phone ?? "" };
@@ -6003,7 +6375,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
   }
 
   const actor = operation === "exports.list" || operation === "exports.request"
-    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    ? await requireExportActor(ctx, deriveRequest(request, { organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) }))
     : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
@@ -7720,7 +8092,26 @@ async function createMembershipMutation(
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
   if (operation === "sale") await applyReferralReward(ctx, actor, memberData);
+  if (operation !== "plan_change") await closeObsoleteAiRenewalWork(ctx, actor, stringValue(memberData.id), membership.id);
   return result;
+}
+
+/**
+ * A renewal or new membership makes RIVET-prepared renewal follow-ups for
+ * the member obsolete. They close in the same transaction as the sale, so a
+ * call is never placed to someone who just renewed. Staff-created tasks and
+ * the renewal journey's own call tasks keep their existing behavior.
+ */
+async function closeObsoleteAiRenewalWork(ctx: MutationCtx, actor: ActorContext, memberId: string, newMembershipId: string): Promise<void> {
+  const tasks = await recordsOfMember(ctx, actor.organization._id, memberId, "task");
+  for (const record of tasks) {
+    const task = data(record.data);
+    if (stringValue(task.status, "open") !== "open") continue;
+    if (stringValue(data(task.origin).kind) !== "ai_run" || stringValue(data(task.aiContext).purpose) !== "renewal") continue;
+    if (optionalString(data(task.aiContext).membershipId) === newMembershipId) continue;
+    await ctx.db.patch(record._id, { data: { ...task, status: "completed", outcome: "Renewed — follow-up no longer needed", completedAt: isoNow(), closedBy: "renewal" }, updatedAt: Date.now() });
+    await insertTimeline(ctx, actor, { memberId, type: "task_completed", title: `Task completed: ${stringValue(task.title)}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(task.title) }), body: "Renewed — follow-up no longer needed", meta: { reason: "renewed", taskId: record.publicId, runId: optionalString(data(task.origin).runId) } });
+  }
 }
 
 /**
@@ -7879,6 +8270,11 @@ async function createMemberMembershipSaleMutation(ctx: MutationCtx, actor: Actor
   return { member: await toMemberDetail(ctx, actor, data(member.data)), sale };
 }
 
+/** A task-title descriptor RIVET wrote, or nothing: only renderable `communicationCompletion.tasks.*` descriptors are kept. */
+function preparedTaskTitleMessage(value: unknown): SystemMessage | undefined {
+  return isRenderableSystemMessage(value) && value.key.startsWith("communicationCompletion.tasks.") ? value : undefined;
+}
+
 async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: Data): Promise<Data> {
   requirePermission(actor, "crm.write");
   const ownerId = recordId(input.ownerId);
@@ -7888,8 +8284,13 @@ async function createTaskMutation(ctx: MutationCtx, actor: ActorContext, input: 
   const member = input.memberId ? await recordOf(ctx, actor, "member", stringValue(input.memberId)) : null;
   const subject = lead ? data(lead.data).fullName : member ? data(member.data).fullName : "—";
   const related = await relatedTaskLink(ctx, actor, input, { memberId: optionalString(input.memberId), leadId: optionalString(input.leadId) });
-  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}) }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
-  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+  // Only a delegated actor can mark a task as prepared by RIVET; clients cannot claim that origin.
+  const aiContext = actor.delegation ? data(input.aiContext) : {};
+  const origin = actor.delegation ? { origin: { kind: "ai_run", runId: actor.delegation.runPublicId, grantId: actor.delegation.grantPublicId }, ...(optionalString(aiContext.purpose) ? { aiContext: { purpose: stringValue(aiContext.purpose), membershipId: optionalString(aiContext.membershipId), topic: optionalString(aiContext.topic) } } : {}) } : {};
+  // A translatable title rides beside the stored English only for a title RIVET itself wrote.
+  const titleMessage = actor.delegation ? preparedTaskTitleMessage(input.titleMessage) : undefined;
+  const task = await insertRecord(ctx, actor, "task", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), type: stringValue(input.type, "general"), title: stringValue(input.title), ...(titleMessage ? { titleMessage } : {}), ownerId, ownerName: owner.fullName, dueAt: stringValue(input.dueAt), priority: stringValue(input.priority, "normal"), status: "open", leadId: optionalString(input.leadId), memberId: optionalString(input.memberId), subjectName: stringValue(subject), createdById: publicUserId(actor.user), createdAt: isoNow(), ...(related ? { relatedTaskId: related.id, relatedTaskTitle: related.title } : {}), ...origin }, { branchId: lead ? optionalString(data(lead.data).branchId) : member ? optionalString(data(member.data).homeBranchId) : undefined, memberPublicId: optionalString(input.memberId), leadPublicId: optionalString(input.leadId) });
+  if (member) await insertTimeline(ctx, actor, { memberId: member.publicId, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: titleMessage ? { message: titleMessage } : stringValue(task.title) }), body: related ? `Follow-on to: ${related.title}` : undefined, ...(related ? { bodyMessage: systemMessage("communicationCompletion.timeline.taskFollowOn", { title: related.title }) } : {}), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
   return task;
 }
 
@@ -8255,6 +8656,9 @@ async function resolveDuplicateMutation(ctx: MutationCtx, actor: ActorContext, i
     const timeline = await insertTimeline(ctx, actor, { memberId: survivingMemberId, branchId: optionalString(patch.homeBranchId) ?? optionalString(survivorValue.homeBranchId), type: "member_merged", title: `Merged duplicate record ${stringValue(mergedValue.memberNumber)}`, titleMessage: systemMessage("communicationCompletion.timeline.memberMerged", { memberNumber: stringValue(mergedValue.memberNumber) }), body: reason, meta: { caseId, mergedMemberId, retainedHistoricalMemberIds: patch.mergedMemberIds } });
     const audit = await insertAudit(ctx, actor, { category: "members", action: "member.merge", entityType: "member", entityId: survivingMemberId, entityLabel: `${stringValue(patch.fullName, stringValue(survivorValue.fullName))} · ${stringValue(survivorValue.memberNumber)}`, summary: `Merged ${stringValue(mergedValue.memberNumber)} into ${stringValue(survivorValue.memberNumber)} without rewriting historical records`, reason, before: { survivor: survivorValue, merged: mergedValue }, after: { survivingMemberId, mergedMemberId, selectedFieldSources: sources, mergedTimelineEventId: timeline.id, retainedHistoricalMemberIds: patch.mergedMemberIds, customerMembershipProjectionsRelinked: mergedProjections.length } });
     mergeAuditReference = stringValue(audit.publicId);
+    // Kept assistant readings about either record are dropped with the merge.
+    await dropModelCache(ctx, actor.organization._id, { type: "member", id: survivingMemberId });
+    await dropModelCache(ctx, actor.organization._id, { type: "member", id: mergedMemberId });
   }
 
   const resolutionValue = { id: caseId, status: resolution, reasons: current.reasons, confidence: current.confidence, primaryMemberId: primary.id, candidateMemberId: candidate.id, survivingMemberId, reason, correlationId: actor.correlationId, mergeAuditReference, createdAt: now, updatedAt: now };
@@ -8515,6 +8919,7 @@ async function ensureCustomerReferralLink(ctx: MutationCtx, membershipId: string
 }
 
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  if ((AI_MUTATION_OPERATIONS as readonly string[]).includes(operation)) return await aiMutation(ctx, operation, input, request, aiDomainPort);
   if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
     const { user } = await requireAuthenticated(ctx);
@@ -9955,7 +10360,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
   }
 
   const actor = operation === "exports.list" || operation === "exports.request"
-    ? await requireExportActor(ctx, { ...request, organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) })
+    ? await requireExportActor(ctx, deriveRequest(request, { organizationId: optionalString(input.organizationId) ?? request.organizationId, ...(input.organizationId ? { branchId: undefined, activeBranchId: undefined } : {}) }))
     : await requireActor(ctx, request);
   const orgId = publicOrganizationId(actor.organization);
 
@@ -10334,6 +10739,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         await ctx.db.delete(asset._id);
       }));
       await ctx.db.delete(record._id);
+      await dropModelCache(ctx, actor.organization._id, { type: "member", id: record.publicId });
       return undefined;
     }
     case "members.note": {
@@ -11209,6 +11615,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = data(record.data);
       const patch: Data = { ...input, updatedAt: isoNow() };
       delete patch.leadId;
+      // Contact consent changes only through its own audited operation.
+      delete patch.doNotContact;
       if (Object.prototype.hasOwnProperty.call(input, "ownerId")) {
         const requestedOwnerId = input.ownerId === "unassigned" ? undefined : recordId(input.ownerId);
         if (requestedOwnerId && requestedOwnerId !== current.ownerId) requirePermission(actor, "crm.assign");
@@ -11245,6 +11653,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         });
       }
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities: [], offers: [] };
+    }
+    case "leads.contact_preference": {
+      // A lead who asked not to be contacted is recorded, audited and left out of prepared calls.
+      requirePermission(actor, "crm.write");
+      const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      const current = data(record.data);
+      const doNotContact = input.doNotContact === true;
+      const reason = optionalString(input.reason)?.trim().slice(0, 200) || undefined;
+      const lead = Boolean(current.doNotContact) === doNotContact
+        ? current
+        : await patchRecord(ctx, actor, record, { doNotContact: doNotContact ? { since: isoNow(), byId: publicUserId(actor.user), byName: actor.user.fullName, ...(reason ? { reason } : {}) } : undefined, updatedAt: isoNow() });
+      if (lead !== current) {
+        await insertAudit(ctx, actor, { category: "crm", action: doNotContact ? "lead.do_not_contact" : "lead.contact_allowed", entityType: "lead", entityId: record.publicId, entityLabel: stringValue(current.fullName), summary: doNotContact ? "Lead asked not to be contacted" : "Lead may be contacted again", reason, before: { doNotContact: Boolean(current.doNotContact) }, after: { doNotContact }, branchId: optionalString(current.branchId) });
+        await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "marketing_preference_changed", title: doNotContact ? "Asked not to be contacted" : "Contact allowed again", titleMessage: systemMessage(doNotContact ? "communicationCompletion.timeline.leadDoNotContact" : "communicationCompletion.timeline.leadContactAllowed"), body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { doNotContact } });
+      }
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+      return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities, offers };
     }
     case "leads.update_contact": {
       requirePermission(actor, "crm.write");
@@ -11504,7 +11930,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "task", recordId(input.taskId));
       const value = data(record.data);
       const updated = await patchRecord(ctx, actor, record, { status: "completed", outcome: stringValue(input.outcome), completedAt: isoNow() });
-      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
+      const storedTitleMessage = preparedTaskTitleMessage(value.titleMessage);
+      if (value.memberId) await insertTimeline(ctx, actor, { memberId: value.memberId, type: "task_completed", title: `Task completed: ${value.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: storedTitleMessage ? { message: storedTitleMessage } : stringValue(value.title) }), body: stringValue(input.outcome), actorId: publicUserId(actor.user), actorName: actor.user.fullName });
       return await toTask(ctx, actor, updated);
     }
     case "leads.complete_sale": {
@@ -12230,6 +12657,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await ctx.db.patch(membership._id, { role, branchIds: nextMembershipValues.branchIds, branchScope, active: nextActive, updatedAt: Date.now() });
       const beforeStatus = organizationUserStatus(user, membership);
       const afterStatus = organizationUserStatus(user, nextMembershipValues);
+      // Access changed: no kept assistant reading may be served under the old access.
+      await dropModelCache(ctx, actor.organization._id);
       await insertAudit(ctx, actor, { category: "users", action: input.status === "deactivated" ? "user.access_deactivate" : "user.access_update", entityType: "user", entityId: publicUserId(user), entityLabel: user.fullName, summary: input.status === "deactivated" ? "Organization access deactivated" : "Organization access updated", reason: input.status === "deactivated" ? "Deactivated by administrator" : undefined, before: { role: membership.role, status: beforeStatus, membershipActive: membership.active }, after: { role, status: afterStatus, membershipActive: nextActive } });
       const updated = await ctx.db.get(user._id);
       const nextMembership = await ctx.db.get(membership._id);
@@ -12286,6 +12715,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!Number.isSafeInteger(discountLimitMinor) || discountLimitMinor < 0) domainError("VALIDATION_ERROR", "Discount limit must be a non-negative integer amount.", { correlationId: actor.correlationId });
       const updated = { permissions: requestedPermissions, catalogVersion: PERMISSION_CATALOG_VERSION, discountLimitMinor, updatedAt: Date.now() };
       await ctx.db.patch(current._id, updated);
+      await dropModelCache(ctx, actor.organization._id);
       await insertAudit(ctx, actor, { category: "users", action: "role.permissions_change", entityType: "role", entityId: publicOrganizationId(actor.organization), entityLabel: current.label, summary: `Permissions updated for the ${current.label} role`, before: { permissions: current.permissions.length, discountLimit: current.discountLimitMinor }, after: { permissions: updated.permissions.length, discountLimit: updated.discountLimitMinor } });
       return { key: frontendRole(role), label: current.label ?? fallback.label, description: current.description ?? fallback.description, permissions: rolePermissions(role, updated.permissions, updated.catalogVersion), catalogVersion: updated.catalogVersion, discountLimitMinor: updated.discountLimitMinor, isSystem: current.isSystem };
     }
@@ -12740,6 +13170,7 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
         kind: "follow_up",
         priority: overdueTask && stringValue(task.priority) === "high" ? "urgent" : overdueTask ? "high" : stringValue(task.priority) === "high" ? "high" : "normal",
         title: stringValue(task.title),
+        ...(preparedTaskTitleMessage(task.titleMessage) ? { titleMessage: task.titleMessage } : {}),
         detail: `${stringValue(task.subjectName)} · ${stringValue(task.ownerName)}`,
         subjectName: stringValue(task.subjectName),
         subject: task.leadId ? { kind: "lead", id: stringValue(task.leadId) } : task.memberId ? { kind: "member", id: stringValue(task.memberId) } : undefined,
@@ -12929,10 +13360,42 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     }
   }
 
+  // A change RIVET prepared reaches the person who may approve it on Today as well as the bell (AI-3.7).
+  // For a cash drawer it is the same situation as "check the difference", so it takes that item's place.
+  const shiftsWithWaitingApproval = new Set<string>();
+  if (!actor.delegation) {
+    const pending = (await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "pending")).take(50)).filter((proposal) => proposal.expiresAt > Date.now() && actor.permissions.includes(proposal.requiredPermission));
+    const entitled = pending.length ? await aiDomainPort.entitledModules(ctx, actor) : [];
+    for (const proposal of pending) {
+      const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposal.runPublicId)).unique();
+      if (!run || !canReadRun(actor, run) || !queueBranchVisible(run.branchPublicId)) continue;
+      // Shown only while the work's page can show the approval: assistance stopped, off or unavailable hides it.
+      const tool = TOOLS[proposal.tool];
+      if (!tool || toolBlocked(tool, await authorityInput(ctx, actor, tool.capability, entitled))) continue;
+      const requester = await ctx.db.get(run.requestedByUserId);
+      const shiftId = proposal.sourceVersions.find((source) => source.table === "shift")?.id;
+      const varianceMinor = numberValue(data(proposal.payload).varianceMinor, 0);
+      if (shiftId) shiftsWithWaitingApproval.add(shiftId);
+      queueItems.push({
+        id: `ai-proposal:${proposal.publicId}`,
+        kind: "approval",
+        priority: shiftId ? "urgent" : "high",
+        title: "A prepared change is waiting for approval",
+        detail: `Prepared by RIVET for ${requester?.fullName ?? ""}`,
+        branchName: run.branchPublicId ? branchNameById.get(run.branchPublicId) : undefined,
+        occurredAt: utcIso(proposal.proposedAt),
+        ...(shiftId && varianceMinor ? { amount: signedMoney(varianceMinor, actor.organization.currency) } : {}),
+        href: runOriginHref(run.playbook as AiPlaybookKey, run.publicId),
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
   if (hasPermission(actor, "reconciliation.read")) {
     for (const shift of shifts) {
       const shiftBranchId = optionalString(shift.branchId);
       if (!queueBranchVisible(shiftBranchId) || stringValue(shift.status) !== "closed" || stringValue(shift.varianceApprovalStatus) !== "pending" || amountOf(shift.variance) === 0) continue;
+      if (shiftsWithWaitingApproval.has(stringValue(shift.id))) continue;
       queueItems.push({
         id: `variance:${stringValue(shift.id)}`,
         kind: "cash_variance",

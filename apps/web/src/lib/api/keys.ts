@@ -1,6 +1,20 @@
 /** Central TanStack Query key factory — mutations invalidate by prefix. */
 export const qk = {
   session: ["session"] as const,
+  aiSettings: ["ai", "settings"] as const,
+  aiPlatformStatus: ["ai", "platformStatus"] as const,
+  aiPlatformAvailability: ["ai", "platformAvailability"] as const,
+  aiOutcomes: ["ai", "outcomes"] as const,
+  aiHeadlines: (memberIds: string[]) => ["ai", "headlines", memberIds.join(",")] as const,
+  memberBrief: (memberId: string) => ["ai", "brief", memberId] as const,
+  aiRun: (runId: string) => ["ai", "run", runId] as const,
+  aiRuns: (params?: unknown) => ["ai", "runs", params] as const,
+  aiStanding: ["ai", "standing"] as const,
+  aiMemories: (memberId: string) => ["ai", "memories", memberId] as const,
+  aiArtifact: (artifactId: string) => ["ai", "artifact", artifactId] as const,
+  aiProposals: (params?: unknown) => ["ai", "proposals", params] as const,
+  aiCollections: (params?: unknown) => ["ai", "collections", params] as const,
+  aiClassOptions: (params?: unknown) => ["ai", "classOptions", params] as const,
   publicOffer: (token: string) => ["publicOffer", token] as const,
   dashboard: (branchId?: string) => ["dashboard", branchId ?? "all"] as const,
   /** Keyed by the viewer and their branch scope: a restricted manager never reads an owner's cached brief. */
@@ -86,6 +100,7 @@ export const qk = {
 
 /** Prefixes invalidated after any money/membership-affecting mutation. */
 export const INVALIDATE_ALL = [
+  "ai",
   "dashboard",
   "members",
   "memberships",

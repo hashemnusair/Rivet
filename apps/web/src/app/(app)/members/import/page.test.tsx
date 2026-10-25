@@ -57,4 +57,26 @@ describe("member import", () => {
     expect(editor).toHaveValue("full_name,phone,gender\nMira Nasser,0798123456,female");
     expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled();
   });
+
+  it("suggests columns from values when assistance is on, filling only empty choices for the person to check", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const user = userEvent.setup();
+    await renderWithApp(<MemberImportPage />, { branchId: BRANCH_ABD, prepare: async (api) => {
+      // A platform admin makes the preview gym available before its owner turns assistance on.
+      await api.setPlatformAiAvailability({ organizationId: (await api.getSession()).organization.id, available: true, reason: "Test gym" });
+      const settings = await api.getAiSettings();
+      await api.updateAiSettings({ tenantMode: "prepare", expectedRevision: settings.revision });
+    } });
+    await user.click(screen.getByRole("button", { name: "Paste CSV instead" }));
+    await user.click(screen.getByRole("textbox", { name: "Member CSV content" }));
+    await user.paste("Col A,Col B,Col C\nMira Nasser,0798123456,female\nOmar Khalil,0785550101,male\nLina Haddad,0777000111,أنثى");
+    expect(screen.getByRole("button", { name: "Check members" })).toBeDisabled();
+    await user.click(await screen.findByTestId("import-suggestions-run"));
+    expect(screen.getByRole("combobox", { name: "Column for full name" })).toHaveTextContent("Col A");
+    expect(screen.getByRole("combobox", { name: "Column for phone" })).toHaveTextContent("Col B");
+    expect(screen.getByRole("combobox", { name: "Column for gender" })).toHaveTextContent("Col C");
+    expect(screen.getByTestId("import-suggestions-applied")).toHaveTextContent("Nothing is imported until you confirm.");
+    expect(screen.getByRole("button", { name: "Check members" })).toBeEnabled();
+    vi.unstubAllGlobals();
+  });
 });

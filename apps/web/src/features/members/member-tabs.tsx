@@ -14,6 +14,7 @@ import { useFormat } from "@/lib/i18n/format";
 import { en } from "@/lib/i18n/messages/en";
 import { leadSourceLabel, paymentMethodLabel, transactionTypeLabel } from "@/lib/i18n/labels";
 import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
+import { useTaskTitle } from "@/lib/i18n/use-task-title";
 import { toast } from "sonner";
 import { DateText, DateTimeText, DaysUntilText, MoneyText, RelativeText } from "@/components/shared/data-display";
 import { DataPagination } from "@/components/shared/chrome";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
+import { ClassFinder } from "@/features/assist/class-finder";
 import { ptBookingAwaitsOutcome, ptNextBooking } from "@/lib/domain/personal-training";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +72,7 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
           )}
         </div>
       </section>
+      <ClassFinder memberId={member.id} />
     </div>
   );
 }
@@ -496,6 +499,7 @@ const CONTACT_TASK_TYPES = new Set<Task["type"]>(["follow_up", "renewal_call", "
 
 export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
   const { t, isolate } = useLocale();
+  const taskTitle = useTaskTitle();
   const invalidate = useInvalidate();
   const query = useApiQuery(qk.tasks({ memberId, open: true }), (api) =>
     api.listTasks({ status: "open", memberId, pageSize: 10 }),
@@ -525,7 +529,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
         <li key={task.id} className="flex items-start gap-2 text-[12.5px]">
           <button
             type="button"
-            aria-label={t("memberProfile.tasks.completeAria", { title: isolate(task.title) })}
+            aria-label={t("memberProfile.tasks.completeAria", { title: isolate(taskTitle(task)) })}
             disabled={complete.isPending}
             onClick={() => requestComplete(task)}
             className="mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line-3 text-transparent hover:border-success hover:text-success focus-visible:border-success focus-visible:text-success"
@@ -533,7 +537,7 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
             <CheckCircle2 className="size-3.5" />
           </button>
           <div className="min-w-0">
-            <p className="font-medium leading-snug" dir="auto">{task.title}</p>
+            <p className="font-medium leading-snug" dir="auto">{taskTitle(task)}</p>
             {task.relatedTaskTitle ? <p className="text-[12px] text-ink-3">{t("memberProfile.tasks.nextStepAfter", { title: isolate(task.relatedTaskTitle) })}</p> : null}
             <p className="text-[12px] text-ink-3">
               <bdi>{task.ownerName}</bdi> · <RelativeText iso={task.dueAt} />

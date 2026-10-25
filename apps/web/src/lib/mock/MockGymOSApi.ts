@@ -15,6 +15,14 @@ import { latinDigits, searchKey } from "@/lib/utils/text";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { purchaseOrderIsOverdue, validExpectedDeliveryDate } from "@/lib/domain/purchase-orders";
 import { MockProspectStore } from "./prospects";
+import { MockAiEngine } from "./ai";
+import type * as AI from "@/lib/ai/contracts";
+import type { CashShiftFacts } from "@/lib/ai/cash-difference";
+import { leadIsDue, OPEN_LEAD_STAGES, type LeadFollowUpFacts } from "@/lib/ai/sales-batch";
+import type { CollectionMemberFacts } from "@/lib/ai/collections";
+import type { ClassOptionFacts } from "@/lib/ai/class-finder";
+import { consentForRenewalChannel } from "../../../convex/renewalPolicy";
+import { stableHash } from "@/lib/ai/note-extraction";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
 import type {
   AuditQuery,
@@ -100,9 +108,9 @@ import { completedByContactOutcome, describeContactOutcome, followUpTaskTitle, i
 import { finalizeTodayQueue } from "@/lib/dashboard/today-queue";
 import { chargeIsCollectible, collectibleOutstandingMinor } from "@/lib/domain/charges";
 import type * as T from "@/lib/domain/types";
-import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, todayISODate } from "@/lib/utils/dates";
+import { addDays, daysFromToday, diffDays, instantFallsInTenantDateRange, nowISO, partsInTimeZone, todayISODate } from "@/lib/utils/dates";
 import { resolveMessagingMode } from "../../../convex/messagingMode";
-import { buildMemberFollowUpContext, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
+import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike } from "../../../convex/followupAssist";
 import { BRIEF_QUEUE_LIMIT, buildOperatingBrief, type BriefQueueItem, type BriefSourceInput, type BriefSourceKey } from "../../../convex/operatingBrief";
 import { feeLabel, findPlan, gymMonthlyPriceMinor, isQuotedPlan, termPriceMinor, validQuotedPriceMinor } from "../../../convex/planCatalogue";
 import { DEFAULT_WEBSITE_PLACES, DEFAULT_WEBSITE_PRICE_MINOR, firstPaymentQuote, normalizePromoCode, paymentNoteReference, PROMO_TARGETS, validPromoCodeShape, type PromoCheck } from "../../../convex/firstPayment";
@@ -578,7 +586,7 @@ type PageParams = { page?: number; pageSize?: number; sort?: string; search?: st
 type MockSubscriptionAgreement = Omit<T.SubscriptionAgreement, "signatory"> & { signatory: { name: string; title?: string; idType: T.AgreementIdType; idNumber: string; phone?: string; email: string } };
 
 type MockPlatformAuditEvent = PlatformGymActivity & {
-  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects" | "platform_setting" | "platform_promo" | "platform_invoice";
+  entityType: "platform_gym" | "platform_plan" | "subscription_agreement" | "platform_prospect" | "platform_prospects" | "platform_setting" | "platform_promo" | "platform_invoice" | "organization";
   entityPublicId: string;
   entityLabel: string;
   reason: string;
@@ -842,6 +850,7 @@ export class MockGymOSApi implements GymOSApi {
   private pinnedWorkspaceItems: import("@/lib/domain/qol").PinnedWorkspaceItem[] = [];
 
   private previewExports?: MockGymOSApi;
+  private ai!: MockAiEngine;
 
   constructor(db?: MockDb, private readonly previewFixtures = true) {
     this.db = db ?? buildSeed();
@@ -881,6 +890,237 @@ export class MockGymOSApi implements GymOSApi {
     this.gymPublicProfile = { organizationId: this.db.organization.id, version: 1, status: "published", publishLocked: false, shortName: listing?.shortName ?? this.db.organization.name.slice(0, 12), taglineEn: listing?.tagline ?? "", descriptionEn: listing?.description ?? "", category: listing?.category ?? "Gym", audience: listing?.audience ?? "All members", amenities: listing?.amenities ?? [], accentColor: listing?.accent ?? "#15140f", gallery: [], trainers: this.ptTrainers.filter((item) => item.status === "published").map((item) => this.ptTrainerView(item)), ptPackages: this.ptPackages.filter((item) => item.status === "active"), publishedAt: nowISO(), updatedAt: nowISO() };
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     this.seedOperationalNotifications();
+    this.ai = this.createAiEngine();
+  }
+
+  private createAiEngine(): MockAiEngine {
+    return new MockAiEngine({
+      db: this.db,
+      today: () => this.today(),
+      timezone: () => this.db.organization.timezone || TZ,
+      actor: () => ({ id: this.actor().id, name: this.actor().name }),
+      role: () => currentRole(this.db),
+      permissions: () => permissionsFor(this.db, currentRole(this.db)),
+      branchVisible: (branchId) => this.branchIsVisible(branchId),
+      activeBranchId: () => this.db.session.activeBranchId,
+      entitledModules: () => this.workspaceAccess().modules.filter((module) => module.entitled && module.enabled).map((module) => module.key),
+      memberFollowUpContext: (memberId) => this.memberFollowUpContextSync(memberId),
+      renewalQueue: (query) => this.renewalQueueItemsSync(query),
+      snoozedUntil: (memberId) => this.retentionStates.find((state) => state.memberId === memberId)?.snoozedUntil,
+      classSessions: () => this.classSessions.map((session) => ({ branchId: session.branchId, startMinute: session.startMinute })),
+      createTask: (input) => {
+        const member = input.memberId ? this.db.members.find((item) => item.id === input.memberId) : undefined;
+        const lead = input.leadId ? this.db.leads.find((item) => item.id === input.leadId) : undefined;
+        const owner = this.db.users.find((user) => user.id === input.ownerId);
+        if (!owner) throw ApiError.of(ERR.NOT_FOUND, "Task owner not found.");
+        const task: T.Task = { ...input, id: mockUuid(), organizationId: this.db.organization.id, ownerName: owner.name, subjectName: member?.fullName ?? lead?.fullName ?? "—", status: "open", createdById: this.actor().id, createdAt: nowISO() };
+        this.db.tasks.push(task);
+        if (member) this.activity({ memberId: member.id, type: "task_created", title: `Task: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskCreated", { title: task.titleMessage ? { message: task.titleMessage } : task.title }), actorId: this.actor().id, actorName: this.actor().name, meta: { delegationRunId: input.origin.runId, delegationGrantId: input.origin.grantId, delegationTool: "task.create_followup" } });
+        return task;
+      },
+      audit: (input) => { this.audit({ category: "ai", action: input.action, entityType: "ai", entityId: input.entityId, entityLabel: input.entityLabel, summary: input.summary }); },
+      stepDelayMs: () => (this.behavior.latencyMs === 0 ? 0 : 220),
+      reportInputs: async (range) => {
+        const attempt = async <R,>(read: () => Promise<R>): Promise<R | undefined> => { try { return await read(); } catch { return undefined; } };
+        const collections = await attempt(() => this.getCollectionsReport(range));
+        const renewals = await attempt(() => this.getRenewalForecastReport(range.branchId ? { branchId: range.branchId } : {}));
+        const crm = await attempt(() => this.getCrmFunnelReport(range));
+        let ledger: Array<Record<string, unknown>> | undefined = [];
+        for (let page = 1; page <= 10 && ledger; page += 1) {
+          const result = await attempt(() => this.listTransactions({ from: range.from, to: range.to, ...(range.branchId ? { branchId: range.branchId } : {}), page, pageSize: 100 }));
+          if (!result) { ledger = undefined; break; }
+          ledger.push(...(result.items as unknown as Array<Record<string, unknown>>));
+          if (page >= result.totalPages) break;
+          if (page === 10) ledger = undefined;
+        }
+        return { ...(collections ? { collections: collections as unknown as Record<string, unknown> } : {}), ...(renewals ? { renewals: renewals as unknown as Record<string, unknown> } : {}), ...(crm ? { crm: crm as unknown as Record<string, unknown> } : {}), ...(ledger ? { ledger } : {}) };
+      },
+      handoverInputs: async (branchId, date) => {
+        const attempt = async <R,>(read: () => Promise<R>): Promise<R | undefined> => { try { return await read(); } catch { return undefined; } };
+        const checklist = await attempt(() => this.getChecklistDay({ branchId, date }));
+        const facility = await attempt(() => this.listFacilityTasks({ branchId }));
+        const issues = await attempt(() => this.listEquipmentIssues({ branchId }));
+        const followUps = await attempt(() => this.listTasks({ status: "open", dueBefore: new Date(Date.now() + 86_400_000).toISOString(), pageSize: 100 }));
+        const shift = await attempt(() => this.getCurrentShiftTotals(branchId));
+        return {
+          ...(checklist ? { checklist: checklist as unknown as Record<string, unknown> } : {}),
+          ...(facility ? { facilityTasks: facility as unknown as Array<Record<string, unknown>> } : {}),
+          ...(issues ? { equipmentIssues: issues as unknown as Array<Record<string, unknown>> } : {}),
+          ...(followUps ? { followUps: followUps.items as unknown as Array<Record<string, unknown>> } : {}),
+          ...(shift !== undefined ? { shift: shift as unknown as Record<string, unknown> | null } : {}),
+        };
+      },
+      requestExport: async (input) => await this.requestExport({ kind: input.kind, filters: input.filters, idempotencyKey: input.idempotencyKey, locale: "en" }),
+      cashShiftFacts: (shiftId) => this.cashShiftFactsSync(shiftId),
+      dueLeads: (branchId, endOfTodayIso) => {
+        this.require("crm.read");
+        return this.db.leads
+          .filter((lead) => this.branchIsVisible(lead.branchId) && (!branchId || lead.branchId === branchId) && (OPEN_LEAD_STAGES as readonly string[]).includes(lead.stage))
+          .filter((lead) => leadIsDue({ stage: lead.stage, ...(lead.nextFollowUpAt ? { nextFollowUpAt: lead.nextFollowUpAt } : {}), ...(lead.convertedMemberId ? { convertedMemberId: lead.convertedMemberId } : {}) }, endOfTodayIso))
+          .sort((left, right) => (left.nextFollowUpAt ?? "").localeCompare(right.nextFollowUpAt ?? ""))
+          .map((lead) => ({ id: lead.id, name: lead.fullName }));
+      },
+      leadFollowUpFacts: (leadId) => this.leadFollowUpFactsSync(leadId),
+      collectionFacts: (branchId, limit) => this.collectionFactsSync(branchId, limit),
+      classOptionFacts: (memberId, from, to) => this.classOptionFactsSync(memberId, from, to),
+      bookClass: (occurrenceKey, memberId) => {
+        const occurrence = this.classOccurrenceById(occurrenceKey);
+        const membership = this.db.memberships.find((candidate) => candidate.memberId === memberId && !candidate.cancelledAt && candidate.startDate <= occurrence.date && candidate.endDate >= occurrence.date);
+        if (!membership) throw ApiError.of(ERR.NOT_FOUND, "Member membership not found.");
+        const updated = this.addClassOccurrenceAttendeeSync({ occurrenceId: occurrenceKey, memberId, membershipId: membership.id });
+        return updated.roster.find((entry) => entry.memberId === memberId && ["booked", "waitlisted"].includes(entry.status))?.status;
+      },
+      reviewVariance: (shiftId, input) => { this.reviewVarianceSync(shiftId, input); },
+      recordTaskNotNeeded: (task) => {
+        if (task.memberId) this.activity({ memberId: task.memberId, type: "task_completed", title: `Task not needed: ${task.title}`, titleMessage: systemMessage("communicationCompletion.timeline.taskNotNeeded", { title: task.titleMessage ? { message: task.titleMessage } : task.title }), actorId: this.actor().id, actorName: this.actor().name });
+      },
+      platformOrganizations: () => [
+        { id: this.db.organization.id, name: this.db.organization.name, status: this.db.organization.status },
+        ...[...this.provisionedTenants.values()].map((tenant) => ({ id: tenant.organization.id, name: tenant.organization.name, status: tenant.organization.status })),
+      ],
+      platformAudit: (input) => { this.recordPlatformAudit({ action: input.action, entityType: "organization", entityPublicId: input.entityId, entityLabel: input.entityLabel, summary: input.summary, reason: input.reason, before: input.before, after: input.after }); },
+    });
+  }
+
+  /**
+   * The preview has no row versions, so a record's version is a digest of its
+   * current contents: any change to it reads as a new version, as on the server.
+   */
+  private recordVersion(value: unknown): number {
+    return Number.parseInt(stableHash(JSON.stringify(value)), 16);
+  }
+
+  private classOptionFactsSync(memberId: string, from: string, to: string): { enabled: boolean; facts: ClassOptionFacts[] } {
+    this.require("members.read");
+    const member = this.db.members.find((candidate) => candidate.id === memberId && candidate.status !== "archived");
+    if (!member || !this.branchIsVisible(member.homeBranchId)) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+    const policy = this.db.operationalPolicies.classBooking;
+    if (!policy.enabled) return { enabled: false, facts: [] };
+    const timezone = this.db.organization.timezone || TZ;
+    const facts: ClassOptionFacts[] = [];
+    for (const branch of this.db.branches.filter((candidate) => candidate.status === "active" && this.branchIsVisible(candidate.id))) {
+      for (let date = from; date <= to; date = addDays(date, 1)) {
+        const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+        for (const template of this.classSessions.filter((candidate) => candidate.branchId === branch.id && candidate.dayOfWeek === day)) this.materializeClassOccurrence(template, date);
+      }
+      for (const occurrence of this.classOccurrences.filter((candidate) => candidate.branchId === branch.id && candidate.date >= from && candidate.date <= to).map((candidate) => this.refreshClassOccurrence(candidate))) {
+        const eligible = this.db.memberships.some((membership) => membership.memberId === member.id && !membership.cancelledAt && membership.startDate <= occurrence.date && membership.endDate >= occurrence.date
+          && !(membership.activeFreeze && membership.activeFreeze.startDate <= occurrence.date && membership.activeFreeze.endDate >= occurrence.date)
+          && (policy.eligibilityMode === "all_active_memberships" || policy.eligiblePlanIds.includes(membership.planId))
+          && membership.homeBranchId === branch.id);
+        const local = partsInTimeZone(new Date(occurrence.startsAt), timezone);
+        const gender = member.gender;
+        facts.push({
+          occurrenceId: occurrence.id,
+          name: occurrence.name,
+          branchId: branch.id,
+          branchName: branch.name,
+          date: occurrence.date,
+          startsAt: occurrence.startsAt,
+          endsAt: occurrence.endsAt,
+          startMinuteLocal: Number(local.hour) * 60 + Number(local.minute),
+          audience: occurrence.audience,
+          ...(occurrence.coachName ? { coachName: occurrence.coachName } : {}),
+          status: occurrence.status,
+          capacity: occurrence.capacity,
+          bookedCount: this.classSeatedCount(occurrence),
+          memberBooked: occurrence.roster.some((entry) => entry.memberId === member.id && ["booked", "waitlisted"].includes(entry.status)),
+          memberEligible: eligible,
+          audienceFits: (gender === "male" || gender === "female") && (occurrence.audience === "mixed" || (occurrence.audience === "women" && gender === "female") || (occurrence.audience === "men" && gender === "male")),
+        });
+      }
+    }
+    return { enabled: true, facts };
+  }
+
+  private collectionFactsSync(branchId: string | undefined, limit: number): { facts: CollectionMemberFacts[]; considered: number } {
+    this.require("members.read");
+    const today = this.today();
+    const owed = new Map<string, CollectionMemberFacts["charges"]>();
+    for (const charge of this.db.charges) {
+      const dueDate = charge.dueDate ?? charge.issueDate ?? charge.createdAt.slice(0, 10);
+      if (charge.status === "refunded" || charge.status === "void" || dueDate > today || charge.outstandingAmount.amount <= 0) continue;
+      owed.set(charge.memberId, [...(owed.get(charge.memberId) ?? []), { id: charge.id, dueDate, outstandingMinor: charge.outstandingAmount.amount }]);
+    }
+    const members = this.db.members.filter((member) => owed.has(member.id) && member.status !== "archived" && this.branchIsVisible(member.homeBranchId) && (!branchId || member.homeBranchId === branchId));
+    const oldest = (memberId: string) => owed.get(memberId)!.map((row) => row.dueDate).sort()[0]!;
+    const total = (memberId: string) => owed.get(memberId)!.reduce((sum, row) => sum + row.outstandingMinor, 0);
+    const ranked = [...members].sort((left, right) => oldest(left.id).localeCompare(oldest(right.id)) || total(right.id) - total(left.id)).slice(0, limit);
+    const facts = ranked.map((member): CollectionMemberFacts => {
+      const payment = this.db.payments.filter((item) => item.memberId === member.id && item.type === "payment" && item.status !== "voided").sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0];
+      const lastContactAt = this.db.activities.filter((event) => event.memberId === member.id && (event.type === "call_attempt" || event.type === "message")).map((event) => event.occurredAt).sort().at(-1);
+      const consent = consentForRenewalChannel(member as unknown as Record<string, unknown>, "whatsapp");
+      return {
+        memberId: member.id,
+        memberName: member.fullName,
+        ...(member.phone ? { phone: member.phone } : {}),
+        ...(member.preferredLanguage === "ar" || member.preferredLanguage === "en" ? { preferredLanguage: member.preferredLanguage } : {}),
+        charges: owed.get(member.id)!,
+        ...(payment ? { lastPayment: { receiptId: payment.receiptId, receiptNumber: payment.receiptNumber, at: payment.occurredAt, amountMinor: Math.abs(payment.amount.amount) } } : {}),
+        ...(lastContactAt ? { lastContactAt } : {}),
+        optedOut: consent.status === "explicit_opt_out" || consent.channelOptedOut,
+      };
+    });
+    return { facts, considered: members.length };
+  }
+
+  private leadFollowUpFactsSync(leadId: string): LeadFollowUpFacts | null {
+    if (!permissionsFor(this.db, currentRole(this.db)).includes("crm.read")) return null;
+    const lead = this.db.leads.find((item) => item.id === leadId);
+    if (!lead || !this.branchIsVisible(lead.branchId)) return null;
+    const summary = this.toLeadSummary(lead);
+    const preferredLanguage = (lead as T.Lead & { preferredLanguage?: string }).preferredLanguage;
+    return {
+      leadId: lead.id,
+      leadName: lead.fullName,
+      stage: lead.stage,
+      branchId: lead.branchId,
+      ...(lead.ownerId ? { ownerId: lead.ownerId } : {}),
+      ...(lead.phone ? { phone: lead.phone } : {}),
+      ...(lead.nextFollowUpAt ? { nextFollowUpAt: lead.nextFollowUpAt } : {}),
+      ...(summary.lastContactAt ? { lastContactAt: summary.lastContactAt } : {}),
+      ...(lead.convertedMemberId ? { convertedMemberId: lead.convertedMemberId } : {}),
+      ...(lead.doNotContact ? { doNotContact: true } : {}),
+      openTasks: this.followUpRelatedTasks({ leadId: lead.id }).map((task) => ({ id: task.id, title: task.title })),
+      draft: followUpHandoffDraft({ fullName: lead.fullName, preferredLanguage }, this.db.organization.name, this.db.organization.defaultLanguage),
+    };
+  }
+
+  private cashShiftFactsSync(shiftId: string): CashShiftFacts {
+    this.require("reconciliation.read");
+    const shift = this.db.shifts.find((item) => item.id === shiftId);
+    if (!shift || !this.branchIsVisible(shift.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Record not found.");
+    const payments: Array<T.Payment | T.RetailPayment> = [...this.db.payments, ...this.db.retailSales.map((sale) => this.retailPaymentProjection(sale))].filter((payment) => payment.shiftId === shift.id);
+    const closed = shift.status === "closed";
+    return {
+      shiftId: shift.id,
+      branchId: shift.branchId,
+      status: shift.status,
+      openedAt: shift.openedAt,
+      ...(shift.closedAt ? { closedAt: shift.closedAt } : {}),
+      openedByName: shift.openedByName,
+      ...(shift.closedById ? { closedByName: this.db.users.find((user) => user.id === shift.closedById)?.name ?? "" } : {}),
+      currency: this.db.organization.currency,
+      timezone: this.db.organization.timezone || TZ,
+      openingFloatMinor: shift.openingFloat.amount,
+      ...(closed ? { expectedCashMinor: shift.expectedCash?.amount ?? 0, countedCashMinor: shift.countedCash?.amount ?? 0, varianceMinor: shift.variance?.amount ?? 0 } : {}),
+      varianceApprovalStatus: shift.varianceApprovalStatus ?? "none",
+      ...(shift.varianceExplanation ? { varianceExplanation: shift.varianceExplanation } : {}),
+      supplierCashPaidMinor: this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.shiftId === shift.id).reduce((sum, payment) => sum + payment.amount.amount, 0),
+      supplierCashReversedMinor: this.db.supplierPayments.filter((payment) => payment.method === "cash" && payment.status === "reversed" && payment.reversal?.shiftId === shift.id).reduce((sum, payment) => sum + payment.amount.amount, 0),
+      transactions: payments.map((payment) => ({
+        id: payment.id,
+        ...(payment.receiptId ? { receiptId: payment.receiptId } : {}),
+        ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
+        type: payment.type,
+        method: payment.method,
+        status: payment.status,
+        amountMinor: Math.abs(payment.amount.amount),
+        occurredAt: payment.occurredAt,
+        updatedAt: this.recordVersion(payment),
+      })),
+      updatedAt: this.recordVersion(shift),
+    };
   }
 
   /**
@@ -4258,6 +4498,48 @@ export class MockGymOSApi implements GymOSApi {
     return { ...this.behavior };
   }
 
+  // ---------------------------------------------------------------------------
+  // RIVET assistance (explicit preview simulation; see ./ai.ts)
+  // ---------------------------------------------------------------------------
+
+  getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
+  updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
+  getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
+  getMemberHeadlines(memberIds: T.UUID[]): Promise<AI.AiMemberHeadlinesResult> { return this.respond(() => this.ai.memberHeadlines(memberIds)); }
+  prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.respond(() => this.ai.prepareCollections(query.branchId ?? this.db.session.activeBranchId)); }
+  getClassOptions(query: { memberId: T.UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<AI.AiClassOptionsResult> { return this.respond(() => this.ai.classOptions(query.memberId, query.timeOfDay)); }
+  getAiOutcomeSummary(): Promise<AI.AiOutcomeSummary> { return this.respond(() => { this.require("settings.manage"); return this.ai.outcomeSummary(); }); }
+  getPlatformAiStatus(): Promise<AI.AiPlatformStatus> { return this.respond(() => this.ai.platformStatus()); }
+  setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.respond(() => this.ai.setPlatformStop(input, this.actor().name)); }
+  getPlatformAiAvailability(): Promise<AI.AiPlatformAvailability> { return this.respond(() => this.ai.platformAvailability()); }
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<AI.AiGymAvailability> { return this.respond(() => this.ai.setPlatformAvailability(input, this.actor().name)); }
+  extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string; locale?: "en" | "ar" }): Promise<AI.AiExtractNoteResult> { return this.respond(() => this.ai.extractNote(input)); }
+  interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.respond(() => this.ai.interpretRevision(input)); }
+  interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.respond(() => this.ai.interpretFilters(input)); }
+  startAiRun(input: AI.StartAiRunInput): Promise<AI.AiRunView> { return this.respond(() => this.ai.startRun(input)); }
+  getAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.getRun(runId)); }
+  async subscribeAiRun(runId: string, onValue: (run: AI.AiRunView) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.ai.subscribeRun(runId, onValue, onError); }
+  listAiRuns(query: { playbook?: AI.AiPlaybookKey; branchId?: T.UUID; limit?: number }): Promise<AI.AiRunView[]> { return this.respond(() => this.ai.listRuns(query)); }
+  cancelAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.cancelRun(runId)); }
+  reviseAiRun(input: { runId: string; text: string; revision: AI.AiRunRevision }): Promise<AI.AiRunView> { return this.respond(() => this.ai.reviseRun(input)); }
+  takeOverAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.takeOverRun(runId)); }
+  retryAiRun(runId: string): Promise<AI.AiRunView> { return this.respond(() => this.ai.retryRun(runId)); }
+  listStandingInstructions(): Promise<AI.AiStandingInstructionView[]> { return this.respond(() => this.ai.listStanding()); }
+  previewStandingInstruction(input: { playbook: AI.AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: T.UUID }): Promise<AI.AiStandingPreview> { return this.respond(() => this.ai.previewStanding(input)); }
+  createStandingInstruction(input: AI.CreateStandingInstructionInput & { previewDigest: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.createStanding(input)); }
+  updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.updateStanding(input)); }
+  listAiProposals(query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => this.ai.listProposals(query)); }
+  decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => this.ai.decideProposal(input)); }
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<AI.AiApproveAllResult> { return this.respond(() => this.ai.approveProposals(input)); }
+  getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => this.ai.getArtifact(artifactId)); }
+  listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.respond(() => this.ai.listMemories(memberId)); }
+  recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }
+  revokeMemberMemory(memoryId: string): Promise<void> { return this.respond(() => this.ai.revokeMemory(memoryId)); }
+  recordAiFeedback(input: AI.AiFeedbackInput): Promise<void> { return this.respond(() => this.ai.recordFeedback(input)); }
+  markAiTaskNotNeeded(input: { taskId: T.UUID; reason?: string }): Promise<{ taskId: T.UUID; closed: boolean; alreadyMarked: boolean }> { return this.respond(() => this.ai.markTaskNotNeeded(input.taskId)); }
+  /** Preview seam for tests: start due standing slots, as the server's cron does. */
+  dispatchDueStandingInstructions(now?: number): number { return this.ai.dispatchDueStanding(now); }
+
   resetDemo(): Promise<void> {
     const role = currentRole(this.db);
     const branch = this.db.session.activeBranchId;
@@ -4295,6 +4577,8 @@ export class MockGymOSApi implements GymOSApi {
     this.promoCodes = mockPromoCodes();
     this.platformSupportCases = MOCK_SUPPORT_CASES.map((supportCase) => ({ ...supportCase, messages: supportCase.messages?.map((message) => ({ ...message })) }));
     this.operationalNotifications = [];
+    this.ai?.dispose();
+    this.ai = this.createAiEngine();
     this.seedOperationalNotifications();
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     this.membershipSaleIdempotency.clear();
@@ -5378,6 +5662,7 @@ export class MockGymOSApi implements GymOSApi {
             kind: "follow_up",
             priority: overdue && task.priority === "high" ? "urgent" : overdue ? "high" : task.priority === "high" ? "high" : "normal",
             title: task.title,
+            ...(task.titleMessage ? { titleMessage: task.titleMessage } : {}),
             detail: `${task.subjectName} · ${task.ownerName}`,
             subjectName: task.subjectName,
             subject: task.leadId ? { kind: "lead", id: task.leadId } : task.memberId ? { kind: "member", id: task.memberId } : undefined,
@@ -5542,9 +5827,29 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
+      // A change RIVET prepared reaches its approver on Today as well as the bell, in place of the drawer's own item.
+      const shiftsWithWaitingApproval = new Set<string>();
+      for (const proposal of this.ai.waitingProposals()) {
+        if (!queueBranchVisible(proposal.branchId)) continue;
+        shiftsWithWaitingApproval.add(proposal.shiftId);
+        queueItems.push({
+          id: `ai-proposal:${proposal.id}`,
+          kind: "approval",
+          priority: "urgent",
+          title: "A prepared change is waiting for approval",
+          detail: `Prepared by RIVET for ${proposal.requestedByName}`,
+          branchName: proposal.branchId ? branchNameById.get(proposal.branchId) : undefined,
+          occurredAt: new Date(proposal.proposedAt).toISOString(),
+          ...(proposal.varianceMinor ? { amount: { amount: proposal.varianceMinor, currency: this.db.organization.currency } } : {}),
+          href: proposal.href,
+          action: { kind: "navigate", label: "Review" },
+        });
+      }
+
       if (permissions.includes("reconciliation.read")) {
         for (const shift of this.db.shifts) {
           if (!queueBranchVisible(shift.branchId) || shift.status !== "closed" || shift.varianceApprovalStatus !== "pending" || !shift.variance || shift.variance.amount === 0) continue;
+          if (shiftsWithWaitingApproval.has(shift.id)) continue;
           queueItems.push({
             id: `variance:${shift.id}`,
             kind: "cash_variance",
@@ -6868,6 +7173,7 @@ export class MockGymOSApi implements GymOSApi {
       createdAt: nowISO(),
     };
     this.db.memberships.push(record);
+    if (args.operation !== "plan_change") this.ai?.closeObsoleteRenewalWork(record.memberId, record.id);
 
     const totalMinor = priceMinor - discountMinor;
     const charge: T.Charge = {
@@ -7574,6 +7880,9 @@ export class MockGymOSApi implements GymOSApi {
       const lostReason = input.lostReason?.trim();
       if (closingAsLost && (!lostReason || lostReason.length < 5)) throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
       const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
+      // Contact consent changes only through its own audited action.
+      input = { ...input };
+      delete (input as { doNotContact?: unknown }).doNotContact;
       if (input.ownerId !== undefined) {
         const ownerId = input.ownerId === "unassigned" ? undefined : input.ownerId;
         if (ownerId && ownerId !== lead.ownerId) this.require("crm.assign");
@@ -7589,6 +7898,22 @@ export class MockGymOSApi implements GymOSApi {
         lead.nextFollowUpAt = undefined;
         for (const task of this.db.tasks) if (task.leadId === lead.id && task.status === "open") { task.status = "cancelled"; task.outcome = `Lead marked not sold: ${lostReason}`; task.completedAt = nowISO(); }
         this.audit({ category: "crm", action: "lead.lost", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: "Lead marked as not sold", reason: lostReason, before, after: { stage: "lost", lostReason: lostReason ?? null }, branchId: lead.branchId });
+      }
+      return this.getLeadSync(leadId);
+    });
+  }
+
+  setLeadContactPreference(leadId: T.UUID, input: { doNotContact: boolean; reason?: string }): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const lead = this.db.leads.find((item) => item.id === leadId);
+      if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const reason = input.reason?.trim().slice(0, 200) || undefined;
+      if (Boolean(lead.doNotContact) !== input.doNotContact) {
+        lead.doNotContact = input.doNotContact ? { since: nowISO(), byId: this.actor().id, byName: this.actor().name, ...(reason ? { reason } : {}) } : undefined;
+        lead.updatedAt = nowISO();
+        this.audit({ category: "crm", action: input.doNotContact ? "lead.do_not_contact" : "lead.contact_allowed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: input.doNotContact ? "Lead asked not to be contacted" : "Lead may be contacted again", reason, branchId: lead.branchId });
+        this.activity({ leadId: lead.id, type: "marketing_preference_changed", title: input.doNotContact ? "Asked not to be contacted" : "Contact allowed again", titleMessage: systemMessage(input.doNotContact ? "communicationCompletion.timeline.leadDoNotContact" : "communicationCompletion.timeline.leadContactAllowed"), body: reason, actorId: this.actor().id, actorName: this.actor().name });
       }
       return this.getLeadSync(leadId);
     });
@@ -7986,7 +8311,7 @@ export class MockGymOSApi implements GymOSApi {
           memberId: task.memberId,
           type: "task_completed",
           title: `Task completed: ${task.title}`,
-          titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.title }),
+          titleMessage: systemMessage("communicationCompletion.timeline.taskCompleted", { title: task.titleMessage ? { message: task.titleMessage } : task.title }),
           body: input.outcome,
           actorId: this.actor().id,
           actorName: this.actor().name,
@@ -8202,7 +8527,11 @@ export class MockGymOSApi implements GymOSApi {
 
 
   listRenewalQueue(query: RenewalQueueQuery): Promise<T.Page<T.RenewalQueueItem>> {
-    return this.respond(() => {
+    return this.respond(() => paginate(this.maybeEmpty(this.renewalQueueItemsSync(query)), query));
+  }
+
+  private renewalQueueItemsSync(query: Pick<RenewalQueueQuery, "branchId" | "bucket" | "days" | "fromDate" | "toDate">): T.RenewalQueueItem[] {
+    {
       this.require("crm.read");
       const branchId = this.branchScopedBranchId(query.branchId);
       const today = this.today();
@@ -8242,8 +8571,8 @@ export class MockGymOSApi implements GymOSApi {
         });
       }
       items.sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
-      return paginate(this.maybeEmpty(items), query);
-    });
+      return items;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -9290,16 +9619,18 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   reviewVariance(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): Promise<T.CashShift> {
-    return this.respond(() => {
-      this.require("reconciliation.approve_variance");
-      this.requireReason(input.note);
-      const shift = this.db.shifts.find((s) => s.id === shiftId);
-      if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
-      shift.varianceApprovalStatus = input.decision;
-      const audit = this.db.audits.find((a) => a.entityType === "cash_shift" && a.entityId === shift.id && a.approvalStatus === "pending");
-      if (audit) audit.approvalStatus = input.decision;
-      return shift;
-    });
+    return this.respond(() => this.reviewVarianceSync(shiftId, input));
+  }
+
+  private reviewVarianceSync(shiftId: T.UUID, input: { decision: "approved" | "rejected"; note: string }): T.CashShift {
+    this.require("reconciliation.approve_variance");
+    this.requireReason(input.note);
+    const shift = this.db.shifts.find((s) => s.id === shiftId);
+    if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
+    shift.varianceApprovalStatus = input.decision;
+    const audit = this.db.audits.find((a) => a.entityType === "cash_shift" && a.entityId === shift.id && a.approvalStatus === "pending");
+    if (audit) audit.approvalStatus = input.decision;
+    return shift;
   }
 
   getDailyReconciliation(query: { branchId: T.UUID; date: T.ISODate }): Promise<T.ReconciliationReport> {
@@ -12553,6 +12884,7 @@ export class MockGymOSApi implements GymOSApi {
       history: all.filter((candidate) => candidate.date < fromDate && candidate.roster.some((entry) => entry.memberId === member.id)).slice(-20).reverse().map(view),
       noShowCount: all.reduce((count, candidate) => count + candidate.roster.filter((entry) => entry.memberId === member.id && entry.status === "no_show").length, 0),
       profileCorrectionRequired,
+      assistance: { classSuggestions: this.ai.memberCapabilityOn("member_class_finder") },
     };
   }
 
@@ -12634,7 +12966,11 @@ export class MockGymOSApi implements GymOSApi {
   }
 
   addClassOccurrenceAttendee(input: T.ClassOccurrenceRosterInput): Promise<T.ClassOccurrence> {
-    return this.respond(() => {
+    return this.respond(() => this.addClassOccurrenceAttendeeSync(input));
+  }
+
+  private addClassOccurrenceAttendeeSync(input: T.ClassOccurrenceRosterInput): T.ClassOccurrence {
+    {
       this.requireRosterPermission();
       const occurrence = this.classOccurrenceById(input.occurrenceId);
       const member = this.db.members.find((candidate) => candidate.id === input.memberId && candidate.status !== "archived");
@@ -12658,7 +12994,7 @@ export class MockGymOSApi implements GymOSApi {
       this.activity({ memberId: member.id, type: status === "booked" ? "class_booked" : "class_waitlisted", title: status === "booked" ? `Booked ${occurrence.name}` : `Joined the ${occurrence.name} waitlist`, titleMessage: systemMessage(status === "booked" ? "communicationCompletion.timeline.classBooked" : "communicationCompletion.timeline.classWaitlisted", { className: occurrence.name }), body: occurrence.date, meta: { occurrenceId: occurrence.id, bookingId: entry.bookingId, bookedBy: "staff" } });
       this.audit({ category: "operations", action: status === "booked" ? "classes.booking.create" : "classes.waitlist.join", entityType: "class_occurrence", entityId: occurrence.id, entityLabel: `${occurrence.name} · ${occurrence.date}`, summary: `${member.fullName} ${status === "booked" ? "booked" : "joined the waitlist for"} ${occurrence.name}`, reason: override });
       return this.refreshClassOccurrence(occurrence);
-    });
+    }
   }
 
   removeClassOccurrenceAttendee(input: { occurrenceId: T.UUID; bookingId: T.UUID; reason?: string }): Promise<T.ClassOccurrence> {

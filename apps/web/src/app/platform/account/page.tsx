@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
+import { Button } from "@/components/ui/button";
 import { PlatformPage, PlatformPanel, PlatformPanelHeader } from "@/components/platform/platform-page";
 import { PageHeader } from "@/components/shared/chrome";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
@@ -31,6 +33,9 @@ export default function PlatformAccountPage() {
               <dd className="mt-1 truncate text-[13.5px] text-ink">{email ? isolateLtr(email) : "—"}</dd>
             </div>
           </dl>
+        </PlatformPanel>
+        <PlatformPanel aria-labelledby="platform-account-assistance">
+          <PlatformPanelHeader id="platform-account-assistance" title={t("aiWork.platformControl.link")} description={t("aiWork.platformControl.linkHint")} actions={<Button asChild variant="secondary" size="sm"><Link href="/platform/assistance" data-testid="platform-assistance-link">{t("aiWork.artifact.open")}</Link></Button>} />
         </PlatformPanel>
         <PlatformPanel aria-labelledby="platform-account-password">
           <PlatformPanelHeader id="platform-account-password" title={t("auth.changePassword.title")} description={t("auth.changePassword.description")} />

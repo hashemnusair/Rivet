@@ -12,7 +12,9 @@ import {
   type ActorContext,
 } from "./security";
 import { deriveServerMembershipStatus } from "./invariants";
-import { addDays, diffDays, localDateTimeToISO, todayISODate } from "../src/lib/utils/dates";
+import { addDays, diffDays, localDateTimeToISO, partsInTimeZone, todayISODate } from "../src/lib/utils/dates";
+import type { ClassOptionFacts } from "../src/lib/ai/class-finder";
+import { memberCapabilityOn } from "./aiPolicy";
 import { classBookingBlockMessage, classCancellationOutcome, occurrenceCancellationBlock } from "../src/lib/domain/class-booking";
 
 type ReadContext = QueryCtx | MutationCtx;
@@ -770,6 +772,7 @@ async function customerClassExperience(ctx: QueryCtx, context: CustomerClassCont
     history: history.filter(Boolean),
     noShowCount: memberBookings.filter((booking) => booking.status === "no_show").length,
     profileCorrectionRequired,
+    assistance: { classSuggestions: await memberCapabilityOn(ctx, context.organization._id, "member_class_finder") },
   };
 }
 
@@ -1178,4 +1181,61 @@ export async function customerClassesQuery(ctx: QueryCtx, context: CustomerClass
 export async function customerClassesMutation(ctx: MutationCtx, context: CustomerClassContext, operation: string, input: Data, correlationId: string): Promise<unknown> {
   if (operation !== "customer.classes.book" && operation !== "customer.classes.cancel") domainError("NOT_FOUND", `Unknown customer classes mutation ${operation}.`, { message: { key: "apiErrors.unexpected" }, correlationId });
   return await customerBookingMutation(ctx, context, operation, input, correlationId);
+}
+
+/**
+ * Upcoming classes in the branches the staff member can see, with the member's
+ * eligibility, audience fit and booking state, for RIVET's class finder.
+ * Read only; booking still goes through `classes.occurrence.roster.add`.
+ */
+export async function classOptionFactsFor(ctx: ReadContext, actor: ActorContext, memberId: string, from: string, to: string): Promise<{ enabled: boolean; facts: ClassOptionFacts[] }> {
+  requirePermission(actor, "members.read");
+  const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "member").eq("publicId", memberId)).unique();
+  if (!member || String(valueData(member.data).status ?? "active") === "archived" || (member.branchId && actor.branchScope === "selected" && !actor.branchIds.includes(member.branchId))) domainError("NOT_FOUND", "Member not found.", { correlationId: actor.correlationId });
+  const policy = await classPolicy(ctx, actor.organization._id);
+  if (!policy.enabled) return { enabled: false, facts: [] };
+  const gender = String(valueData(member.data).gender ?? "");
+  const timezone = actor.organization.timezone || "Asia/Amman";
+  const branches = (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect())
+    .filter((branch) => branch.active && branch.status !== "inactive" && (actor.branchScope === "all" || actor.branchIds.includes(branch._id)));
+  const eligibility = new Map<string, boolean>();
+  const facts: ClassOptionFacts[] = [];
+  for (const branch of branches) {
+    for (const { source, bookings } of await listOccurrenceSources(ctx, actor.organization, branch, from, to)) {
+      const date = String(source.date);
+      const key = `${branch._id}:${date}`;
+      if (!eligibility.has(key)) eligibility.set(key, Boolean((await membershipEligibility(ctx, actor.organization, memberId, undefined, branch, date, policy)).membership));
+      const audience = String(source.audience ?? "mixed");
+      const startsAt = Number(source.startsAt);
+      const local = partsInTimeZone(new Date(startsAt), timezone);
+      facts.push({
+        occurrenceId: String(source.id),
+        name: String(source.name ?? ""),
+        branchId: publicBranchId(branch),
+        branchName: branch.name,
+        date,
+        startsAt: new Date(startsAt).toISOString(),
+        endsAt: new Date(Number(source.endsAt)).toISOString(),
+        startMinuteLocal: Number(local.hour) * 60 + Number(local.minute),
+        audience,
+        ...(source.coachName ? { coachName: String(source.coachName) } : {}),
+        status: String(source.status ?? "scheduled"),
+        capacity: Number(source.capacity ?? 0),
+        bookedCount: bookings.filter((booking) => bookingIsRostered(booking.status)).length,
+        memberBooked: bookings.some((booking) => booking.memberPublicId === memberId && ACTIVE_BOOKING_STATUSES.has(booking.status)),
+        memberEligible: eligibility.get(key)!,
+        // As at booking: a known gender that matches a single-gender class, or any known gender for mixed.
+        audienceFits: (gender === "male" || gender === "female") && (audience === "mixed" || (audience === "women" && gender === "female") || (audience === "men" && gender === "male")),
+      });
+    }
+  }
+  return { enabled: true, facts };
+}
+
+/** The member's booking state for one class, read back after a delegated booking. */
+export async function classBookingStatusFor(ctx: ReadContext, actor: ActorContext, occurrenceKey: string, memberId: string): Promise<string | undefined> {
+  const occurrence = await ctx.db.query("classOccurrences").withIndex("by_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", occurrenceKey)).unique();
+  if (!occurrence) return undefined;
+  const rows = await ctx.db.query("classBookings").withIndex("by_occurrence_member", (q) => q.eq("organizationId", actor.organization._id).eq("occurrenceId", occurrence._id).eq("memberPublicId", memberId)).collect();
+  return rows.filter((row) => ACTIVE_BOOKING_STATUSES.has(row.status)).sort((left, right) => right.updatedAt - left.updatedAt)[0]?.status;
 }

@@ -50,6 +50,7 @@ import { nav } from "./nav";
 import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
+import { aiWork } from "./aiWork";
 
 /**
  * English is the source of truth: `Messages` is derived from it, so the Arabic
@@ -112,6 +113,7 @@ export const en = {
   palette,
   renewFlow,
   shell,
+  aiWork,
 };
 
 export type Messages = typeof en;

@@ -37,6 +37,7 @@ export const staffTools: typeof EnglishStaffTools = {
       users: "فريق العمل والصلاحيات",
       settings: "الإعدادات",
       legal: "الشؤون القانونية",
+      ai: "الأعمال المُعدّة",
     },
     role: {
       owner: "مالك النادي",

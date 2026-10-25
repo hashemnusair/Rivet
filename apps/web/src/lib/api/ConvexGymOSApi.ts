@@ -62,6 +62,7 @@ import type {
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
+import type * as AI from "@/lib/ai/contracts";
 import type { CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
@@ -96,6 +97,7 @@ export interface ConvexTransport {
   action(reference: typeof api.gymApplications.review, args: ReviewGymApplicationInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: InvitationActionArgs): Promise<unknown>;
+  action(reference: typeof api.aiActions.prepare, args: { operation: "extract_note" | "interpret_revision" | "interpret_filters"; input: Record<string, unknown>; organizationId?: string; activeBranchId?: string; correlationId: string }): Promise<unknown>;
   action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
 }
 
@@ -337,6 +339,58 @@ export class ConvexGymOSApi implements GymOSApi {
     // ordinary query only after the watch enters fallback.
     return stop;
   }
+
+  private async prepareWithAi<R>(operation: "extract_note" | "interpret_revision" | "interpret_filters", input: object): Promise<R> {
+    try {
+      if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");
+      const result = await this.transport.action(api.aiActions.prepare, { operation, input: input as Record<string, unknown>, organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() });
+      return result as R;
+    } catch (error) {
+      throw error instanceof ApiError ? error : errorFromConvex(error);
+    }
+  }
+
+  getAiSettings(): Promise<AI.AiSettingsView> { return this.query("ai.settings.get"); }
+  updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.mutate("ai.settings.update", input); }
+  getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.query("ai.member.brief", { memberId }); }
+  getMemberHeadlines(memberIds: T.UUID[]): Promise<AI.AiMemberHeadlinesResult> { return this.query("ai.member.headlines", { memberIds }); }
+  prepareCollections(query: { branchId?: T.UUID }): Promise<AI.AiCollectionsResult> { return this.query("ai.collections.prepare", query); }
+  getClassOptions(query: { memberId: T.UUID; timeOfDay?: "morning" | "afternoon" | "evening" }): Promise<AI.AiClassOptionsResult> { return this.query("ai.classes.options", query); }
+  getAiOutcomeSummary(): Promise<AI.AiOutcomeSummary> { return this.query("ai.outcomes.summary", {}); }
+  getPlatformAiStatus(): Promise<AI.AiPlatformStatus> { return this.query("ai.platform.status", {}); }
+  setPlatformAiStop(input: { stopped: boolean; reason: string }): Promise<{ stopped: boolean; reason: string }> { return this.mutate("ai.platform.stop", input); }
+  getPlatformAiAvailability(): Promise<AI.AiPlatformAvailability> { return this.query("ai.platform.availability", {}); }
+  setPlatformAiAvailability(input: { organizationId: string; available: boolean; reason: string }): Promise<AI.AiGymAvailability> { return this.mutate("ai.platform.availability.set", input); }
+  extractContactNote(input: { memberId?: T.UUID; leadId?: T.UUID; note: string; noteAt?: string; locale?: "en" | "ar" }): Promise<AI.AiExtractNoteResult> { return this.prepareWithAi("extract_note", input); }
+  interpretRunRevision(input: { runId: string; text: string }): Promise<AI.AiInterpretRevisionResult> { return this.prepareWithAi("interpret_revision", input); }
+  interpretListFilters(input: { surface: "members" | "leads"; text: string }): Promise<AI.AiInterpretFiltersResult> { return this.prepareWithAi("interpret_filters", input); }
+  startAiRun(input: AI.StartAiRunInput): Promise<AI.AiRunView> { return this.mutate("ai.run.start", input); }
+  getAiRun(runId: string): Promise<AI.AiRunView> { return this.query("ai.run.get", { runId }); }
+  subscribeAiRun(runId: string, onValue: (run: AI.AiRunView) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("ai.run.get", { runId }, onValue, onError); }
+  listAiRuns(query: { playbook?: AI.AiPlaybookKey; branchId?: T.UUID; limit?: number }): Promise<AI.AiRunView[]> { return this.query("ai.runs.list", query); }
+  cancelAiRun(runId: string): Promise<AI.AiRunView> { return this.mutate("ai.run.cancel", { runId }); }
+  reviseAiRun(input: { runId: string; text: string; revision: AI.AiRunRevision }): Promise<AI.AiRunView> { return this.mutate("ai.run.revise", input); }
+  takeOverAiRun(runId: string): Promise<AI.AiRunView> { return this.mutate("ai.run.take_over", { runId }); }
+  retryAiRun(runId: string): Promise<AI.AiRunView> { return this.mutate("ai.run.retry", { runId }); }
+  listStandingInstructions(): Promise<AI.AiStandingInstructionView[]> { return this.query("ai.standing.list"); }
+  previewStandingInstruction(input: { playbook: AI.AiPlaybookKey; params: Record<string, string | number | boolean>; branchId?: T.UUID }): Promise<AI.AiStandingPreview> { return this.query("ai.standing.preview", input); }
+  createStandingInstruction(input: AI.CreateStandingInstructionInput & { previewDigest: string }): Promise<AI.AiStandingInstructionView> { return this.mutate("ai.standing.create", input); }
+  updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> {
+    const { action, ...rest } = input;
+    return this.mutate(`ai.standing.${action}`, rest);
+  }
+  listAiProposals(query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.query("ai.proposals.list", query); }
+  decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.mutate("ai.proposal.decide", input); }
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<AI.AiApproveAllResult> { return this.mutate("ai.proposals.approve_all", input); }
+  getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.query("ai.artifact.get", { artifactId }); }
+  listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.query("ai.memories.list", { memberId }); }
+  recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> {
+    const { memberId, ...rest } = input;
+    return this.mutate("ai.memory.record", { subjectId: memberId, ...rest });
+  }
+  revokeMemberMemory(memoryId: string): Promise<void> { return this.mutate("ai.memory.revoke", { memoryId }); }
+  recordAiFeedback(input: AI.AiFeedbackInput): Promise<void> { return this.mutate("ai.feedback.record", input); }
+  markAiTaskNotNeeded(input: { taskId: T.UUID; reason?: string }): Promise<{ taskId: T.UUID; closed: boolean; alreadyMarked: boolean }> { return this.mutate("ai.task.mark_unnecessary", input); }
 
   async getSession(): Promise<T.Session> {
     const session = await this.query<T.Session>("session");
@@ -623,6 +677,7 @@ export class ConvexGymOSApi implements GymOSApi {
   subscribeLead(leadId: T.UUID, onValue: (lead: T.LeadDetail) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("leads.get", { leadId }, onValue, onError); }
   createLead(input: T.CreateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.create", input); }
   updateLead(leadId: T.UUID, input: T.UpdateLeadInput): Promise<T.LeadDetail> { return this.mutate("leads.update", { leadId, ...input }); }
+  setLeadContactPreference(leadId: T.UUID, input: { doNotContact: boolean; reason?: string }): Promise<T.LeadDetail> { return this.mutate("leads.contact_preference", { leadId, ...input }); }
   updateLeadContact(leadId: T.UUID, input: T.UpdateLeadContactInput): Promise<T.LeadDetail> { return this.mutate("leads.update_contact", { leadId, ...input }); }
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }

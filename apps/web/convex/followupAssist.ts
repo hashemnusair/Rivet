@@ -198,6 +198,8 @@ export interface FollowUpRelatedTask {
   id: string;
   type: string;
   title: string;
+  /** For a task RIVET prepared: its title as a descriptor, shown in the reader's language. */
+  titleMessage?: import("../src/lib/i18n/system-messages").SystemMessage;
   ownerId?: string;
   ownerName: string;
   dueAt: string;

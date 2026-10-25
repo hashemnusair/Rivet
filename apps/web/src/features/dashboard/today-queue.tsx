@@ -70,6 +70,7 @@ export function todayQueueKindLabel(kind: TodayQueueKind, t?: TFunction): string
  */
 export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueItem) => void; isCompleting: (item: TodayQueueItem) => boolean; dialog: ReactNode } {
   const { t, locale, isolate } = useLocale();
+  const format = useFormat();
   /** A follow-up about a person: "Done" asks what happened so the outcome is kept. */
   const [logging, setLogging] = useState<TodayQueueItem>();
   const invalidate = useInvalidate();
@@ -92,7 +93,7 @@ export function useTodayQueueCompletion(): { requestComplete: (item: TodayQueueI
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{t("dashboard.today.dialog.title")}</DialogTitle>
-          <DialogDescription>{logging ? t("dashboard.today.dialog.description", { title: isolate(todayItemTitle({ t, locale, isolate }, logging)) }) : ""}</DialogDescription>
+          <DialogDescription>{logging ? t("dashboard.today.dialog.description", { title: isolate(todayItemTitle({ t, locale, isolate, format }, logging)) }) : ""}</DialogDescription>
         </DialogHeader>
         {logging?.subject ? (
           <DialogBody>
@@ -237,7 +238,7 @@ export function TodayQueueRow({
 }) {
   const { t, locale, isolate } = useLocale();
   const format = useFormat();
-  const copy = { t, locale, isolate, clock: format.clock };
+  const copy = { t, locale, isolate, clock: format.clock, format };
   const Icon = KIND_ICON[item.kind];
   const title = todayItemTitle(copy, item);
   const actionLabel = todayActionLabel(copy, item.action.label);

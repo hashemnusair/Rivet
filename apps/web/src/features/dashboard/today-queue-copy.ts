@@ -1,5 +1,7 @@
 import type { TodayQueueItem } from "@/lib/domain/types";
+import type { Formatters } from "@/lib/i18n/formatters";
 import type { TFunction, TKey } from "@/lib/i18n/provider";
+import { isRenderableSystemMessage, renderSystemMessage } from "@/lib/i18n/system-messages";
 
 /**
  * Today items arrive with English titles, details and button words written by
@@ -16,6 +18,8 @@ export interface TodayItemCopyOptions {
   locale: string;
   isolate: (value: string | number) => string;
   clock?: (value: string) => string;
+  /** Needed for descriptors that carry dates (the title of a task RIVET prepared). */
+  format?: Formatters;
 }
 
 const ACTION_KEYS: Record<string, TKey> = {
@@ -35,9 +39,11 @@ export function todayActionLabel({ t, locale }: TodayItemCopyOptions, label: str
   return key ? t(key) : label;
 }
 
-export function todayItemTitle({ t, locale, isolate }: TodayItemCopyOptions, item: TodayQueueItem): string {
+export function todayItemTitle({ t, locale, isolate, format }: TodayItemCopyOptions, item: TodayQueueItem): string {
   const { title, subjectName, branchName, id } = item;
   if (locale === "en") return title;
+  // A task RIVET prepared carries its title as a descriptor; older tasks keep their stored text.
+  if (item.titleMessage && format && isRenderableSystemMessage(item.titleMessage)) return renderSystemMessage(item.titleMessage, { locale: locale as "ar", t, format });
 
   if (subjectName) {
     const name = isolate(subjectName);
@@ -48,6 +54,8 @@ export function todayItemTitle({ t, locale, isolate }: TodayItemCopyOptions, ite
     if (item.kind === "access_denial" && title === `${subjectName} was refused entry`) return t("dashboard.today.item.refusedEntry", { name });
     if (item.kind === "follow_up" && id.startsWith("lead-follow-up:") && title === `Follow up — ${subjectName}`) return t("dashboard.today.item.followUpLead", { name });
   }
+
+  if (item.kind === "approval" && id.startsWith("ai-proposal:") && title === "A prepared change is waiting for approval") return t("communicationCompletion.notifications.aiProposalWaiting");
 
   if (item.kind === "cash_variance") {
     if (branchName && title === `Check the cash difference at ${branchName}`) return t("dashboard.today.item.cashDifferenceAt", { branch: isolate(branchName) });
@@ -78,6 +86,10 @@ export function todayItemDetail(options: TodayItemCopyOptions, item: TodayQueueI
   if (locale === "en") return detail;
 
   if (item.kind === "outstanding_balance" && detail === "Owes money") return t("dashboard.today.item.owesMoney");
+  if (item.kind === "approval" && item.id.startsWith("ai-proposal:")) {
+    const preparedFor = /^Prepared by RIVET for (.+)$/.exec(detail);
+    if (preparedFor) return t("communicationCompletion.notifications.aiProposalFor", { name: isolate(preparedFor[1]!) });
+  }
   if (item.kind === "follow_up" && detail === "Lead · not contacted yet") return t("dashboard.today.item.leadNotContacted");
 
   if (item.kind === "renewal") {

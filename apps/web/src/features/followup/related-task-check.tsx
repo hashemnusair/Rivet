@@ -8,6 +8,7 @@ import type { ContactSubjectKind, FollowUpRelatedTask, Task } from "@/lib/domain
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useLocale } from "@/lib/i18n/provider";
+import { useTaskTitle } from "@/lib/i18n/use-task-title";
 
 export interface RelatedTaskDraftInput {
   type: string;
@@ -18,7 +19,7 @@ export interface RelatedTaskDraftInput {
 }
 
 function toRelated(task: Task, me: string | undefined): FollowUpRelatedTask {
-  return { id: task.id, type: task.type, title: task.title, ownerId: task.ownerId, ownerName: task.ownerName, dueAt: task.dueAt, priority: task.priority, status: task.status, mine: !task.ownerId || task.ownerId === me, createdById: task.createdById, relatedTaskId: task.relatedTaskId, relatedTaskTitle: task.relatedTaskTitle };
+  return { id: task.id, type: task.type, title: task.title, ...(task.titleMessage ? { titleMessage: task.titleMessage } : {}), ownerId: task.ownerId, ownerName: task.ownerName, dueAt: task.dueAt, priority: task.priority, status: task.status, mine: !task.ownerId || task.ownerId === me, createdById: task.createdById, relatedTaskId: task.relatedTaskId, relatedTaskTitle: task.relatedTaskTitle };
 }
 
 /**
@@ -48,6 +49,7 @@ export function RelatedTaskCheck({
 }) {
   const { session } = useApp();
   const { t, isolate } = useLocale();
+  const taskTitle = useTaskTitle();
   const idKey = subject === "lead" ? "leadId" : "memberId";
   const tasksQuery = useApiQuery(
     qk.tasks({ [idKey]: subjectId, open: true, surface: "related-task-check" }),
@@ -61,7 +63,7 @@ export function RelatedTaskCheck({
     const fresh = await tasksQuery.refetch();
     const latest = (fresh.data?.items ?? []).find((candidate) => candidate.id === task.id);
     if (!latest || latest.status !== "open" || latest.ownerId !== task.ownerId || latest.dueAt !== task.dueAt) {
-      setStale(t("memberProfile.relatedTask.stale", { title: isolate(task.title) }));
+      setStale(t("memberProfile.relatedTask.stale", { title: isolate(taskTitle(task)) }));
       return undefined;
     }
     return toRelated(latest, session?.user.id);
@@ -77,7 +79,7 @@ export function RelatedTaskCheck({
             {tasks.map((task) => (
               <li key={task.id} className="rounded-md border border-line-2 px-2 py-1.5">
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium text-ink" dir="auto">{task.title}</span>
+                  <span className="font-medium text-ink" dir="auto">{taskTitle(task)}</span>
                   <span className="text-ink-3"><bdi>{task.ownerName}</bdi> · {t("memberProfile.relatedTask.due")} <RelativeText iso={task.dueAt} /></span>
                   {task.relatedTaskTitle ? <span className="text-ink-3">· {t("memberProfile.relatedTask.after", { title: isolate(task.relatedTaskTitle) })}</span> : null}
                 </div>

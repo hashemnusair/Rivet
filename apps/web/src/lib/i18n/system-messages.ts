@@ -8,8 +8,8 @@ import { domain as enDomain } from "./messages/en/domain";
 import { memberProfile as enMemberProfile } from "./messages/en/memberProfile";
 
 /**
- * Stable, translatable descriptors for system-generated notifications and
- * timeline events.
+ * Stable, translatable descriptors for system-generated notifications,
+ * timeline events and the titles of tasks RIVET prepares.
  *
  * A record keeps its original stored text forever; a descriptor rides beside
  * it (`titleMessage`, `bodyMessage`) so a reader can see the same event in
@@ -22,7 +22,7 @@ import { memberProfile as enMemberProfile } from "./messages/en/memberProfile";
  * Pure: no React, no Convex. Shared by Convex creators, the preview adapter
  * and the UI.
  */
-export type SystemMessageKey = Extract<TKey, `communicationCompletion.notifications.${string}` | `communicationCompletion.timeline.${string}`>;
+export type SystemMessageKey = Extract<TKey, `communicationCompletion.notifications.${string}` | `communicationCompletion.timeline.${string}` | `communicationCompletion.tasks.${string}`>;
 
 /** Enumerations a parameter may name; each maps to catalogue labels. */
 export type SystemMessageEnum = "channel" | "paymentMethod" | "messageContext" | "contactOutcome" | "renewalReason";
@@ -96,7 +96,7 @@ export function renewalReasonMessage(value: string | undefined): SystemMessage |
 }
 
 function leafFor(key: string): unknown {
-  if (!/^communicationCompletion\.(notifications|timeline)\./.test(key)) return undefined;
+  if (!/^communicationCompletion\.(notifications|timeline|tasks)\./.test(key)) return undefined;
   let node: unknown = enCatalogue;
   for (const segment of key.slice(PREFIX.length).split(".")) {
     if (!node || typeof node !== "object" || isPluralForms(node)) return undefined;

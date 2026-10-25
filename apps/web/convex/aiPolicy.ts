@@ -1,0 +1,396 @@
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { ActorContext } from "./security";
+import { domainError, publicBranchId, publicUserId } from "./security";
+import { CAPABILITY_KEYS, effectiveCapabilityMode, PLAYBOOKS, type AuthorityInput } from "../src/lib/ai/capabilities";
+import { resolveAdapterConfig, type AiAdapterConfig } from "../src/lib/ai/model";
+import { localDateOf } from "../src/lib/analytics/operational-reports";
+import { artifactSectionReadable } from "../src/lib/ai/jobs";
+import type {
+  AiArtifactView,
+  AiCapabilityKey,
+  AiErrorCategory,
+  AiMemoryView,
+  AiPlaybookKey,
+  AiProposalView,
+  AiRunStatus,
+  AiRunView,
+  AiSettingsView,
+  AiStandingInstructionView,
+  AiTenantMode,
+} from "../src/lib/ai/contracts";
+import { isTerminalRunStatus } from "../src/lib/ai/contracts";
+
+/**
+ * Server-side policy for RIVET assistance: deployment configuration, the
+ * platform stop, gym settings, capability modes, and the views pages read.
+ * Pure helpers over Convex reads; no business writes happen here.
+ */
+
+type ReadCtx = QueryCtx | MutationCtx;
+export type AiSettingsDoc = Doc<"aiSettings">;
+export type AiRunDoc = Doc<"aiRuns">;
+export type AiGrantDoc = Doc<"aiGrants">;
+
+export const GLOBAL_CONTROL_KEY = "global";
+export const LEASE_MS = 60_000;
+export const ARTIFACT_TTL_MS = 30 * 86_400_000;
+export const PROPOSAL_TTL_MS = 24 * 3_600_000;
+/** Runs one gym may have in progress at once; more wait in the queue. */
+export const TENANT_CONCURRENCY = 2;
+
+export function adapterConfig(): AiAdapterConfig {
+  return resolveAdapterConfig({
+    RIVET_AI_MODE: process.env.RIVET_AI_MODE,
+    RIVET_AI_PROTOCOL: process.env.RIVET_AI_PROTOCOL,
+    RIVET_AI_API_KEY: process.env.RIVET_AI_API_KEY,
+    RIVET_AI_BASE_URL: process.env.RIVET_AI_BASE_URL,
+    RIVET_AI_MODEL: process.env.RIVET_AI_MODEL,
+    RIVET_AI_TIMEOUT_MS: process.env.RIVET_AI_TIMEOUT_MS,
+    RIVET_AI_PROCESSING_APPROVED: process.env.RIVET_AI_PROCESSING_APPROVED,
+    RIVET_AI_MAX_RUN_COST_MICROS: process.env.RIVET_AI_MAX_RUN_COST_MICROS,
+    RIVET_AI_MAX_MONTHLY_COST_MICROS: process.env.RIVET_AI_MAX_MONTHLY_COST_MICROS,
+    RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK: process.env.RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK,
+    RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK: process.env.RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK,
+  });
+}
+
+export function newAiPublicId(prefix: string): string {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+/** The gym's own calendar month of a moment ("YYYY-MM"): budgets and summaries roll over at local midnight. */
+export function monthKey(timestamp: number, timezone: string): string {
+  return localDateOf(new Date(timestamp).toISOString(), timezone).slice(0, 7);
+}
+
+/** A moment safely before a gym-local month starts; filter what it returns with `monthKey`. */
+export function monthLowerBound(month: string): number {
+  return Date.parse(`${month}-01T00:00:00.000Z`) - 14 * 3_600_000;
+}
+
+export async function aiSettingsFor(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<AiSettingsDoc | null> {
+  return await ctx.db.query("aiSettings").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+}
+
+export async function availabilityFor(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<Doc<"aiAvailability"> | null> {
+  return await ctx.db.query("aiAvailability").withIndex("by_organization", (q) => q.eq("organizationId", organizationId)).unique();
+}
+
+/** Whether RIVET has made assistance available for this gym. No row means no: the default for every gym. */
+export async function platformAvailable(ctx: ReadCtx, organizationId: Id<"organizations">): Promise<boolean> {
+  return Boolean((await availabilityFor(ctx, organizationId))?.available);
+}
+
+/**
+ * Drop reusable model answers (AI-1.9): for one subject after a merge or
+ * deletion, or for the whole gym after a permission change. Keys already
+ * change with record versions and access; this removes the words they hold.
+ */
+export async function dropModelCache(ctx: MutationCtx, organizationId: Id<"organizations">, subject?: { type: "member" | "lead"; id: string }): Promise<number> {
+  const rows = subject
+    ? await ctx.db.query("aiModelCache").withIndex("by_organization_subject", (q) => q.eq("organizationId", organizationId).eq("subjectType", subject.type).eq("subjectId", subject.id)).take(500)
+    : await ctx.db.query("aiModelCache").withIndex("by_organization_key", (q) => q.eq("organizationId", organizationId)).take(2_000);
+  for (const row of rows) await ctx.db.delete(row._id);
+  return rows.length;
+}
+
+/** Recorded model spend this month for a gym, and for one run when named. */
+export async function spentMicros(ctx: ReadCtx, organizationId: Id<"organizations">, runPublicId?: string): Promise<{ monthMicros: number; runMicros?: number }> {
+  const timezone = (await ctx.db.get(organizationId))?.timezone ?? "Asia/Amman";
+  const rows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", organizationId).eq("month", monthKey(Date.now(), timezone))).collect();
+  return {
+    monthMicros: rows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
+    ...(runPublicId ? { runMicros: rows.filter((row) => row.runPublicId === runPublicId).reduce((sum, row) => sum + (row.costMicros ?? 0), 0) } : {}),
+  };
+}
+
+/**
+ * Whether a member-facing capability is on for a gym: deployment not off, no
+ * platform stop, the gym available, gym assistance on and the capability not
+ * turned off. Used by member surfaces, which never see staff settings themselves.
+ */
+export async function memberCapabilityOn(ctx: ReadCtx, organizationId: Id<"organizations">, capability: AiCapabilityKey): Promise<boolean> {
+  if (adapterConfig().mode === "off" || (await globalStopped(ctx)).stopped) return false;
+  const [settings, available] = await Promise.all([aiSettingsFor(ctx, organizationId), platformAvailable(ctx, organizationId)]);
+  return effectiveCapabilityMode(tenantModeOf(settings, available), settings?.capabilityModes?.[capability], capability) !== "off";
+}
+
+export async function globalStopped(ctx: ReadCtx): Promise<{ stopped: boolean; reason?: string }> {
+  const row = await ctx.db.query("aiControls").withIndex("by_key", (q) => q.eq("key", GLOBAL_CONTROL_KEY)).unique();
+  return { stopped: Boolean(row?.stopped), reason: row?.reason };
+}
+
+/** The gym's effective mode: what it chose, or off while RIVET has not made assistance available to it. */
+export function tenantModeOf(settings: AiSettingsDoc | null, available: boolean): AiTenantMode {
+  return available ? settings?.tenantMode ?? "off" : "off";
+}
+
+export function capabilityModeOf(settings: AiSettingsDoc | null, capability: AiCapabilityKey, available: boolean): AiTenantMode {
+  return effectiveCapabilityMode(tenantModeOf(settings, available), settings?.capabilityModes?.[capability], capability);
+}
+
+/** Inputs to the pure authority intersection for one actor right now. */
+export async function authorityInput(ctx: ReadCtx, actor: ActorContext, capability: AiCapabilityKey, entitledModules: readonly string[]): Promise<Omit<AuthorityInput, "grantTools" | "grantActive">> {
+  const [settings, stop, available] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx), platformAvailable(ctx, actor.organization._id)]);
+  return {
+    adapterMode: adapterConfig().mode,
+    globalStop: stop.stopped,
+    tenantMode: tenantModeOf(settings, available),
+    capabilityMode: capabilityModeOf(settings, capability, available),
+    actorPermissions: actor.permissions,
+    entitledModules,
+  };
+}
+
+async function userName(ctx: ReadCtx, userId: Id<"users"> | undefined, cache: Map<string, string>): Promise<string> {
+  if (!userId) return "";
+  const key = String(userId);
+  if (!cache.has(key)) cache.set(key, (await ctx.db.get(userId))?.fullName ?? "");
+  return cache.get(key) ?? "";
+}
+
+export async function settingsView(ctx: ReadCtx, actor: ActorContext): Promise<AiSettingsView> {
+  const config = adapterConfig();
+  const [settings, stop, available] = await Promise.all([aiSettingsFor(ctx, actor.organization._id), globalStopped(ctx), platformAvailable(ctx, actor.organization._id)]);
+  const now = Date.now();
+  const month = monthKey(now, actor.organization.timezone);
+  const usageRows = await ctx.db.query("aiUsage").withIndex("by_organization_month", (q) => q.eq("organizationId", actor.organization._id).eq("month", month)).take(5_000);
+  const runs = (await ctx.db.query("aiRuns").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id).gte("createdAt", monthLowerBound(month))).take(2_000))
+    .filter((run) => monthKey(run.createdAt, actor.organization.timezone) === month);
+  // The gym's own choice is shown as saved; what can run uses the effective mode.
+  const tenantMode = settings?.tenantMode ?? "off";
+  const effectiveMode = tenantModeOf(settings, available);
+  const names = new Map<string, string>();
+  return {
+    adapterMode: config.mode,
+    adapterReady: config.ready,
+    ...(config.reason ? { adapterReason: config.reason } : {}),
+    globalStop: stop.stopped,
+    platformAvailable: available,
+    tenantMode,
+    externalProcessing: settings?.externalProcessing ?? false,
+    memberDataApproved: config.memberDataApproved,
+    capabilities: CAPABILITY_KEYS.map((key) => {
+      const own = settings?.capabilityModes?.[key];
+      const effective = effectiveCapabilityMode(effectiveMode, own, key);
+      return { key, mode: own ?? effectiveCapabilityMode("execute", undefined, key), effective, available: config.mode !== "off" && !stop.stopped && effective !== "off" };
+    }),
+    usage: {
+      monthRuns: runs.length,
+      // Spend and the budget are for people who manage the gym's settings.
+      ...(actor.permissions.includes("settings.manage") ? {
+        monthModelCalls: usageRows.filter((row) => row.source === "live").length,
+        monthCostMicros: usageRows.reduce((sum, row) => sum + (row.costMicros ?? 0), 0),
+        ...(config.maxMonthlyCostMicros ? { budgetMicros: config.maxMonthlyCostMicros } : {}),
+      } : {}),
+    },
+    revision: settings?.revision ?? 0,
+    ...(settings ? { updatedAt: new Date(settings.updatedAt).toISOString(), updatedByName: await userName(ctx, settings.updatedByUserId, names) } : {}),
+    canManage: actor.permissions.includes("settings.manage") && !actor.delegation,
+  };
+}
+
+/**
+ * Whether work belonging to a branch (or to the whole gym, with no branch) is
+ * in this person's scope, whatever their role. Gym-wide work is only for people
+ * who cover every branch.
+ */
+export function branchInScope(actor: ActorContext, branchPublicId: string | undefined): boolean {
+  if (actor.branchScope === "all") return true;
+  if (!branchPublicId) return false;
+  return Boolean(actor.branch && publicBranchId(actor.branch) === branchPublicId);
+}
+
+/** The branch new work belongs to: the one asked for, the active one, or a branch-limited person's only branch. */
+export async function workBranchPublicId(ctx: ReadCtx, actor: ActorContext, requested?: string): Promise<string | undefined> {
+  if (requested) return requested;
+  if (actor.branch) return publicBranchId(actor.branch);
+  if (actor.branchScope === "selected" && actor.branchIds.length === 1) return publicBranchId(await ctx.db.get(actor.branchIds[0]!)) || undefined;
+  return undefined;
+}
+
+function runBranchInScope(actor: ActorContext, run: AiRunDoc): boolean {
+  return branchInScope(actor, run.branchPublicId);
+}
+
+/** Who may read a run: the requester, the accountable owner, or, in its branch, owners, managers and staff with the playbook's read access. */
+export function canReadRun(actor: ActorContext, run: AiRunDoc): boolean {
+  if (run.requestedByUserId === actor.user._id || run.ownerUserId === actor.user._id) return true;
+  if (!runBranchInScope(actor, run)) return false;
+  if (actor.role === "owner" || actor.role === "manager") return true;
+  const playbook = PLAYBOOKS[run.playbook as AiPlaybookKey];
+  if (!playbook) return false;
+  const readPermission = playbook.startPermissions[0];
+  return Boolean(readPermission && actor.permissions.includes(readPermission));
+}
+
+export function canControlRun(actor: ActorContext, run: AiRunDoc): boolean {
+  if (actor.delegation) return false;
+  if (run.requestedByUserId === actor.user._id || run.ownerUserId === actor.user._id) return true;
+  return (actor.role === "owner" || actor.role === "manager") && runBranchInScope(actor, run);
+}
+
+export async function runView(ctx: ReadCtx, actor: ActorContext, run: AiRunDoc, options: { includeSteps?: boolean } = {}): Promise<AiRunView> {
+  const names = new Map<string, string>();
+  const playbook = PLAYBOOKS[run.playbook as AiPlaybookKey];
+  const steps = options.includeSteps === false ? [] : await ctx.db.query("aiRunSteps").withIndex("by_organization_run", (q) => q.eq("organizationId", run.organizationId).eq("runPublicId", run.publicId)).take(500);
+  const branch = run.branchPublicId ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", run.branchPublicId)).unique() : null;
+  const grant = await ctx.db.query("aiGrants").withIndex("by_organization_public_id", (q) => q.eq("organizationId", run.organizationId).eq("publicId", run.grantPublicId)).unique();
+  const terminal = isTerminalRunStatus(run.status as AiRunStatus);
+  const control = canControlRun(actor, run);
+  const committedEffects = run.counts.created + run.resultRefs.filter((ref) => (ref as { kind?: string }).kind === "artifact").length;
+  return {
+    id: run.publicId,
+    playbook: run.playbook as AiPlaybookKey,
+    playbookVersion: run.playbookVersion,
+    status: run.status as AiRunStatus,
+    stageKey: run.stage,
+    goal: { key: playbook?.goalKey ?? "aiWork.goal.generic", params: { branch: branch?.name ?? "" } },
+    ...(run.branchPublicId ? { branchId: run.branchPublicId, branchName: branch?.name ?? "" } : {}),
+    requestedById: publicUserId(await ctx.db.get(run.requestedByUserId)),
+    requestedByName: await userName(ctx, run.requestedByUserId, names),
+    ownerId: publicUserId(await ctx.db.get(run.ownerUserId)),
+    ownerName: await userName(ctx, run.ownerUserId, names),
+    grantId: run.grantPublicId,
+    ...(grant?.kind === "standing" ? { standingInstructionId: grant.publicId } : {}),
+    trigger: run.trigger,
+    counts: run.counts,
+    results: run.resultRefs as AiRunView["results"],
+    exclusions: run.exclusions as AiRunView["exclusions"],
+    steps: steps.map((step) => ({
+      id: String(step._id),
+      seq: step.seq,
+      capability: step.tool,
+      ...(step.subjectId ? { subjectId: step.subjectId, subjectName: step.subjectName ?? "" } : {}),
+      status: step.status,
+      ...(step.reason ? { reason: step.reason as AiRunView["steps"][number]["reason"] } : {}),
+      ...(step.resultRef ? { resultRef: step.resultRef as AiRunView["steps"][number]["resultRef"] } : {}),
+      ...(step.draft ? { draft: step.draft } : {}),
+      ...(step.markedUnnecessaryAt ? { markedUnnecessary: true } : {}),
+      updatedAt: new Date(step.updatedAt).toISOString(),
+    })),
+    revisions: await Promise.all(run.revisions.map(async (revision) => ({ id: revision.id, at: new Date(revision.at).toISOString(), byName: await userName(ctx, revision.byUserId, names), text: revision.text, interpreted: revision.interpreted, appliedToRemaining: revision.appliedToRemaining }))),
+    ...(run.errorCategory ? { errorCategory: run.errorCategory as AiErrorCategory } : {}),
+    cancelRequested: Boolean(run.cancelRequestedAt),
+    ...(run.takenOverByUserId ? { takenOverByName: await userName(ctx, run.takenOverByUserId, names) } : {}),
+    committedEffects,
+    budget: { modelCalls: run.budget.modelCalls, writes: run.budget.writes, maxWrites: run.limits.maxWrites, costMicros: run.budget.costMicros },
+    source: run.source,
+    createdAt: new Date(run.createdAt).toISOString(),
+    updatedAt: new Date(run.updatedAt).toISOString(),
+    ...(run.completedAt ? { completedAt: new Date(run.completedAt).toISOString() } : {}),
+    allowed: {
+      cancel: control && !terminal,
+      revise: control && !terminal && run.playbook === "renewal_followups",
+      takeOver: control && !terminal && run.plannedSubjects.length > run.cursor,
+      retry: control && (run.status === "failed" || run.status === "partially_completed") && run.errorCategory !== "authority_revoked",
+    },
+  };
+}
+
+export async function standingView(ctx: ReadCtx, grant: AiGrantDoc): Promise<AiStandingInstructionView> {
+  const names = new Map<string, string>();
+  const branch = grant.branchPublicId ? await ctx.db.query("branches").withIndex("by_organization_public_id", (q) => q.eq("organizationId", grant.organizationId).eq("publicId", grant.branchPublicId)).unique() : null;
+  const owner = await ctx.db.get(grant.ownerUserId);
+  const creator = await ctx.db.get(grant.grantorUserId);
+  const playbook = PLAYBOOKS[grant.playbook as AiPlaybookKey];
+  return {
+    id: grant.publicId,
+    playbook: grant.playbook as AiPlaybookKey,
+    title: playbook?.goalKey ?? grant.playbook,
+    ownerId: publicUserId(owner),
+    ownerName: await userName(ctx, grant.ownerUserId, names),
+    createdById: publicUserId(creator),
+    ...(grant.branchPublicId ? { branchId: grant.branchPublicId, branchName: branch?.name ?? "" } : {}),
+    schedule: grant.schedule ?? { weekdays: [], time: "08:00" },
+    capabilities: grant.tools,
+    limits: grant.limits,
+    params: (grant.params ?? {}) as AiStandingInstructionView["params"],
+    status: grant.status,
+    revision: grant.revision,
+    ...(grant.lastRunAt ? { lastRunAt: new Date(grant.lastRunAt).toISOString() } : {}),
+    ...(grant.nextRunAt ? { nextRunAt: new Date(grant.nextRunAt).toISOString() } : {}),
+    ...(grant.lastRunPublicId ? { lastRunId: grant.lastRunPublicId } : {}),
+    ...(grant.expiresAt ? { expiresAt: new Date(grant.expiresAt).toISOString() } : {}),
+    ...(grant.revokedReason ? { revokedReason: grant.revokedReason } : {}),
+    createdAt: new Date(grant.createdAt).toISOString(),
+    updatedAt: new Date(grant.updatedAt).toISOString(),
+  };
+}
+
+export function memoryView(memory: Doc<"aiMemories">, recordedBy: { id: string; name: string }): AiMemoryView {
+  return {
+    id: memory.publicId,
+    kind: memory.kind,
+    topic: memory.topic,
+    subjectType: memory.subjectType,
+    subjectId: memory.subjectId,
+    text: memory.text,
+    effectiveFrom: memory.effectiveFrom,
+    ...(memory.effectiveUntil ? { effectiveUntil: memory.effectiveUntil } : {}),
+    status: memory.status,
+    provenance: { sourceKind: memory.provenance.sourceKind, ...(memory.provenance.sourceId ? { sourceId: memory.provenance.sourceId } : {}), recordedById: recordedBy.id, recordedByName: recordedBy.name, recordedAt: new Date(memory.provenance.recordedAt).toISOString() },
+    revision: memory.revision,
+  };
+}
+
+/** Active statements for a subject; ones past their end date read as expired without a write. */
+export async function activeMemories(ctx: ReadCtx, organizationId: Id<"organizations">, subjectType: Doc<"aiMemories">["subjectType"], subjectId: string, today: string): Promise<AiMemoryView[]> {
+  const rows = await ctx.db.query("aiMemories").withIndex("by_organization_subject", (q) => q.eq("organizationId", organizationId).eq("subjectType", subjectType).eq("subjectId", subjectId)).take(50);
+  const views: AiMemoryView[] = [];
+  for (const row of rows) {
+    if (row.status !== "active") continue;
+    if (row.effectiveUntil && row.effectiveUntil < today) continue;
+    const user = await ctx.db.get(row.provenance.recordedByUserId);
+    views.push(memoryView(row, { id: publicUserId(user), name: user?.fullName ?? "" }));
+  }
+  return views;
+}
+
+export async function proposalView(ctx: ReadCtx, actor: ActorContext, proposal: Doc<"aiProposals">, options: { approvalBlocked?: boolean } = {}): Promise<AiProposalView> {
+  const names = new Map<string, string>();
+  const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", proposal.organizationId).eq("publicId", proposal.runPublicId)).unique();
+  const pending = proposal.status === "pending" && proposal.expiresAt > Date.now();
+  // The person who asked RIVET to prepare it may approve it; RIVET never approves its own proposal.
+  const mayDecide = pending && !actor.delegation && actor.permissions.includes(proposal.requiredPermission);
+  return {
+    id: proposal.publicId,
+    runId: proposal.runPublicId,
+    capability: proposal.tool,
+    changes: proposal.changes.map((change) => ({ field: change.field, ...(change.from !== undefined ? { from: change.from } : {}), to: change.to })),
+    subjectLabel: proposal.subjectLabel,
+    changesetHash: proposal.changesetHash,
+    requiredPermissionKey: proposal.requiredPermission,
+    status: proposal.status === "pending" && proposal.expiresAt <= Date.now() ? "expired" : proposal.status,
+    proposedAt: new Date(proposal.proposedAt).toISOString(),
+    expiresAt: new Date(proposal.expiresAt).toISOString(),
+    ...(proposal.decidedByUserId ? { decidedByName: await userName(ctx, proposal.decidedByUserId, names) } : {}),
+    ...(proposal.invalidationReason ? { invalidationReason: proposal.invalidationReason as AiErrorCategory } : {}),
+    // A stop, removed availability or a turned-off capability leaves only rejecting.
+    allowed: { approve: mayDecide && Boolean(run) && !options.approvalBlocked, reject: mayDecide },
+  };
+}
+
+export async function artifactView(ctx: ReadCtx, actor: ActorContext, artifact: Doc<"aiArtifacts">): Promise<AiArtifactView> {
+  if (artifact.expiresAt <= Date.now()) domainError("NOT_FOUND", "This prepared work has expired. Prepare it again.", { correlationId: actor.correlationId });
+  if (artifact.requiredPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
+  // Gym-wide prepared work is only for people who cover every branch.
+  if (actor.branchScope === "selected" && (!artifact.branchId || !actor.branchIds.includes(artifact.branchId))) domainError("FORBIDDEN", "You do not have access to this branch.", { correlationId: actor.correlationId });
+  const branch = artifact.branchId ? await ctx.db.get(artifact.branchId) : null;
+  const content = (artifact.content ?? {}) as Pick<AiArtifactView, "sections" | "verification" | "coverage" | "titleParams">;
+  const readable = (key: string) => artifactSectionReadable(artifact.kind, key, actor.permissions);
+  return {
+    id: artifact.publicId,
+    kind: artifact.kind,
+    title: artifact.title,
+    ...(content.titleParams ? { titleParams: content.titleParams } : {}),
+    ...(branch ? { branchId: publicBranchId(branch), branchName: branch.name } : {}),
+    createdAt: new Date(artifact.createdAt).toISOString(),
+    expiresAt: new Date(artifact.expiresAt).toISOString(),
+    runId: artifact.runPublicId,
+    sections: (content.sections ?? []).filter((section) => readable(section.key)),
+    verification: content.verification ?? { verified: false, checks: [] },
+    coverage: (content.coverage ?? []).filter((item) => readable(item.key)),
+  };
+}

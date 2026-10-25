@@ -234,3 +234,26 @@ describe("historical records", () => {
     expect(event).toEqual({ title: "تم تمديد الاشتراك يومين" });
   });
 });
+
+describe("titles of tasks RIVET prepares", () => {
+  const title = "Call Omar Haddad about membership renewal";
+  const message = systemMessage("communicationCompletion.tasks.renewalCall", { name: "Omar Haddad" });
+
+  it("shows the reader's language beside the stored English, and leaves older tasks as stored", () => {
+    expect(isRenderableSystemMessage(message)).toBe(true);
+    expect(presentSystemText(title, message, EN)).toBe(title);
+    expect(strip(presentSystemText(title, message, AR))).toBe("الاتصال بـ Omar Haddad بشأن تجديد الاشتراك");
+    expect(strip(presentSystemText("Follow up with Rana", systemMessage("communicationCompletion.tasks.leadFollowUp", { name: "Rana" }), AR))).toBe("متابعة Rana");
+    expect(strip(presentSystemText("Read the handover for 2026-10-22", systemMessage("communicationCompletion.tasks.readHandover", { date: { date: "2026-10-22" } }), AR))).toBe("قراءة ملاحظات التسليم ليوم 22 تشرين الأول 2026");
+    expect(presentSystemText(title, undefined, AR)).toBe(title);
+    expect(isRenderableSystemMessage({ key: "communicationCompletion.tasks.notATitle", params: {} })).toBe(false);
+  });
+
+  it("names a prepared task in the timeline through the same descriptor", () => {
+    expect(strip(presentSystemText(`Task: ${title}`, systemMessage("communicationCompletion.timeline.taskCreated", { title: { message } }), AR))).toBe("مهمة: الاتصال بـ Omar Haddad بشأن تجديد الاشتراك");
+  });
+
+  it("has the same placeholders in both languages", () => {
+    for (const [key, leaf] of leaves(en.tasks)) expect(placeholders(leaf), key).toEqual(placeholders(leaves(ar.tasks).find(([other]) => other === key)?.[1]));
+  });
+});

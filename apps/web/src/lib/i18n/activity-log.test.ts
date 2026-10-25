@@ -45,6 +45,7 @@ const TEMPLATED_CODES = [
   "shift.variance.approved", "shift.variance.rejected",
   "bulk.members_add_tags", "bulk.members_remove_tags", "bulk.members_assign_branch", "bulk.members_create_follow_up", "bulk.members_archive",
   "bulk.leads_assign_owner", "bulk.leads_create_follow_up", "bulk.leads_close_lost",
+  "ai.standing.pause", "ai.standing.resume", "ai.standing.revoke", "ai.standing.transfer",
 ];
 
 describe("activity action catalogue", () => {

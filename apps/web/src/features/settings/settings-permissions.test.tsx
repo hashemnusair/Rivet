@@ -1,15 +1,28 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
+import type { MockGymOSApi } from "@/lib/mock/MockGymOSApi";
 import { SettingsPageInner } from "@/features/settings/settings-page-inner";
+
+const navigation = vi.hoisted(() => ({ search: "section=organization" }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => "/settings",
-  useSearchParams: () => new URLSearchParams("section=organization"),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }));
 
-afterEach(() => resetApiForTests());
+// Assistance appears in Settings only once RIVET has made it available for the gym.
+async function makeAvailable(api: MockGymOSApi) {
+  await api.setPlatformAiAvailability({ organizationId: (await api.getSession()).organization.id, available: true, reason: "Test gym" });
+}
+
+afterEach(() => {
+  navigation.search = "section=organization";
+  vi.unstubAllGlobals();
+  resetApiForTests();
+});
 
 describe("Settings sections follow the signed-in role's permissions", () => {
   it("shows a manager with staff rights only the sections their role can save, and explains a deep link it cannot", async () => {
@@ -52,5 +65,27 @@ describe("Settings sections follow the signed-in role's permissions", () => {
     await renderWithApp(<SettingsPageInner />);
     expect(await screen.findByRole("heading", { name: "Gym details", level: 2 })).toBeInTheDocument();
     expect(screen.getAllByRole("tab")).toHaveLength(17);
+  });
+
+  it("keeps Assistance under Roles & access so the rail never grows, while search and the Roles page still reach it", async () => {
+    // Radix radios measure themselves; jsdom has no ResizeObserver.
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    navigation.search = "section=assistance";
+    const user = userEvent.setup();
+    await renderWithApp(<SettingsPageInner />, { prepare: makeAvailable });
+    expect(await screen.findByRole("heading", { name: "Assistance", level: 2 })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab")).toHaveLength(17);
+    expect(screen.queryByRole("tab", { name: "Assistance" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Roles & access" })).toHaveAttribute("aria-selected", "true");
+    await user.type(screen.getByRole("textbox", { name: "Search settings" }), "rivet");
+    expect(screen.getByRole("tab", { name: "Assistance" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("links from Roles & access to Assistance for someone who can change settings", async () => {
+    navigation.search = "section=roles";
+    await renderWithApp(<SettingsPageInner />, { prepare: makeAvailable });
+    const link = await screen.findByRole("link", { name: "Open assistance settings" });
+    expect(link).toHaveAttribute("href", "/settings?section=assistance");
+    expect(await screen.findByText("Now: Off")).toBeInTheDocument();
   });
 });

@@ -15,6 +15,20 @@ const organizationStatus = v.union(
 
 const accountStatus = v.union(v.literal("active"), v.literal("invited"), v.literal("deactivated"));
 
+const aiTenantMode = v.union(v.literal("off"), v.literal("prepare"), v.literal("execute"));
+const aiRunStatus = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("waiting_for_approval"),
+  v.literal("waiting_for_input"),
+  v.literal("waiting_for_event"),
+  v.literal("completed"),
+  v.literal("partially_completed"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+const aiRunLimits = v.object({ maxWrites: v.number(), maxSubjects: v.number(), maxModelCalls: v.number(), maxDurationMs: v.number() });
+
 const gymApplicationStatus = v.union(
   v.literal("pending"),
   v.literal("under_review"),
@@ -2040,5 +2054,264 @@ export default defineSchema({
     nextValue: v.number(),
     updatedAt: v.number(),
   }).index("by_organization_key", ["organizationId", "key"]),
+
+  // ---------------------------------------------------------------------------
+  // RIVET assistance and delegated work (docs/23). Business records stay in
+  // the domain tables; these hold settings, authority, run progress,
+  // receipts, staff statements, protected artifacts and safe traces. Every
+  // tenant row is in tenantPurge.TENANT_TABLES. No raw prompts or full notes.
+  // ---------------------------------------------------------------------------
+
+  aiSettings: defineTable({
+    organizationId: v.id("organizations"),
+    tenantMode: aiTenantMode,
+    externalProcessing: v.boolean(),
+    capabilityModes: v.record(v.string(), aiTenantMode),
+    revision: v.number(),
+    updatedByUserId: v.optional(v.id("users")),
+    updatedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
+  // Gyms RIVET lets use assistance, set by a platform admin with a reason.
+  // No row means not available: the default for every gym.
+  aiAvailability: defineTable({
+    organizationId: v.id("organizations"),
+    available: v.boolean(),
+    reason: v.string(),
+    changedByUserId: v.id("users"),
+    changedAt: v.number(),
+  }).index("by_organization", ["organizationId"]),
+
+  // Platform-wide stop. Not tenant data: no organizationId.
+  aiControls: defineTable({
+    key: v.string(),
+    stopped: v.boolean(),
+    reason: v.optional(v.string()),
+    changedByUserId: v.optional(v.id("users")),
+    changedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  aiGrants: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    kind: v.union(v.literal("one_off"), v.literal("standing")),
+    playbook: v.string(),
+    playbookVersion: v.string(),
+    grantorUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    branchPublicId: v.optional(v.string()),
+    tools: v.array(v.string()),
+    params: v.any(),
+    limits: aiRunLimits,
+    schedule: v.optional(v.object({ weekdays: v.array(v.number()), time: v.string() })),
+    status: v.union(v.literal("active"), v.literal("paused"), v.literal("revoked"), v.literal("expired")),
+    revision: v.number(),
+    expiresAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    revokedByUserId: v.optional(v.id("users")),
+    revokedReason: v.optional(v.string()),
+    lastRunAt: v.optional(v.number()),
+    lastRunPublicId: v.optional(v.string()),
+    lastSlotKey: v.optional(v.string()),
+    nextRunAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization", ["organizationId", "createdAt"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_status_next_run", ["status", "nextRunAt"])
+    .index("by_owner", ["ownerUserId"]),
+
+  aiRuns: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    grantPublicId: v.string(),
+    playbook: v.string(),
+    playbookVersion: v.string(),
+    branchPublicId: v.optional(v.string()),
+    requestedByUserId: v.id("users"),
+    ownerUserId: v.id("users"),
+    trigger: v.union(v.literal("user"), v.literal("schedule"), v.literal("event")),
+    requestKey: v.string(),
+    params: v.any(),
+    status: aiRunStatus,
+    stage: v.string(),
+    // Subjects planned at the start; the cursor advances as steps commit.
+    plannedSubjects: v.array(v.object({ id: v.string(), name: v.string(), ref: v.optional(v.string()) })),
+    cursor: v.number(),
+    counts: v.object({ considered: v.number(), prepared: v.number(), created: v.number(), linked: v.number(), skipped: v.number(), failed: v.number() }),
+    budget: v.object({ modelCalls: v.number(), writes: v.number(), costMicros: v.number(), inputTokens: v.number(), outputTokens: v.number() }),
+    limits: aiRunLimits,
+    leaseToken: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    attempts: v.number(),
+    deadlineAt: v.number(),
+    cancelRequestedAt: v.optional(v.number()),
+    cancelRequestedByUserId: v.optional(v.id("users")),
+    takenOverAt: v.optional(v.number()),
+    takenOverByUserId: v.optional(v.id("users")),
+    errorCategory: v.optional(v.string()),
+    revisions: v.array(v.object({ id: v.string(), at: v.number(), byUserId: v.id("users"), text: v.string(), interpreted: v.any(), appliedToRemaining: v.number() })),
+    resultRefs: v.array(v.any()),
+    exclusions: v.array(v.any()),
+    artifactPublicId: v.optional(v.string()),
+    source: v.union(v.literal("fixture"), v.literal("live"), v.literal("rules")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_organization", ["organizationId", "createdAt"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_request_key", ["organizationId", "requestKey"])
+    .index("by_organization_status", ["organizationId", "status"])
+    .index("by_status_lease", ["status", "leaseExpiresAt"])
+    .index("by_grant", ["grantPublicId"]),
+
+  aiRunSteps: defineTable({
+    organizationId: v.id("organizations"),
+    runPublicId: v.string(),
+    seq: v.number(),
+    tool: v.string(),
+    subjectId: v.optional(v.string()),
+    subjectName: v.optional(v.string()),
+    operationKey: v.optional(v.string()),
+    status: v.union(v.literal("planned"), v.literal("skipped"), v.literal("committed"), v.literal("verified"), v.literal("failed"), v.literal("cancelled"), v.literal("handed_over")),
+    reason: v.optional(v.string()),
+    resultRef: v.optional(v.any()),
+    draft: v.optional(v.object({ language: v.union(v.literal("en"), v.literal("ar")), text: v.string() })),
+    /** A person marked the contact this step saved as not needed (AI-5.3). */
+    markedUnnecessaryAt: v.optional(v.number()),
+    attempts: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_run", ["organizationId", "runPublicId", "seq"])
+    .index("by_organization_subject", ["organizationId", "subjectId"]),
+
+  aiProposals: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    runPublicId: v.string(),
+    tool: v.string(),
+    subjectLabel: v.string(),
+    changes: v.array(v.object({ field: v.string(), from: v.optional(v.string()), to: v.string() })),
+    payload: v.any(),
+    changesetHash: v.string(),
+    sourceVersions: v.array(v.object({ table: v.string(), id: v.string(), updatedAt: v.number() })),
+    requiredPermission: v.string(),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected"), v.literal("expired"), v.literal("invalidated"), v.literal("executed"), v.literal("failed")),
+    proposedAt: v.number(),
+    expiresAt: v.number(),
+    decidedByUserId: v.optional(v.id("users")),
+    decidedAt: v.optional(v.number()),
+    invalidationReason: v.optional(v.string()),
+    executionReceipt: v.optional(v.any()),
+  })
+    .index("by_organization_status", ["organizationId", "status"])
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_run", ["organizationId", "runPublicId"]),
+
+  // Explicit staff statements and preferences, with provenance and expiry.
+  // Never a substitute for domain facts (attendance, balances, dates).
+  aiMemories: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    kind: v.union(v.literal("staff_statement"), v.literal("preference"), v.literal("policy")),
+    topic: v.union(v.literal("travel"), v.literal("contact_time"), v.literal("language"), v.literal("no_contact"), v.literal("other")),
+    subjectType: v.union(v.literal("member"), v.literal("lead"), v.literal("branch"), v.literal("gym"), v.literal("user")),
+    subjectId: v.string(),
+    branchId: v.optional(v.id("branches")),
+    text: v.string(),
+    effectiveFrom: v.string(),
+    effectiveUntil: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("revoked"), v.literal("expired"), v.literal("superseded")),
+    provenance: v.object({ sourceKind: v.union(v.literal("contact_note"), v.literal("staff_explicit"), v.literal("settings")), sourceId: v.optional(v.string()), recordedByUserId: v.id("users"), recordedAt: v.number() }),
+    revision: v.number(),
+    supersedesPublicId: v.optional(v.string()),
+    revokedAt: v.optional(v.number()),
+    revokedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_subject", ["organizationId", "subjectType", "subjectId"])
+    .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  // Protected outputs of delegated jobs (reports, handovers, investigations).
+  // Access is rechecked on every read; rows expire.
+  aiArtifacts: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    kind: v.union(v.literal("management_report"), v.literal("shift_handover"), v.literal("cash_difference")),
+    runPublicId: v.string(),
+    branchId: v.optional(v.id("branches")),
+    title: v.string(),
+    content: v.any(),
+    requiredPermissions: v.array(v.string()),
+    createdByUserId: v.id("users"),
+    sourceDigest: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_kind", ["organizationId", "kind", "createdAt"])
+    .index("by_expires", ["expiresAt"]),
+
+  // Validated provider answers reused for a short window (AI-1.9), so a
+  // repeated reading of the same note is not paid for twice. The key covers
+  // the gym, subject and its version, the reader's access, language and the
+  // prompt/model; entries are dropped on merge, deletion or permission change
+  // and expire within minutes because they hold words from an unsaved note.
+  aiModelCache: defineTable({
+    organizationId: v.id("organizations"),
+    key: v.string(),
+    task: v.string(),
+    subjectType: v.union(v.literal("member"), v.literal("lead")),
+    subjectId: v.string(),
+    promptVersion: v.string(),
+    model: v.string(),
+    answer: v.any(),
+    costMicros: v.number(),
+    hits: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_key", ["organizationId", "key"])
+    .index("by_organization_subject", ["organizationId", "subjectType", "subjectId"])
+    .index("by_expires", ["expiresAt"]),
+
+  // Safe operational traces: versions, timings, counts and categories only.
+  aiUsage: defineTable({
+    organizationId: v.id("organizations"),
+    runPublicId: v.optional(v.string()),
+    task: v.string(),
+    capability: v.string(),
+    source: v.union(v.literal("fixture"), v.literal("live"), v.literal("rules")),
+    model: v.optional(v.string()),
+    promptVersion: v.string(),
+    latencyMs: v.number(),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    costMicros: v.optional(v.number()),
+    outcome: v.union(v.literal("ok"), v.literal("timeout"), v.literal("malformed"), v.literal("refused"), v.literal("unavailable"), v.literal("blocked"), v.literal("error")),
+    errorCategory: v.optional(v.string()),
+    month: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_organization_month", ["organizationId", "month"]),
+
+  // Useful / not useful, suggestions dismissed, and prepared contacts later
+  // marked not needed (AI-5.3). Counts feed the monthly outcome summary.
+  aiFeedback: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    subjectKind: v.union(v.literal("brief"), v.literal("extraction"), v.literal("run"), v.literal("draft"), v.literal("artifact"), v.literal("task")),
+    subjectId: v.string(),
+    rating: v.union(v.literal("useful"), v.literal("not_useful"), v.literal("dismissed"), v.literal("unnecessary")),
+    correctedFields: v.array(v.string()),
+    userId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_organization", ["organizationId", "createdAt"])
+    .index("by_organization_subject", ["organizationId", "subjectKind", "subjectId"]),
 
 });

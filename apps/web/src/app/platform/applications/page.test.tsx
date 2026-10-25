@@ -1,9 +1,17 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement, ReactNode } from "react";
+import { render as renderBare, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GymProvisioningResult, PlatformGymApplication } from "@/lib/api/GymOSApi";
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import PlatformApplicationsPage from "./page";
+
+/** The console runs inside the app's query provider; the operator review brief reads through it. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderBare(ui, { wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
+}
 
 const state = vi.hoisted(() => ({
   rows: [] as PlatformGymApplication[],

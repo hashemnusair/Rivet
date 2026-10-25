@@ -15,4 +15,9 @@ crons.interval("purge expired export files", { hours: 1 }, internal.qolMaintenan
 crons.interval("backfill customer membership identity", { minutes: 15 }, internal.qolMaintenance.backfillCustomerMembershipIdentity, {});
 crons.interval("backfill member visit summaries", { minutes: 15 }, internal.qolMaintenance.backfillMemberVisits, {});
 
+crons.interval("resume delegated work after a stopped worker", { minutes: 1 }, internal.aiRuns.recoverExpiredLeases, {});
+crons.interval("start due standing instructions", { minutes: 5 }, internal.aiRuns.dispatchStanding, {});
+crons.interval("expire prepared reports and handovers", { hours: 1 }, internal.aiRuns.expireArtifacts, {});
+crons.interval("expire kept assistant readings", { minutes: 15 }, internal.aiActions.expireModelAnswers, {});
+
 export default crons;

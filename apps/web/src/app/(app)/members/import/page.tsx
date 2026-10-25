@@ -22,6 +22,7 @@ import { downloadTextFile } from "@/lib/exports/download";
 import { isCalendarDate } from "@/lib/utils/dates";
 import { useFormat } from "@/lib/i18n/format";
 import { memberImportErrors } from "@/lib/imports/member-import-errors";
+import { ImportSuggestions } from "@/features/assist/import-suggestions";
 import { money } from "@/lib/utils/money";
 
 const SAMPLE_CSV = `full_name,phone,gender,email,plan_name,membership_start_date,membership_end_date,remaining_visits,freeze_start_date,freeze_end_date,opening_balance,historical_paid_total,historical_payment_date,historical_payment_reference
@@ -241,6 +242,11 @@ export default function MemberImportPage() {
     {headers.length ? <section className="panel overflow-hidden">
       <header className="border-b border-line px-5 py-4"><h2 className="font-display text-[15px] font-semibold text-ink">{t("memberMigration.matchColumns")}</h2><p className="mt-1 text-[12.5px] text-ink-2">{t("memberMigration.columnsHint")}</p></header>
       <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4"><MappingSelect label={t("common.label.fullName")} required headers={headers} value={mapping.fullName} onChange={(value) => { setMapping((current) => ({ ...current, fullName: value })); }} /><MappingSelect label={t("common.label.phone")} required headers={headers} value={mapping.phone} onChange={(value) => { setMapping((current) => ({ ...current, phone: value })); }} /><MappingSelect label={t("memberProfile.details.gender")} required headers={headers} value={mapping.gender} onChange={(value) => { setMapping((current) => ({ ...current, gender: value })); }} /><MappingSelect label={t("common.label.email")} headers={headers} value={mapping.email} onChange={(value) => { setMapping((current) => ({ ...current, email: value })); }} /></div>
+      <ImportSuggestions matrix={matrix} mapping={mapping} sourcePlans={sourcePlans} plans={(plans.data?.items ?? []).map((plan) => ({ id: plan.id, name: plan.name, kind: plan.kind, durationDays: plan.durationDays, visitAllowance: plan.visitAllowance }))} planMappings={planMappings} onApply={(columns, planSuggestions) => {
+        if (columns.length) setMapping((current) => ({ ...current, ...Object.fromEntries(columns.filter((item) => current[item.field] == null).map((item) => [item.field, item.index])) }));
+        if (planSuggestions.length) setPlanMappings((current) => ({ ...current, ...Object.fromEntries(planSuggestions.filter((item) => !current[item.sourceName]).map((item) => [item.sourceName, item.planId])) }));
+        if (columns.length || planSuggestions.length) { setPreview(undefined); setResult(undefined); }
+      }} />
       <div className="border-t border-line px-5 py-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-[13px] font-semibold text-ink">{t("memberMigration.bringMemberships")}</h3><p className="mt-1 max-w-3xl text-[12px] leading-5 text-ink-2">{t("memberMigration.membershipHint")}</p></div><label className="w-full space-y-1.5 sm:w-52"><span className="text-[12px] font-medium text-ink">{t("memberMigration.listDate")}</span><Input type="date" value={migrationCutoffDate} onChange={(event) => { setMigrationCutoffDate(event.target.value); setPreview(undefined); setResult(undefined); }} aria-label={t("memberMigration.listDate")} /></label></div>
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{OPTIONAL_MEMBERSHIP_IMPORT_FIELDS.map(({ field }) => <MappingSelect key={field} label={importColumnLabel(t, field)} headers={headers} value={mapping[field]} onChange={(value) => { setMapping((current) => ({ ...current, [field]: value })); if (field === "sourcePlanName") setPlanMappings({}); setPreview(undefined); setResult(undefined); }} />)}</div>

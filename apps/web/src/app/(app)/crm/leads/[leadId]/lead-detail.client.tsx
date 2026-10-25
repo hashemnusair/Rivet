@@ -35,6 +35,7 @@ import { ErrorState, NotFoundState } from "@/components/ui/states";
 import { Switch } from "@/components/ui/switch";
 import { LogContactDialog } from "@/features/crm/contact-work-panel";
 import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
+import { LeadContactConsent } from "@/features/crm/lead-contact-consent";
 import { OfferWorkPanel } from "@/features/crm/offer-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { useFormat } from "@/lib/i18n/format";
@@ -295,6 +296,7 @@ export default function LeadDetailPageClient() {
               <ContextRow label={t("crm.newLead.phone")}><span dir="ltr">{lead.phone}</span></ContextRow>
               <ContextRow label={t("crm.newLead.email")}><span dir={lead.email ? "ltr" : undefined}>{lead.email ?? "—"}</span></ContextRow>
               <ContextRow label={t("crm.lead.ownerLabel")}><span dir="auto">{lead.ownerName ?? t("crmCompletion.pipeline.card.unassigned")}</span></ContextRow>
+              <LeadContactConsent lead={lead} canEdit={Boolean(session?.permissions.includes("crm.write"))} />
               <ContextRow label={t("crm.queues.lastContact")}>{lead.lastContactAt ? <>{contactOutcomeLabel(t, lead.lastContactOutcome) ?? t("crmCompletion.queues.contacted")} · <RelativeText iso={lead.lastContactAt} /></> : t("crmCompletion.lead.notContacted")}</ContextRow>
               <ContextRow label={t("crm.lead.nextFollowUp")}>{lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} className={lead.overdue ? "font-medium text-danger" : undefined} /> : "—"}</ContextRow>
               <ContextRow label={t("crmCompletion.lead.added")}><DateTimeText iso={lead.createdAt} /></ContextRow>

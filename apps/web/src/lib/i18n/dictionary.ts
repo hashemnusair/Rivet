@@ -81,6 +81,9 @@ function pluralRules(locale: Locale): Intl.PluralRules {
 }
 
 export function selectPluralForm(forms: PluralCategories, locale: Locale, count: number): string {
+  // An explicit zero form wins for 0 in every language ("ends today", not
+  // "ends in 0 days"); English CLDR rules alone never select "zero".
+  if (count === 0 && forms.zero !== undefined) return forms.zero;
   const category = pluralRules(locale).select(count);
   return forms[category] ?? forms.other;
 }

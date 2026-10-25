@@ -67,12 +67,288 @@ no provider activation or production write is performed by this planning change.
 Manual WhatsApp and existing Resend delivery gates remain unchanged. Release
 evidence belongs here and in CURRENT_STATE; work status stays in docs/13.
 
+### AI environment ownership — implementation branch, 24 October 2026
+
+The implementation (`codex/ai-native-rivet`) places the model call in Convex
+internal actions (docs/09 AI-0 decision). Configuration therefore belongs to the
+Convex deployment that runs those actions. None of these variables exists in
+production; leaving them unset keeps AI off. The production values are set only
+during "AI release to production" below, after the backend release.
+
+| Variable | Local mock preview / CI | Isolated dev Convex (test) | Production Convex | Vercel / Next.js |
+| --- | --- | --- | --- | --- |
+| `RIVET_AI_MODE` | Mock adapter only; Convex tests set `fixture` in-process | `fixture` first, `live` only for an approved endpoint test | Unset (off) until the release below; then `live` for the Hashem Test acceptance | Never |
+| `RIVET_AI_PROTOCOL` | — | `anthropic_messages` for Claude; `openai_chat_json` only for another endpoint whose contract is verified | `anthropic_messages` at the release below | Never |
+| `RIVET_AI_API_KEY` | Live evaluation only: git-ignored `apps/web/.env.ai-eval.local`, created by the key holder | Entered by the key holder (Hashem or Elias) in the dashboard; never in Git, shell, logs or chat | Pasted by Elias in the Convex Production dashboard after the backend release; never in Git, shell, logs or chat | Never (`NEXT_PUBLIC_` forbidden) |
+| `RIVET_AI_MODEL` | — | `claude-sonnet-5-5` | `claude-sonnet-5-5` at the release below | Never |
+| `RIVET_AI_BASE_URL` | — | Unset for `anthropic_messages` (defaults to `https://api.anthropic.com`); required https URL for `openai_chat_json` | Unset | Never |
+| `RIVET_AI_INPUT_PRICE_MICROS_PER_MTOK`, `RIVET_AI_OUTPUT_PRICE_MICROS_PER_MTOK` | — | Only for a model missing from the price table in `src/lib/ai/model.ts` (Claude Sonnet 5.5, Opus 5.5 and Haiku 5.5 are listed); live mode is not ready without a price | Unset | Never |
+| `RIVET_AI_PROCESSING_APPROVED` | — | Unset (synthetic data only) until processing terms are approved; then `member_data` | Unset until the docs/09 data-processing decision is made; then `member_data` (availability keeps every gym except Hashem Test off) | Never |
+| `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS` | — | Optional | Timeout unset (default); run cap as decided (proposed `500000`, $0.50) | Never |
+| `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | **Required for any live call**: the approved per-gym monthly budget in micro-units of the provider's billing currency (micro-dollars for Claude: `5000000` is $5); unset means live mode spends nothing | As decided (proposed `5000000`, $5 per gym per month) | Never |
+
+Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
+never `convex env get`. Gym availability (platform admin, `/platform/assistance`),
+the gym-level switch (Settings → Roles & access → Assistance), the platform stop and
+capability modes are stored in Convex tables; every gym starts unavailable and off.
+
+#### Connecting Claude with a key holder's API key
+
+These steps measure Claude before any deployment. The production connection, with
+acceptance on the "Hashem Test" gym, is "AI release to production" below (Hashem's
+decision of 25 October 2026; it replaces the separate staging acceptance).
+
+1. **Measure, with no deployment.** The key holder creates
+   `apps/web/.env.ai-eval.local` in an editor with the single line
+   `RIVET_AI_API_KEY=` followed by the key (never through a shell command, chat or
+   commit; the file is git-ignored), then runs `pnpm ai:eval:live` from the repository
+   root. It sends the held-out reader cases (written for the evaluation, no real
+   member data) to Claude Sonnet 5.5 and stops at a $1 spend limit
+   (`RIVET_AI_EVAL_MAX_COST_MICROS`); a full run is about 60 short calls. It prints
+   the scores, cost and latency and writes
+   `apps/web/test-results/ai-eval/live-report.json`. Record the result in
+   CURRENT_STATE and in the pilot record below. `RIVET_AI_MODEL` and
+   `RIVET_AI_TIMEOUT_MS` may be set in the same file to compare models or timeouts.
+2. **Optional: isolated development deployment** (`fleet-otter-621`; deploying this branch's
+   functions there needs Hashem's explicit approval). In the Convex dashboard for that
+   deployment only, under Settings → Environment Variables: `RIVET_AI_MODE=live`,
+   `RIVET_AI_PROTOCOL=anthropic_messages`, `RIVET_AI_MODEL=claude-sonnet-5-5`,
+   `RIVET_AI_MAX_MONTHLY_COST_MICROS` (for example `5000000`), and `RIVET_AI_API_KEY`
+   pasted by the key holder. Set `RIVET_AI_PROCESSING_APPROVED=member_data` only
+   while that deployment holds synthetic records; until then reading notes and
+   drafting stay blocked and only list filters and run corrections reach Claude,
+   and only once the gym allows external processing. Then turn assistance on
+   for the seeded gym (Settings → Roles & access → Assistance, including external
+   processing). Check names with `pnpm convex:env:names`, never values.
+3. **Production**: follow "AI release to production" below after Hashem merges.
+   Until then every production variable stays unset (off).
+
 AI implementation must use a separate feature worktree and an isolated test
 backend/identity environment. Verify every connected target before preview tests;
 a preview frontend can otherwise still point to production. Docs/23 records
 future endpoint configuration and secret placement by model-call runtime. This
 docs-only publication to main does not authorize merging or activating the AI
 implementation itself.
+
+### AI release verification, stops and pilot record — implementation branch
+
+**Local and CI verification (no provider, no credentials).** From the repository
+root: `pnpm install --frozen-lockfile`, `pnpm test` (includes the AI evaluation gate),
+`pnpm ai:eval` (prints the evaluation and writes
+`apps/web/test-results/ai-eval/report.json`), `pnpm typecheck`,
+`pnpm convex:typecheck`, `pnpm lint`, `pnpm build`, `pnpm audit --prod`,
+`python3 docs/arabic/verify-lock.py`, `git diff --check`, credential-free codegen
+against a worktree-local anonymous backend (no `_generated` diff), and the built
+mock preview with the full Playwright suite plus `e2e/ai-assist.spec.ts`. These are
+deterministic and local evidence only; they say nothing about a real provider. The
+live evaluation runs on the deployment itself through `aiEvaluation:runLive`
+(below).
+
+**Stops and what they do.** Every stop takes effect at the next step of a run,
+inside the step's transaction; committed effects are reported, never "rolled back".
+Ordinary workflows never depend on assistance.
+
+| Stop | Who | Effect | Rehearsal (real Convex functions) |
+| --- | --- | --- | --- |
+| Platform stop (`aiControls` key `global`) | Platform admin at `/platform/assistance` (from the account page), `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step; a waiting prepared change can be rejected but not approved | `convex/ai.delegation.test.ts` "platform-wide stop" |
+| Gym availability removed (`aiAvailability`) | Platform admin at `/platform/assistance` → "Gyms that can use assistance", `ai.platform.availability.set` with reason (platform audit `ai.gym.available` / `ai.gym.unavailable`) | That gym only: every assistance gate reads it as off, its Settings → Assistance is hidden, running work stops at the next step, waiting prepared changes can only be rejected; its own saved choices are kept and apply again only if a platform admin makes it available again. No gym is available by default, and its owner cannot turn assistance on until it is | "stops that gym's running work at the next step when availability is removed", "reads a gym without availability as off at every gate" |
+| Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary; waiting prepared changes can only be rejected | "turns assistance off mid-run" |
+| One capability off | Owner | Only that capability's runs stop | "only that capability is turned off" |
+| Run cancel | Requester, owner or manager | Stops at the next step; reports what was saved | "stops at the next step when cancelled" |
+| Lost access / revoked grant | Automatic | Pending writes stop; standing work revoked | "loses access between steps", standing-instruction test |
+| Deactivated person | Automatic | Actor rebuilt from records has no authority | "a deactivated person has no authority" |
+| Worker crash | Automatic | Lease expiry and recovery cron resume without repeating a committed step | "resumes after a worker stops right after a commit", lease fencing test |
+
+**Pilot release record (fill one per activation; leave blank fields blank).**
+
+| Field | Value |
+| --- | --- |
+| Source SHA and branch | |
+| Target deployment (production `descriptive-meerkat-589` for the Hashem Test acceptance) and its Convex/Clerk/Vercel identifiers (names only) | |
+| `RIVET_AI_MODE`, protocol, model name and version | |
+| Prompt versions (`PROMPT_VERSIONS`) and tool versions (`TOOLS`) | |
+| Capabilities enabled and their modes | |
+| Tenants made available (platform audit time and reason) and branches used | |
+| Deterministic evaluation report (set, date, result) | |
+| Live provider evaluation report (`aiEvaluation:runLive` on the deployment, or `pnpm ai:eval:live` locally: set, sample sizes, cost, p95 latency, result), or "not run" | |
+| Provider data-handling approval and `RIVET_AI_PROCESSING_APPROVED` state | |
+| Per-run and monthly budget caps | |
+| Incident owner and stop owner (names) | |
+| Rollback: stop used, how verified, who verified | |
+
+Nothing on the implementation branch activates assistance or deploys anything; the
+production release and acceptance are the next section.
+
+### AI release to production — Hashem's procedure after the merge (not yet run)
+
+Written on 25 October 2026 by the implementation pass. **Nothing in this section has
+been run.** It replaces the separate staging acceptance of AI-2.7 and AI-5.6 (Hashem's
+decision, docs/09): acceptance happens on production, and only the disposable
+**"Hashem Test"** gym is made available. Hashem runs every step; Elias pastes the
+provider key. Run commands from the repository root of a clean checkout of the merged
+`main`, at the exact SHA you record. `CONVEX_DEPLOY_KEY=''` stops a local
+development key in `.env.local` from redirecting a `--prod` command (as in earlier
+releases); it never prints anything.
+
+**This release also ships work that is on main but not in production.** The last
+Convex Production release is from `22e5157b` (22 October 2026, runtime `8babeeb9`),
+and production's frontend before the deployment hold is
+`dpl_8RnoByETV17fHPsda81oHAhHiPtv`. Deploying the merged main therefore also
+releases, for the first time, the billing and export fixes merged on 24 October:
+submitted payments protected before invoice replacement (`46997109`), purchased
+Basic add-ons in recurring revenue (`561876f9`), overdue submitted claims routed to
+operator review (`236d5ed3`), paid value kept across delayed upgrades (`e61bd2e6`),
+cancelled-gym exports (`f3acfbf1`), billing audit evidence (`9db78ef5`), payment
+corrections through operator support (`ffb66be3`), and billing scoped to the
+displayed gym (`b8b2f512`, `afceb7e9`, `8d7d20a1`); and, with the frontend, their
+screens, the export workspace-selection fix (`440600ff`), unlimited-capacity labels
+(`475f3f33`) and the patched Next.js 16.4.2 and Zod 4.6.7 (`253e1760`, `dda48254`).
+Their own release checks (Mixed owner access, Termination exports, Delayed-upgrade
+release verification, Audit correctness release checks, above) still apply; this
+procedure does not replace them.
+
+**a) Backend first: dry run, then deploy.**
+
+1. Take a fresh snapshot export of `descriptive-meerkat-589` from the Convex
+   dashboard (Settings → Backup & Restore) and note its time.
+2. `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` and confirm the target
+   is Production. No `RIVET_AI_*` name should be present yet.
+3. `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --dry-run --yes`. Expect only
+   additions: the twelve assistance tables (`aiSettings`, `aiAvailability`,
+   `aiControls`, `aiGrants`, `aiRuns`, `aiRunSteps`, `aiProposals`, `aiMemories`,
+   `aiArtifacts`, `aiModelCache`, `aiUsage`, `aiFeedback`) and their indexes, with no
+   index or table deletion. **Stop if the dry run would delete anything.**
+4. `CONVEX_DEPLOY_KEY='' pnpm convex:deploy -- --yes`, then
+   `CONVEX_DEPLOY_KEY='' pnpm --filter web exec convex run health:check --prod`
+   (expect `ok`). Record the SHA, deployment name, time, deploy result and health
+   time in CURRENT_STATE.
+
+With no `RIVET_AI_*` variable set and no gym available, the deployed backend changes
+nothing for any gym: every assistance gate reads off.
+
+**b) Compatibility, proved before the deploy.** The live frontend keeps running
+against the new backend until step c, so the new backend must accept everything that
+frontend calls. CURRENT_STATE (AI checkpoint 6) records the check against both
+`origin/main` and the production frontend's source (`3ed7d3d2`, the same application
+source as `22e5157b`): the schema change is additive only (new tables and new
+optional fields; no field, table or index removed or narrowed); no public Convex
+function or argument that frontend uses is removed or renamed; every `domain.query` /
+`domain.mutate` operation it names still exists with the same arguments. The one
+visible difference for an old frontend is a possible "A prepared change is waiting for
+approval" item on Today, which only appears once a gym is available and its owner has
+turned assistance on. Re-run the dry run if anything merged after that check.
+
+**c) Frontend, only when Hashem says.** Keep the hold until then. When Hashem decides
+to release the frontend, choose one, as a deliberate release-policy change:
+restore Git deployment (a reviewed commit removing `git.deploymentEnabled: false` from
+`apps/web/vercel.json`, and the project's Ignored Build Step reset from `exit 0` to
+its earlier unset value), or keep the hold and promote one manual production
+deployment of the exact merged SHA from Vercel. Either way, confirm the deployment is
+READY at that SHA on all five canonical aliases (website, app, platform, admin,
+dashboard) and record its ID. The new frontend needs the new backend, so never
+release it before step a.
+
+**d) Production environment variables (names and non-secret values).** Set in the
+Convex dashboard for `descriptive-meerkat-589` only (Settings → Environment
+Variables), never through a shell command. Convex applies them to the next function
+call; no redeploy is needed. Set `RIVET_AI_MODE` last.
+
+| Name | Value | Set by |
+| --- | --- | --- |
+| `RIVET_AI_PROTOCOL` | `anthropic_messages` | Hashem |
+| `RIVET_AI_MODEL` | `claude-sonnet-5-5` | Hashem |
+| `RIVET_AI_MAX_MONTHLY_COST_MICROS` | The decided monthly budget per gym (proposed `5000000`, $5); without it live mode spends nothing | Hashem |
+| `RIVET_AI_MAX_RUN_COST_MICROS` | The decided per-run cap (proposed `500000`, $0.50) | Hashem |
+| `RIVET_AI_PROCESSING_APPROVED` | `member_data` only once the docs/09 data-processing decision is made; unset keeps notes and drafts away from Claude, and only list filters and run corrections reach it | Hashem |
+| `RIVET_AI_API_KEY` | The key from Elias's Claude API account, pasted into the dashboard | Elias |
+| `RIVET_AI_MODE` | `live` | Hashem, last |
+
+Leave `RIVET_AI_BASE_URL`, `RIVET_AI_TIMEOUT_MS` and the two price overrides unset
+(Sonnet 5.5 is in the price table). Check with
+`CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` (names only). At
+`/platform/assistance` the status should read "Deployment setting: live provider".
+
+**Server-side live evaluation.** Before any gym uses it, run the held-out evaluation on
+the deployment itself, where the key is:
+
+```
+CONVEX_DEPLOY_KEY='' pnpm --filter web exec convex run aiEvaluation:runLive '{"maxCostMicros":1000000}' --prod
+```
+
+It sends only the evaluation's own written cases (no gym's data), stops at the given
+limit ($1 here; never above $5), is not charged to any gym's budget, and prints scores,
+counts, cost and p95 latency, never the key, prompts or case notes. `ran: false` with a
+reason means the configuration is incomplete (for example `ai_off` or a missing
+budget). Continue only if `report.meetsMinimums` is `true` and
+`report.live.stoppedAtCostLimit` is `false`; record the result in CURRENT_STATE and the
+pilot record. Never add `--verbose` or any other diagnostic flag.
+
+**e) Make "Hashem Test" available.** A platform admin opens `/platform/assistance` on
+the platform host → "Gyms that can use assistance" → chooses Hashem Test → "Make
+available", reason "Production acceptance (Hashem's decision of 25 October 2026)". The
+platform activity log shows "Made RIVET assistance available". Then Hashem Test's
+owner, in the gym app, opens Settings → Roles & access → Assistance, chooses "Prepare
+and save work", turns on the capabilities below, and ticks "Allow member details to be
+sent to RIVET's assistant": nothing typed reaches Claude without it, and notes and
+drafts also need `RIVET_AI_PROCESSING_APPROVED=member_data`. No other gym is made
+available.
+
+**f) Acceptance on Hashem Test.** Use records created in Hashem Test for this purpose
+only; never another gym's members. Nothing here sends a message: drafts stay drafts.
+
+Journeys (the same ones `e2e/ai-assist.spec.ts` walks on the mock preview):
+
+1. Before step e, Hashem Test's Settings shows no Assistance link; after it, the link
+   shows "Now: Off" until the owner turns it on.
+2. Member details before a call on a test member.
+3. Read a contact note ("Call back tomorrow evening, interested in evening classes")
+   into the contact form; the original note is kept. Read the same note again within
+   15 minutes: the same reading comes back and the month's usage does not grow (the
+   kept answer). Use "Hide suggestions" once.
+4. Prepare renewal follow-ups from Members; the call tasks are saved, explained and
+   still there after leaving the page; switch to Arabic and check their titles; mark
+   one "Not needed".
+5. Prepare lead follow-ups from Leads; mark one test lead "Asked not to be
+   contacted" first and check it is left out with that reason. Do not send a draft.
+6. Prepare a report with checked totals and a shift handover.
+7. Cash difference: look into a drawer difference, and see it say plainly when
+   nothing recorded matches. The approval journey needs a cash payment and a drawer
+   closed short by it in Hashem Test: these are real records in that gym's reports.
+   Do it only if Hashem accepts that; otherwise rely on the local evidence. If done,
+   the waiting change appears on the approver's Today list and is approved there.
+8. A plain request turned into the members list's own filters.
+9. An unsaved collections call list beside the owes-money filter.
+10. Find a class for a test member and book it through the roster rules.
+11. Arabic on a phone (390px): no horizontal scrolling.
+12. Settings → Assistance: the month's summary counts the hidden suggestion and the
+    call marked not needed; usage and spend match the Claude console within a cent.
+
+Rehearse the three stops on production while a renewal preparation is running:
+
+- **Platform stop**: "Stop assistance for every gym" with a reason; the run stops at its
+  next step and reports what it saved; screens are ordinary; a waiting prepared change
+  (journey 7, if done) shows no Approve button and can only be rejected; then "Resume
+  assistance".
+- **Gym off**: the owner sets "Off"; the same result for Hashem Test only; turn it back on.
+- **Availability removed**: a platform admin removes Hashem Test; Assistance disappears
+  from its Settings, running work stops, the owner cannot turn it on; make it available
+  again and check its saved choices returned.
+
+Check the platform activity log and the gym's Activity log for each change, then fill
+the pilot release record above (one row per field; leave unknowns blank).
+
+**g) Rollback**, fastest first; each needs no code change:
+
+1. Platform stop (every gym) or removing Hashem Test's availability (that gym only).
+2. Unset `RIVET_AI_MODE` in the Convex Production dashboard: no provider calls, every
+   gym's screens are ordinary. Elias can also revoke the key in the Claude console.
+3. Frontend: Vercel instant rollback to the previous production deployment
+   (`dpl_8RnoByETV17fHPsda81oHAhHiPtv`), which works with the new backend (step b).
+   Roll back the frontend before the backend, never the other way round.
+4. Backend, only if the stops are not enough: redeploy the previous main revision
+   through the same guarded dry run and deploy, after reading what the dry run would
+   remove. This also withdraws the billing and export fixes listed above. The snapshot
+   from step a is the way back for data.
 
 ## Mixed owner access — review follow-up, 24 October 2026 (unreleased)
 
