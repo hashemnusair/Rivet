@@ -295,7 +295,7 @@ started.**
   suggestions applied into the existing reviewed preview; commit stays human.
 - [ ] **AI-4.5 Classes/PT**: eligible sessions for a member with capacity/eligibility
   rechecked at commit; booking within grant through existing roster/PT rules.
-- [ ] **AI-4.6 Natural-language filters** for members/leads producing editable,
+- [x] **AI-4.6 Natural-language filters** *(Implemented locally for the members list: mapped onto the list's own filters only, with not-applied parts and reasons shown. Leads are not covered: the pipeline has search but no structured filters to map onto.)* for members/leads producing editable,
   visible filters.
 - [ ] **AI-4.7 Member portal** self-only assistance (class finder) under member
   authorization; no staff context.
