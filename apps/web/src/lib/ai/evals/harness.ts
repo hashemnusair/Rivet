@@ -4,7 +4,7 @@ import { interpretFiltersDeterministic, interpretRevisionDeterministic } from ".
 import { extractNoteDeterministic } from "../note-extraction";
 import { evaluateLeadCandidate, type LeadDecision, type LeadFollowUpFacts } from "../sales-batch";
 import { preselectedMachine } from "../fault-triage";
-import { EVAL_MACHINES, MACHINE_CASES, EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, FILTER_CASES_V2, HELD_OUT_SET_VERSION, NOTE_AT, NOTE_CASES, NOTE_CASES_V2, REVISION_CANDIDATES, REVISION_CASES, REVISION_CASES_V2, TIMEZONE, type FilterCase, type Language, type NoteCase, type RevisionCase } from "./cases";
+import { EVAL_MACHINES, MACHINE_CASES, EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, FILTER_CASES_V2, HELD_OUT_SET_VERSION, NOTE_AT, NOTE_CASES, NOTE_CASES_V2, NOTE_CASES_V2_MIXED, REVISION_CANDIDATES, REVISION_CASES, REVISION_CASES_V2, TIMEZONE, type FilterCase, type Language, type NoteCase, type RevisionCase } from "./cases";
 
 /**
  * Deterministic evaluation of RIVET's assistance readers and decisions. It
@@ -246,7 +246,7 @@ function evaluateMachines(): TaskReport {
 
 export function runEvaluations(now = new Date()): EvalReport {
   txnSeq = 0;
-  const tasks = [evaluateNotes(NOTE_CASES_V2), evaluateFilters(FILTER_CASES_V2), evaluateRevisions(REVISION_CASES_V2), evaluateMachines(), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
+  const tasks = [evaluateNotes([...NOTE_CASES_V2, ...NOTE_CASES_V2_MIXED]), evaluateFilters(FILTER_CASES_V2), evaluateRevisions(REVISION_CASES_V2), evaluateMachines(), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
   const development = [evaluateNotes(NOTE_CASES), evaluateFilters(FILTER_CASES), evaluateRevisions(REVISION_CASES)];
   return { set: HELD_OUT_SET_VERSION, developmentSet: EVAL_SET_VERSION, reader: "deterministic", ranAt: now.toISOString(), tasks, development, meetsMinimums: tasks.every((task) => task.meetsMinimum) };
 }

@@ -146,6 +146,18 @@ export const NOTE_CASES_V2: NoteCase[] = [
   { id: "v2-n-ar-12", language: "ar", note: "اتصلت مرتين وما رد، رح ابعتله واتساب الأسبوع الجاي", expect: { outcome: "no_answer", renewalInterest: null } },
 ];
 
+/**
+ * v2 addition, written 2026-10-25 after the reader fixes but before these
+ * cases were ever run: code-switched notes as Jordanian desk staff write them.
+ * Not used to change any reader.
+ */
+export const NOTE_CASES_V2_MIXED: NoteCase[] = [
+  { id: "v2-n-mx-01", language: "ar", note: "ما رد، call him بكرة الصبح", expect: { outcome: "no_answer", followUpDate: "2026-10-23", followUpTime: "10:00" } },
+  { id: "v2-n-mx-02", language: "en", note: "Interested بالتجديد, call Sunday 6pm", expect: { followUpDate: "2026-10-25", followUpTime: "18:00" } },
+  { id: "v2-n-mx-03", language: "ar", note: "مسافر until 20/11", expect: { travelUntil: "2026-11-20" } },
+  { id: "v2-n-mx-04", language: "en", note: "Wrong number, الرقم مش إله", expect: { outcome: "wrong_number", renewalInterest: null } },
+];
+
 export const FILTER_CASES_V2: FilterCase[] = [
   { id: "v2-f-en-01", language: "en", text: "memberships ending this week", expect: { membership: "expiring", expiringWithinDays: 7 } },
   { id: "v2-f-en-02", language: "en", text: "members with unpaid balances at Abdoun", expect: { owes: true, branchId: "b-abd" } },

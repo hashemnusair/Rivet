@@ -82,7 +82,7 @@ set, measurable baseline and runnable synthetic proof. **Status: in progress.**
   row. Implementation: drafted from `convex/navigationCatalogue.ts`, the role matrix in
   `convex/permissions.ts` and the `domain.ts` dispatcher. Verification: Hashem/Elias
   review pending. Next: keep rows current as each AI-4 slice lands.
-- [ ] **AI-0.2 Conflicting automation inventory and shared dedupe boundary.** Scope:
+- [x] **AI-0.2 Conflicting automation inventory and shared dedupe boundary.** *(Rule enforced: every task-creating playbook links an existing open follow-up instead of adding one, rechecked inside the write; tests in `convex/ai.delegation.test.ts` and `convex/ai.sales.test.ts`.)* Scope:
   automations that create staff work or messages and could duplicate AI work.
   Acceptance: each has a documented coordination rule, enforced by code and tests in
   AI-2.4/AI-2.5. Inventory: `automations.evaluate` (15 min, rule-created tasks,
@@ -93,23 +93,23 @@ set, measurable baseline and runnable synthetic proof. **Status: in progress.**
   Rule: AI never creates a second open `follow_up`/`renewal_call` for a member who
   already has one; it links/updates permitted work, and renewal/contact facts are
   rechecked inside the write transaction.
-- [ ] **AI-0.3 QOL improvements per selected journey.** At least one per journey,
+- [x] **AI-0.3 QOL improvements per selected journey.** *(Implemented with tests: travel suppression and one connected call per renewal; note → fields that never overwrite the person's choice; exclusion reasons on every batch; report totals rechecked against the ledger with coverage gaps; handover assigned as a task. Further finds are in the list below.)* At least one per journey,
   recorded with acceptance examples: renewal (one connected item per member, travel
   suppression), contact logging (fields from a note, preserved edits), batch
   (exclusion reasons), report (verified totals with coverage), handover (assigned
   open work, not prose only). Additional discoveries go to the list at the end.
-- [ ] **AI-0.4 Baseline measurement method.** Scope: manual baseline for renewal
+- [x] **AI-0.4 Baseline measurement method.** *(Protocol and synthetic counts below; the live stopwatch baseline with real staff is still pending a pilot gym.)* Scope: manual baseline for renewal
   follow-up, task preparation and report assembly. Acceptance: a written protocol
   (steps, fields typed, screens visited, elapsed time) plus a synthetic
   interaction-count baseline produced by the browser journeys. Live stopwatch baseline
   with real staff remains *pending* (needs Hashem/pilot gym); synthetic counts must be
   labelled synthetic.
-- [ ] **AI-0.5 Evaluation fixtures, held-out split and targets.** Scope: versioned
+- [x] **AI-0.5 Evaluation fixtures, held-out split and targets.** *(`apps/web/src/lib/ai/evals`: development set v1 and held-out v2 in English, Arabic and code-switched notes, ambiguous dates, adversarial instructions, filters, revisions, machine matching and exact decision cases; minimums in the harness; protocol in docs/09. Sparse-history and conflicting-record cases live in the member-brief and renewal tests, not in the harness.)* Scope: versioned
   synthetic fixtures in English, Arabic and mixed notes, ambiguous dates, sparse
   history, conflicting records and adversarial content, with a held-out set not used
   while developing prompts/rules. Targets from docs/23 §12 are adopted as initial
   targets, not measured claims.
-- [ ] **AI-0.6 Runtime selection with synthetic durability/revocation proof.**
+- [x] **AI-0.6 Runtime selection with synthetic durability/revocation proof.** *(Proved with real Convex functions in `convex/ai.delegation.test.ts`: resume after a crash after commit, duplicate start, lease fencing, cancellation during a batch, revocation and lost access between steps.)*
   Decision in docs/09: Convex-native durable runs (tables, internal
   mutations/actions, scheduler, leases, crons) with model calls in Convex internal
   actions; external runtimes rejected for now with recorded reasons. Acceptance: tests
@@ -281,8 +281,9 @@ local implementation and tests only (AI-3.1–AI-3.7); no staging or live eviden
 ### AI-4 — Broader workflow coverage
 
 Each slice needs its real tool path, existing-UI integration, approval behavior,
-fallback, evaluations, accessibility/localization and outcome measure. **Status: not
-started.**
+fallback, evaluations, accessibility/localization and outcome measure. **Status:
+implemented locally for AI-4.1–AI-4.9 with Convex, preview-adapter, component and browser
+tests; isolated staging and live evidence pending; AI-4.10 lists what is not covered.**
 
 - [x] **AI-4.1 Payment and cash-difference investigation** (cash shifts): *(Implemented locally: exact-amount matches only, voided movements included, expected cash rechecked, "nothing matches" stated plainly; entry point on Shifts & cash; isolated staging pending.)* candidate
   transactions and unresolved difference; human supplies physical count; posting and
@@ -303,16 +304,61 @@ started.**
   no blanket cross-tenant gym-agent access.
 - [x] **AI-4.9 Collections preparation** *(Implemented locally as prepare-only: unsaved call list with last receipt and contact; drafts only where an approved template's claim is true. Most overdue balances get no draft because the catalogue has no truthful "N days overdue" reminder; recorded below.)* (unpaid accounts, receipts lookup); no claim
   of payment without recorded evidence.
-- [ ] **AI-4.10 Remaining inventory rows** recorded as explicit coverage gaps with
+- [x] **AI-4.10 Remaining inventory rows** *(Recorded below with acceptance examples.)* recorded as explicit coverage gaps with
   acceptance examples (stock drafts, settings explanation, automation proposals,
   support drafts, public-profile copy, membership change proposals, reception
   entry-issue explanation).
+
+#### AI-4.10 coverage gaps (not built; each needs its own slice)
+
+| Gap | Acceptance example when built |
+| --- | --- |
+| Membership sale/renewal/plan-change comparison | For a member whose term ends in 5 days, two eligible plans are shown with current approved prices and the existing renew form opens prefilled; RIVET never sets a price. |
+| Lead approved-plan comparison (rest of AI-4.2) | A prepared lead call lists active plans and their current prices from the plan list; the draft still carries no price. |
+| Personal-training slot finder | For a member with PT credits, open slots this week with that coach are listed and booking runs the existing credit rules with the slot rechecked. |
+| Reception entry-issue explanation | A blocked check-in shows the reason from the existing check-in evaluation in plain words; no override and no waiting on a model. |
+| Stock replenishment draft | Products under their reorder point produce a draft purchase order for review; nothing is sent to a supplier. |
+| Supplier bill explanation | An open bill shows what it is for and what has been paid against it, from existing records only. |
+| Duplicate-member merge proposal | Two records sharing a phone produce a merge proposal bound to both record versions; the existing merge confirms it. |
+| Settings explanation | "Why can't reception freeze memberships?" answers from the role and policy settings with links to the controls. |
+| Automation rule proposal | A plain request becomes a rule preview with the members it would affect; saving stays in the automations form. |
+| Support case draft | A staff support request gets context (gym, plan, recent errors) and a draft reply the person edits and sends. |
+| Public-profile copy | Draft gym-profile text from existing details for the owner to edit and publish through the existing flow. |
+| Platform support and payment-review preparation (rest of AI-4.8) | A support case or a submitted payment claim shows the related invoices, prior cases and checks before the operator replies or decides. |
+| Today card for a waiting proposal (rest of AI-3.7) | A waiting approval appears on the approver's Today list as well as the bell. |
+| "Approve all" for grouped proposals (rest of AI-3.4) | Several proposals in one run are reviewed together and approved in one step, each still rechecked. |
+| Unnecessary contacts and dismissals (rest of AI-5.3) | Dismissed suggestions and contacts later marked unnecessary are counted in the monthly summary. |
+| Lead contact consent | A lead who asked not to be contacted is excluded from lead preparation with a reason. |
+| Neutral overdue payment template | A catalogue-reviewed "you have an unpaid balance of {amount}" message lets collections offer a truthful draft for any overdue balance. |
+| Arabic names and aliases | Branches and people can carry an Arabic name, so "الصويفية" finds Sweifieh in filters and revisions. |
+| Leads list structured filters (rest of AI-4.6) | The pipeline gains filters a request can map onto (stage, owner, due), shown as editable controls. |
+| Localised stored task titles | Prepared task titles render in the reader's language instead of stored English. |
+| Model-output cache (AI-1.9) | A repeated live reading of the same note within the cache window reuses the result, keyed by tenant, scope, source version, locale and prompt/model version, and is dropped on access change. |
+
+#### AI-0.4 baseline protocol and synthetic counts
+
+Protocol for a live baseline (pending a pilot gym): one trained desk member does each
+task on the same synthetic data set with assistance off, then on; record elapsed time
+from opening the screen to the saved result, the screens visited, the fields typed and
+the corrections needed afterwards; three runs each, median reported; nothing about a
+real member is shown to an observer outside the gym.
+
+Synthetic interaction counts (labelled synthetic; counted from the steps the browser
+journeys in `apps/web/e2e/ai-assist.spec.ts` and the ordinary forms perform, not timed):
+
+| Task | Without assistance | With assistance |
+| --- | --- | --- |
+| Renewal calls for 10 expiring members | About 70 interactions (per member: open, check recent contact, open task form, title, owner, due, save) | 1 click, then reviewing the saved list and exclusion reasons |
+| Logging one contact from a note | 5 (outcome, date, time, note, save) | 4 (note, read, use all, save) with the decision fields filled from the note |
+| Monthly management report | About 7 plus totals checked by hand (range, three report views, export) | 3 (open, prepare, start) with totals rechecked against the payments list |
+| Cash difference with a single matching receipt | Searching receipts by hand, then the review form | 1 click to list the match, then approve with the prepared note |
 
 ### AI-5 — Controlled pilot, evidence, and expansion of autonomy
 
 Exit: live evidence for the exact released scope, known limitations, effective stop
 controls, cost headroom, incident ownership and a repeatable improvement process.
-**Status: not started; live parts pending authorization.**
+**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); AI-5.2 and AI-5.6 need a
+provider endpoint and separate authorization and are not started.**
 
 - [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 50/58 fields (86.2%; en 10/12, ar 6/12 cases), filters 13/16 cases, revisions 10/10, cash matching 8/8, lead decisions 8/8, filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
   and sample size, run in CI and as a documented command.
@@ -328,8 +374,8 @@ controls, cost headroom, incident ownership and a repeatable improvement process
   provider evidence, budgets, owners, rollback/stop).
 - [ ] **AI-5.6 Hosted isolated staging, selected-tenant activation and live pilot
   evidence** — blocked on separate authorization; never fabricated.
-- [ ] **AI-5.7 Autonomy expansion policy** tied to measured reliability and clear
-  domain policy.
+- [x] **AI-5.7 Autonomy expansion policy** tied to measured reliability and clear
+  domain policy. *(Policy recorded in docs/09; no capability's autonomy was expanded.)*
 
 ### Discovered improvements and defects
 

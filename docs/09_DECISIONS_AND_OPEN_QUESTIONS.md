@@ -96,6 +96,19 @@ a recorded decision here. The deterministic reader is a fixture: its Arabic note
 result on v2 (6/12 cases) is not adequate for an Arabic release of reading, which
 needs the live reader to be measured on the same set first.
 
+**Autonomy expansion policy (implementation decision, 25 October 2026).** A capability
+moves to more autonomy (for example from prepared drafts to saved work, from one-off to
+standing instructions, or from a proposal to direct execution) only when all of these
+hold, and the change is recorded here with its evidence: (1) a domain rule already
+permits the action without a person's approval, and that rule is unchanged; (2) live
+evaluation on the held-out set and real pilot use meet the capability's minimums with
+zero fabrications for at least four weeks at the gyms concerned; (3) the monthly outcome
+summary shows the saved work is being used (done rather than left open or closed another
+way) and corrections are falling; (4) the stop controls were rehearsed on that
+deployment; (5) the owner of the affected gyms agreed. Money movement, membership
+dates, refunds, discounts, messages to members and machine safety never become
+autonomous under this policy; they stay with a person through the existing approvals.
+
 ### AI open decisions — not approved by the implementation work
 
 | Decision | Owner | Current default in code |
