@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## AI-native implementation — in progress on `codex/ai-native-rivet`, 24 October 2026
+## AI-native implementation — implemented locally on `codex/ai-native-rivet`, 25 October 2026
 
 **Not released, not merged, no deployment.** Implementation of
 [docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate
@@ -18,8 +18,7 @@ decisions". Environment ownership: docs/12 "AI environment ownership".
 Checkpoint 1: canonical breakdown, traceability map, capability inventory and
 decisions (`7f503745`).
 
-**Checkpoint 2 — AI-1/AI-2 foundation, INCOMPLETE (session usage limit).**
-Implemented locally, deterministic evidence only, no UI yet:
+**Checkpoint 2 — AI-1/AI-2 foundation (historical; completed in checkpoint 3).**
 
 - Shared pure contracts in `apps/web/src/lib/ai/`: `contracts.ts`, `capabilities.ts`
   (tool/playbook registry, authority intersection, param schemas), `model.ts`
@@ -47,8 +46,7 @@ Implemented locally, deterministic evidence only, no UI yet:
   expectations were corrected and the standing test re-enabled (`ai.delegation.test.ts`
   22/22). The full suite then exposed missing Activity-log labels for the new AI
   audit actions; English/Arabic labels were added.
-- **Not yet run:** full `pnpm test`, lint, build, Playwright, codegen in CI. Generated
-  bindings were produced with a worktree-local anonymous Convex backend
+- Generated bindings are produced with a worktree-local anonymous Convex backend
   (`CONVEX_DEPLOYMENT=anonymous:anonymous-agent npx convex codegen` from `apps/web`,
   selector kept in ignored `apps/web/.env.ai-local-backend.local`; no hosted target).
 
@@ -81,12 +79,63 @@ Implemented locally, deterministic evidence only, no UI yet:
   `e2e/ai-assist.spec.ts` 4/4. Full Playwright suite, plain production build, audit
   and Arabic lock are run before publication (see the publication record below).
 
-**Next steps (in order):** AI-3.5 management report/export and AI-3.6 shift handover
-playbooks (Convex + preview + UI entry points); AI-3.4 grouped approvals with the
-AI-4.1 cash-difference investigation; AI-4.2–AI-4.9 slices; AI-5.1 evaluation harness
-command with held-out cases; AI-1.5 monthly budget enforcement once budgets are set.
-Read docs/13 AI section, docs/09 AI-0 decision, `convex/aiRuns.ts`,
-`convex/aiPlaybooks.ts`, `src/lib/ai/*`, `src/lib/mock/ai.ts`, `src/features/assist/*`.
+**Checkpoint 4 — remaining slices, evaluation and release documentation
+(`2514b311`…HEAD, 25 October 2026).** Implemented locally; deterministic and mock-browser
+evidence only; no provider, staging or live evidence.
+
+- AI-3.5/3.6: management report (money totals rechecked against the full payment
+  ledger, coverage gaps, financial-access recheck and 30-day expiry, optional payments
+  export through the existing job) and next-shift handover (gaps shown, one "read the
+  handover" task per person and day). `convex/aiPlaybooks.ts`, `src/lib/ai/jobs.ts`.
+- AI-3.4/4.1: cash-difference investigation (exact-amount matches only) and the first
+  bound proposal: approval rechecks record versions, re-derives the changeset from
+  current records and runs the existing variance review as the approver; delegated
+  work can never decide. `src/lib/ai/cash-difference.ts`, `convex/ai.ts`
+  (`PROPOSAL_EXECUTORS`), `src/features/assist/proposal-card.tsx`.
+- AI-3.7: run notices for new results and problems; scheduled runs that only find open
+  work stay quiet; owners/managers notified of waiting approvals.
+- AI-4.2 lead follow-ups (`sales-batch.ts`), AI-4.3 machine-problem intake
+  (`fault-triage.ts`), AI-4.4 import column/plan suggestions (`import-assist.ts`), AI-4.5
+  class finder with booking that rechecks the spot and never joins a waitlist
+  (`class-finder.ts`, `convex/classes.ts`), AI-4.6 members-list filters
+  (`list-filters.ts`), AI-4.7 member-portal "Classes that fit you", AI-4.8 platform
+  application brief and `/platform/assistance` stop page, AI-4.9 collections call list
+  (`collections.ts`). AI-4.10 lists everything not covered, with acceptance examples.
+- AI-2.1: each renewal row shows the member fact it lacked (`listRowFact`).
+- AI-1.5: spend caps before every live call; no approved monthly budget means no spend.
+- AI-5.1: `pnpm ai:eval` and the same gate in `pnpm test`; held-out v2 (written before
+  the reader fixes found by v1): note fields 58/66 (87.9%; en 12/14, ar 8/14 cases),
+  filters 13/16, revisions 10/10, machine matching 12/12, decision tasks exact, zero
+  fabrications. Protocol in docs/09.
+- AI-5.3: owner-visible monthly outcome summary. AI-5.4: every stop rehearsed with real
+  Convex functions. AI-5.5: release checks and pilot record template in docs/12.
+  AI-5.7: autonomy policy in docs/09.
+- Settings → Assistance lives under Roles & access (the settings rail is full and its
+  height and keyboard order are pinned by existing browser tests).
+- Defects found and fixed along the way are listed under "Discovered improvements and
+  defects" in docs/13 (export delegation principal, rolled-back expiry write, empty
+  page-header wrappers that broke a Linux visual test, Arabic date and filter readings).
+
+**Final local gates (this publication):** frozen install; `pnpm test` (2,549 Vitest
+tests in 403 files passed, 2 existing opt-in benchmarks skipped, plus 14 repository
+safety tests); `pnpm ai:eval` (all minimums met); `pnpm typecheck`;
+`pnpm convex:typecheck`; `pnpm lint` (including the secret-output audit); plain
+`pnpm build`; `pnpm audit --prod` (no known vulnerabilities);
+`python3 docs/arabic/verify-lock.py` (revision 607, 247 decisions); `git diff --check`;
+credential-free codegen with no `_generated` diff; built mock preview with
+the full Playwright suite (252 passed, 14 existing conditional skips, 0 failed or flaky; the 11 AI journeys in `e2e/ai-assist.spec.ts` included).
+
+**Still open (not blocked by code):** AI-0.1 inventory review (Hashem/Elias); AI-0.7
+provider, data-processing, budget, packaging and pilot decisions; AI-1.4 real endpoint
+evidence; AI-1.9 model-output cache; AI-2.7 and AI-5.6 isolated staging and live pilot
+(separate authorization); AI-5.2 live evaluation (needs an endpoint). Nothing was
+deployed, merged into main, activated or run against a live tenant.
+
+Read first: docs/13 AI section (status and gaps), docs/09 AI decisions (runtime, keys,
+evaluation protocol, autonomy policy), docs/12 AI environment and release sections,
+`apps/web/convex/ai.ts`, `aiRuns.ts`, `aiPlaybooks.ts`, `apps/web/src/lib/ai/*`,
+`apps/web/src/lib/mock/ai.ts`, `apps/web/src/features/assist/*`,
+`apps/web/src/lib/ai/evals/*`, `apps/web/e2e/ai-assist.spec.ts`.
 
 ## Source-only merge preparation — 24 October 2026
 
