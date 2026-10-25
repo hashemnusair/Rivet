@@ -255,7 +255,7 @@ rows) is partly done: the selected-member panel shows the brief headline.
 Exit: work survives navigation and worker restart; revocation stops pending writes;
 scheduled runs stay within grants; each job produces verified saved records or protected
 artifacts; uncertainty and partial results are truthful. **Status: in progress —
-local implementation and tests only (AI-3.1–AI-3.6); no staging or live evidence.**
+local implementation and tests only (AI-3.1–AI-3.7); no staging or live evidence.**
 
 - [x] **AI-3.1 Inspect and resume.** *(Leases with fencing, recovery cron, crash-after-commit test; run kept in the page URL.)* Run state, steps and receipts persist; navigating
   back shows the same run; leases with fencing; recovery cron resumes expired leases.
@@ -274,7 +274,7 @@ local implementation and tests only (AI-3.1–AI-3.6); no staging or live eviden
 - [x] **AI-3.6 Job: next-shift handover.** *(Implemented locally: unreadable sources shown as gaps, one "read the handover" task per person and day, nothing marked done; isolated staging pending.)* Assemble unresolved checklist items, open
   repair/maintenance work and open follow-ups for the branch; save the handover and
   assign permitted tasks; cannot certify physical work.
-- [ ] **AI-3.7 Completion and exception reporting.** Useful completions, failures and
+- [x] **AI-3.7 Completion and exception reporting.** *(Implemented locally: run notices for new results and problems, silence for scheduled runs that only find open work, approver notices for prepared changes. Shown on the existing bell; there is no Today card for a waiting proposal yet.)* Useful completions, failures and
   required decisions reach existing notifications/Today; background checks with
   nothing new stay quiet.
 
