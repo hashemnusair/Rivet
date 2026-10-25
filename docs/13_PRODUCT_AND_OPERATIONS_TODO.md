@@ -297,7 +297,7 @@ started.**
   rechecked at commit; booking within grant through existing roster/PT rules.
 - [x] **AI-4.6 Natural-language filters** *(Implemented locally for the members list: mapped onto the list's own filters only, with not-applied parts and reasons shown. Leads are not covered: the pipeline has search but no structured filters to map onto.)* for members/leads producing editable,
   visible filters.
-- [ ] **AI-4.7 Member portal** self-only assistance (class finder) under member
+- [x] **AI-4.7 Member portal** *(Implemented locally: "Classes that fit you" from the member's own class view and attended history, under member authorization; it opens the day and the member books as usual. Off unless the gym enables it.)* self-only assistance (class finder) under member
   authorization; no staff context.
 - [ ] **AI-4.8 Platform console** review preparation under platform-admin authority;
   no blanket cross-tenant gym-agent access.
