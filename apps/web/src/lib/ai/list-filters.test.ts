@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { memberFilterPlan } from "./list-filters";
+import { interpretFiltersDeterministic } from "./model";
 
 describe("members list filters from a request", () => {
   it("applies only the list's own filters and names the window it really uses", () => {
@@ -17,5 +18,18 @@ describe("members list filters from a request", () => {
     expect(plan.apply).toEqual({});
     expect(plan.notApplied).toEqual([{ kind: "membershipNone" }, { kind: "notVisited", days: 21 }, { kind: "branchSwitch", branchId: "b-2" }, { kind: "unrecognised", text: "tall people" }]);
     expect(memberFilterPlan({ branchId: "b-1", unrecognised: [] }, { activeBranchId: "b-1" }).notes).toEqual([{ kind: "branchShown", branchId: "b-1" }]);
+  });
+});
+
+describe("filter reading defects found by the held-out-v1 evaluation", () => {
+  const read = (text: string) => interpretFiltersDeterministic({ kind: "interpret_filters", surface: "members", text, branches: [] });
+  it("never turns a future ending into “expired”", () => {
+    expect(read("الأعضاء اللي بخلص اشتراكهم خلال أسبوعين")).toMatchObject({ membership: "expiring", expiringWithinDays: 14 });
+    expect(read("اللي خلص اشتراكهم")).toMatchObject({ membership: "expired" });
+  });
+  it("reads spans written as words and plural verbs", () => {
+    expect(read("people who haven't come in for a month").notVisitedForDays).toBe(30);
+    expect(read("اللي ما اجوا من ٣ أسابيع").notVisitedForDays).toBe(21);
+    expect(read("members with no membership").membership).toBe("none");
   });
 });

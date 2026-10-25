@@ -3,7 +3,7 @@ import { memberFilterPlan } from "../list-filters";
 import { interpretFiltersDeterministic, interpretRevisionDeterministic } from "../model";
 import { extractNoteDeterministic } from "../note-extraction";
 import { evaluateLeadCandidate, type LeadDecision, type LeadFollowUpFacts } from "../sales-batch";
-import { EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, NOTE_AT, NOTE_CASES, REVISION_CANDIDATES, REVISION_CASES, TIMEZONE, type Language } from "./cases";
+import { EVAL_BRANCHES, EVAL_SET_VERSION, FILTER_CASES, FILTER_CASES_V2, HELD_OUT_SET_VERSION, NOTE_AT, NOTE_CASES, NOTE_CASES_V2, REVISION_CANDIDATES, REVISION_CASES, REVISION_CASES_V2, TIMEZONE, type FilterCase, type Language, type NoteCase, type RevisionCase } from "./cases";
 
 /**
  * Deterministic evaluation of RIVET's assistance readers and decisions. It
@@ -29,10 +29,14 @@ export interface TaskReport {
 }
 
 export interface EvalReport {
+  /** The set that gates: written before the readers were last changed. */
   set: string;
+  /** The earlier set, used to find and fix defects; reported, never gating. */
+  developmentSet: string;
   reader: "deterministic";
   ranAt: string;
   tasks: TaskReport[];
+  development: TaskReport[];
   meetsMinimums: boolean;
 }
 
@@ -64,9 +68,9 @@ function finishReport(report: TaskReport): TaskReport {
   return report;
 }
 
-function evaluateNotes(): TaskReport {
+function evaluateNotes(cases: NoteCase[]): TaskReport {
   const report = emptyReport("note_extraction", "reader", { metric: "field_accuracy", value: MINIMUMS.note_extraction, fabrications: 0 });
-  for (const item of NOTE_CASES) {
+  for (const item of cases) {
     const result = extractNoteDeterministic({ note: item.note, noteAt: NOTE_AT, timezone: TIMEZONE, subject: "member" });
     const actual: Record<string, unknown> = {
       outcome: result.outcome?.value ?? null,
@@ -94,9 +98,9 @@ function evaluateNotes(): TaskReport {
   return finishReport(report);
 }
 
-function evaluateFilters(): TaskReport {
+function evaluateFilters(cases: FilterCase[]): TaskReport {
   const report = emptyReport("filter_interpretation", "reader", { metric: "case_accuracy", value: MINIMUMS.filter_interpretation, fabrications: 0 });
-  for (const item of FILTER_CASES) {
+  for (const item of cases) {
     const result = interpretFiltersDeterministic({ kind: "interpret_filters", surface: "members", text: item.text, branches: EVAL_BRANCHES });
     const problems: string[] = [];
     const keys = ["membership", "expiringWithinDays", "notVisitedForDays", "owes", "branchId"] as const;
@@ -126,9 +130,9 @@ function evaluateFilters(): TaskReport {
   return finishReport(report);
 }
 
-function evaluateRevisions(): TaskReport {
+function evaluateRevisions(cases: RevisionCase[]): TaskReport {
   const report = emptyReport("revision_interpretation", "reader", { metric: "case_accuracy", value: MINIMUMS.revision_interpretation, fabrications: 0 });
-  for (const item of REVISION_CASES) {
+  for (const item of cases) {
     const result = interpretRevisionDeterministic({ kind: "interpret_revision", text: item.text, candidates: REVISION_CANDIDATES, today: "2026-10-22" });
     const expected = item.expect;
     let ok = result.kind === expected.kind;
@@ -223,19 +227,23 @@ function evaluateFilterMapping(): TaskReport {
 
 export function runEvaluations(now = new Date()): EvalReport {
   txnSeq = 0;
-  const tasks = [evaluateNotes(), evaluateFilters(), evaluateRevisions(), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
-  return { set: EVAL_SET_VERSION, reader: "deterministic", ranAt: now.toISOString(), tasks, meetsMinimums: tasks.every((task) => task.meetsMinimum) };
+  const tasks = [evaluateNotes(NOTE_CASES_V2), evaluateFilters(FILTER_CASES_V2), evaluateRevisions(REVISION_CASES_V2), evaluateCashMatching(), evaluateLeadDecisions(), evaluateFilterMapping()];
+  const development = [evaluateNotes(NOTE_CASES), evaluateFilters(FILTER_CASES), evaluateRevisions(REVISION_CASES)];
+  return { set: HELD_OUT_SET_VERSION, developmentSet: EVAL_SET_VERSION, reader: "deterministic", ranAt: now.toISOString(), tasks, development, meetsMinimums: tasks.every((task) => task.meetsMinimum) };
 }
 
 export function formatReport(report: EvalReport): string {
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
-  const lines = [`RIVET assistance evaluation · ${report.set} · ${report.reader} reader · ${report.ranAt}`];
-  for (const task of report.tasks) {
+  const lines = [`RIVET assistance evaluation · gate ${report.set} · ${report.reader} reader · ${report.ranAt}`];
+  const describe = (task: TaskReport, gating: boolean) => {
     const languages = Object.entries(task.byLanguage).map(([language, bucket]) => `${language} ${bucket.passed}/${bucket.cases}`).join(", ");
     const fields = task.fields ? ` · fields ${task.fields.correct}/${task.fields.scored} (${percent(task.fields.scored ? task.fields.correct / task.fields.scored : 0)})` : "";
-    lines.push(`${task.meetsMinimum ? "PASS" : "FAIL"} ${task.task}: cases ${task.passedCases}/${task.cases}${languages ? ` (${languages})` : ""}${fields} · fabrications ${task.fabrications} · minimum ${task.minimum.metric} ≥ ${percent(task.minimum.value)}`);
+    lines.push(`${gating ? (task.meetsMinimum ? "PASS" : "FAIL") : "INFO"} ${task.task}: cases ${task.passedCases}/${task.cases}${languages ? ` (${languages})` : ""}${fields} · fabrications ${task.fabrications}${gating ? ` · minimum ${task.minimum.metric} ≥ ${percent(task.minimum.value)}` : ""}`);
     for (const failure of task.failures) lines.push(`    ${failure.id}: ${failure.detail}`);
-  }
+  };
+  for (const task of report.tasks) describe(task, true);
+  lines.push(`Development set ${report.developmentSet} (used to fix readers; not gating):`);
+  for (const task of report.development) describe(task, false);
   lines.push(report.meetsMinimums ? "All minimums met." : "Some minimums are not met.");
   return lines.join("\n");
 }

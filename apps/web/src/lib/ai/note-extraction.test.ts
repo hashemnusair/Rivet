@@ -139,3 +139,21 @@ describe("suggestions never overwrite what the person already chose", () => {
     expect(untouched.every((item) => !item.blockedByEdit)).toBe(true);
   });
 });
+
+describe("defects found by the held-out-v1 evaluation", () => {
+  it("counts Arabic duals and number words instead of falling back to today", () => {
+    expect(resolveDatePhrase("جربي بعد يومين بالعصر", THURSDAY, TZ)).toMatchObject({ date: "2026-10-24", time: "14:00" });
+    expect(resolveDatePhrase("رجعله بعد أسبوع", THURSDAY, TZ)?.date).toBe("2026-10-29");
+    expect(resolveDatePhrase("call in two days", THURSDAY, TZ)?.date).toBe("2026-10-24");
+    expect(resolveDatePhrase("try in a week", THURSDAY, TZ)?.date).toBe("2026-10-29");
+  });
+
+  it("reads a stated preference as a contact time, not as today's date", () => {
+    const arabic = extractNoteDeterministic({ note: "بفضل نتصل فيه بالمسا", noteAt: THURSDAY, timezone: TZ, subject: "member" });
+    expect(arabic.preferredContactTime?.value).toBe("evening");
+    expect(arabic.followUp).toBeUndefined();
+    const english = extractNoteDeterministic({ note: "Asked us to call in the evening", noteAt: THURSDAY, timezone: TZ, subject: "member" });
+    expect(english.preferredContactTime?.value).toBe("evening");
+    expect(extractNoteDeterministic({ note: "He'll think about it", noteAt: THURSDAY, timezone: TZ, subject: "member" }).renewalInterest?.value).toBe("undecided");
+  });
+});

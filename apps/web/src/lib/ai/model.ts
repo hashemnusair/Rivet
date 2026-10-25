@@ -192,26 +192,43 @@ export function interpretRevisionDeterministic(task: InterpretRevisionTask): AiR
   return { kind: "unsupported", messageKey: "aiWork.revise.notUnderstood" };
 }
 
+const COUNT_WORDS: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, ten: 10 };
+
+/** A span of days written as digits, English number words or Arabic duals ("a month", "أسبوعين"). */
+function spanDays(amountText: string | undefined, unit: string): number {
+  const amount = amountText === undefined ? 1 : /^\d/.test(amountText) ? Number(amountText) : COUNT_WORDS[amountText] ?? 1;
+  if (/(يومين)/u.test(unit)) return 2;
+  if (/(اسبوعين|أسبوعين)/u.test(unit)) return 14;
+  if (/(شهرين)/u.test(unit)) return 60;
+  return /week|أسبوع|اسبوع|اسابيع|أسابيع/u.test(unit) ? amount * 7 : /month|شهر|اشهر|أشهر/u.test(unit) ? amount * 30 : amount;
+}
+
+const EN_SPAN = "(\\d{1,3}|an?|one|two|three|four|five|six|ten)\\s*(days?|weeks?|months?)";
+const AR_SPAN = "(?:(\\d{1,3})\\s*)?(يومين|اسبوعين|أسبوعين|شهرين|يوم|أيام|ايام|أسبوع|اسبوع|أسابيع|اسابيع|شهر|أشهر|اشهر)";
+
 export function interpretFiltersDeterministic(task: InterpretFiltersTask): MemberFilterInterpretation {
   const original = normalizeNoteText(task.text);
   const text = original.toLowerCase();
   const result: MemberFilterInterpretation = { unrecognised: [] };
-  const days = (pattern: RegExp): number | undefined => {
+  const span = (pattern: RegExp): number | undefined => {
     const found = text.match(pattern);
-    if (!found) return undefined;
-    const amount = Number(found[1]);
-    const unit = found[2] ?? "day";
-    return /week|أسبوع|اسبوع|اسابيع|أسابيع/u.test(unit) ? amount * 7 : /month|شهر|اشهر|أشهر/u.test(unit) ? amount * 30 : amount;
+    return found ? spanDays(found[1], found[2] ?? "day") : undefined;
   };
-  const notVisited = days(/(?:haven'?t|has ?n[o']t|not|no) (?:visited|come|been|checked in)[^\d]{0,24}(\d{1,3})\s*(days?|weeks?|months?)/) ?? days(/(?:ما زار|ما اجى|ما إجا|ما اجا|غايب|غايبين)[^\d]{0,16}(\d{1,3})\s*(يوم|أيام|ايام|أسبوع|اسبوع|أسابيع|اسابيع|شهر|أشهر|اشهر)/u);
+  // Verb forms include plurals ("ما اجوا", "ما زاروا") since lists are about many people.
+  const notVisited = span(new RegExp(`(?:haven'?t|has ?n[o']t|not|no) (?:visited|come(?: in)?|been(?: in)?|checked in)[^\\d]{0,24}?${EN_SPAN}`))
+    ?? span(new RegExp(`(?:ما زار|ما زاروا|ما زارت|ما اجى|ما إجا|ما اجا|ما اجوا|ما إجوا|ما اجت|غايب|غايبين)[^\\d]{0,16}?${AR_SPAN}`, "u"));
   if (notVisited) result.notVisitedForDays = notVisited;
-  else if (/\b(inactive|not visiting|stopped coming|haven'?t (been|come))\b/.test(text) || /(ما بيجي|بطل يجي|غايب)/u.test(text)) result.notVisitedForDays = 14;
-  const expiring = days(/(?:expir\w*|end\w*|ending)[^\d]{0,16}(\d{1,3})\s*(days?|weeks?|months?)/) ?? days(/(?:ينتهي|بتخلص|بخلص)[^\d]{0,16}(\d{1,3})\s*(يوم|أيام|ايام|أسبوع|اسبوع|شهر)/u);
+  else if (/\b(inactive|not visiting|stopped coming|haven'?t (been|come))\b/.test(text) || /(ما بيجي|بطل يجي|بطلوا يجوا|غايب)/u.test(text)) result.notVisitedForDays = 14;
+  const expiring = span(new RegExp(`(?:expir\\w*|end\\w*|ending)[^\\d]{0,16}?${EN_SPAN}`))
+    ?? span(new RegExp(`(?:ينتهي|بتخلص|بخلص|رح يخلص|رح تخلص)[^\\d]{0,24}?${AR_SPAN}`, "u"));
+  // Present and future forms ("بخلص") mean ending soon; only the past ("خلص اشتراكه") means expired.
+  const futureEnding = /(بخلص|بتخلص|رح يخلص|رح تخلص|قرب يخلص|قرب ينتهي|ينتهي)/u.test(text);
   if (expiring) { result.membership = "expiring"; result.expiringWithinDays = expiring; }
-  else if (/\b(expiring|ending soon|due for renewal|renewals?)\b/.test(text) || /(قرب ينتهي|بتخلص قريب|تجديد)/u.test(text)) { result.membership = "expiring"; result.expiringWithinDays = 14; }
-  else if (/\b(expired|ended|lapsed)\b/.test(text) || /(منتهي|خلص اشتراكه|انتهى)/u.test(text)) result.membership = "expired";
-  else if (/\bfrozen\b/.test(text) || /(مجمد|مجمّد|تجميد)/u.test(text)) result.membership = "frozen";
-  if (/\b(owe|owes|owing|unpaid|debt|balance)\b/.test(text) || /(عليه|مديون|المبلغ المتبقي|ما دفع)/u.test(text)) result.owes = true;
+  else if (/\b(expiring|ending soon|due for renewal|renewals?)\b/.test(text) || futureEnding || /(بتخلص قريب|تجديد|التجديدات)/u.test(text)) { result.membership = "expiring"; result.expiringWithinDays = 14; }
+  else if (/\b(expired|ended|lapsed)\b/.test(text) || /(منتهي|المنتهية|(?<!ب|بت)خلص اشتراك|انتهى)/u.test(text)) result.membership = "expired";
+  else if (/\bfrozen\b/.test(text) || /(مجمد|مجمّد|المجمدين|تجميد)/u.test(text)) result.membership = "frozen";
+  else if (/\b(no|without( an?)?) (active )?(membership|plan)s?\b/.test(text) || /(بدون اشتراك|من غير اشتراك|ما (عنده|عندها|عندهم) اشتراك)/u.test(text)) result.membership = "none";
+  if (/\b(owe|owes|owing|unpaid|debt|balance)\b/.test(text) || /(عليه|عليها|عليهم|مديون|المبلغ المتبقي|ما دفع)/u.test(text)) result.owes = true;
   for (const branch of task.branches) {
     if (text.includes(normalizeNoteText(branch.name).toLowerCase())) result.branchId = branch.id;
   }

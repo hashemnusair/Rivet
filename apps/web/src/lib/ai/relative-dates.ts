@@ -14,6 +14,8 @@ import type { AiDateResolution } from "./contracts";
 export type TimeOfDay = "morning" | "afternoon" | "evening";
 
 export const TIME_OF_DAY_CLOCK: Record<TimeOfDay, string> = { morning: "10:00", afternoon: "14:00", evening: "18:00" };
+/** Arabic words that state a habit or preference rather than a date ("بفضّل المسا"). */
+export const PREFERENCE_AR = /(بيحب|بتحب|بحب|بنحب|بفضل|بيفضل|بتفضل|يفضل|تفضل|دايما|عادة)/u;
 
 const WEEKDAYS_EN: Array<[RegExp, number]> = [
   [/\bsun(day)?\b/, 0],
@@ -165,6 +167,29 @@ function explicitDateIn(text: string, from: { date: string }): { date: string; p
   return undefined;
 }
 
+const COUNT_WORDS_EN: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, ten: 10 };
+
+/**
+ * "In 3 days", "in two weeks", "بعد يومين", "بعد ٣ أيام", "بعد أسبوع": a count
+ * of days or weeks from the note's date. Arabic duals (يومين، أسبوعين) carry
+ * their own count.
+ */
+function countedDaysIn(text: string): { days: number; phrase: string } | undefined {
+  const lower = text.toLowerCase();
+  const en = lower.match(/\bin (\d{1,2}|an?|one|two|three|four|five|six|seven|ten) (days?|weeks?)\b/);
+  if (en) {
+    const amount = /^\d/.test(en[1]!) ? Number(en[1]) : COUNT_WORDS_EN[en[1]!]!;
+    return { days: /week/.test(en[2]!) ? amount * 7 : amount, phrase: en[0]! };
+  }
+  const arCount = text.match(/بعد (\d{1,2}) ?(ايام|أيام|يوم|اسابيع|أسابيع|اسبوع|أسبوع)/u);
+  if (arCount) return { days: Number(arCount[1]) * (/سب|سابيع/u.test(arCount[2]!) ? 7 : 1), phrase: arCount[0]! };
+  const arDual = text.match(/بعد (يومين|اسبوعين|أسبوعين)/u);
+  if (arDual) return { days: /يومين/u.test(arDual[1]!) ? 2 : 14, phrase: arDual[0]! };
+  const arWeek = text.match(/بعد (اسبوع|أسبوع)(?![ا-ي])/u);
+  if (arWeek) return { days: 7, phrase: arWeek[0]! };
+  return undefined;
+}
+
 /**
  * Read the first date expression in a clause. `notBefore` keeps a callback
  * after a stated travel period: "until Sunday, call Monday" never resolves
@@ -194,8 +219,8 @@ export function resolveDatePhrase(clause: string, noteAt: string, timezone: stri
     return { ...resolution, date: later, alternatives: [{ date: resolution.date, ...(resolution.time ? { time: resolution.time } : {}), reasonKey: "aiWork.dates.beforeReturn" }, ...(resolution.alternatives ?? [])] };
   };
 
-  const inDays = lower.match(/\bin (\d{1,2}) days?\b/) ?? text.match(/بعد (\d{1,2}) (?:ايام|أيام|يوم)/u);
-  if (inDays) return respectFloor(withTime(addDays(from.date, Number(inDays[1])), inDays[0]!));
+  const counted = countedDaysIn(text);
+  if (counted) return respectFloor(withTime(addDays(from.date, counted.days), counted.phrase));
   if (/\bday after tomorrow\b/.test(lower) || /بعد (بكرة|بكرا|بكره|غدا|غداً)/u.test(text)) return respectFloor(withTime(addDays(from.date, 2), /day after/.test(lower) ? "day after tomorrow" : "بعد بكرة"));
   if (/\btomorrow\b/.test(lower) || /(بكرة|بكرا|بكره|غدا|غداً|غدًا)/u.test(text)) return respectFloor(withTime(addDays(from.date, 1), /tomorrow/.test(lower) ? "tomorrow" : (text.match(/(بكرة|بكرا|بكره|غدا|غداً|غدًا)/u)?.[0] ?? "")));
   if (/\b(today|tonight)\b/.test(lower) || /(اليوم|الليلة)/u.test(text)) return respectFloor(withTime(from.date, /tonight/.test(lower) ? "tonight" : /today/.test(lower) ? "today" : (text.match(/(اليوم|الليلة)/u)?.[0] ?? "")));
@@ -220,6 +245,6 @@ export function resolveDatePhrase(clause: string, noteAt: string, timezone: stri
     }
     return respectFloor(withTime(upcoming, weekday.phrase));
   }
-  if (timeOfDay && !/\b(prefers?|usually|always)\b/.test(lower) && !/(بيحب|بتحب|دايما|عادة)/u.test(text)) return respectFloor(withTime(from.date, timeOfDay.phrase));
+  if (timeOfDay && !/\b(prefers?|usually|always|asked (us )?to call)\b/.test(lower) && !PREFERENCE_AR.test(text)) return respectFloor(withTime(from.date, timeOfDay.phrase));
   return undefined;
 }

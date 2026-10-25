@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test scripts/safe-convex-cli.test.mjs scripts/validate-vercel-env.test.mjs && vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "ai:eval": "AI_EVAL_PRINT=1 AI_EVAL_REPORT=test-results/ai-eval/report.json vitest run src/lib/ai/evals"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.6.3",

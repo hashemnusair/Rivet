@@ -72,10 +72,10 @@ const UNTIL_EN = /\b(until|till|til|through|back (on|by)|returns? (on|by)?|comin
 const UNTIL_AR = /(لحد|لغاية|حتى|لعند|راجع|راجعة|برجع|بترجع|يرجع|ترجع)/u;
 const INTEREST_YES_EN = /\b(interested in renewing|wants to renew|will renew|going to renew|plans to renew|happy to renew|keen to renew|interested)\b/i;
 const INTEREST_YES_AR = /(بدو يجدد|بدها تجدد|حابب يجدد|حابة تجدد|رح يجدد|رح تجدد|مهتم|مهتمة|موافق يجدد)/u;
-const INTEREST_MAYBE_EN = /\b(thinking about it|will think|not sure|undecided|maybe|considering)\b/i;
+const INTEREST_MAYBE_EN = /\b(thinking about it|think it over|(will|'ll) think|not sure|undecided|maybe|considering|decide (by|on|later))\b/i;
 const INTEREST_MAYBE_AR = /(بفكر|بتفكر|رح يفكر|رح تفكر|مش متأكد|مش متأكدة|يمكن|لسا مش مقرر)/u;
-const PREFERS_EN = /\b(prefers?|better|best|only|usually free|free) (in the )?(mornings?|afternoons?|evenings?|after work|after \d)/i;
-const PREFERS_AR = /(بيحب|بتحب|أفضل|افضل|بس|دايما|عادة).{0,12}(الصبح|بعد الظهر|المسا|المساء|بالليل|بعد الدوام)/u;
+const PREFERS_EN = /\b(prefers?|better|best|only|usually free|free|asked (us )?to (call|contact|reach)( (him|her|them))?) (in the )?(mornings?|afternoons?|evenings?|after work|after \d)/i;
+const PREFERS_AR = /(بيحب|بتحب|بحب|بنحب|بفضل|بيفضل|بتفضل|يفضل|تفضل|أفضل|افضل|بس|دايما|عادة).{0,16}(الصبح|بعد الظهر|المسا|المساء|بالليل|بعد الدوام)/u;
 
 const TOPIC_PATTERNS: Array<{ topic: Topic; en: RegExp; ar: RegExp }> = [
   { topic: "complaint", en: /\b(complain(t|ed|ing|s)?|unhappy|angry|upset|frustrated|rude|dirty|broken|not working|overcharged|charged twice|refund|bad experience)\b/i, ar: /(شكوى|اشتكى|اشتكت|زعلان|زعلانة|معصب|مش راضي|مش راضية|خربان|مكسور|وسخ|تعامل سيء)/u },
