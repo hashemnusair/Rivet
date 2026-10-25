@@ -41,8 +41,11 @@ import {
   type AiMemberBriefResult,
   type AiCollectionsResult,
   type AiClassOptionsResult,
+  type AiApproveAllOutcome,
+  type AiApproveAllResult,
   type AiGymAvailability,
   type AiPlatformAvailability,
+  type AiProposalView,
   type AiPlatformStatus,
   type AiOutcomeSummary,
   type AiMemberHeadlinesResult,
@@ -520,6 +523,69 @@ function validRevision(raw: unknown, run: AiRunDoc, staff: Array<{ id: string; n
   return undefined;
 }
 
+type ProposalRefusal = Exclude<AiApproveAllOutcome, "approved" | "no_longer_matched" | "not_saved">;
+
+/** The checks before any decision on a prepared change, for this person, now. */
+async function decidableProposal(ctx: MutationCtx, actor: ActorContext, proposalId: string, changesetHash: string, runId?: string): Promise<{ proposal: Doc<"aiProposals">; run: AiRunDoc } | { refusal: ProposalRefusal }> {
+  const proposal = await ctx.db.query("aiProposals").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposalId)).unique();
+  if (!proposal || (runId !== undefined && proposal.runPublicId !== runId)) return { refusal: "not_found" };
+  const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposal.runPublicId)).unique();
+  if (!run || !canReadRun(actor, run)) return { refusal: "not_found" };
+  if (!actor.permissions.includes(proposal.requiredPermission)) return { refusal: "no_access" };
+  if (proposal.status !== "pending") return { refusal: "already_decided" };
+  // The view already reads an elapsed proposal as expired; nothing is written for it.
+  if (proposal.expiresAt <= Date.now()) return { refusal: "expired" };
+  if (changesetHash !== proposal.changesetHash) return { refusal: "changed" };
+  return { proposal, run };
+}
+
+function refuseProposalDecision(actor: ActorContext, refusal: ProposalRefusal): never {
+  const options = { correlationId: actor.correlationId };
+  switch (refusal) {
+    case "not_found": domainError("NOT_FOUND", "Record not found.", options);
+    case "no_access": domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", options);
+    case "already_decided": domainError("CONFLICT", "This change was already decided.", options);
+    case "expired": domainError("CONFLICT", "This prepared change expired. Prepare it again.", options);
+    case "changed": domainError("CONFLICT", "This record changed. Refresh and try again.", options);
+  }
+}
+
+/**
+ * Approve a prepared change that passed `decidableProposal`: re-derive it from
+ * current records, and either record that it no longer matches or run the
+ * existing operation as the approving person, with its own checks and audit.
+ */
+async function approveCheckedProposal(ctx: MutationCtx, actor: ActorContext, port: AiDomainPort, request: RequestArgs, proposal: Doc<"aiProposals">, run: AiRunDoc): Promise<{ outcome: "approved" | "no_longer_matched"; view: AiProposalView }> {
+  const now = Date.now();
+  const executor = PROPOSAL_EXECUTORS[proposal.tool];
+  const executorInput = executor?.input(record(proposal.payload));
+  if (!executor || !executorInput) domainError("VALIDATION_ERROR", "This prepared change cannot be approved here.", { correlationId: actor.correlationId });
+  const versions = await port.sourceVersions(ctx, actor, proposal.sourceVersions);
+  const sourcesMoved = proposal.sourceVersions.some((source, index) => versions[index] !== source.updatedAt);
+  const rederived = sourcesMoved ? null : await executor.rederive(ctx, actor, port, record(proposal.payload));
+  if (rederived !== proposal.changesetHash) {
+    // A material change since it was prepared: record that, change nothing else.
+    await ctx.db.patch(proposal._id, { status: "invalidated", invalidationReason: "source_changed", decidedByUserId: actor.user._id, decidedAt: now });
+    await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.invalidate", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change no longer matched the records", branchId: run.branchPublicId });
+    return { outcome: "no_longer_matched", view: await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!) };
+  }
+  // The existing operation runs as the approving person, with its own permission, reason and audit.
+  const result = record(await port.executeApproved(ctx, executor.operation, executorInput, request));
+  await ctx.db.patch(proposal._id, { status: "executed", decidedByUserId: actor.user._id, decidedAt: now, executionReceipt: { operation: executor.operation, recordId: text(result.id), executedAt: now } });
+  await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.approve", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change approved and saved", branchId: run.branchPublicId });
+  return { outcome: "approved", view: await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!) };
+}
+
+/** One approval inside "approve all", for the internal step that runs each in its own sub-transaction. */
+export async function approveProposalForBatch(ctx: MutationCtx, request: RequestArgs, port: AiDomainPort, input: { runId: string; proposalId: string; changesetHash: string }): Promise<{ outcome: AiApproveAllOutcome; subjectLabel?: string }> {
+  const actor = await requireActor(ctx, request);
+  requireHuman(actor);
+  const checked = await decidableProposal(ctx, actor, input.proposalId, input.changesetHash, input.runId);
+  if ("refusal" in checked) return { outcome: checked.refusal };
+  const { outcome } = await approveCheckedProposal(ctx, actor, port, request, checked.proposal, checked.run);
+  return { outcome, subjectLabel: checked.proposal.subjectLabel };
+}
+
 export async function aiMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs, port: AiDomainPort): Promise<unknown> {
   if (operation === "ai.platform.stop") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
@@ -759,39 +825,40 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
     case "ai.proposal.decide": {
       // RIVET never decides its own proposal; only a signed-in person can.
       requireHuman(actor);
-      const proposal = await ctx.db.query("aiProposals").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", text(input.proposalId))).unique();
-      if (!proposal) domainError("NOT_FOUND", "Record not found.", { correlationId: actor.correlationId });
-      const run = await runByPublicId(ctx, actor, proposal.runPublicId);
-      if (!actor.permissions.includes(proposal.requiredPermission)) domainError("FORBIDDEN", "You do not have access to this action. Ask your gym owner.", { correlationId: actor.correlationId });
       const decision = text(input.decision);
       if (decision !== "approve" && decision !== "reject") domainError("VALIDATION_ERROR", "Choose approve or reject.", { correlationId: actor.correlationId });
-      if (proposal.status !== "pending") domainError("CONFLICT", "This change was already decided.", { correlationId: actor.correlationId });
-      const now = Date.now();
-      // The view already reads an elapsed proposal as expired; a write here would be rolled back by the error.
-      if (proposal.expiresAt <= now) domainError("CONFLICT", "This prepared change expired. Prepare it again.", { correlationId: actor.correlationId });
-      if (text(input.changesetHash) !== proposal.changesetHash) domainError("CONFLICT", "This record changed. Refresh and try again.", { correlationId: actor.correlationId });
+      const checked = await decidableProposal(ctx, actor, text(input.proposalId), text(input.changesetHash));
+      if ("refusal" in checked) refuseProposalDecision(actor, checked.refusal);
+      const { proposal, run } = checked;
       if (decision === "reject") {
-        await ctx.db.patch(proposal._id, { status: "rejected", decidedByUserId: actor.user._id, decidedAt: now });
+        await ctx.db.patch(proposal._id, { status: "rejected", decidedByUserId: actor.user._id, decidedAt: Date.now() });
         await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.reject", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change rejected", branchId: run.branchPublicId });
         return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
       }
-      const executor = PROPOSAL_EXECUTORS[proposal.tool];
-      const executorInput = executor?.input(record(proposal.payload));
-      if (!executor || !executorInput) domainError("VALIDATION_ERROR", "This prepared change cannot be approved here.", { correlationId: actor.correlationId });
-      const versions = await port.sourceVersions(ctx, actor, proposal.sourceVersions);
-      const sourcesMoved = proposal.sourceVersions.some((source, index) => versions[index] !== source.updatedAt);
-      const rederived = sourcesMoved ? null : await executor.rederive(ctx, actor, port, record(proposal.payload));
-      if (rederived !== proposal.changesetHash) {
-        // A material change since it was prepared: record that, change nothing else.
-        await ctx.db.patch(proposal._id, { status: "invalidated", invalidationReason: "source_changed", decidedByUserId: actor.user._id, decidedAt: now });
-        await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.invalidate", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change no longer matched the records", branchId: run.branchPublicId });
-        return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
+      return (await approveCheckedProposal(ctx, actor, port, request, proposal, run)).view;
+    }
+
+    case "ai.proposals.approve_all": {
+      // One step for several prepared changes in one run. Each runs alone, with every recheck a single
+      // approval has; one that fails is rolled back on its own and reported, never hidden.
+      requireHuman(actor);
+      const run = await runByPublicId(ctx, actor, text(input.runId));
+      const requested = (Array.isArray(input.proposals) ? input.proposals : []).map(record).map((item) => ({ proposalId: text(item.proposalId), changesetHash: text(item.changesetHash) })).filter((item) => item.proposalId);
+      const items = [...new Map(requested.map((item) => [item.proposalId, item])).values()].slice(0, 20);
+      if (!items.length) domainError("VALIDATION_ERROR", "Choose the changes to approve.", { correlationId: actor.correlationId });
+      const results: AiApproveAllResult["results"] = [];
+      for (const item of items) {
+        try {
+          const one: { outcome: AiApproveAllOutcome; subjectLabel?: string } = await ctx.runMutation(internal.aiRuns.approveProposalStep, { ...(request.organizationId ? { organizationId: request.organizationId } : {}), ...(request.activeBranchId ? { activeBranchId: request.activeBranchId } : {}), ...(request.correlationId ? { correlationId: request.correlationId } : {}), runId: run.publicId, proposalId: item.proposalId, changesetHash: item.changesetHash });
+          results.push({ proposalId: item.proposalId, outcome: one.outcome, ...(one.subjectLabel ? { subjectLabel: one.subjectLabel } : {}) });
+        } catch {
+          // The existing operation refused or failed: its writes were rolled back with it.
+          results.push({ proposalId: item.proposalId, outcome: "not_saved" });
+        }
       }
-      // The existing operation runs as the approving person, with its own permission, reason and audit.
-      const result = record(await port.executeApproved(ctx, executor.operation, executorInput, request));
-      await ctx.db.patch(proposal._id, { status: "executed", decidedByUserId: actor.user._id, decidedAt: now, executionReceipt: { operation: executor.operation, recordId: text(result.id), executedAt: now } });
-      await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposal.approve", entityType: "ai_proposal", entityId: proposal.publicId, entityLabel: proposal.subjectLabel, summary: "Prepared change approved and saved", branchId: run.branchPublicId });
-      return await proposalView(ctx, actor, (await ctx.db.get(proposal._id))!);
+      const approved = results.filter((item) => item.outcome === "approved").length;
+      await port.insertAudit(ctx, actor, { category: "ai", action: "ai.proposals.approve_all", entityType: "ai_run", entityId: run.publicId, entityLabel: run.playbook, summary: `Approved ${approved} of ${results.length} prepared changes together`, after: { outcomes: results.map((item) => `${item.proposalId}=${item.outcome}`).join(", ") }, branchId: run.branchPublicId });
+      return { runId: run.publicId, results, approved } satisfies AiApproveAllResult;
     }
 
     case "ai.memory.record": {

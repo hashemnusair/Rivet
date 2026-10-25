@@ -80,6 +80,7 @@ export const activityLog = {
     aiProposalApprove: "Prepared change approved",
     aiProposalReject: "Prepared change rejected",
     aiProposalInvalidate: "Prepared change no longer matched the records",
+    aiProposalsApproveAll: "Prepared changes approved together",
     aiMemoryRecord: "Note kept for follow-ups",
     aiMemoryRevoke: "Note no longer used for follow-ups",
     aiGlobalStop: "Assistance stopped for every gym",

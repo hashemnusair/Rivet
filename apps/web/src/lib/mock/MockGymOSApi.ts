@@ -4526,6 +4526,7 @@ export class MockGymOSApi implements GymOSApi {
   updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: T.UUID; reason?: string }): Promise<AI.AiStandingInstructionView> { return this.respond(() => this.ai.updateStanding(input)); }
   listAiProposals(query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.respond(() => this.ai.listProposals(query)); }
   decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.respond(() => this.ai.decideProposal(input)); }
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<AI.AiApproveAllResult> { return this.respond(() => this.ai.approveProposals(input)); }
   getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.respond(() => this.ai.getArtifact(artifactId)); }
   listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.respond(() => this.ai.listMemories(memberId)); }
   recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> { return this.respond(() => this.ai.recordMemory(input)); }

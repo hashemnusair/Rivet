@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
-import type { AiProposalView } from "@/lib/ai/contracts";
+import type { AiApproveAllResult, AiProposalView } from "@/lib/ai/contracts";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useFormat } from "@/lib/i18n/format";
@@ -74,16 +75,58 @@ function ProposalCard({ proposal }: { proposal: AiProposalView }) {
   );
 }
 
+/**
+ * Several prepared changes in one run, approved in one step. Each is still
+ * checked against the current records on the server, one by one, and the
+ * result says what happened to each; nothing is reported as saved unless it was.
+ */
+function ApproveAll({ runId, proposals, onDone }: { runId: string; proposals: AiProposalView[]; onDone: (result: AiApproveAllResult) => void }) {
+  const { t } = useLocale();
+  const invalidate = useInvalidate();
+  const approveAll = useApiMutation((api, _unused: void) => api.approveAiProposals({ runId, proposals: proposals.map((proposal) => ({ proposalId: proposal.id, changesetHash: proposal.changesetHash })) }), {
+    onSuccess: async (next) => {
+      onDone(next);
+      await invalidate([qk.aiProposals({ runId }), qk.shifts(), qk.aiRun(runId)]);
+    },
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-sunken/40 px-3 py-2" data-testid="ai-proposals-approve-all">
+      <Button type="button" size="sm" loading={approveAll.isPending} onClick={() => approveAll.mutate()} data-testid="ai-proposals-approve-all-button">{t("aiWork.proposal.approveAll", { count: proposals.length })}</Button>
+      <p className="text-[12px] text-ink-3">{t("aiWork.proposal.approveAllHint")}</p>
+    </div>
+  );
+}
+
+function ApproveAllResult({ result }: { result: AiApproveAllResult }) {
+  const { t } = useLocale();
+  const notApproved = result.results.filter((item) => item.outcome !== "approved");
+  return (
+    <div role="status" className="rounded-md border border-line bg-surface px-3 py-2 text-[12.5px]" data-testid="ai-proposals-approve-all-result">
+      <p className="font-medium text-ink">{t("aiWork.proposal.approveAllResult", { approved: result.approved, total: result.results.length })}</p>
+      {notApproved.length ? (
+        <ul className="mt-1 space-y-0.5 text-ink-2">
+          {notApproved.map((item) => <li key={item.proposalId}>{t(`aiWork.proposal.approveAllOutcome.${item.outcome}` as TKey)}</li>)}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function AiProposals({ runId }: { runId: string }) {
   const { t } = useLocale();
+  const [result, setResult] = useState<AiApproveAllResult>();
   const query = useApiQuery(qk.aiProposals({ runId }), (api) => api.listAiProposals({ runId }));
   if (query.isLoading) return <Skeleton className="h-28 w-full" />;
   if (query.isError) return <ErrorState layout="section" onRetry={() => query.refetch()} />;
   const proposals = query.data ?? [];
   if (proposals.length === 0) return null;
+  // Grouped approval only when the reader may approve two or more that are still waiting.
+  const approvable = proposals.filter((proposal) => proposal.status === "pending" && proposal.allowed.approve);
   return (
     <div className="space-y-2" data-testid="ai-proposals">
       <p className="context-label">{t("aiWork.proposal.title")}</p>
+      {approvable.length >= 2 ? <ApproveAll runId={runId} proposals={approvable} onDone={setResult} /> : null}
+      {result ? <ApproveAllResult result={result} /> : null}
       {proposals.map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} />)}
     </div>
   );

@@ -42,6 +42,8 @@ import {
   type AiRunStepView,
   type AiRunView,
   type AiArtifactView,
+  type AiApproveAllOutcome,
+  type AiApproveAllResult,
   type AiSettingsView,
   type AiStandingInstructionView,
   type AiStandingPreview,
@@ -814,6 +816,32 @@ export class MockAiEngine {
     Object.assign(proposal, { status: "executed", decidedByName: actor.name });
     this.host.audit({ action: "ai.proposal.approve", entityId: proposal.id, entityLabel: proposal.subjectLabel, summary: "Prepared change approved and saved" });
     return this.proposalView(proposal);
+  }
+
+  /**
+   * Several prepared changes in one run, approved in one step. Each gets the
+   * same checks as a single approval; one that is refused or fails changes
+   * nothing for itself and is reported, as on the server.
+   */
+  approveProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): AiApproveAllResult {
+    this.readableRun(input.runId);
+    const items = [...new Map(input.proposals.filter((item) => item.proposalId).map((item) => [item.proposalId, item])).values()].slice(0, 20);
+    if (!items.length) throw ApiError.of(ERR.VALIDATION, "Choose the changes to approve.");
+    const results = items.map((item): AiApproveAllResult["results"][number] => {
+      const proposal = this.proposals.get(item.proposalId);
+      if (!proposal || proposal.runId !== input.runId) return { proposalId: item.proposalId, outcome: "not_found" };
+      const refusal: AiApproveAllOutcome | undefined = !this.host.permissions().includes(proposal.requiredPermission) ? "no_access" : proposal.status !== "pending" ? "already_decided" : proposal.expiresAt <= Date.now() ? "expired" : item.changesetHash !== proposal.changesetHash ? "changed" : undefined;
+      if (refusal) return { proposalId: proposal.id, subjectLabel: proposal.subjectLabel, outcome: refusal };
+      try {
+        const decided = this.decideProposal({ proposalId: proposal.id, decision: "approve", changesetHash: item.changesetHash });
+        return { proposalId: proposal.id, subjectLabel: proposal.subjectLabel, outcome: decided.status === "executed" ? "approved" : "no_longer_matched" };
+      } catch {
+        return { proposalId: proposal.id, subjectLabel: proposal.subjectLabel, outcome: "not_saved" };
+      }
+    });
+    const approved = results.filter((item) => item.outcome === "approved").length;
+    this.host.audit({ action: "ai.proposals.approve_all", entityId: input.runId, entityLabel: input.runId, summary: `Approved ${approved} of ${results.length} prepared changes together` });
+    return { runId: input.runId, results, approved };
   }
 
   private saveArtifact(run: MockRun, kind: AiArtifactView["kind"], title: string, composed: ReturnType<typeof composeManagementReport>, requiredPermissions: string[]): AiArtifactView {

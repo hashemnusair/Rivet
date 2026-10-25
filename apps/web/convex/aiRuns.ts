@@ -6,11 +6,11 @@ import { delegatedRequest, publicBranchId, publicOrganizationId, requireActor, t
 import { aiDomainPort, cashShiftFactsFor, executeDomainMutation, executeDomainQuery, leadFollowUpFactsFor, notifyProposalWaiting, renewalFactsForMember } from "./domain";
 import { classBookingStatusFor, classOptionFactsFor } from "./classes";
 import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAiPublicId, spentMicros, TENANT_CONCURRENCY, type AiGrantDoc, type AiRunDoc } from "./aiPolicy";
-import { createRun, nextStandingSlot } from "./ai";
+import { approveProposalForBatch, createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
 import { runPlaybookStep, type PlaybookStepEnv } from "./aiPlaybooks";
 import { PLAYBOOKS, playbookBlocked, runOriginHref, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
-import { isTerminalRunStatus, type AiErrorCategory, type AiPlaybookKey, type AiRunStatus } from "../src/lib/ai/contracts";
+import { isTerminalRunStatus, type AiApproveAllOutcome, type AiErrorCategory, type AiPlaybookKey, type AiRunStatus } from "../src/lib/ai/contracts";
 import { budgetBlocked, type ModelTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 
@@ -347,6 +347,20 @@ export const dispatchStanding = internalMutation({
       started += 1;
     }
     return started;
+  },
+});
+
+/**
+ * One approval inside "approve all". Called with ctx.runMutation from the
+ * parent mutation, so it is its own sub-transaction: if the existing
+ * operation refuses or fails, only this approval's writes are rolled back.
+ * The actor is rebuilt from the signed-in person; no delegation crosses here.
+ */
+export const approveProposalStep = internalMutation({
+  args: { organizationId: v.optional(v.string()), activeBranchId: v.optional(v.string()), correlationId: v.optional(v.string()), runId: v.string(), proposalId: v.string(), changesetHash: v.string() },
+  handler: async (ctx, args): Promise<{ outcome: AiApproveAllOutcome; subjectLabel?: string }> => {
+    const request: RequestArgs = { ...(args.organizationId ? { organizationId: args.organizationId } : {}), ...(args.activeBranchId ? { activeBranchId: args.activeBranchId } : {}), ...(args.correlationId ? { correlationId: args.correlationId } : {}) };
+    return await approveProposalForBatch(ctx, request, aiDomainPort, { runId: args.runId, proposalId: args.proposalId, changesetHash: args.changesetHash });
   },
 });
 

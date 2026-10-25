@@ -381,6 +381,7 @@ export class ConvexGymOSApi implements GymOSApi {
   }
   listAiProposals(query: { runId?: string }): Promise<AI.AiProposalView[]> { return this.query("ai.proposals.list", query); }
   decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<AI.AiProposalView> { return this.mutate("ai.proposal.decide", input); }
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<AI.AiApproveAllResult> { return this.mutate("ai.proposals.approve_all", input); }
   getAiArtifact(artifactId: string): Promise<AI.AiArtifactView> { return this.query("ai.artifact.get", { artifactId }); }
   listMemberMemories(memberId: T.UUID): Promise<AI.AiMemoryView[]> { return this.query("ai.memories.list", { memberId }); }
   recordMemberMemory(input: { memberId: T.UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<AI.AiMemoryView> {

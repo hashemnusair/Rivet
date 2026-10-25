@@ -228,3 +228,108 @@ describe("cash-difference investigation", () => {
     await expect(t.withIdentity({ subject: "clerk-cash-desk" }).mutation(api.domain.mutate, op("ai.run.start", { playbook: "cash_difference", params: { shiftId: "cash-shift" }, requestKey: "cash-request-9" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
 });
+
+describe("approving grouped prepared changes in one step", () => {
+  type ApproveAll = { runId: string; approved: number; results: Array<{ proposalId: string; outcome: string; subjectLabel?: string }> };
+  /** A second closed drawer with the same story as the first, so one run can hold two prepared approvals. */
+  async function secondDrawer(t: TestConvex<typeof schema>) {
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      const main = (await ctx.db.query("branches").collect())[0]!;
+      const now = NOW.getTime();
+      const rec = (entityType: string, publicId: string, value: Record<string, unknown>) => ctx.db.insert("domainRecords", { organizationId: org._id, entityType, publicId, branchId: main._id, createdAt: now, updatedAt: now, data: { id: publicId, organizationId: ORG, ...value } });
+      await rec("shift", "cash-shift-2", { branchId: MAIN, openedById: "cash-desk", openedByName: "cash-desk", openedAt: "2026-10-21T05:00:00.000Z", openingFloat: { amount: 10_000, currency: "JOD" }, status: "closed", closedAt: "2026-10-21T17:00:00.000Z", closedById: "cash-desk", expectedCash: { amount: 30_000, currency: "JOD" }, countedCash: { amount: 35_000, currency: "JOD" }, variance: { amount: 5_000, currency: "JOD" }, varianceExplanation: "Counted twice", varianceApprovalStatus: "pending" });
+      await rec("payment", "cash-pay-3", { branchId: MAIN, shiftId: "cash-shift-2", type: "payment", status: "completed", method: "cash", amount: { amount: 20_000, currency: "JOD" }, receiptId: "cash-receipt-3", receiptNumber: "R-0003", occurredAt: "2026-10-21T08:00:00.000Z" });
+      await rec("payment", "cash-pay-4", { branchId: MAIN, shiftId: "cash-shift-2", type: "payment", status: "completed", method: "card", amount: { amount: 5_000, currency: "JOD" }, receiptId: "cash-receipt-4", receiptNumber: "R-0004", occurredAt: "2026-10-21T09:15:00.000Z" });
+    });
+  }
+
+  /** Two prepared approvals in one run: the second drawer's investigation is grouped under the first run. */
+  async function groupedRun(t: TestConvex<typeof schema>) {
+    await seed(t);
+    await secondDrawer(t);
+    const first = await investigate(t, "clerk-cash-owner", "cash-shift", "cash-group-1");
+    const second = await investigate(t, "clerk-cash-owner", "cash-shift-2", "cash-group-2");
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query("aiProposals").collect()) if (row.runPublicId === second.id) await ctx.db.patch(row._id, { runPublicId: first.id });
+    });
+    const proposals = await proposalsFor(t, "clerk-cash-manager", first.id);
+    expect(proposals).toHaveLength(2);
+    return { runId: first.id, proposals };
+  }
+
+  const approveAll = (t: TestConvex<typeof schema>, subject: string, runId: string, proposals: Array<{ proposalId: string; changesetHash: string }>) =>
+    t.withIdentity({ subject }).mutation(api.domain.mutate, op("ai.proposals.approve_all", { runId, proposals })) as Promise<ApproveAll>;
+
+  async function drawers(t: TestConvex<typeof schema>) {
+    const page = await t.withIdentity({ subject: "clerk-cash-owner" }).query(api.domain.query, op("shifts.list", { branchId: MAIN })) as { items: Array<Shift & { id: string }> };
+    return Object.fromEntries(page.items.filter((shift) => shift.id.startsWith("cash-shift")).map((shift) => [shift.id, shift.varianceApprovalStatus]));
+  }
+
+  it("approves every prepared change in the run, each through the existing review as the manager", async () => {
+    const t = convexTest(schema, modules);
+    const { runId, proposals } = await groupedRun(t);
+    const result = await approveAll(t, "clerk-cash-manager", runId, proposals.map((item) => ({ proposalId: item.id, changesetHash: item.changesetHash })));
+    expect(result).toMatchObject({ runId, approved: 2 });
+    expect(result.results.map((item) => item.outcome)).toEqual(["approved", "approved"]);
+    expect(await drawers(t)).toEqual({ "cash-shift": "approved", "cash-shift-2": "approved" });
+    const audits = (await t.run(async (ctx) => await ctx.db.query("auditEvents").collect())).map((event) => event.action);
+    expect(audits.filter((action) => action === "ai.proposal.approve")).toHaveLength(2);
+    expect(audits.filter((action) => action === "shift.variance.approved")).toHaveLength(2);
+    expect(audits).toContain("ai.proposals.approve_all");
+  });
+
+  it("rechecks each one and reports a partial result truthfully", async () => {
+    const t = convexTest(schema, modules);
+    const { runId, proposals } = await groupedRun(t);
+    const [first, second] = proposals as [Proposal, Proposal];
+    // The second drawer's card payment is corrected after RIVET prepared its approval.
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("domainRecords").collect()).find((item) => item.publicId === "cash-pay-4")!;
+      await ctx.db.patch(row._id, { data: { ...(row.data as Record<string, unknown>), method: "cash" }, updatedAt: row.updatedAt + 1 });
+    });
+    const result = await approveAll(t, "clerk-cash-manager", runId, [{ proposalId: first.id, changesetHash: first.changesetHash }, { proposalId: second.id, changesetHash: second.changesetHash }]);
+    expect(result.approved).toBe(1);
+    expect(Object.fromEntries(result.results.map((item) => [item.proposalId, item.outcome]))).toEqual({ [first.id]: "approved", [second.id]: "no_longer_matched" });
+    expect(await drawers(t)).toEqual({ "cash-shift": "approved", "cash-shift-2": "pending" });
+    // Asking again changes nothing: one was decided, the other no longer matched.
+    const again = await approveAll(t, "clerk-cash-manager", runId, [{ proposalId: first.id, changesetHash: first.changesetHash }, { proposalId: second.id, changesetHash: second.changesetHash }]);
+    expect(again.results.map((item) => item.outcome)).toEqual(["already_decided", "already_decided"]);
+  });
+
+  it("refuses what the approver did not review, and rolls back only the one that cannot be saved", async () => {
+    const t = convexTest(schema, modules);
+    const { runId, proposals } = await groupedRun(t);
+    const [first, second] = proposals as [Proposal, Proposal];
+    // A prepared change whose stored details cannot run through the review.
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      await ctx.db.insert("aiProposals", { organizationId: org._id, publicId: "proposal-broken", runPublicId: runId, tool: "shift.propose_variance_review", subjectLabel: "cash-shift", changes: [], payload: { shiftId: "cash-shift" }, changesetHash: "broken-hash", sourceVersions: [], requiredPermission: "reconciliation.approve_variance", status: "pending", proposedAt: NOW.getTime(), expiresAt: NOW.getTime() + 3_600_000 });
+    });
+    const result = await approveAll(t, "clerk-cash-manager", runId, [
+      { proposalId: "proposal-broken", changesetHash: "broken-hash" },
+      { proposalId: first.id, changesetHash: "not-what-was-shown" },
+      { proposalId: second.id, changesetHash: second.changesetHash },
+      { proposalId: "proposal-from-elsewhere", changesetHash: "x" },
+    ]);
+    expect(Object.fromEntries(result.results.map((item) => [item.proposalId, item.outcome]))).toEqual({ "proposal-broken": "not_saved", [first.id]: "changed", [second.id]: "approved", "proposal-from-elsewhere": "not_found" });
+    expect(result.approved).toBe(1);
+    expect(await drawers(t)).toEqual({ "cash-shift": "pending", "cash-shift-2": "approved" });
+    expect((await t.run(async (ctx) => await ctx.db.query("aiProposals").collect())).find((row) => row.publicId === "proposal-broken")?.status).toBe("pending");
+  });
+
+  it("lets nobody without the approval access approve anything, and never delegated work", async () => {
+    const t = convexTest(schema, modules);
+    const { runId, proposals } = await groupedRun(t);
+    const items = proposals.map((item) => ({ proposalId: item.id, changesetHash: item.changesetHash }));
+    const desk = await approveAll(t, "clerk-cash-desk", runId, items).catch((error: { data?: { code?: string } }) => error.data?.code);
+    expect(desk === "NOT_FOUND" || (typeof desk === "object" && desk.approved === 0)).toBe(true);
+    expect(await drawers(t)).toEqual({ "cash-shift": "pending", "cash-shift-2": "pending" });
+    const ids = await t.run(async (ctx) => ({ org: (await ctx.db.query("organizations").collect())[0]!._id, owner: (await ctx.db.query("users").collect()).find((user) => user.publicId === "cash-owner")!._id }));
+    await expect(t.run(async (ctx) => {
+      const request = delegatedRequest({ organizationId: ORG, activeBranchId: MAIN, correlationId: "cor-cash-agent" }, { userId: ids.owner, organizationId: ids.org, allowedPermissions: ["reconciliation.read", "reconciliation.approve_variance"], runPublicId: runId, grantPublicId: "grant-cash", tool: "shift.propose_variance_review" });
+      await executeDomainMutation(ctx, "ai.proposals.approve_all", { runId, proposals: items }, request);
+    })).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+    expect(await drawers(t)).toEqual({ "cash-shift": "pending", "cash-shift-2": "pending" });
+  });
+});

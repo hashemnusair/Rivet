@@ -1578,6 +1578,8 @@ export interface GymOSApi {
   updateStandingInstruction(input: { standingId: string; action: "pause" | "resume" | "revoke" | "transfer"; ownerId?: UUID; reason?: string }): Promise<import("@/lib/ai/contracts").AiStandingInstructionView>;
   listAiProposals(query: { runId?: string }): Promise<import("@/lib/ai/contracts").AiProposalView[]>;
   decideAiProposal(input: { proposalId: string; decision: "approve" | "reject"; changesetHash: string; note?: string }): Promise<import("@/lib/ai/contracts").AiProposalView>;
+  /** Approve several prepared changes in one run in one step; each is rechecked and the result says what happened to each. */
+  approveAiProposals(input: { runId: string; proposals: Array<{ proposalId: string; changesetHash: string }> }): Promise<import("@/lib/ai/contracts").AiApproveAllResult>;
   getAiArtifact(artifactId: string): Promise<import("@/lib/ai/contracts").AiArtifactView>;
   listMemberMemories(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemoryView[]>;
   recordMemberMemory(input: { memberId: UUID; topic: "travel" | "contact_time" | "no_contact"; effectiveUntil?: string; value?: string; text?: string; sourceTimelineId?: string }): Promise<import("@/lib/ai/contracts").AiMemoryView>;

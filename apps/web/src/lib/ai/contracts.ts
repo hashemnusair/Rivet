@@ -391,6 +391,15 @@ export interface AiProposalView {
   allowed: { approve: boolean; reject: boolean };
 }
 
+/** What happened to one prepared change in "approve all"; anything but `approved` saved nothing for it. */
+export type AiApproveAllOutcome = "approved" | "no_longer_matched" | "already_decided" | "expired" | "changed" | "no_access" | "not_found" | "not_saved";
+
+export interface AiApproveAllResult {
+  runId: string;
+  results: Array<{ proposalId: string; subjectLabel?: string; outcome: AiApproveAllOutcome }>;
+  approved: number;
+}
+
 /** A prepared, unsaved collections call list (AI-4.9). */
 export type AiCollectionsResult =
   | { available: true; items: import("./collections").CollectionItem[]; considered: number; limited: boolean }
@@ -553,6 +562,7 @@ export const AI_MUTATION_OPERATIONS = [
   "ai.standing.revoke",
   "ai.standing.transfer",
   "ai.proposal.decide",
+  "ai.proposals.approve_all",
   "ai.memory.record",
   "ai.memory.revoke",
   "ai.feedback.record",

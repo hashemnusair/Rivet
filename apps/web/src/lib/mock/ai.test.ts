@@ -151,16 +151,37 @@ describe("preview report and handover jobs", () => {
 
 describe("preview cash-difference investigation", () => {
   /** A closed drawer 4.250 over, with one card payment of exactly that amount in the shift. */
-  function seedOverDrawer(): { shiftId: string } {
+  function seedOverDrawer(suffix = ""): { shiftId: string } {
     const db = (api as unknown as { db: MockDb }).db;
     const branchId = db.branches[0]!.id;
     const member = db.members[0]!;
-    const shiftId = "preview-cash-shift";
+    const shiftId = `preview-cash-shift${suffix}`;
     const payment = (id: string, method: "cash" | "card", amount: number) => ({ id, organizationId: db.organization.id, branchId, memberId: member.id, type: "payment" as const, amount: { amount, currency: db.organization.currency }, method, status: "completed" as const, receiptId: `${id}-receipt`, receiptNumber: id.toUpperCase(), collectedById: db.users[0]!.id, collectedByName: db.users[0]!.name, shiftId, idempotencyKey: id, occurredAt: "2026-10-22T08:00:00.000Z" });
-    db.payments.push(payment("pv-cash", "cash", 20_000), payment("pv-card", "card", 4_250));
+    db.payments.push(payment(`pv-cash${suffix}`, "cash", 20_000), payment(`pv-card${suffix}`, "card", 4_250));
     db.shifts.push({ id: shiftId, organizationId: db.organization.id, branchId, openedById: db.users[0]!.id, openedByName: db.users[0]!.name, openedAt: "2026-10-22T05:00:00.000Z", openingFloat: { amount: 10_000, currency: db.organization.currency }, closedAt: "2026-10-22T17:00:00.000Z", closedById: db.users[0]!.id, expectedCash: { amount: 30_000, currency: db.organization.currency }, countedCash: { amount: 34_250, currency: db.organization.currency }, variance: { amount: 4_250, currency: db.organization.currency }, varianceExplanation: "Counted twice", varianceApprovalStatus: "pending", status: "closed" });
     return { shiftId };
   }
+
+  it("approves several prepared changes in one run in one step, rechecking each and reporting what happened", async () => {
+    await enable();
+    const first = seedOverDrawer();
+    const second = seedOverDrawer("-2");
+    const runA = await settled((await api.startAiRun({ playbook: "cash_difference", params: { shiftId: first.shiftId }, requestKey: "cash-group-a" })).id);
+    const runB = await settled((await api.startAiRun({ playbook: "cash_difference", params: { shiftId: second.shiftId }, requestKey: "cash-group-b" })).id);
+    // Group the second drawer's prepared approval under the first run.
+    for (const proposal of (api as unknown as { ai: { proposals: Map<string, { runId: string }> } }).ai.proposals.values()) if (proposal.runId === runB.id) proposal.runId = runA.id;
+    const proposals = await api.listAiProposals({ runId: runA.id });
+    expect(proposals).toHaveLength(2);
+    (api as unknown as { db: MockDb }).db.payments.find((item) => item.id === "pv-card-2")!.method = "cash";
+    const result = await api.approveAiProposals({ runId: runA.id, proposals: proposals.map((item) => ({ proposalId: item.id, changesetHash: item.changesetHash })) });
+    expect(result.approved).toBe(1);
+    expect(result.results.map((item) => item.outcome).sort()).toEqual(["approved", "no_longer_matched"]);
+    const shifts = (await api.listCashShifts({ pageSize: 200 })).items;
+    expect(shifts.find((shift) => shift.id === first.shiftId)?.varianceApprovalStatus).toBe("approved");
+    expect(shifts.find((shift) => shift.id === second.shiftId)?.varianceApprovalStatus).toBe("pending");
+    const again = await api.approveAiProposals({ runId: runA.id, proposals: proposals.map((item) => ({ proposalId: item.id, changesetHash: item.changesetHash })) });
+    expect(again.results.map((item) => item.outcome)).toEqual(["already_decided", "already_decided"]);
+  });
 
   it("prepares a bound approval that a manager approves through the usual review", async () => {
     await enable();
@@ -171,7 +192,8 @@ describe("preview cash-difference investigation", () => {
     const [proposal] = await api.listAiProposals({ runId: run.id });
     expect(proposal).toMatchObject({ status: "pending", allowed: { approve: true, reject: true } });
     // It waits on the approver's Today list, in place of the drawer's own item.
-    const today = async () => (await api.getDashboard({})).todayQueue!.items;
+    const day = new Date().toISOString().slice(0, 10);
+    const today = async () => (await api.getDashboard({ from: day, to: day })).todayQueue!.items;
     expect((await today()).find((item) => item.id === `ai-proposal:${proposal!.id}`)).toMatchObject({ kind: "approval", href: `/payments/shifts?run=${run.id}` });
     expect((await today()).some((item) => item.id === `variance:${shiftId}`)).toBe(false);
     const decided = await api.decideAiProposal({ proposalId: proposal!.id, decision: "approve", changesetHash: proposal!.changesetHash });
