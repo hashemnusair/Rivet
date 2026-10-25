@@ -1,8 +1,37 @@
 # GymOS / RIVET current implementation state
 
-## AI-native implementation — implemented locally on `codex/ai-native-rivet`, 25 October 2026
+## AI-native implementation — merged; production backend released 26 October 2026
 
-**Not released, not merged, no deployment.** Implementation of
+**Release in progress (26 October 2026, Amman time).** Hashem approved merging PR #30
+after review; it merged into `main` as `e4f94416` (merge commit; no Vercel deployment
+was created, the hold stays). Hashem's release decisions: $5 per gym per month
+(`RIVET_AI_MAX_MONTHLY_COST_MICROS=5000000`), $1 per run
+(`RIVET_AI_MAX_RUN_COST_MICROS=1000000`), member data allowed
+(`RIVET_AI_PROCESSING_APPROVED=member_data`); only Hashem Test is to be made available.
+Hashem took a Production snapshot before the release. Elias set `RIVET_AI_API_KEY` in
+Production himself (confirmed by name only).
+
+- Backend: from a clean worktree of `e4f94416`,
+  `CONVEX_DEPLOYMENT=dev:fleet-otter-621 CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod`
+  listed Production names (target confirmed by the Production-only `AI_GATEWAY_API_KEY`);
+  the guarded dry run targeted `rivet:rivet:production` / `descriptive-meerkat-589`,
+  reported no index deletions and only added the twelve assistance tables' indexes;
+  `pnpm convex:deploy -- --yes` (same selectors) deployed at 2026-10-25T22:23Z.
+  `health:check --prod` returned `ok`; `aiEvaluation:runLive --prod` returned
+  `{ ran: false, mode: "off", reason: "ai_off" }` because no `RIVET_AI_MODE` was set yet,
+  so nothing was sent and every gym stayed off.
+- Main CI run 40239405110 on `e4f94416` failed one browser journey only at night:
+  after midnight the preview's earlier follow-ups turn urgent, Today's first page (12
+  items, most urgent and oldest first) fills, and the new approval falls past it. The
+  journey now runs at a fixed late-morning time (`page.clock.setFixedTime`, as other
+  journeys do); it passed twice and the 13 AI journeys passed at 01:30 Amman time.
+  Known product behaviour, unchanged: a busy Today list can hide a new waiting
+  approval beyond its first 12 items; the bell still shows it.
+- Not yet done: Production AI settings, the server-side live evaluation, the frontend
+  release (lifts the hold; needs Hashem's go), making Hashem Test available, acceptance
+  journeys, stop rehearsals and the pilot record (docs/12 "AI release to production").
+
+**Implementation history (before the merge).** Implementation of
 [docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate
 worktree `/Users/hashemnusair/Documents/gym-os-ai-native` on branch
 `codex/ai-native-rivet`, created from `origin/main` `80a83c7c` (CI passed all 11 jobs

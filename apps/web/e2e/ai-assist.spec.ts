@@ -230,6 +230,10 @@ test.describe("RIVET assistance", () => {
   });
 
   test("brings a prepared cash approval to Today and approves it from there", async ({ page }) => {
+    // Today loads its first 12 items, most urgent and oldest first. After midnight the
+    // preview's follow-ups from the day before turn urgent and push a new approval past
+    // the twelfth, so the journey runs at a fixed late morning instead of the wall clock.
+    await page.clock.setFixedTime(new Date("2026-10-22T11:00:00+03:00"));
     const errors = collectConsoleErrors(page);
     await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare and save work");
