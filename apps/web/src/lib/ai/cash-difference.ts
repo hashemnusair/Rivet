@@ -63,7 +63,11 @@ export interface CashInvestigation {
   /** False when a recorded movement changed after the drawer was closed. */
   expectedStillMatches: boolean;
   candidates: CashCandidate[];
-  /** True when one recorded movement alone matches the difference exactly. */
+  /**
+   * True when exactly one recorded movement, and nothing else, matches the
+   * difference. Two equal receipts, or a receipt and a pair, leave the cause to
+   * the person: RIVET prepares no approval that names one of them.
+   */
   singleMatch: boolean;
 }
 
@@ -113,7 +117,6 @@ export function investigateCashDifference(facts: CashShiftFacts): CashInvestigat
         else if (txn.type === "refund" && txn.method !== "cash") add("non_cash_refund", [txn]);
       }
     }
-    const singleMatch = candidates.length > 0;
     if (variance < 0) {
       const cash = live.filter((txn) => isCollection(txn) && txn.method === "cash" && txn.amountMinor < target).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)).slice(0, MAX_PAIR_SCAN);
       for (let i = 0; i < cash.length && candidates.length < MAX_CANDIDATES; i += 1) {
@@ -122,6 +125,7 @@ export function investigateCashDifference(facts: CashShiftFacts): CashInvestigat
         }
       }
     }
+    const singleMatch = candidates.length === 1 && candidates[0]!.transactions.length === 1;
     return { varianceMinor: variance, recomputedExpectedMinor: recomputed, expectedStillMatches, candidates, singleMatch };
   }
   return { varianceMinor: variance, recomputedExpectedMinor: recomputed, expectedStillMatches, candidates, singleMatch: false };

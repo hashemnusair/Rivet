@@ -26,7 +26,26 @@ describe("cash-difference matching", () => {
     const result = investigateCashDifference(short);
     expect(result.varianceMinor).toBe(-5_000);
     expect(result.candidates.map((candidate) => candidate.kind)).toEqual(["cash_payment", "non_cash_refund", "cash_payment_pair"]);
-    expect(result.singleMatch).toBe(true);
+    // Three explanations: the person decides, so no approval is prepared.
+    expect(result.singleMatch).toBe(false);
+    expect(shouldPrepareVarianceReview(short, result)).toBe(false);
+  });
+
+  it("prepares an approval only when exactly one movement explains the difference", () => {
+    const one = shift([txn({ method: "card", amountMinor: 5_000 })], 0);
+    const over = { ...one, countedCashMinor: (one.expectedCashMinor ?? 0) + 5_000, varianceMinor: 5_000 };
+    expect(shouldPrepareVarianceReview(over, investigateCashDifference(over))).toBe(true);
+    // Two equal card payments: either could be the cash one, so RIVET names neither.
+    const two = shift([txn({ method: "card", amountMinor: 5_000 }), txn({ method: "card", amountMinor: 5_000 })], 0);
+    const ambiguous = { ...two, countedCashMinor: (two.expectedCashMinor ?? 0) + 5_000, varianceMinor: 5_000 };
+    const result = investigateCashDifference(ambiguous);
+    expect(result.candidates).toHaveLength(2);
+    expect(result.singleMatch).toBe(false);
+    expect(shouldPrepareVarianceReview(ambiguous, result)).toBe(false);
+    // A pair is never a single cause either.
+    const pair = shift([txn({ amountMinor: 2_000 }), txn({ amountMinor: 3_000 })], 0);
+    const short = { ...pair, countedCashMinor: (pair.expectedCashMinor ?? 0) - 5_000, varianceMinor: -5_000 };
+    expect(investigateCashDifference(short).singleMatch).toBe(false);
   });
 
   it("for an over drawer, offers non-cash payments, voided cash payments and cash refunds of the exact amount", () => {
