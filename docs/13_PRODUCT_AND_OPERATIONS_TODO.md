@@ -220,11 +220,11 @@ production acceptance on Hashem Test (docs/12) pending.** Evidence: `convex/ai.d
   relative dates resolved against the note time and gym timezone, ambiguity asked
   about, per-field accept, staff edits never overwritten, original note preserved and
   accepted fields saved once.
-- [x] **AI-1.9 Derived-context cache and invalidation.** *(Implemented locally for the one model output that is reused, live note readings: a 15-minute kept answer keyed by a SHA-256 of gym, member or lead and its record version, the reader's role, branch scope and permissions, language, prompt version, protocol and model, and the note itself. Every access and policy check runs before a kept answer is served; reuse makes no call and records no spend; dates and evidence are recomputed against the current note; member merge or deletion and any role or staff-access change drop entries, and a corrected record changes the key. Eight tests in `convex/ai.prepare.test.ts` "model-output cache". The brief is still recomputed per read, so it needs no cache. Filter and revision readings are not cached; docs/09.)* Cache keys include tenant,
+- [x] **AI-1.9 Derived-context cache and invalidation.** *(Implemented locally for the one model output that is reused, live note readings: a 15-minute kept answer keyed by a SHA-256 of gym, member or lead and its record version, the reader's role, branch scope and permissions, language, prompt version, protocol and model, and the note itself. Every access and policy check runs before a kept answer is served; reuse makes no call and records no spend; dates and evidence are recomputed against the current note; member merge or deletion and any role or staff-access change drop entries, and a corrected record changes the key. Eight tests in `convex/ai.prepare.test.ts` "reusing a live reading of the same note (AI-1.9)". The brief is still recomputed per read, so it needs no cache. Filter and revision readings are not cached; docs/09.)* Cache keys include tenant,
   branch/access scope, subject, source revisions, locale, policy and prompt/model
   versions; access rechecked when serving; permission change, merge, deletion or
   corrected source invalidates affected content.
-- [x] **AI-1.10 Platform availability per gym.** *(Added 25 October 2026 as the release blocker: no gym can use assistance until a platform admin makes it available at `/platform/assistance` with a reason, each change a platform audit event; every gate reads an unavailable gym as off, its owner cannot turn assistance on, Settings → Roles & access → Assistance is hidden, and removal stops running work at the next step. Tests: `convex/ai.delegation.test.ts` "platform availability", `src/lib/mock/ai.test.ts`, `assist-ui.test.tsx`, `platform-assist.test.tsx`, browser journey "stays hidden from a gym until RIVET makes it available".)* Only RIVET decides which
+- [x] **AI-1.10 Platform availability per gym.** *(Added 25 October 2026 as the release blocker: no gym can use assistance until a platform admin makes it available at `/platform/assistance` with a reason, each change a platform audit event; every gate reads an unavailable gym as off, its owner cannot turn assistance on, Settings → Roles & access → Assistance is hidden, and removal stops running work at the next step. Tests: `convex/ai.delegation.test.ts` "platform availability per gym", `src/lib/mock/ai.test.ts`, `assist-ui.test.tsx`, `platform-assist.test.tsx`, browser journey "stays hidden from a gym until RIVET makes it available".)* Only RIVET decides which
   gyms may use assistance; the gym's owner then decides what it may do.
 
 ### AI-2 — Complete renewal loop and first executable desk delegation
@@ -407,8 +407,9 @@ Recorded as found during implementation; each entry names its subitem and eviden
 - **Fixed (AI-2.4):** a later unlinked term was briefly treated as a renewal, which
   contradicted the renewal list; "renewed" now means a linked successor term, the
   domain's existing definition. Found by inspecting the rendered run panel.
-- **Known limitation (AI-2.4):** task titles are stored in English, like other
-  system-created tasks, so Arabic readers see an English title on prepared calls.
+- **Resolved 25 October 2026 (AI-2.4):** task titles were stored in English only, so
+  Arabic readers saw an English title on prepared calls. Tasks RIVET saves now also
+  carry a translatable title; tasks saved before this change keep their English text.
 - **Fixed (AI-3.5):** the export mutation path built its request without the
   delegation principal, so a delegated export would have run as an ordinary signed-in
   request; both export paths now use `deriveRequest` (`convex/domain.ts`, `2514b311`).
@@ -430,8 +431,8 @@ Recorded as found during implementation; each entry names its subitem and eviden
   covered with synthetic drawers in Convex, preview-adapter and component tests.
 - **Open (AI-4.2):** approved-plan comparison for a lead (plans and current approved
   prices beside the prepared call) is not built; drafts deliberately carry no price.
-- **Found (AI-4.2):** leads have no stored contact consent or opt-out, unlike members, so
-  lead preparation cannot honour a "do not contact" request; recorded for product review.
+- **Resolved 25 October 2026 (AI-4.2):** leads had no stored contact consent; a lead can
+  now be marked "Asked not to be contacted" (audited) and lead preparation leaves them out.
 - **Fixed (AI-5.1, found by evaluation):** an Arabic note "بعد يومين بالعصر" ("in two
   days, afternoon") resolved to today; "بخلص اشتراكهم خلال أسبوعين" (ending within two
   weeks) was read as the opposite filter, expired; "for a month" became 14 days;
@@ -455,6 +456,37 @@ Recorded as found during implementation; each entry names its subitem and eviden
   RIVET rejected recorded no usage at all. Every billed reply, including refused, cut-off
   and rejected ones, is now priced, and live mode is not ready without a price
   (`convex/aiModelCall.ts`, `convex/ai.prepare.test.ts`).
+- **Fixed (branch review, 25 October 2026).** A review of the whole branch against main
+  found, and this pass fixed with tests (`683c6046`, `ef92590c`):
+  - *AI-1.5 spend:* on `openai_chat_json`, refused and cut-off replies were not counted
+    (their usage was read after the early return), and replies had no length bound;
+    correction readings were not charged to their run, so the run cap never applied to
+    them; the month rolled over at UTC midnight instead of the gym's.
+  - *AI-1.4 data:* a typed filter or correction request reached a live provider even
+    when the gym had not allowed external processing; the gym's consent now applies to
+    every live call.
+  - *AI-1.2 scope:* owners and managers limited to selected branches could read, cancel
+    and decide other branches' runs and proposals and see their repeating work; a
+    branch-limited person's run sent without a branch was stored gym-wide and became
+    readable to everyone; gym-wide reports were readable by branch-limited managers.
+  - *AI-3.4:* a waiting prepared change could still be approved after a platform stop,
+    the gym switching off, a capability off or availability removed; approval of a
+    cash difference was prepared whenever at least one movement matched, naming the
+    first; a cash run started from another branch than its drawer was shown to that
+    branch's approvers.
+  - *AI-3.6:* the handover showed follow-ups and the open drawer to readers without that
+    access; a "read the handover" task (no member, so no branch) could be marked not
+    needed by anyone with `crm.write`.
+  - *AI-3.3:* a repeating report repeated its fixed period, a repeating handover with a
+    date repeated that day, and a colleague's request key returned someone else's
+    instruction.
+  - *Settings:* every staff role could read the month's spend and budget.
+- **Open (minor, review):** `ai.feedback.record` has no rate or role limit beyond being
+  signed in, so a staff member could inflate the feedback counts; a moved standing
+  instruction's in-flight run still names the previous owner; parallel preparation
+  calls can each pass the budget check before either records its cost, so the cap can
+  be passed by one reply per concurrent call; a `200` chat-completions reply without
+  `usage` cannot be priced. None changes a gym's records.
 - No milestone is complete. Current status per subitem is above; evidence and
   remaining work are in CURRENT_STATE.
 

@@ -116,7 +116,8 @@ decision of 25 October 2026; it replaces the separate staging acceptance).
    `RIVET_AI_MAX_MONTHLY_COST_MICROS` (for example `5000000`), and `RIVET_AI_API_KEY`
    pasted by the key holder. Set `RIVET_AI_PROCESSING_APPROVED=member_data` only
    while that deployment holds synthetic records; until then reading notes and
-   drafting stay blocked and only list filters reach Claude. Then turn assistance on
+   drafting stay blocked and only list filters and run corrections reach Claude,
+   and only once the gym allows external processing. Then turn assistance on
    for the seeded gym (Settings → Roles & access → Assistance, including external
    processing). Check names with `pnpm convex:env:names`, never values.
 3. **Production**: follow "AI release to production" below after Hashem merges.
@@ -149,9 +150,9 @@ Ordinary workflows never depend on assistance.
 
 | Stop | Who | Effect | Rehearsal (real Convex functions) |
 | --- | --- | --- | --- |
-| Platform stop (`aiControls` key `global`) | Platform admin at `/platform/assistance` (from the account page), `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step | `convex/ai.delegation.test.ts` "platform-wide stop" |
-| Gym availability removed (`aiAvailability`) | Platform admin at `/platform/assistance` → "Gyms that can use assistance", `ai.platform.availability.set` with reason (platform audit `ai.gym.available` / `ai.gym.unavailable`) | That gym only: every assistance gate reads it as off, its Settings → Assistance is hidden, running work stops at the next step; its own saved choices are kept and apply again only if a platform admin makes it available again. No gym is available by default, and its owner cannot turn assistance on until it is | "stops that gym's running work at the next step when availability is removed", "reads a gym without availability as off at every gate" |
-| Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary | "turns assistance off mid-run" |
+| Platform stop (`aiControls` key `global`) | Platform admin at `/platform/assistance` (from the account page), `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step; a waiting prepared change can be rejected but not approved | `convex/ai.delegation.test.ts` "platform-wide stop" |
+| Gym availability removed (`aiAvailability`) | Platform admin at `/platform/assistance` → "Gyms that can use assistance", `ai.platform.availability.set` with reason (platform audit `ai.gym.available` / `ai.gym.unavailable`) | That gym only: every assistance gate reads it as off, its Settings → Assistance is hidden, running work stops at the next step, waiting prepared changes can only be rejected; its own saved choices are kept and apply again only if a platform admin makes it available again. No gym is available by default, and its owner cannot turn assistance on until it is | "stops that gym's running work at the next step when availability is removed", "reads a gym without availability as off at every gate" |
+| Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary; waiting prepared changes can only be rejected | "turns assistance off mid-run" |
 | One capability off | Owner | Only that capability's runs stop | "only that capability is turned off" |
 | Run cancel | Requester, owner or manager | Stops at the next step; reports what was saved | "stops at the next step when cancelled" |
 | Lost access / revoked grant | Automatic | Pending writes stop; standing work revoked | "loses access between steps", standing-instruction test |
@@ -258,7 +259,7 @@ call; no redeploy is needed. Set `RIVET_AI_MODE` last.
 | `RIVET_AI_MODEL` | `claude-sonnet-5-5` | Hashem |
 | `RIVET_AI_MAX_MONTHLY_COST_MICROS` | The decided monthly budget per gym (proposed `5000000`, $5); without it live mode spends nothing | Hashem |
 | `RIVET_AI_MAX_RUN_COST_MICROS` | The decided per-run cap (proposed `500000`, $0.50) | Hashem |
-| `RIVET_AI_PROCESSING_APPROVED` | `member_data` only once the docs/09 data-processing decision is made; unset keeps notes and drafts away from Claude, and only list filters reach it | Hashem |
+| `RIVET_AI_PROCESSING_APPROVED` | `member_data` only once the docs/09 data-processing decision is made; unset keeps notes and drafts away from Claude, and only list filters and run corrections reach it | Hashem |
 | `RIVET_AI_API_KEY` | The key from Elias's Claude API account, pasted into the dashboard | Elias |
 | `RIVET_AI_MODE` | `live` | Hashem, last |
 
@@ -287,9 +288,10 @@ the platform host → "Gyms that can use assistance" → chooses Hashem Test →
 available", reason "Production acceptance (Hashem's decision of 25 October 2026)". The
 platform activity log shows "Made RIVET assistance available". Then Hashem Test's
 owner, in the gym app, opens Settings → Roles & access → Assistance, chooses "Prepare
-and save work", turns on the capabilities below, and, only if
-`RIVET_AI_PROCESSING_APPROVED=member_data` is set, ticks "Allow member details to be
-sent to RIVET's assistant". No other gym is made available.
+and save work", turns on the capabilities below, and ticks "Allow member details to be
+sent to RIVET's assistant": nothing typed reaches Claude without it, and notes and
+drafts also need `RIVET_AI_PROCESSING_APPROVED=member_data`. No other gym is made
+available.
 
 **f) Acceptance on Hashem Test.** Use records created in Hashem Test for this purpose
 only; never another gym's members. Nothing here sends a message: drafts stay drafts.
@@ -324,7 +326,9 @@ Journeys (the same ones `e2e/ai-assist.spec.ts` walks on the mock preview):
 Rehearse the three stops on production while a renewal preparation is running:
 
 - **Platform stop**: "Stop assistance for every gym" with a reason; the run stops at its
-  next step and reports what it saved; screens are ordinary; then "Resume assistance".
+  next step and reports what it saved; screens are ordinary; a waiting prepared change
+  (journey 7, if done) shows no Approve button and can only be rejected; then "Resume
+  assistance".
 - **Gym off**: the owner sets "Off"; the same result for Hashem Test only; turn it back on.
 - **Availability removed**: a platform admin removes Hashem Test; Assistance disappears
   from its Settings, running work stops, the owner cannot turn it on; make it available

@@ -204,6 +204,25 @@ commercial term, a provider approval or a gym's data.
   would lead to a call, including linking open work, with the existing reason
   "Asked not to be contacted". The Today list's own lead follow-up item is unchanged
   in this pass (open below).
+- **Rules tightened by the branch review** (the defects are listed in docs/13):
+  - The gym's "Allow member details to be sent" consent applies to every live call,
+    because a typed filter or correction can name a member; notes and drafts also need
+    RIVET's member-data approval.
+  - A waiting prepared change can be approved only while its capability can run: a
+    platform stop, the gym switching off or lowering to "Prepare only", a capability
+    off or removed availability leaves only rejecting. This replaces the earlier
+    behaviour, where people could still approve under a stop.
+  - Work belongs to a branch. A branch-limited person's work is always filed under
+    their branch; gym-wide work (no branch) is visible only to people who cover every
+    branch, plus whoever asked for it; owners and managers limited to selected branches
+    see only those branches' runs, proposals and repeating work.
+  - A cash approval is prepared only when exactly one recorded movement explains the
+    difference; otherwise the person decides through the ordinary review.
+  - Handover sections drawn from follow-ups or the open drawer are hidden from readers
+    without that access, so the handover still reaches the next person on shift.
+  - Budgets and monthly summaries use the gym's own calendar month.
+  - Management reports cannot repeat on a schedule (their period is fixed), and
+    repeating work never takes a fixed date.
 - **Localised prepared task titles.** Tasks RIVET saves keep their English `title` and
   carry a `titleMessage` descriptor in the existing system-message format, extended to
   `communicationCompletion.tasks.*` keys. Only delegated work can store one; tasks
