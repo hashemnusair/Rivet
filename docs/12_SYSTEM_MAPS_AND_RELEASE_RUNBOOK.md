@@ -114,7 +114,7 @@ Ordinary workflows never depend on assistance.
 
 | Stop | Who | Effect | Rehearsal (real Convex functions) |
 | --- | --- | --- | --- |
-| Platform stop (`aiControls` key `global`) | Platform admin, `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step | `convex/ai.delegation.test.ts` "platform-wide stop" |
+| Platform stop (`aiControls` key `global`) | Platform admin at `/platform/assistance` (from the account page), `ai.platform.stop` with reason (platform audit) | Every gym: no new runs; running work stops at the next step | `convex/ai.delegation.test.ts` "platform-wide stop" |
 | Gym switch off | Owner, Settings → Roles & access → Assistance | That gym's runs stop; screens return to ordinary | "turns assistance off mid-run" |
 | One capability off | Owner | Only that capability's runs stop | "only that capability is turned off" |
 | Run cancel | Requester, owner or manager | Stops at the next step; reports what was saved | "stops at the next step when cancelled" |

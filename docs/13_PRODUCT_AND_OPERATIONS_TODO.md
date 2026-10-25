@@ -299,7 +299,7 @@ started.**
   visible filters.
 - [x] **AI-4.7 Member portal** *(Implemented locally: "Classes that fit you" from the member's own class view and attended history, under member authorization; it opens the day and the member books as usual. Off unless the gym enables it.)* self-only assistance (class finder) under member
   authorization; no staff context.
-- [ ] **AI-4.8 Platform console** review preparation under platform-admin authority;
+- [x] **AI-4.8 Platform console** *(Implemented locally: application review brief under platform-admin authority, and the platform stop's console page with reason and audit. Support-case and payment-review preparation are not covered; recorded in AI-4.10.)* review preparation under platform-admin authority;
   no blanket cross-tenant gym-agent access.
 - [x] **AI-4.9 Collections preparation** *(Implemented locally as prepare-only: unsaved call list with last receipt and contact; drafts only where an approved template's claim is true. Most overdue balances get no draft because the catalogue has no truthful "N days overdue" reminder; recorded below.)* (unpaid accounts, receipts lookup); no claim
   of payment without recorded evidence.
