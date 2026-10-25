@@ -91,6 +91,19 @@ export const PLAYBOOKS: Record<AiPlaybookKey, PlaybookDefinition> = {
   class_finder: { key: "class_finder", version: "class-finder.v1", capability: "class_finder", tools: ["classes.eligible", "class.book"], startPermissions: ["members.read"], writes: true, batch: false, usesModel: false, standingAllowed: false, goalKey: "aiWork.goal.classFinder", limits: { ...DEFAULT_RUN_LIMITS, maxWrites: 1, maxSubjects: 50 } },
 };
 
+/** Where a run's work lives in the existing screens; notices and Today link here. */
+export function runOriginHref(playbook: AiPlaybookKey, runId: string): string {
+  switch (playbook) {
+    case "renewal_followups": return `/crm/queues?view=renewals&run=${runId}`;
+    case "sales_followups": return `/crm/pipeline?run=${runId}`;
+    case "management_report": return `/reports?run=${runId}`;
+    case "shift_handover": return `/checklists?run=${runId}`;
+    case "cash_difference": return `/payments/shifts?run=${runId}`;
+    case "ops_triage": return `/maintenance?run=${runId}`;
+    case "class_finder": return `/classes?run=${runId}`;
+  }
+}
+
 export const CAPABILITY_KEYS: readonly AiCapabilityKey[] = ["member_context", "note_extraction", "followup_batch", "report_job", "handover_job", "cash_difference", "sales_followups", "ops_triage", "import_assist", "class_finder", "nl_filters", "collections_prep", "member_class_finder", "platform_review"];
 
 /** Capabilities that never mutate business records; `prepare` is enough for them. */

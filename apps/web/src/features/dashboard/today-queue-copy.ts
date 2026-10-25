@@ -55,6 +55,8 @@ export function todayItemTitle({ t, locale, isolate, format }: TodayItemCopyOpti
     if (item.kind === "follow_up" && id.startsWith("lead-follow-up:") && title === `Follow up — ${subjectName}`) return t("dashboard.today.item.followUpLead", { name });
   }
 
+  if (item.kind === "approval" && id.startsWith("ai-proposal:") && title === "A prepared change is waiting for approval") return t("communicationCompletion.notifications.aiProposalWaiting");
+
   if (item.kind === "cash_variance") {
     if (branchName && title === `Check the cash difference at ${branchName}`) return t("dashboard.today.item.cashDifferenceAt", { branch: isolate(branchName) });
     if (title === "Check the cash difference at the branch") return t("dashboard.today.item.cashDifferenceAtBranch");
@@ -84,6 +86,10 @@ export function todayItemDetail(options: TodayItemCopyOptions, item: TodayQueueI
   if (locale === "en") return detail;
 
   if (item.kind === "outstanding_balance" && detail === "Owes money") return t("dashboard.today.item.owesMoney");
+  if (item.kind === "approval" && item.id.startsWith("ai-proposal:")) {
+    const preparedFor = /^Prepared by RIVET for (.+)$/.exec(detail);
+    if (preparedFor) return t("communicationCompletion.notifications.aiProposalFor", { name: isolate(preparedFor[1]!) });
+  }
   if (item.kind === "follow_up" && detail === "Lead · not contacted yet") return t("dashboard.today.item.leadNotContacted");
 
   if (item.kind === "renewal") {

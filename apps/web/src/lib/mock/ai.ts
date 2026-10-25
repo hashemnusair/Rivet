@@ -7,6 +7,7 @@ import {
   parsePlaybookParams,
   PLAYBOOKS,
   playbookBlocked,
+  runOriginHref,
   TOOLS,
   toolBlocked,
   type AuthorityInput,
@@ -761,6 +762,16 @@ export class MockAiEngine {
       ...(proposal.invalidationReason ? { invalidationReason: proposal.invalidationReason } : {}),
       allowed: { approve: mayDecide, reject: mayDecide },
     };
+  }
+
+  /** Prepared changes this reader may approve, for Today as well as the bell (AI-3.7); none while the work's capability cannot run. */
+  waitingProposals(): Array<{ id: string; runId: string; requestedByName: string; branchId?: string; proposedAt: number; href: string; shiftId: string; varianceMinor: number }> {
+    return [...this.proposals.values()].filter((proposal) => proposal.status === "pending" && proposal.expiresAt > Date.now() && this.host.permissions().includes(proposal.requiredPermission)).flatMap((proposal) => {
+      const run = this.runs.get(proposal.runId);
+      const tool = TOOLS[proposal.tool];
+      if (!run || !this.canRead(run) || !tool || toolBlocked(tool, this.authority(tool.capability))) return [];
+      return [{ id: proposal.id, runId: run.id, requestedByName: run.requestedByName, ...(run.branchId ? { branchId: run.branchId } : {}), proposedAt: proposal.proposedAt, href: runOriginHref(run.playbook, run.id), shiftId: proposal.payload.shiftId, varianceMinor: proposal.payload.varianceMinor }];
+    });
   }
 
   listProposals(query: { runId?: string }): AiProposalView[] {

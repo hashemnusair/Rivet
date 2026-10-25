@@ -106,6 +106,28 @@ describe("cash-difference investigation", () => {
     expect(notices.filter((row) => row.kind === "ai_proposal").map((row) => row.recipientUserId)).toEqual([managerId]);
   });
 
+  it("puts the waiting approval on the approver's Today list in place of the drawer's own item", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const run = await investigate(t, "clerk-cash-owner", "cash-shift", "cash-request-today");
+    const [proposal] = await proposalsFor(t, "clerk-cash-manager", run.id);
+    type Today = { todayQueue: { items: Array<{ id: string; kind: string; href: string; title: string; detail: string; amount?: { amount: number } }> } };
+    const today = async (subject: string) => (await t.withIdentity({ subject }).query(api.domain.query, op("dashboard", {})) as Today).todayQueue.items;
+    const managerItems = await today("clerk-cash-manager");
+    expect(managerItems.find((item) => item.id === `ai-proposal:${proposal!.id}`)).toMatchObject({ kind: "approval", href: `/payments/shifts?run=${run.id}`, title: "A prepared change is waiting for approval", detail: "Prepared by RIVET for cash-owner", amount: { amount: 5_000 } });
+    // One item for one situation: the drawer's "check the difference" item gives way to the prepared approval.
+    expect(managerItems.some((item) => item.id === "variance:cash-shift")).toBe(false);
+    // Someone who cannot approve it never sees it there.
+    expect((await today("clerk-cash-desk")).some((item) => item.id.startsWith("ai-proposal:"))).toBe(false);
+    // With assistance off the approval cannot be shown, so the drawer's own item comes back.
+    await t.withIdentity({ subject: "clerk-cash-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "off", expectedRevision: 1 }));
+    expect((await today("clerk-cash-manager")).map((item) => item.id)).toContain("variance:cash-shift");
+    await t.withIdentity({ subject: "clerk-cash-owner" }).mutation(api.domain.mutate, op("ai.settings.update", { tenantMode: "execute", expectedRevision: 2 }));
+    await t.withIdentity({ subject: "clerk-cash-manager" }).mutation(api.domain.mutate, op("ai.proposal.decide", { proposalId: proposal!.id, decision: "approve", changesetHash: proposal!.changesetHash }));
+    const after = await today("clerk-cash-manager");
+    expect(after.some((item) => item.id.startsWith("ai-proposal:") || item.id === "variance:cash-shift")).toBe(false);
+  });
+
   it("approves through the existing review as the manager, with the prepared note as the reason", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

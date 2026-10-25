@@ -9,7 +9,7 @@ import { adapterConfig, aiSettingsFor, authorityInput, LEASE_MS, monthKey, newAi
 import { createRun, nextStandingSlot } from "./ai";
 import { callModel } from "./aiModelCall";
 import { runPlaybookStep, type PlaybookStepEnv } from "./aiPlaybooks";
-import { PLAYBOOKS, playbookBlocked, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
+import { PLAYBOOKS, playbookBlocked, runOriginHref, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
 import { isTerminalRunStatus, type AiErrorCategory, type AiPlaybookKey, type AiRunStatus } from "../src/lib/ai/contracts";
 import { budgetBlocked, type ModelTask, type ModelTaskOutput } from "../src/lib/ai/model";
 import { systemMessage } from "../src/lib/i18n/system-messages";
@@ -45,15 +45,7 @@ const STAGE_BY_STATUS: Partial<Record<AiRunStatus, string>> = {
 };
 
 function originHref(run: AiRunDoc): string {
-  switch (run.playbook as AiPlaybookKey) {
-    case "renewal_followups": return `/crm/queues?view=renewals&run=${run.publicId}`;
-    case "sales_followups": return `/crm/pipeline?run=${run.publicId}`;
-    case "management_report": return `/reports?run=${run.publicId}`;
-    case "shift_handover": return `/checklists?run=${run.publicId}`;
-    case "cash_difference": return `/payments/shifts?run=${run.publicId}`;
-    case "ops_triage": return `/maintenance?run=${run.publicId}`;
-    case "class_finder": return `/classes?run=${run.publicId}`;
-  }
+  return runOriginHref(run.playbook as AiPlaybookKey, run.publicId);
 }
 
 /** Finish a run truthfully: committed effects stay reported, and one useful notice reaches the requester. */

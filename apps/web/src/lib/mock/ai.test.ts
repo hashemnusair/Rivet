@@ -170,8 +170,13 @@ describe("preview cash-difference investigation", () => {
     expect(run.results.map((ref) => ref.kind)).toEqual(["artifact", "proposal"]);
     const [proposal] = await api.listAiProposals({ runId: run.id });
     expect(proposal).toMatchObject({ status: "pending", allowed: { approve: true, reject: true } });
+    // It waits on the approver's Today list, in place of the drawer's own item.
+    const today = async () => (await api.getDashboard({})).todayQueue!.items;
+    expect((await today()).find((item) => item.id === `ai-proposal:${proposal!.id}`)).toMatchObject({ kind: "approval", href: `/payments/shifts?run=${run.id}` });
+    expect((await today()).some((item) => item.id === `variance:${shiftId}`)).toBe(false);
     const decided = await api.decideAiProposal({ proposalId: proposal!.id, decision: "approve", changesetHash: proposal!.changesetHash });
     expect(decided.status).toBe("executed");
+    expect((await today()).some((item) => item.id.startsWith("ai-proposal:"))).toBe(false);
     const shifts = await api.listCashShifts({ pageSize: 200 });
     expect(shifts.items.find((shift) => shift.id === shiftId)?.varianceApprovalStatus).toBe("approved");
   });

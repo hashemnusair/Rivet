@@ -71,7 +71,8 @@ import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, 
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
-import { dropModelCache } from "./aiPolicy";
+import { authorityInput, canReadRun, dropModelCache } from "./aiPolicy";
+import { runOriginHref, TOOLS, toolBlocked } from "../src/lib/ai/capabilities";
 import { AI_MUTATION_OPERATIONS, AI_QUERY_OPERATIONS, type AiPlaybookKey } from "../src/lib/ai/contracts";
 import type { MemberAttendance, MemberClassOptions } from "../src/lib/ai/member-brief";
 import { composeRenewalFacts, evaluateRenewalCandidate, type RenewalMemberFacts } from "../src/lib/ai/renewal-batch";
@@ -13320,10 +13321,42 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
     }
   }
 
+  // A change RIVET prepared reaches the person who may approve it on Today as well as the bell (AI-3.7).
+  // For a cash drawer it is the same situation as "check the difference", so it takes that item's place.
+  const shiftsWithWaitingApproval = new Set<string>();
+  if (!actor.delegation) {
+    const pending = (await ctx.db.query("aiProposals").withIndex("by_organization_status", (q) => q.eq("organizationId", actor.organization._id).eq("status", "pending")).take(50)).filter((proposal) => proposal.expiresAt > Date.now() && actor.permissions.includes(proposal.requiredPermission));
+    const entitled = pending.length ? await aiDomainPort.entitledModules(ctx, actor) : [];
+    for (const proposal of pending) {
+      const run = await ctx.db.query("aiRuns").withIndex("by_organization_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("publicId", proposal.runPublicId)).unique();
+      if (!run || !canReadRun(actor, run) || !queueBranchVisible(run.branchPublicId)) continue;
+      // Shown only while the work's page can show the approval: assistance stopped, off or unavailable hides it.
+      const tool = TOOLS[proposal.tool];
+      if (!tool || toolBlocked(tool, await authorityInput(ctx, actor, tool.capability, entitled))) continue;
+      const requester = await ctx.db.get(run.requestedByUserId);
+      const shiftId = proposal.sourceVersions.find((source) => source.table === "shift")?.id;
+      const varianceMinor = numberValue(data(proposal.payload).varianceMinor, 0);
+      if (shiftId) shiftsWithWaitingApproval.add(shiftId);
+      queueItems.push({
+        id: `ai-proposal:${proposal.publicId}`,
+        kind: "approval",
+        priority: shiftId ? "urgent" : "high",
+        title: "A prepared change is waiting for approval",
+        detail: `Prepared by RIVET for ${requester?.fullName ?? ""}`,
+        branchName: run.branchPublicId ? branchNameById.get(run.branchPublicId) : undefined,
+        occurredAt: utcIso(proposal.proposedAt),
+        ...(shiftId && varianceMinor ? { amount: signedMoney(varianceMinor, actor.organization.currency) } : {}),
+        href: runOriginHref(run.playbook as AiPlaybookKey, run.publicId),
+        action: { kind: "navigate", label: "Review" },
+      });
+    }
+  }
+
   if (hasPermission(actor, "reconciliation.read")) {
     for (const shift of shifts) {
       const shiftBranchId = optionalString(shift.branchId);
       if (!queueBranchVisible(shiftBranchId) || stringValue(shift.status) !== "closed" || stringValue(shift.varianceApprovalStatus) !== "pending" || amountOf(shift.variance) === 0) continue;
+      if (shiftsWithWaitingApproval.has(stringValue(shift.id))) continue;
       queueItems.push({
         id: `variance:${stringValue(shift.id)}`,
         kind: "cash_variance",

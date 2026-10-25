@@ -5821,9 +5821,29 @@ export class MockGymOSApi implements GymOSApi {
         }
       }
 
+      // A change RIVET prepared reaches its approver on Today as well as the bell, in place of the drawer's own item.
+      const shiftsWithWaitingApproval = new Set<string>();
+      for (const proposal of this.ai.waitingProposals()) {
+        if (!queueBranchVisible(proposal.branchId)) continue;
+        shiftsWithWaitingApproval.add(proposal.shiftId);
+        queueItems.push({
+          id: `ai-proposal:${proposal.id}`,
+          kind: "approval",
+          priority: "urgent",
+          title: "A prepared change is waiting for approval",
+          detail: `Prepared by RIVET for ${proposal.requestedByName}`,
+          branchName: proposal.branchId ? branchNameById.get(proposal.branchId) : undefined,
+          occurredAt: new Date(proposal.proposedAt).toISOString(),
+          ...(proposal.varianceMinor ? { amount: { amount: proposal.varianceMinor, currency: this.db.organization.currency } } : {}),
+          href: proposal.href,
+          action: { kind: "navigate", label: "Review" },
+        });
+      }
+
       if (permissions.includes("reconciliation.read")) {
         for (const shift of this.db.shifts) {
           if (!queueBranchVisible(shift.branchId) || shift.status !== "closed" || shift.varianceApprovalStatus !== "pending" || !shift.variance || shift.variance.amount === 0) continue;
+          if (shiftsWithWaitingApproval.has(shift.id)) continue;
           queueItems.push({
             id: `variance:${shift.id}`,
             kind: "cash_variance",
