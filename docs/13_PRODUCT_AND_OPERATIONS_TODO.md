@@ -40,9 +40,10 @@ not replace the separate release/acceptance work or reopen retired Jev/WhatsApp 
 - **Status vocabulary.** Each subitem records four separate states:
   *Implementation* (not started / in progress / implemented locally),
   *Deterministic verification* (local/CI tests and synthetic evaluations),
-  *Provider evidence* (real model endpoint; pending until Hashem supplies one and its
-  data handling is approved) and *Acceptance/release* (credentialed isolated staging,
-  selected tenants, live pilot). A milestone is complete only when its docs/23 exit
+  *Provider evidence* (real model endpoint: Claude Sonnet 5.5 through Elias's account,
+  key pasted after the release; member data only once its handling is approved) and
+  *Acceptance/release* (production acceptance on the Hashem Test gym, which replaced
+  credentialed isolated staging on 25 October 2026; selected tenants; live pilot). A milestone is complete only when its docs/23 exit
   criteria have the required evidence; mock or fixture success never closes live gates.
 - **Evidence format.** Commit SHAs, test files and evaluation commands are recorded
   on the subitem as slices land; long output belongs in CURRENT_STATE.
@@ -56,13 +57,13 @@ between phases.
 | --- | --- |
 | §1 quiet assistance + delegated execution; experience tests | AI-1.7, AI-1.8, AI-2.1–AI-2.4, AI-3.2, AI-3.5, AI-3.6 |
 | §2 discovery contract; record additions | AI-0.3, AI-4.10, "Discovered improvements and defects" |
-| §3 isolated worktree/backend, key placement, disabled-by-default | AI-0.6, AI-1.4, AI-1.5, AI-5.6 |
+| §3 isolated worktree/backend, key placement, disabled-by-default | AI-0.6, AI-1.4, AI-1.5, AI-1.10, AI-5.6 |
 | §4 shared interaction patterns and small details | AI-1.7, AI-1.8, AI-2.2, AI-3.1, AI-4.6, AI-5.1 (UX cases) |
 | §5 scoped context, three kinds of memory, cache invalidation, no invented prediction | AI-1.1, AI-1.7, AI-2.3, AI-1.9 |
 | §6 delegable desk work map, delegation contract, standing instructions | AI-0.1, AI-2.4, AI-3.2, AI-3.3, AI-4.x |
 | §7 authority intersection, approvals bound to changesets, delegated principal | AI-1.2, AI-3.4 |
 | §8 governed capability layer, durable execution, records, runtime/model selection, budgets | AI-0.6, AI-1.1–AI-1.6, AI-3.1 |
-| §9 untrusted content, data minimization, isolated analysis, stop controls | AI-1.4, AI-1.5, AI-5.4 |
+| §9 untrusted content, data minimization, isolated analysis, stop controls | AI-1.4, AI-1.5, AI-1.10, AI-5.4 |
 | §10 flagship renewal journey + batch | AI-2.1–AI-2.7 |
 | §11 milestone exits | each milestone below |
 | §12 evaluation matrix and thresholds | AI-0.5, AI-5.1, AI-5.2, AI-5.3 |
@@ -81,7 +82,9 @@ set, measurable baseline and runnable synthetic proof. **Status: in progress.**
   every navigation-catalogue destination and names the tool/subitem for each delegable
   row. Implementation: drafted from `convex/navigationCatalogue.ts`, the role matrix in
   `convex/permissions.ts` and the `domain.ts` dispatcher. Verification: Hashem/Elias
-  review pending. Next: keep rows current as each AI-4 slice lands.
+  review pending; the review questions and recommended answers are in the docs/09
+  "AI decision sheet" (proposed, awaiting Hashem/Elias). Next: keep rows current as each
+  AI-4 slice lands.
 - [x] **AI-0.2 Conflicting automation inventory and shared dedupe boundary.** *(Rule enforced: every task-creating playbook links an existing open follow-up instead of adding one, rechecked inside the write; tests in `convex/ai.delegation.test.ts` and `convex/ai.sales.test.ts`.)* Scope:
   automations that create staff work or messages and could duplicate AI work.
   Acceptance: each has a documented coordination rule, enforced by code and tests in
@@ -121,7 +124,10 @@ set, measurable baseline and runnable synthetic proof. **Status: in progress.**
   processing/retention terms, member-data processing approval, concrete
   currency-denominated pilot budgets, Basic/Pro AI packaging, pilot gyms, owners and
   incident responsibility. Code ships with conservative defaults that keep live
-  processing off.
+  processing off. On 25 October 2026 Hashem decided the acceptance gym ("Hashem Test",
+  on production) and the candidate provider (Claude Sonnet 5.5 through Elias's
+  account); every other decision has a recommended answer in the docs/09 "AI decision
+  sheet", marked proposed and awaiting Hashem/Elias.
 
 #### AI-0.1 capability inventory (staff workspace)
 
@@ -169,8 +175,9 @@ delegable or not yet in scope.
 Exit: real backend-to-UI context flow; cross-tenant/branch denial; invalidation after
 source/access change; malformed-model, timeout and unavailable-model cases; check-in and
 payment never depend on model availability. **Status: implemented locally with
-deterministic and browser (mock) evidence; real provider evidence and isolated
-staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.test.ts`,
+deterministic and browser (mock) evidence, including per-gym platform availability
+(AI-1.10) and the model-output cache (AI-1.9); real provider evidence and the
+production acceptance on Hashem Test (docs/12) pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.test.ts`,
 `src/lib/ai/note-extraction.test.ts`, `src/lib/mock/ai.test.ts`,
 `src/features/assist/assist-ui.test.tsx`, `e2e/ai-assist.spec.ts` (commits `6d4c9efa`…`f257a890`).
 
@@ -192,7 +199,7 @@ staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.
   failure/compensation. Tools wrap existing domain operations; no direct table writes
   by agents and no success inferred from timeline text. Versioned playbooks name goal,
   permitted tools, context and completion checks.
-- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live with two protocols. `anthropic_messages` calls Claude through Anthropic's official SDK and is tested through that SDK with a stubbed transport; `openai_chat_json` is tested against a stubbed provider. Live mode needs a known price so every billed reply is counted. Real endpoint evidence pending: `pnpm ai:eval:live` with a key, then the isolated development deployment.)* Modes `off` (default),
+- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live with two protocols. `anthropic_messages` calls Claude through Anthropic's official SDK and is tested through that SDK with a stubbed transport; `openai_chat_json` is tested against a stubbed provider. Live mode needs a known price so every billed reply is counted. Real endpoint evidence pending: the server-side `aiEvaluation:runLive` on production after the release (docs/12), or `pnpm ai:eval:live` locally with a key.)* Modes `off` (default),
   `fixture` (deterministic, non-production) and `live` (explicit protocol, key, base
   URL and model in the isolated Convex deployment). Strict output validation,
   timeouts, malformed/refusal handling, minimized context, member-data gate, versioned
@@ -213,17 +220,19 @@ staging pending.** Evidence: `convex/ai.delegation.test.ts`, `convex/ai.prepare.
   relative dates resolved against the note time and gym timezone, ambiguity asked
   about, per-field accept, staff edits never overwritten, original note preserved and
   accepted fields saved once.
-- [ ] **AI-1.9 Derived-context cache and invalidation.** *(Brief is recomputed per read from current records with scope checks, so there is nothing stale to invalidate yet; a model-output cache is not built and stays open.)* Cache keys include tenant,
+- [x] **AI-1.9 Derived-context cache and invalidation.** *(Implemented locally for the one model output that is reused, live note readings: a 15-minute kept answer keyed by a SHA-256 of gym, member or lead and its record version, the reader's role, branch scope and permissions, language, prompt version, protocol and model, and the note itself. Every access and policy check runs before a kept answer is served; reuse makes no call and records no spend; dates and evidence are recomputed against the current note; member merge or deletion and any role or staff-access change drop entries, and a corrected record changes the key. Eight tests in `convex/ai.prepare.test.ts` "model-output cache". The brief is still recomputed per read, so it needs no cache. Filter and revision readings are not cached; docs/09.)* Cache keys include tenant,
   branch/access scope, subject, source revisions, locale, policy and prompt/model
   versions; access rechecked when serving; permission change, merge, deletion or
   corrected source invalidates affected content.
+- [x] **AI-1.10 Platform availability per gym.** *(Added 25 October 2026 as the release blocker: no gym can use assistance until a platform admin makes it available at `/platform/assistance` with a reason, each change a platform audit event; every gate reads an unavailable gym as off, its owner cannot turn assistance on, Settings → Roles & access → Assistance is hidden, and removal stops running work at the next step. Tests: `convex/ai.delegation.test.ts` "platform availability", `src/lib/mock/ai.test.ts`, `assist-ui.test.tsx`, `platform-assist.test.tsx`, browser journey "stays hidden from a gym until RIVET makes it available".)* Only RIVET decides which
+  gyms may use assistance; the gym's owner then decides what it may do.
 
 ### AI-2 — Complete renewal loop and first executable desk delegation
 
 Exit: single-member and batch journeys pass with real domain mutations in isolated
 staging; interruption/retry does not duplicate tasks; no false send/contact claim;
 English/Arabic/phone interactions pass. **Status: implemented locally; the exit is not
-met until AI-2.7 isolated staging runs.**
+met until the AI-2.7 acceptance runs on production for Hashem Test.**
 
 - [x] **AI-2.1 One connected renewal opportunity per member** *(Implemented locally in the renewal list: one row per membership as before, each with the member's most useful brief fact the row lacks; full brief with sources in the selected panel; order unchanged. The Today queue is unchanged.)* in the existing renewal
   list/Today surfaces, with supporting facts and source links; complete, stable list
@@ -235,7 +244,7 @@ met until AI-2.7 isolated staging runs.**
   "travelling until Sunday" is saved, with provenance and expiry, as a staff statement
   (not a verified fact); suppresses absence suggestions for that period only; never
   alters attendance, balances or membership dates; visible and revocable.
-- [x] **AI-2.4 Delegated "Prepare follow-ups" batch.** *(Implemented and verified locally with real Convex functions; isolated staging pending.)* Finds eligible members in the
+- [x] **AI-2.4 Delegated "Prepare follow-ups" batch.** *(Implemented and verified locally with real Convex functions; production acceptance pending.)* Finds eligible members in the
   displayed branch/window, excludes renewed, recently contacted, opted-out, frozen,
   travelling and already-tasked members with reasons, prepares drafts, creates/assigns
   deduplicated tasks within the grant, verifies persisted tasks, reports progress,
@@ -246,15 +255,16 @@ met until AI-2.7 isolated staging runs.**
 - [x] **AI-2.6 Attribution.** *(Timeline meta and audit details name run/grant/tool; Activity log category "Prepared work".)* Timeline and activity log show who requested the work,
   the run and grant used; tasks are real records; no contact, call or message is
   claimed unless a person recorded it.
-- [ ] **AI-2.7 Isolated staging acceptance.** Pending a separately authorized isolated
-  Convex/Clerk test deployment. Not satisfied by mock browser tests.
+- [ ] **AI-2.7 Acceptance on production for Hashem Test** (replaces isolated staging,
+  Hashem's decision of 25 October 2026). Procedure in docs/12 "AI release to
+  production"; Hashem runs it after the merge. Not satisfied by mock browser tests.
 
 ### AI-3 — Persistent delegation and reusable desk capabilities
 
 Exit: work survives navigation and worker restart; revocation stops pending writes;
 scheduled runs stay within grants; each job produces verified saved records or protected
 artifacts; uncertainty and partial results are truthful. **Status: in progress —
-local implementation and tests only (AI-3.1–AI-3.7); no staging or live evidence.**
+local implementation and tests only (AI-3.1–AI-3.7); no production or live evidence.**
 
 - [x] **AI-3.1 Inspect and resume.** *(Leases with fencing, recovery cron, crash-after-commit test; run kept in the page URL.)* Run state, steps and receipts persist; navigating
   back shows the same run; leases with fencing; recovery cron resumes expired leases.
@@ -264,16 +274,16 @@ local implementation and tests only (AI-3.1–AI-3.7); no staging or live eviden
 - [x] **AI-3.3 Standing instructions.** *(Preview digest required, one run per slot, owner-loss revocation; UI in Settings → Assistance.)* Visible owner, scope, schedule, permitted
   actions, limits, pause/revoke/transfer; initial-effect preview before enabling;
   scheduled runs deduplicated per slot and stopped by lost authority.
-- [x] **AI-3.4 Consequence review.** *(Implemented locally for the first consequential capability, the cash-difference approval: changeset bound to record versions with 24-hour expiry; approval rechecks versions and re-derives the changeset from current records; delegated work refused; the existing variance review runs as the approver with its reason. Proposals are grouped per run; there is no "approve all" yet. Isolated staging pending.)* Grouped proposals bound to exact records, amounts,
+- [x] **AI-3.4 Consequence review.** *(Implemented locally for the first consequential capability, the cash-difference approval: changeset bound to record versions with 24-hour expiry; approval rechecks versions and re-derives the changeset from current records; delegated work refused; the existing variance review runs as the approver with its reason. Proposals are grouped per run, and "Approve all" (25 October 2026) approves up to 20 waiting proposals of one run in one step, each with exactly the checks of a single approval in its own sub-transaction, reporting every outcome. No current playbook creates more than one proposal per run, so the browser journey shows the single case; grouped approval is tested with real Convex functions, the preview adapter and the component. Production acceptance pending.)* Grouped proposals bound to exact records, amounts,
   terms, source revisions and expiry; material change invalidates; the agent cannot
   approve its own proposal; existing approvals/reasons stay.
-- [x] **AI-3.5 Job: scoped management report/export.** *(Implemented locally with real Convex functions: money totals rechecked against the full payment ledger, coverage gaps named, financial-access recheck and 30-day expiry on every read, optional payments download through the existing export job; isolated staging pending.)* Report built from existing
+- [x] **AI-3.5 Job: scoped management report/export.** *(Implemented locally with real Convex functions: money totals rechecked against the full payment ledger, coverage gaps named, financial-access recheck and 30-day expiry on every read, optional payments download through the existing export job; production acceptance pending.)* Report built from existing
   report services with verified totals and coverage, saved as a protected artifact
   with access recheck and expiry; exports through existing export jobs.
-- [x] **AI-3.6 Job: next-shift handover.** *(Implemented locally: unreadable sources shown as gaps, one "read the handover" task per person and day, nothing marked done; isolated staging pending.)* Assemble unresolved checklist items, open
+- [x] **AI-3.6 Job: next-shift handover.** *(Implemented locally: unreadable sources shown as gaps, one "read the handover" task per person and day, nothing marked done; production acceptance pending.)* Assemble unresolved checklist items, open
   repair/maintenance work and open follow-ups for the branch; save the handover and
   assign permitted tasks; cannot certify physical work.
-- [x] **AI-3.7 Completion and exception reporting.** *(Implemented locally: run notices for new results and problems, silence for scheduled runs that only find open work, approver notices for prepared changes. Shown on the existing bell; there is no Today card for a waiting proposal yet.)* Useful completions, failures and
+- [x] **AI-3.7 Completion and exception reporting.** *(Implemented locally: run notices for new results and problems, silence for scheduled runs that only find open work, approver notices for prepared changes on the existing bell, and (25 October 2026) a Today item for each waiting proposal for the people who may approve it, linking to its run and taking the place of the cash drawer's own "check the difference" item. Browser journey "brings a prepared cash approval to Today".)* Useful completions, failures and
   required decisions reach existing notifications/Today; background checks with
   nothing new stay quiet.
 
@@ -282,12 +292,12 @@ local implementation and tests only (AI-3.1–AI-3.7); no staging or live eviden
 Each slice needs its real tool path, existing-UI integration, approval behavior,
 fallback, evaluations, accessibility/localization and outcome measure. **Status:
 implemented locally for AI-4.1–AI-4.9 with Convex, preview-adapter, component and browser
-tests; isolated staging and live evidence pending; AI-4.10 lists what is not covered.**
+tests; production acceptance and live evidence pending; AI-4.10 lists what is not covered.**
 
-- [x] **AI-4.1 Payment and cash-difference investigation** (cash shifts): *(Implemented locally: exact-amount matches only, voided movements included, expected cash rechecked, "nothing matches" stated plainly; entry point on Shifts & cash; isolated staging pending.)* candidate
+- [x] **AI-4.1 Payment and cash-difference investigation** (cash shifts): *(Implemented locally: exact-amount matches only, voided movements included, expected cash rechecked, "nothing matches" stated plainly; entry point on Shifts & cash; production acceptance pending.)* candidate
   transactions and unresolved difference; human supplies physical count; posting and
   approval unchanged.
-- [x] **AI-4.2 Sales preparation** (leads): *(Implemented locally: due-lead queue, per-lead recheck, one call task per lead and follow-up date, catalogue drafts; entry point on Leads. The approved-plan comparison is not built yet and stays open below; lead contact consent is not modelled, so no consent check applies to leads. Isolated staging pending.)* due-lead queue, approved-plan comparison,
+- [x] **AI-4.2 Sales preparation** (leads): *(Implemented locally: due-lead queue, per-lead recheck, one call task per lead and follow-up date, catalogue drafts; entry point on Leads. The approved-plan comparison is not built yet and stays open below. Lead contact consent (25 October 2026): a lead marked "Asked not to be contacted" (audited, on the lead's Contact panel) is left out with that reason before any call is prepared or open work linked. Production acceptance pending.)* due-lead queue, approved-plan comparison,
   drafts and deduplicated tasks; no fabricated offer, discount or contact attempt.
 - [x] **AI-4.3 Operations triage** *(Implemented locally as intake assistance: machine target and title suggested by deterministic bilingual rules, open problems on that machine shown before filing; the person files through the existing owner/manager form. No severity, safety or fault-category suggestion and no delegated filing: safety needs someone who saw the machine. Evaluation 12/12, same author as the rules.)* (maintenance): fault category/target, related
   repair history, prepared issue report within grant.
@@ -308,7 +318,7 @@ tests; isolated staging and live evidence pending; AI-4.10 lists what is not cov
   support drafts, public-profile copy, membership change proposals, reception
   entry-issue explanation).
 
-#### AI-4.10 coverage gaps (not built; each needs its own slice)
+#### AI-4.10 coverage gaps (each needs its own slice; rows marked built were done on 25 October 2026)
 
 | Gap | Acceptance example when built |
 | --- | --- |
@@ -324,15 +334,15 @@ tests; isolated staging and live evidence pending; AI-4.10 lists what is not cov
 | Support case draft | A staff support request gets context (gym, plan, recent errors) and a draft reply the person edits and sends. |
 | Public-profile copy | Draft gym-profile text from existing details for the owner to edit and publish through the existing flow. |
 | Platform support and payment-review preparation (rest of AI-4.8) | A support case or a submitted payment claim shows the related invoices, prior cases and checks before the operator replies or decides. |
-| Today card for a waiting proposal (rest of AI-3.7) | A waiting approval appears on the approver's Today list as well as the bell. |
-| "Approve all" for grouped proposals (rest of AI-3.4) | Several proposals in one run are reviewed together and approved in one step, each still rechecked. |
-| Unnecessary contacts and dismissals (rest of AI-5.3) | Dismissed suggestions and contacts later marked unnecessary are counted in the monthly summary. |
-| Lead contact consent | A lead who asked not to be contacted is excluded from lead preparation with a reason. |
+| Today card for a waiting proposal (rest of AI-3.7) — **built 25 Oct 2026** | A waiting approval appears on the approver's Today list as well as the bell. |
+| "Approve all" for grouped proposals (rest of AI-3.4) — **built 25 Oct 2026** | Several proposals in one run are reviewed together and approved in one step, each still rechecked. |
+| Unnecessary contacts and dismissals (rest of AI-5.3) — **built 25 Oct 2026** | Dismissed suggestions and contacts later marked unnecessary are counted in the monthly summary. |
+| Lead contact consent — **built 25 Oct 2026** | A lead who asked not to be contacted is excluded from lead preparation with a reason. |
 | Neutral overdue payment template | A catalogue-reviewed "you have an unpaid balance of {amount}" message lets collections offer a truthful draft for any overdue balance. |
 | Arabic names and aliases | Branches and people can carry an Arabic name, so "الصويفية" finds Sweifieh in filters and revisions. |
 | Leads list structured filters (rest of AI-4.6) | The pipeline gains filters a request can map onto (stage, owner, due), shown as editable controls. |
-| Localised stored task titles | Prepared task titles render in the reader's language instead of stored English. |
-| Model-output cache (AI-1.9) | A repeated live reading of the same note within the cache window reuses the result, keyed by tenant, scope, source version, locale and prompt/model version, and is dropped on access change. |
+| Localised stored task titles — **built 25 Oct 2026 for tasks RIVET saves from now on**; older prepared tasks and tasks people type keep their stored text | Prepared task titles render in the reader's language instead of stored English. |
+| Model-output cache (AI-1.9) — **built 25 Oct 2026** | A repeated live reading of the same note within the cache window reuses the result, keyed by tenant, scope, source version, locale and prompt/model version, and is dropped on access change. |
 
 #### AI-0.4 baseline protocol and synthetic counts
 
@@ -356,23 +366,26 @@ journeys in `apps/web/e2e/ai-assist.spec.ts` and the ordinary forms perform, not
 
 Exit: live evidence for the exact released scope, known limitations, effective stop
 controls, cost headroom, incident ownership and a repeatable improvement process.
-**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); the AI-5.2 command is
-built but not run (needs a key); AI-5.6 needs separate authorization and is not started.**
+**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); the AI-5.2 commands are
+built but not run (the server-side one runs on production after the release); AI-5.6 is
+the production acceptance on Hashem Test in docs/12, not started.**
 
-- [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 58/66 fields (87.9%; en 12/14, ar 8/14 cases, including four code-switched notes), filters 13/16 cases, revisions 10/10, machine matching 12/12, cash matching 8/8, lead decisions 8/8, filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
+- [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 58/66 fields (87.9%; en 12/14, ar 8/14 cases, including four code-switched notes), filters 13/16 cases, revisions 10/10, machine matching 12/12, cash matching 8/8, lead decisions 9/9 (case l-09, a lead who asked not to be contacted, was added with that rule and is written by the rule's author, like machine matching), filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
   and sample size, run in CI and as a documented command.
-- [ ] **AI-5.2 Opt-in live provider evaluation** *(Command built, not run: `pnpm ai:eval:live` sends the held-out note, filter and revision cases through the production model call, scores them with the same harness and minimums, and reports cost, failures and latency, with a $1 default spend limit. The runner is tested offline; no live result exists until a key holder runs it.)* (synthetic fixtures only until data
+- [ ] **AI-5.2 Opt-in live provider evaluation** *(Commands built, not run: `pnpm ai:eval:live` locally, and (25 October 2026) the internal Convex action `aiEvaluation:runLive`, which runs the same held-out cases inside the deployment with the deployment's own model call and configuration, keeps the $1 default spend limit (never above $5), is not charged to any gym, and returns scores, counts, cost and latency only. Tested with real Convex functions and a stubbed provider in `convex/aiEvaluation.test.ts`. Running it on production is Hashem's step in docs/12; no live result exists yet.)* (synthetic fixtures only until data
   handling is approved); pending a key.
-- [x] **AI-5.3 Instrumentation and outcome measures** *(Implemented locally: owner-visible monthly summary of runs, saved tasks and their later outcome, proposal decisions, corrections, model calls/latency/cost and feedback. "Unnecessary contacts" and suggestion dismissals are not measured yet: the product records neither, so they stay open in AI-4.10.)*: usage, latency, cost, task
+- [x] **AI-5.3 Instrumentation and outcome measures** *(Implemented locally: owner-visible monthly summary of runs, saved tasks and their later outcome, proposal decisions, corrections, model calls/latency/cost and feedback. Since 25 October 2026 it also counts dismissed suggestions ("Hide suggestions" on a note reading) and prepared calls marked "Not needed", each recorded once and audited.)*: usage, latency, cost, task
   completion, corrections, dismissals, unnecessary contacts; owner-visible summary.
-- [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Rehearsed locally only, not on a hosted deployment.)*: global/tenant/capability/run
+- [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Gym availability removal was added and rehearsed the same way on 25 October 2026. Rehearsed locally only; the production rehearsal of the platform stop, gym off and availability removal is in the docs/12 acceptance.)*: global/tenant/capability/run
   stops, pending-grant revocation, in-flight effect reporting, ordinary workflows
   intact; rehearsed in tests and documented in docs/12.
 - [x] **AI-5.5 Pilot-readiness documentation** *(Release checks and the per-activation record template are in docs/12; no record is filled because nothing is activated.)*: release record template (source SHA,
   target, model/prompt/tool versions, capabilities, tenants, mode, evaluations,
   provider evidence, budgets, owners, rollback/stop).
-- [ ] **AI-5.6 Hosted isolated staging, selected-tenant activation and live pilot
-  evidence** — blocked on separate authorization; never fabricated.
+- [ ] **AI-5.6 Production acceptance on Hashem Test, selected-tenant activation and
+  live pilot evidence** — replaces hosted isolated staging (Hashem's decision of
+  25 October 2026); procedure in docs/12, run by Hashem after the merge; never
+  fabricated.
 - [x] **AI-5.7 Autonomy expansion policy** tied to measured reliability and clear
   domain policy. *(Policy recorded in docs/09; no capability's autonomy was expanded.)*
 

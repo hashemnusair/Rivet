@@ -128,16 +128,128 @@ deployment; (5) the owner of the affected gyms agreed. Money movement, membershi
 dates, refunds, discounts, messages to members and machine safety never become
 autonomous under this policy; they stay with a person through the existing approvals.
 
+### AI release decisions — Hashem, 25 October 2026
+
+Recorded as given by Hashem in the task for this pass. They change the release
+path, not the scope of docs/23.
+
+1. **Acceptance happens on production instead of a separate staging deployment.**
+   After the merge, assistance is made available only for the disposable
+   **"Hashem Test"** gym (platform availability, below). This replaces the staging
+   parts of AI-2.7 and AI-5.6; the production procedure is in docs/12 "AI release to
+   production".
+2. **Candidate provider: Claude Sonnet 5.5 through Elias's Claude API account.**
+   Elias pastes the key into the Convex Production dashboard after the release. No
+   key is needed or used by the implementation pass. The approval of the provider for
+   wider use remains in the decision sheet below.
+3. **This pass finishes the plan plus five small gaps** (Today card for a waiting
+   proposal, "approve all", dismissals and unnecessary contacts, lead contact consent,
+   localised prepared task titles). The other AI-4.10 gaps come in a later pass.
+
+### AI implementation decisions — 25 October 2026 pass
+
+Engineering decisions made while implementing the above, for review. None changes a
+commercial term, a provider approval or a gym's data.
+
+- **Platform availability per gym (release blocker).** A new `aiAvailability` table
+  (tenant data, purged with the gym) records which gyms RIVET lets use assistance. No
+  row means not available, so **no gym is available by default**. Only a platform
+  admin changes it, from `/platform/assistance`, with a reason; each change writes a
+  platform audit event (`ai.gym.available` / `ai.gym.unavailable`). The server treats
+  an unavailable gym as off in every gate (the authority intersection used by member
+  surfaces, preparation, runs, standing work and the settings view), and
+  `ai.settings.update` refuses to turn assistance or external processing on for it.
+  Removing availability stops that gym's queued and running work at its next step,
+  like the gym's own switch, and keeps the gym's saved choices, which apply again only
+  if a platform admin makes it available again. The preview adapter starts every gym
+  unavailable as well, so the preview shows the same first-run state.
+- **Server-side live evaluation.** `aiEvaluation:runLive` is an internal Convex action
+  (no page or browser can call it). It runs only when `RIVET_AI_MODE=live` and the
+  adapter is fully configured, keeps the $1 default spend limit and never goes above a
+  $5 ceiling, is not charged to any gym's monthly budget, and returns scores, counts,
+  cost and latency only. Running it on production is Hashem's step (docs/12).
+- **Model-output cache (AI-1.9) covers live note readings only.** The validated
+  provider answer is kept for 15 minutes under a SHA-256 key over the gym, the member
+  or lead and its record version, the reader's role, branch scope and permissions, the
+  reader's language, and the prompt version, protocol and model. RIVET recomputes
+  dates and checks evidence against the current note on every reuse, so a reused
+  answer read after midnight resolves "tomorrow" to the new day. Every access and
+  policy check runs before a kept answer is served; a reuse makes no call and records
+  no spend (it is served even when the month's budget is used up). Kept answers are
+  dropped on a member merge or deletion and on any change to roles or staff access,
+  expire by cron, and are never kept in test mode. Filter and revision readings are
+  not cached: their inputs change with the list or the run, and they were not part
+  of the acceptance.
+- **Today card.** A waiting proposal appears on Today for each person who holds its
+  required permission and can read its run, linking to the work's own page. For a cash
+  drawer it takes the place of that drawer's "check the difference" item (one item for
+  one situation). It is shown only while the work's capability can run, so a stopped,
+  turned-off or unavailable gym never gets a link to a page that cannot show it.
+- **"Approve all".** Offered on a run's proposal list when the reader may approve two
+  or more waiting proposals; at most 20 in one step. Each proposal runs in its own
+  Convex sub-transaction with exactly the checks of a single approval, so one that
+  changed, no longer matches or cannot be saved is rolled back on its own and reported
+  with its outcome. No current playbook creates more than one proposal per run, so in
+  practice the button appears only once a future playbook groups proposals.
+- **Dismissals and unnecessary contacts (AI-5.3).** "Hide suggestions" on a note
+  reading records a `dismissed` feedback row. "Not needed" on a call RIVET saved
+  closes it as cancelled with the outcome "Not needed" if it is still open (with a
+  member timeline line), marks the step, is audited (`ai.contact.unnecessary`), counts
+  once, and is refused for tasks people created themselves. The monthly summary counts
+  both.
+- **Lead contact consent.** An additive `doNotContact` record on the lead (when, who,
+  optional note), set only through `leads.contact_preference` (audited as
+  `lead.do_not_contact` / `lead.contact_allowed`, with a lead timeline line);
+  `leads.update` strips it. Lead preparation excludes such a lead before anything that
+  would lead to a call, including linking open work, with the existing reason
+  "Asked not to be contacted". The Today list's own lead follow-up item is unchanged
+  in this pass (open below).
+- **Localised prepared task titles.** Tasks RIVET saves keep their English `title` and
+  carry a `titleMessage` descriptor in the existing system-message format, extended to
+  `communicationCompletion.tasks.*` keys. Only delegated work can store one; tasks
+  people create, and older prepared tasks, keep showing their stored title.
+
+### AI decision sheet — proposed, awaiting Hashem/Elias
+
+Each line is a recommendation from the implementation agent, **not an approval**. The
+code ships with the conservative default in the last column until a person decides.
+
+**AI-0.1 capability inventory review** (the table under AI-0.1 in docs/13)
+
+| Decision | Recommended answer (proposed, awaiting Hashem/Elias) | Default in code until decided |
+| --- | --- | --- |
+| Accept the five classes (read, prepare, execute within a grant, existing approval, physical/unsupported) as the release inventory | Accept as written; revisit a row only when its AI-4.10 slice is built | Table is documentation only; it grants nothing |
+| Rows that stay with people | Confirm: check-in overrides, payments, refunds and voids, physical cash counts, machine safety and repairs, messages to members | Not delegable in code |
+| Capabilities to enable for the "Hashem Test" acceptance | Every built capability in "Prepare and save work", external processing on | Each gym off until its owner turns it on, and only once available |
+| Remaining AI-4.10 gaps | Defer to the next pass (decision 3 above) | Not built |
+
+**AI-0.7 provider, data, budgets, packaging, pilot and owners**
+
+| Decision | Recommended answer (proposed, awaiting Hashem/Elias) | Default in code until decided |
+| --- | --- | --- |
+| Provider and model | Claude Sonnet 5.5 (`claude-sonnet-5-5`, `anthropic_messages`) for the Hashem Test acceptance; decide wider use after the server-side live evaluation meets every minimum | `RIVET_AI_MODE` unset (off) |
+| Provider data processing, retention and region | Confirm Anthropic's current commercial API terms (data use, retention, region) for Elias's account before any real gym's member data is sent; until then member data goes only to the provider from Hashem Test, which holds test records | `RIVET_AI_PROCESSING_APPROVED` unset: notes and drafts never sent |
+| Member-data approval for the acceptance | Set `RIVET_AI_PROCESSING_APPROVED=member_data` for the Hashem Test acceptance only; availability keeps every other gym off | Unset |
+| Monthly budget per gym | $5 (`RIVET_AI_MAX_MONTHLY_COST_MICROS=5000000`); one note reading is about $0.0014 at Sonnet 5.5 prices, so about 3,500 readings | Unset: live mode spends nothing |
+| Budget per run | $0.50 (`RIVET_AI_MAX_RUN_COST_MICROS=500000`) | Unset (only the monthly cap applies) |
+| Evaluation spend | $1 default, $5 ceiling per server-side run | As recommended |
+| Basic/Pro packaging, allowances, pricing | No AI in Basic/Pro pricing during the pilot; pilot gyms free; decide a package after a month of measured cost and use | No entitlement change |
+| Pilot gyms | "Hashem Test" for acceptance (decided above); one friendly gym after two weeks of clean Hashem Test evidence | None available |
+| Incident owner | Hashem | None named |
+| Platform stop and availability owner | Hashem (platform admin); Elias as backup | Any platform admin can act |
+| Provider key and spend owner | Elias: holds the key, rotates it, watches spend in the Claude console | No key |
+| Standing authorities beyond preparation | Keep to internal tasks, reports and handovers (autonomy policy above) | As recommended |
+| Today lead follow-up item for a do-not-contact lead | Hide it, or show it without "Log contact"; small follow-up | Unchanged in this pass |
+
 ### AI open decisions — not approved by the implementation work
 
 | Decision | Owner | Current default in code |
 | --- | --- | --- |
-| Model provider/endpoint and its actual API contract | Hashem | `RIVET_AI_MODE` unset (off); fixture for local/CI. Claude (`anthropic_messages`, Sonnet 5.5) is implemented as the candidate; not approved for production |
-| Provider data processing, retention and region; member-data approval | Hashem (with counsel as needed) | Member data never sent to a live provider unless `RIVET_AI_PROCESSING_APPROVED=member_data` and the gym enabled external processing |
+| Model provider/endpoint for wider use | Hashem | `RIVET_AI_MODE` unset (off); fixture for local/CI. Claude Sonnet 5.5 is the decided candidate for the Hashem Test acceptance (above) |
+| Provider data processing, retention and region; member-data approval | Hashem (with counsel as needed) | Member data never sent to a live provider unless `RIVET_AI_PROCESSING_APPROVED=member_data`, the gym is available and the gym enabled external processing |
 | Pilot budgets in currency (per run, per gym per month) | Hashem | Code caps exist but stay unset/zero-spend; live calls refuse when a cost is reported without a configured budget |
-| Basic/Pro AI packaging, allowances and pricing | Hashem/Elias | No entitlement change; AI off by default per gym |
-| Pilot gyms, accountable owners, incident responsibility | Hashem/Elias | None selected |
-| Hosted isolated staging deployment for AI acceptance | Hashem | Not created by the agent; acceptance recorded as pending |
+| Basic/Pro AI packaging, allowances and pricing | Hashem/Elias | No entitlement change; no gym available by default |
+| Pilot gyms beyond Hashem Test, accountable owners, incident responsibility | Hashem/Elias | Only a platform admin can make a gym available |
 | Which standing authorities may run unattended beyond preparation | Hashem after measured evidence | Standing instructions limited to internal tasks/reports/handovers |
 
 ## Decisions already made
