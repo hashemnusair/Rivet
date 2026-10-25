@@ -81,6 +81,8 @@ export const activityLog: typeof EnglishActivityLog = {
     aiProposalReject: "رفض تغيير مُعدّ",
     aiProposalsApproveAll: "اعتماد تغييرات مُعدّة معًا",
     aiContactUnnecessary: "تحديد تواصل مُعدّ بأنه غير مطلوب",
+    leadDoNotContact: "طلب المهتم بالاشتراك عدم التواصل معه",
+    leadContactAllowed: "السماح بالتواصل مع المهتم بالاشتراك مجددًا",
     aiProposalInvalidate: "تغيير مُعدّ لم يعد يطابق السجلات",
     aiMemoryRecord: "حفظ ملاحظة للمتابعات",
     aiMemoryRevoke: "إيقاف استخدام ملاحظة في المتابعات",

@@ -131,3 +131,50 @@ describe("lead follow-up preparation", () => {
     await expect(t.withIdentity({ subject: "clerk-sales-rep" }).query(api.domain.query, op("ai.outcomes.summary"))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
   });
 });
+
+describe("lead contact consent", () => {
+  /** One more due lead, added only for these tests so the shared seed's counts stay as they are. */
+  async function quietLead(t: TestConvex<typeof schema>) {
+    await t.run(async (ctx) => {
+      const org = (await ctx.db.query("organizations").collect())[0]!;
+      const main = (await ctx.db.query("branches").collect())[0]!;
+      const now = NOW.getTime();
+      await ctx.db.insert("domainRecords", { organizationId: org._id, entityType: "lead", publicId: "lead-quiet", branchId: main._id, leadPublicId: "lead-quiet", createdAt: now, updatedAt: now, data: { id: "lead-quiet", organizationId: ORG, branchId: MAIN, source: "instagram", createdAt: "2026-10-10T08:00:00.000Z", updatedAt: "2026-10-10T08:00:00.000Z", phone: "+962790000001", fullName: "Lama Haddad", stage: "contacted", nextFollowUpAt: "2026-10-21T10:00:00.000Z" } });
+    });
+  }
+
+  it("records a do-not-contact request with an audit and a timeline line, and lead preparation leaves the lead out with that reason", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await quietLead(t);
+    const rep = t.withIdentity({ subject: "clerk-sales-rep" });
+    const marked = await rep.mutation(api.domain.mutate, op("leads.contact_preference", { leadId: "lead-quiet", doNotContact: true, reason: "Asked us to stop calling" })) as { doNotContact?: { byName: string; reason?: string }; activities: Array<{ title: string; titleMessage?: { key: string } }> };
+    expect(marked.doNotContact).toMatchObject({ byName: "sales-rep", reason: "Asked us to stop calling" });
+    expect(marked.activities.some((event) => event.titleMessage?.key === "communicationCompletion.timeline.leadDoNotContact")).toBe(true);
+    // Asking again records nothing new.
+    await rep.mutation(api.domain.mutate, op("leads.contact_preference", { leadId: "lead-quiet", doNotContact: true }));
+    const audits = (await t.run(async (ctx) => await ctx.db.query("auditEvents").collect())).filter((event) => event.action.startsWith("lead.do_not_contact"));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ reason: "Asked us to stop calling", entityPublicId: "lead-quiet" });
+
+    const run = await prepare(t, "clerk-sales-rep", "sales-consent-1");
+    expect(run.exclusions.find((item) => item.subjectName === "Lama Haddad")?.reason).toBe("opted_out");
+    expect((await openLeadTasks(t)).some((task) => task.leadId === "lead-quiet")).toBe(false);
+
+    // Allowing contact again is audited too, and the next preparation includes the lead.
+    await rep.mutation(api.domain.mutate, op("leads.contact_preference", { leadId: "lead-quiet", doNotContact: false }));
+    expect((await t.run(async (ctx) => await ctx.db.query("auditEvents").collect())).some((event) => event.action === "lead.contact_allowed")).toBe(true);
+    const again = await prepare(t, "clerk-sales-rep", "sales-consent-2");
+    expect(again.results.some((item) => item.subjectName === "Lama Haddad")).toBe(true);
+  });
+
+  it("can only change through its own audited action, by staff who may work with leads", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await quietLead(t);
+    await t.withIdentity({ subject: "clerk-sales-rep" }).mutation(api.domain.mutate, op("leads.update", { leadId: "lead-quiet", doNotContact: { since: "2026-10-22T08:00:00.000Z", byName: "Nobody" } }));
+    const lead = await t.withIdentity({ subject: "clerk-sales-owner" }).query(api.domain.query, op("leads.get", { leadId: "lead-quiet" })) as { doNotContact?: unknown };
+    expect(lead.doNotContact).toBeUndefined();
+    await expect(t.withIdentity({ subject: "clerk-sales-desk" }).mutation(api.domain.mutate, op("leads.contact_preference", { leadId: "lead-quiet", doNotContact: true }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "FORBIDDEN" }) });
+  });
+});

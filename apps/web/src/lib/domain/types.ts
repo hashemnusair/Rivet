@@ -2103,6 +2103,8 @@ export interface Lead {
   nextFollowUpAt?: ISODateTime;
   lostReason?: string;
   convertedMemberId?: UUID;
+  /** The lead asked not to be contacted; changed only through its own audited action. */
+  doNotContact?: { since: ISODateTime; byId: UUID; byName: string; reason?: string };
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }

@@ -240,6 +240,34 @@ test.describe("RIVET assistance", () => {
     expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
   });
 
+  test("leaves out a lead who asked not to be contacted, and says why", async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    await enterAvailableOwner(page);
+    await turnOnAssistance(page, "Prepare and save work");
+    await page.goto("/crm/pipeline");
+    await page.getByTestId("prepare-lead-follow-ups").click();
+    const first = page.getByTestId("ai-run-panel");
+    await expect(first).toHaveAttribute("data-status", "completed", { timeout: 30_000 });
+    const firstResult = first.getByTestId("ai-run-results").locator("li").first();
+    const name = (await firstResult.locator("span.font-medium").first().textContent())!.trim();
+    await firstResult.getByRole("link", { name: "Open" }).click();
+    await expect(page).toHaveURL(/\/crm\/leads\//);
+    const consent = page.getByTestId("lead-contact-consent");
+    await consent.getByTestId("lead-contact-consent-mark").click();
+    await page.getByLabel("Note (optional)").fill("Asked us to stop calling");
+    await page.getByTestId("lead-contact-consent-confirm").click();
+    await expect(consent.getByTestId("lead-contact-consent-state")).toContainText("No, asked not to be contacted");
+    // Back through the app's own link, so the preview keeps what was just recorded.
+    await page.getByRole("navigation", { name: /breadcrumb/i }).getByRole("link").first().click();
+    await expect(page).toHaveURL(/\/crm\/pipeline/);
+    await page.getByTestId("prepare-lead-follow-ups").click();
+    const second = page.getByTestId("ai-run-panel");
+    await expect(second).toHaveAttribute("data-status", "completed", { timeout: 30_000 });
+    const left = second.getByTestId("ai-run-exclusions").locator("li").filter({ hasText: name });
+    await expect(left).toContainText("Asked not to be contacted");
+    expect(errors.filter((text) => !/Download the React DevTools/.test(text))).toEqual([]);
+  });
+
   test("turns a plain request into the members list's own filters", async ({ page }) => {
     await enterAvailableOwner(page);
     await turnOnAssistance(page, "Prepare only");

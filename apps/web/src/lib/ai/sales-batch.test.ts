@@ -15,6 +15,11 @@ describe("lead follow-up decisions", () => {
     expect(leadIsDue({ stage: "offer_sent", nextFollowUpAt: "2026-10-20T06:00:00.000Z", convertedMemberId: "m-1" }, tonight)).toBe(false);
   });
 
+  it("leaves out a lead who asked not to be contacted, even with open work to link", () => {
+    expect(evaluateLeadCandidate({ ...base, doNotContact: true }, { now: NOW })).toEqual({ decision: "exclude", reason: "opted_out" });
+    expect(evaluateLeadCandidate({ ...base, doNotContact: true, openTasks: [{ id: "t-1", title: "Call back" }] }, { now: NOW })).toEqual({ decision: "exclude", reason: "opted_out" });
+  });
+
   it("stops for a lead closed, without a phone, or contacted in the last day, and links open work", () => {
     expect(evaluateLeadCandidate({ ...base, stage: "lost" }, { now: NOW })).toEqual({ decision: "exclude", reason: "lead_closed" });
     expect(evaluateLeadCandidate({ ...base, convertedMemberId: "m-1" }, { now: NOW })).toEqual({ decision: "exclude", reason: "lead_closed" });

@@ -1782,6 +1782,7 @@ export async function leadFollowUpFactsFor(ctx: ReadContext, actor: ActorContext
     ...(optionalString(lead.nextFollowUpAt) ? { nextFollowUpAt: stringValue(lead.nextFollowUpAt) } : {}),
     ...(optionalString(summary?.lastContactAt) ? { lastContactAt: stringValue(summary?.lastContactAt) } : {}),
     ...(optionalString(lead.convertedMemberId) ? { convertedMemberId: stringValue(lead.convertedMemberId) } : {}),
+    ...(lead.doNotContact ? { doNotContact: true } : {}),
     openTasks,
     draft: followUpHandoffDraft({ fullName, preferredLanguage: lead.preferredLanguage }, actor.organization.name, actor.organization.defaultLanguage),
   };
@@ -11611,6 +11612,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const current = data(record.data);
       const patch: Data = { ...input, updatedAt: isoNow() };
       delete patch.leadId;
+      // Contact consent changes only through its own audited operation.
+      delete patch.doNotContact;
       if (Object.prototype.hasOwnProperty.call(input, "ownerId")) {
         const requestedOwnerId = input.ownerId === "unassigned" ? undefined : recordId(input.ownerId);
         if (requestedOwnerId && requestedOwnerId !== current.ownerId) requirePermission(actor, "crm.assign");
@@ -11647,6 +11650,24 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         });
       }
       return { ...(await toLeadSummary(ctx, actor, updated)), notes: optionalString(updated.notes), activities: [], offers: [] };
+    }
+    case "leads.contact_preference": {
+      // A lead who asked not to be contacted is recorded, audited and left out of prepared calls.
+      requirePermission(actor, "crm.write");
+      const record = await recordOf(ctx, actor, "lead", recordId(input.leadId));
+      const current = data(record.data);
+      const doNotContact = input.doNotContact === true;
+      const reason = optionalString(input.reason)?.trim().slice(0, 200) || undefined;
+      const lead = Boolean(current.doNotContact) === doNotContact
+        ? current
+        : await patchRecord(ctx, actor, record, { doNotContact: doNotContact ? { since: isoNow(), byId: publicUserId(actor.user), byName: actor.user.fullName, ...(reason ? { reason } : {}) } : undefined, updatedAt: isoNow() });
+      if (lead !== current) {
+        await insertAudit(ctx, actor, { category: "crm", action: doNotContact ? "lead.do_not_contact" : "lead.contact_allowed", entityType: "lead", entityId: record.publicId, entityLabel: stringValue(current.fullName), summary: doNotContact ? "Lead asked not to be contacted" : "Lead may be contacted again", reason, before: { doNotContact: Boolean(current.doNotContact) }, after: { doNotContact }, branchId: optionalString(current.branchId) });
+        await insertTimeline(ctx, actor, { leadId: record.publicId, branchId: optionalString(current.branchId), type: "marketing_preference_changed", title: doNotContact ? "Asked not to be contacted" : "Contact allowed again", titleMessage: systemMessage(doNotContact ? "communicationCompletion.timeline.leadDoNotContact" : "communicationCompletion.timeline.leadContactAllowed"), body: reason, actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { doNotContact } });
+      }
+      const activities = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === record.publicId);
+      const offers = (await recordsOfLead(ctx, actor.organization._id, record.publicId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === record.publicId);
+      return { ...(await toLeadSummary(ctx, actor, lead)), notes: optionalString(lead.notes), activities, offers };
     }
     case "leads.update_contact": {
       requirePermission(actor, "crm.write");

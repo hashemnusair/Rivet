@@ -298,6 +298,8 @@ export const communicationCompletion = {
     taskFollowOn: "Follow-on to: {title}",
     taskCompleted: "Task completed: {title}",
     taskNotNeeded: "Task not needed: {title}",
+    leadDoNotContact: "Asked not to be contacted",
+    leadContactAllowed: "Contact allowed again",
     taskContactCompleted: "Contact logged — {outcome}",
     tagsAdded: "Tags added: {tags}",
     tagsRemoved: "Tags removed: {tags}",

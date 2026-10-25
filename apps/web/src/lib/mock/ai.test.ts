@@ -244,4 +244,18 @@ describe("preview lead follow-ups", () => {
     const again = await settled((await api.startAiRun({ playbook: "sales_followups", params: {}, requestKey: "sales-preview-2" })).id);
     expect(again.counts.created).toBe(0);
   });
+
+  it("leaves out leads who asked not to be contacted, with that reason", async () => {
+    await enable();
+    const leads = (await api.listLeads({ pageSize: 200 })).items;
+    for (const lead of leads) await api.setLeadContactPreference(lead.id, { doNotContact: true, reason: "Asked us to stop" });
+    expect((await api.getLead(leads[0]!.id)).doNotContact).toMatchObject({ reason: "Asked us to stop" });
+    const run = await settled((await api.startAiRun({ playbook: "sales_followups", params: {}, requestKey: "sales-preview-consent" })).id);
+    expect(run.counts.created + run.counts.linked).toBe(0);
+    expect(run.exclusions.length).toBeGreaterThan(0);
+    expect(run.exclusions.every((item) => item.reason === "opted_out")).toBe(true);
+    // A plain lead update cannot change it; only the audited action can.
+    await api.updateLead(leads[0]!.id, { doNotContact: undefined } as never);
+    expect((await api.getLead(leads[0]!.id)).doNotContact).toBeDefined();
+  });
 });

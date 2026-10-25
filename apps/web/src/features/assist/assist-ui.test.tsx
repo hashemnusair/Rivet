@@ -10,6 +10,9 @@ import { AiRunPanel } from "./run-panel";
 import { AssistanceSettingsSection } from "./assistance-settings-section";
 import { AssistanceLink } from "./assistance-link";
 import { NaturalMemberFilters } from "./natural-filters";
+import { LeadContactConsent } from "@/features/crm/lead-contact-consent";
+import { qk } from "@/lib/api/keys";
+import { useApiQuery } from "@/lib/hooks/use-api";
 import { MemberTasksPanel } from "@/features/members/member-tabs";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { systemMessage } from "@/lib/i18n/system-messages";
@@ -292,5 +295,29 @@ describe("titles of tasks RIVET prepared", () => {
     await user.click(screen.getByRole("button", { name: "show" }));
     expect(await screen.findByText(/^الاتصال بـ .+ بشأن تجديد الاشتراك$/)).toBeInTheDocument();
     expect(screen.getByText(/about membership renewal · old$/)).toBeInTheDocument();
+  });
+});
+
+describe("lead contact consent", () => {
+  it("records that a lead asked not to be contacted, with an optional note, and allows contact again", async () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const user = userEvent.setup();
+    let leadId = "";
+    function Consent() {
+      const query = useApiQuery(qk.lead(leadId), (api) => api.getLead(leadId));
+      return query.data ? <dl><LeadContactConsent lead={query.data} canEdit /></dl> : null;
+    }
+    const { api } = await renderWithApp(<Deferred>{() => <Consent />}</Deferred>);
+    leadId = (await api.listLeads({ pageSize: 1 })).items[0]!.id;
+    await user.click(screen.getByRole("button", { name: "show" }));
+    expect(await screen.findByTestId("lead-contact-consent-state")).toHaveTextContent("Yes");
+    await user.click(screen.getByTestId("lead-contact-consent-mark"));
+    await user.type(await screen.findByLabelText("Note (optional)"), "Asked us to stop calling");
+    await user.click(screen.getByTestId("lead-contact-consent-confirm"));
+    await waitFor(() => expect(screen.getByTestId("lead-contact-consent-state")).toHaveTextContent("No, asked not to be contacted"));
+    expect((await api.getLead(leadId)).doNotContact).toMatchObject({ reason: "Asked us to stop calling" });
+    await user.click(screen.getByTestId("lead-contact-consent-allow"));
+    await waitFor(() => expect(screen.getByTestId("lead-contact-consent-state")).toHaveTextContent("Yes"));
+    expect((await api.getLead(leadId)).doNotContact).toBeUndefined();
   });
 });

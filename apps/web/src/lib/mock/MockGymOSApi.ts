@@ -1080,6 +1080,7 @@ export class MockGymOSApi implements GymOSApi {
       ...(lead.nextFollowUpAt ? { nextFollowUpAt: lead.nextFollowUpAt } : {}),
       ...(summary.lastContactAt ? { lastContactAt: summary.lastContactAt } : {}),
       ...(lead.convertedMemberId ? { convertedMemberId: lead.convertedMemberId } : {}),
+      ...(lead.doNotContact ? { doNotContact: true } : {}),
       openTasks: this.followUpRelatedTasks({ leadId: lead.id }).map((task) => ({ id: task.id, title: task.title })),
       draft: followUpHandoffDraft({ fullName: lead.fullName, preferredLanguage }, this.db.organization.name, this.db.organization.defaultLanguage),
     };
@@ -7879,6 +7880,9 @@ export class MockGymOSApi implements GymOSApi {
       const lostReason = input.lostReason?.trim();
       if (closingAsLost && (!lostReason || lostReason.length < 5)) throw ApiError.of(ERR.VALIDATION, "A specific reason is required before closing a lead.");
       const before = { stage: lead.stage, lostReason: lead.lostReason ?? null };
+      // Contact consent changes only through its own audited action.
+      input = { ...input };
+      delete (input as { doNotContact?: unknown }).doNotContact;
       if (input.ownerId !== undefined) {
         const ownerId = input.ownerId === "unassigned" ? undefined : input.ownerId;
         if (ownerId && ownerId !== lead.ownerId) this.require("crm.assign");
@@ -7894,6 +7898,22 @@ export class MockGymOSApi implements GymOSApi {
         lead.nextFollowUpAt = undefined;
         for (const task of this.db.tasks) if (task.leadId === lead.id && task.status === "open") { task.status = "cancelled"; task.outcome = `Lead marked not sold: ${lostReason}`; task.completedAt = nowISO(); }
         this.audit({ category: "crm", action: "lead.lost", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: "Lead marked as not sold", reason: lostReason, before, after: { stage: "lost", lostReason: lostReason ?? null }, branchId: lead.branchId });
+      }
+      return this.getLeadSync(leadId);
+    });
+  }
+
+  setLeadContactPreference(leadId: T.UUID, input: { doNotContact: boolean; reason?: string }): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      const lead = this.db.leads.find((item) => item.id === leadId);
+      if (!lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Lead not found.");
+      const reason = input.reason?.trim().slice(0, 200) || undefined;
+      if (Boolean(lead.doNotContact) !== input.doNotContact) {
+        lead.doNotContact = input.doNotContact ? { since: nowISO(), byId: this.actor().id, byName: this.actor().name, ...(reason ? { reason } : {}) } : undefined;
+        lead.updatedAt = nowISO();
+        this.audit({ category: "crm", action: input.doNotContact ? "lead.do_not_contact" : "lead.contact_allowed", entityType: "lead", entityId: lead.id, entityLabel: lead.fullName, summary: input.doNotContact ? "Lead asked not to be contacted" : "Lead may be contacted again", reason, branchId: lead.branchId });
+        this.activity({ leadId: lead.id, type: "marketing_preference_changed", title: input.doNotContact ? "Asked not to be contacted" : "Contact allowed again", titleMessage: systemMessage(input.doNotContact ? "communicationCompletion.timeline.leadDoNotContact" : "communicationCompletion.timeline.leadContactAllowed"), body: reason, actorId: this.actor().id, actorName: this.actor().name });
       }
       return this.getLeadSync(leadId);
     });

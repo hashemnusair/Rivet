@@ -82,6 +82,8 @@ export const activityLog = {
     aiProposalInvalidate: "Prepared change no longer matched the records",
     aiProposalsApproveAll: "Prepared changes approved together",
     aiContactUnnecessary: "Prepared contact marked as not needed",
+    leadDoNotContact: "Lead asked not to be contacted",
+    leadContactAllowed: "Lead may be contacted again",
     aiMemoryRecord: "Note kept for follow-ups",
     aiMemoryRevoke: "Note no longer used for follow-ups",
     aiGlobalStop: "Assistance stopped for every gym",

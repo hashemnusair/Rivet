@@ -25,6 +25,8 @@ export interface LeadFollowUpFacts {
   nextFollowUpAt?: string;
   lastContactAt?: string;
   convertedMemberId?: string;
+  /** The lead asked not to be contacted. */
+  doNotContact?: boolean;
   openTasks: Array<{ id: string; title: string }>;
   draft?: { language: "en" | "ar"; text: string };
 }
@@ -43,6 +45,8 @@ export function leadIsDue(lead: { stage: string; nextFollowUpAt?: string; conver
 
 export function evaluateLeadCandidate(facts: LeadFollowUpFacts, context: { now: string }): LeadDecision {
   if (!(OPEN_LEAD_STAGES as readonly string[]).includes(facts.stage) || facts.convertedMemberId) return { decision: "exclude", reason: "lead_closed" };
+  // Before anything else that would lead to a call, including linking open work.
+  if (facts.doNotContact) return { decision: "exclude", reason: "opted_out" };
   if (!facts.phone?.trim()) return { decision: "exclude", reason: "no_phone" };
   if (facts.lastContactAt && Date.parse(context.now) - Date.parse(facts.lastContactAt) < LEAD_RECENT_CONTACT_HOURS * 3_600_000) return { decision: "exclude", reason: "lead_contacted_recently" };
   const open = facts.openTasks[0];

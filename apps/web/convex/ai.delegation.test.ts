@@ -80,7 +80,7 @@ async function seed(t: Harness, options: { aiMode?: "off" | "prepare" | "execute
   });
 }
 
-type RunView = { id: string; status: string; counts: Record<string, number>; exclusions: Array<{ subjectId: string; reason: string }>; results: Array<{ kind: string; id: string; subjectName?: string; labelMessage?: { key: string } }>; steps: Array<{ subjectId?: string; status: string; reason?: string; draft?: { language: string; text: string } }>; committedEffects: number; errorCategory?: string; allowed: Record<string, boolean> };
+type RunView = { id: string; status: string; counts: Record<string, number>; exclusions: Array<{ subjectId: string; reason: string }>; results: Array<{ kind: string; id: string; subjectName?: string; labelMessage?: { key: string } }>; steps: Array<{ subjectId?: string; status: string; reason?: string; draft?: { language: string; text: string }; markedUnnecessary?: boolean }>; committedEffects: number; errorCategory?: string; allowed: Record<string, boolean> };
 type TaskRow = { id: string; memberId?: string; type: string; status: string; dueAt: string; ownerId?: string; title: string; titleMessage?: { key: string; params?: Record<string, unknown> }; origin?: { kind: string; runId: string }; aiContext?: { purpose: string; membershipId?: string; topic?: string }; outcome?: string };
 
 async function tasksOf(t: Harness, memberId: string, status = "open"): Promise<TaskRow[]> {
@@ -668,7 +668,7 @@ describe("dismissed suggestions and contacts later marked not needed (AI-5.3)", 
     expect(await sales.mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: omarTask!.id }, { activeBranchId: MAIN }))).toEqual({ taskId: omarTask!.id, closed: true, alreadyMarked: false });
     expect(await tasksOf(t, "m-omar")).toHaveLength(0);
     expect((await tasksOf(t, "m-omar", "cancelled"))[0]).toMatchObject({ id: omarTask!.id, outcome: "Not needed" });
-    const run = await getRun(t, started.id) as RunView & { steps: Array<{ subjectId?: string; markedUnnecessary?: boolean }> };
+    const run = await getRun(t, started.id);
     expect(run.steps.find((step) => step.subjectId === "m-omar")?.markedUnnecessary).toBe(true);
     // Marking again changes nothing and counts once.
     expect(await sales.mutation(api.domain.mutate, op("ai.task.mark_unnecessary", { taskId: omarTask!.id }, { activeBranchId: MAIN }))).toMatchObject({ closed: false, alreadyMarked: true });

@@ -239,6 +239,7 @@ function evaluateLeadDecisions(): TaskReport {
     { id: "l-06", facts: { ...base, openTasks: [{ id: "t", title: "Call" }] }, expect: { decision: "link", taskId: "t" } },
     { id: "l-07", facts: { ...base, nextFollowUpAt: "2026-10-22T14:00:00.000Z" }, expect: { decision: "create", dueAt: "2026-10-22T14:00:00.000Z", priority: "normal" } },
     { id: "l-08", facts: { ...base, nextFollowUpAt: "2026-10-19T08:00:00.000Z" }, expect: { decision: "create", priority: "high" } },
+    { id: "l-09", facts: { ...base, doNotContact: true, openTasks: [{ id: "t", title: "Call" }] }, expect: { decision: "exclude", reason: "opted_out" } },
   ];
   for (const item of cases) {
     const result = evaluateLeadCandidate(item.facts, { now }) as Record<string, unknown>;

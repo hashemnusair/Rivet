@@ -296,6 +296,8 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
     taskFollowOn: "متابعة للمهمة: {title}",
     taskCompleted: "اكتمل تنفيذ المهمة: {title}",
     taskNotNeeded: "مهمة لم تعد مطلوبة: {title}",
+    leadDoNotContact: "طلب عدم التواصل معه",
+    leadContactAllowed: "يمكن التواصل معه مجددًا",
     taskContactCompleted: "تم تسجيل التواصل — {outcome}",
     tagsAdded: "تمت إضافة الوسوم: {tags}",
     tagsRemoved: "تمت إزالة الوسوم: {tags}",
