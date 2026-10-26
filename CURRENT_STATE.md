@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## AI-native implementation — merged; production backend released and live evaluation passed 26 October 2026
+## AI-native implementation — released to production 26 October 2026 (assistance available to no gym yet)
 
 **Release in progress (26 October 2026, Amman time).** Hashem approved merging PR #30
 after review; it merged into `main` as `e4f94416` (merge commit; no Vercel deployment
@@ -58,9 +58,32 @@ Production himself (confirmed by name only).
   journeys do); it passed twice and the 13 AI journeys passed at 01:30 Amman time.
   Known product behaviour, unchanged: a busy Today list can hide a new waiting
   approval beyond its first 12 items; the bell still shows it.
-- Not yet done: the frontend release (lifts the hold; needs Hashem's go), making Hashem
-  Test available, acceptance journeys, stop rehearsals and the pilot record (docs/12
-  "AI release to production").
+- Frontend released (Hashem's go, 26 October 2026; docs/12 step c, option A: the hold
+  stays). Before it, `convex function-spec --prod` listed `aiEvaluation:runLive`,
+  `aiActions:prepare`, `aiRuns:tick` and `aiRuns:approveProposalStep`, and the guarded dry
+  run against `descriptive-meerkat-589` showed no index change, so Production's backend
+  is `main`'s. A CLI deployment from a worktree of `6ae7f679`
+  (`dpl_FVtgwBekR6j7vxDGuLqgYC2zA2Eo`) was **BLOCKED** by Vercel and never built: on the
+  Hobby plan the latest commit's author (Elias) may not create deployments
+  (`TEAM_ACCESS_REQUIRED`). It changed nothing. The release was then deployed from an
+  exact `git archive 6ae7f679` export (no Git metadata, no `.env` files; `.vercelignore`
+  applied) with `vercel deploy --prod`: **`dpl_7hKbwR3xCToUsGoxbPv4CQRk9a6d`**, started
+  2026-10-26T15:42Z, READY and assigned to `rivetjo.com`, `www.rivetjo.com`,
+  `app.rivetjo.com`, `dashboard.rivetjo.com`, `platform.rivetjo.com` and
+  `admin.rivetjo.com`. It replaces `dpl_8RnoByETV17fHPsda81oHAhHiPtv` (source
+  `3ed7d3d2`) and also ships main's unreleased 24 October billing/export fixes and the
+  patched Next.js 16.4.2 and Zod 4.6.7. Vercel records no SHA for an archive deployment;
+  the source is `6ae7f679` by construction. `git.deploymentEnabled: false` and the
+  Ignored Build Step `exit 0` are unchanged. Smoke check without signing in: the website
+  (`rivetjo.com` 308 → `www` 200), `/login/gym`, `/login/member`, `/login/admin`,
+  `/dashboard`, `/members` and `/platform/assistance` (a route only the new build has)
+  return 200, and `admin.rivetjo.com` redirects to the platform host. Signed-in checks
+  (an existing gym's Today and Members, `/platform/assistance` as a platform admin) and
+  the 24 October billing/export acceptance with multi-gym accounts are Hashem's. No gym
+  was made available and no Convex environment variable was changed.
+- Not yet done: making Hashem Test available, the acceptance journeys, the stop
+  rehearsals and the pilot record (docs/12 "AI release to production", steps e–f;
+  Elias's agent), and the 24 October billing/export release checks with real accounts.
 
 **Implementation history (before the merge).** Implementation of
 [docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate

@@ -245,7 +245,11 @@ restore Git deployment (a reviewed commit removing `git.deploymentEnabled: false
 its earlier unset value), or keep the hold and promote one manual production
 deployment of the exact merged SHA from Vercel. Either way, confirm the deployment is
 READY at that SHA on all five canonical aliases (website, app, platform, admin,
-dashboard) and record its ID. The new frontend needs the new backend, so never
+dashboard) and record its ID. On the Hobby plan Vercel blocks a CLI deployment whose
+latest commit's author is not the account owner (`readyState: BLOCKED`,
+`TEAM_ACCESS_REQUIRED`); deploy instead from an exact `git archive <sha>` export with
+the project's `.vercel` link copied in, and record the SHA yourself (used for the
+26 October release, CURRENT_STATE). The new frontend needs the new backend, so never
 release it before step a.
 
 **d) Production environment variables (names and non-secret values).** Set in the
