@@ -199,7 +199,7 @@ production acceptance on Hashem Test (docs/12) pending.** Evidence: `convex/ai.d
   failure/compensation. Tools wrap existing domain operations; no direct table writes
   by agents and no success inferred from timeline text. Versioned playbooks name goal,
   permitted tools, context and completion checks.
-- [ ] **AI-1.4 Replaceable server-side model adapter.** *(Implemented locally: off/fixture/live with two protocols. `anthropic_messages` calls Claude through Anthropic's official SDK and is tested through that SDK with a stubbed transport; `openai_chat_json` is tested against a stubbed provider. Live mode needs a known price so every billed reply is counted. Real endpoint evidence pending: the server-side `aiEvaluation:runLive` on production after the release (docs/12), or `pnpm ai:eval:live` locally with a key.)* Modes `off` (default),
+- [x] **AI-1.4 Replaceable server-side model adapter.** *(Implemented: off/fixture/live with two protocols. `anthropic_messages` calls Claude through Anthropic's official SDK and is tested through that SDK with a stubbed transport; `openai_chat_json` is tested against a stubbed provider. Live mode needs a known price so every billed reply is counted. Real endpoint evidence (26 October 2026): `aiEvaluation:runLive` on production through Claude Sonnet 5.5 answered all 54 calls with no errors (CURRENT_STATE).)* Modes `off` (default),
   `fixture` (deterministic, non-production) and `live` (explicit protocol, key, base
   URL and model in the isolated Convex deployment). Strict output validation,
   timeouts, malformed/refusal handling, minimized context, member-data gate, versioned
@@ -366,14 +366,14 @@ journeys in `apps/web/e2e/ai-assist.spec.ts` and the ordinary forms perform, not
 
 Exit: live evidence for the exact released scope, known limitations, effective stop
 controls, cost headroom, incident ownership and a repeatable improvement process.
-**Status: local parts done (AI-5.1, AI-5.3–AI-5.5, AI-5.7 policy); the AI-5.2 commands are
-built but not run (the server-side one runs on production after the release); AI-5.6 is
-the production acceptance on Hashem Test in docs/12, not started.**
+**Status: AI-5.1–AI-5.5 and the AI-5.7 policy done; AI-5.2 passed on production on 26
+October 2026; AI-5.6 is the production acceptance on Hashem Test in docs/12, not
+started.**
 
 - [x] **AI-5.1 Deterministic evaluation harness** *(Implemented: `pnpm ai:eval`, also in CI via the unit suite. Gate held-out-v2: note reading 58/66 fields (87.9%; en 12/14, ar 8/14 cases, including four code-switched notes), filters 13/16 cases, revisions 10/10, machine matching 12/12, cash matching 8/8, lead decisions 9/9 (case l-09, a lead who asked not to be contacted, was added with that rule and is written by the rule's author, like machine matching), filter mapping 4/4, zero fabrications. Protocol in docs/09.)* with held-out results by task type
   and sample size, run in CI and as a documented command.
-- [ ] **AI-5.2 Opt-in live provider evaluation** *(Commands built, not run: `pnpm ai:eval:live` locally, and (25 October 2026) the internal Convex action `aiEvaluation:runLive`, which runs the same held-out cases inside the deployment with the deployment's own model call and configuration, keeps the $1 default spend limit (never above $5), is not charged to any gym, and returns scores, counts, cost and latency only. Tested with real Convex functions and a stubbed provider in `convex/aiEvaluation.test.ts`. Running it on production is Hashem's step in docs/12; no live result exists yet.)* (synthetic fixtures only until data
-  handling is approved); pending a key.
+- [x] **AI-5.2 Opt-in live provider evaluation** *(Passed on production, 26 October 2026: Claude Sonnet 5.5 through `anthropic_messages`, 54/54 calls answered, $0.17 of the $1 limit, p95 4.2 s; note reading 65/66 fields (98.5%; en 14/14, ar 13/14 cases), filters 16/16, revisions 10/10, zero fabrications, all minimums met (CURRENT_STATE). Commands: `pnpm ai:eval:live` locally, and (25 October 2026) the internal Convex action `aiEvaluation:runLive`, which runs the same held-out cases inside the deployment with the deployment's own model call and configuration, keeps the $1 default spend limit (never above $5), is not charged to any gym, and returns scores, counts, cost and latency only. Tested with real Convex functions and a stubbed provider in `convex/aiEvaluation.test.ts`. Re-run it after any model, prompt or reader change.)* (synthetic fixtures only until data
+  handling is approved).
 - [x] **AI-5.3 Instrumentation and outcome measures** *(Implemented locally: owner-visible monthly summary of runs, saved tasks and their later outcome, proposal decisions, corrections, model calls/latency/cost and feedback. Since 25 October 2026 it also counts dismissed suggestions ("Hide suggestions" on a note reading) and prepared calls marked "Not needed", each recorded once and audited.)*: usage, latency, cost, task
   completion, corrections, dismissals, unnecessary contacts; owner-visible summary.
 - [x] **AI-5.4 Stop/recovery mechanisms and rehearsal** *(Rehearsed with real Convex functions for every stop, including the platform-wide stop and a single capability; table and evidence in docs/12. Gym availability removal was added and rehearsed the same way on 25 October 2026. Rehearsed locally only; the production rehearsal of the platform stop, gym off and availability removal is in the docs/12 acceptance.)*: global/tenant/capability/run

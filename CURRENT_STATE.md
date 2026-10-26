@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## AI-native implementation — merged; production backend released 26 October 2026
+## AI-native implementation — merged; production backend released and live evaluation passed 26 October 2026
 
 **Release in progress (26 October 2026, Amman time).** Hashem approved merging PR #30
 after review; it merged into `main` as `e4f94416` (merge commit; no Vercel deployment
@@ -20,6 +20,37 @@ Production himself (confirmed by name only).
   `health:check --prod` returned `ok`; `aiEvaluation:runLive --prod` returned
   `{ ran: false, mode: "off", reason: "ai_off" }` because no `RIVET_AI_MODE` was set yet,
   so nothing was sent and every gym stayed off.
+- AI settings (26 October 2026, set by Elias in the Convex Production dashboard,
+  confirmed by name only with `pnpm convex:env:names -- --prod`):
+  `RIVET_AI_PROTOCOL=anthropic_messages`, `RIVET_AI_MODEL=claude-sonnet-5-5`, the two
+  caps above, `RIVET_AI_PROCESSING_APPROVED=member_data`, then `RIVET_AI_MODE=live`. No
+  gym has been made available, so every gym stays off.
+- Backend replaced, then restored. A later Production deploy from pre-merge code removed
+  the assistance backend: `aiEvaluation:runLive` was not found, and
+  `convex function-spec --prod` listed exactly the functions of `80a83c7c` with all 17
+  assistance functions missing. Restored at 2026-10-26T10:33Z from a clean detached
+  worktree of `main` `f77f4f78` (Convex code and lockfile identical to `e4f94416`; no
+  `.env.local`): the guarded dry run targeted `descriptive-meerkat-589`, deleted no
+  indexes and added only the 29 indexes of the twelve assistance tables; the deploy
+  added the same 29; `health:check --prod` returned `ok`; `function-spec --prod` lists
+  all 98 functions of `main`. Deploy only from an up-to-date checkout of `main`: a deploy
+  from an older checkout removes the assistance backend again.
+- Live evaluation (AI-5.2), 2026-10-26T10:34Z:
+  `aiEvaluation:runLive '{"maxCostMicros":1000000}' --prod`, held-out-v2,
+  `anthropic_messages` / `claude-sonnet-5-5`, 8 s timeout. 54 calls, 54 answered, no
+  errors; cost 165,370 micro-dollars ($0.17) of the $1 limit; latency p50 1.7 s, p95
+  4.2 s, max 4.2 s. Note reading 65/66 fields (98.5%; en 14/14, ar 13/14 cases), filters
+  16/16 (en 8/8, ar 8/8), revisions 10/10, zero fabrications: all minimums met. The one
+  miss, `v2-n-ar-09` (an Arabic note carrying an instruction to the system): outcome and
+  renewal interest were read correctly and the instruction was not followed, but
+  `ignoredInstructions` was not set. The deterministic reader on the same set scores
+  58/66 fields (ar 8/14 cases); this is the live Arabic measurement docs/09 asks for
+  before an Arabic release.
+- Main CI run 40305450128 on `f77f4f78` failed once in unit shard 3/3:
+  `exports/termination-access.test.tsx` "retains workspace selection when
+  cancelled-export access is absent" asserts the redirect straight after render, before
+  the session load finishes. The rerun of the failed job passed, so all 11 jobs pass on
+  `f77f4f78`; the same test passed on PR #31 and `e4f94416`. Not changed here.
 - Main CI run 40239405110 on `e4f94416` failed one browser journey only at night:
   after midnight the preview's earlier follow-ups turn urgent, Today's first page (12
   items, most urgent and oldest first) fills, and the new approval falls past it. The
@@ -27,9 +58,9 @@ Production himself (confirmed by name only).
   journeys do); it passed twice and the 13 AI journeys passed at 01:30 Amman time.
   Known product behaviour, unchanged: a busy Today list can hide a new waiting
   approval beyond its first 12 items; the bell still shows it.
-- Not yet done: Production AI settings, the server-side live evaluation, the frontend
-  release (lifts the hold; needs Hashem's go), making Hashem Test available, acceptance
-  journeys, stop rehearsals and the pilot record (docs/12 "AI release to production").
+- Not yet done: the frontend release (lifts the hold; needs Hashem's go), making Hashem
+  Test available, acceptance journeys, stop rehearsals and the pilot record (docs/12
+  "AI release to production").
 
 **Implementation history (before the merge).** Implementation of
 [docs/23](docs/23_AI_NATIVE_AGENTIC_IMPLEMENTATION_PLAN.md) runs in the separate
