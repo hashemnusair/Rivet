@@ -42,16 +42,17 @@ export function PageHeader({
 export function Breadcrumbs({ items }: { items: Array<{ label: string; href?: string }> }) {
   const t = useT();
   return (
-    <nav aria-label={t("common.breadcrumb")} className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
+    <nav aria-label={t("common.breadcrumb")} className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-3">
       {items.map((item, i) => (
-        <span key={i} className="flex items-center gap-1.5">
+        <span key={i} className={cn("flex items-center gap-1.5", item.href ? "shrink-0" : "min-w-0")}>
           {i > 0 ? <span aria-hidden className="text-ink-4">/</span> : null}
           {item.href ? (
             <Link href={item.href} className="hover:text-ink transition-colors">
               {item.label}
             </Link>
           ) : (
-            <span className="text-ink-2">{item.label}</span>
+            // The current page is often a person's name; it gives way rather than widening the page.
+            <span className="truncate text-ink-2" title={item.label}>{item.label}</span>
           )}
         </span>
       ))}

@@ -32,6 +32,7 @@ import { LedgerStatusBadge } from "./ledger-status";
 import { RecordSupplierPaymentDialog } from "./record-supplier-payment-dialog";
 import { SupplierPaymentHistoryDialog, supplierPaymentHref } from "./supplier-payment-history-dialog";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 const STATUS_FILTERS: Array<{ value: PayableStatusFilter; label: TKey }> = [
   { value: "open", label: "payablesWorkspace.notFull" },
@@ -96,7 +97,8 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
   const [payDialog, setPayDialog] = useState<{ supplierId?: string; payable?: Payable } | null>(() => (searchParams.get("pay") ? { supplierId: searchParams.get("supplier") ?? undefined } : null));
   const [history, setHistory] = useState<{ payableId?: string; supplierId?: string; sourceLabel: string; supplierName: string } | null>(null);
   const [exporting, setExporting] = useState(false);
-  const debouncedSearch = useDebouncedValue(search.trim(), 250);
+  // The API refuses a longer search; a pasted or bookmarked one is clamped rather than shown as a failure.
+  const debouncedSearch = useDebouncedValue(search.trim().slice(0, TEXT_LIMITS.search), 250);
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams.toString());
     if (value) next.set(key, value); else next.delete(key);
@@ -159,7 +161,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
     <div className="flex flex-wrap items-end gap-3">
       <div className="relative">
         <SearchIcon className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-        <Input value={search} onChange={(event) => setSearch(event.target.value)} onBlur={() => updateFilter("search", search)} placeholder={t("payablesWorkspace.searchPlaceholder")} className="h-9 w-60 max-w-full ps-8" aria-label={t("payablesWorkspace.searchBills")} />
+        <Input value={search} maxLength={TEXT_LIMITS.search} onChange={(event) => setSearch(event.target.value)} onBlur={() => updateFilter("search", search)} placeholder={t("payablesWorkspace.searchPlaceholder")} className="h-9 w-60 max-w-full ps-8" aria-label={t("payablesWorkspace.searchBills")} />
       </div>
       {!embedded ? (
         <Select value={branchId} onValueChange={(value) => { setBranchId(value); updateFilter("branch", value); }}>

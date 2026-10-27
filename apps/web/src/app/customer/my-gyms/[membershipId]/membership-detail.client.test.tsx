@@ -295,6 +295,29 @@ describe("member visit history", () => {
     await waitFor(() => expect(state.requestMembershipFreeze).toHaveBeenCalledWith({ membershipId: membership.id, startDate: start, days: 3, reason: "سفر Travel" }));
   });
 
+  it("keeps a typed freeze length as typed and refuses a fraction instead of reading 1.5 as 15", async () => {
+    const membership = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<LocaleProvider initialLocale="en"><QueryClientProvider client={client}><MembershipDetailClient membershipId={membership.id} /></QueryClientProvider></LocaleProvider>);
+    await user.click(await screen.findByRole("button", { name: "Request a freeze" }));
+    const dialog = await screen.findByRole("dialog", { name: "Request a freeze" });
+    fireEvent.change(dialog.querySelector("#freeze-start")!, { target: { value: addDays(todayISODate(), 3) } });
+    await user.type(dialog.querySelector("#freeze-reason")!, "Travel");
+    const days = dialog.querySelector<HTMLInputElement>("#freeze-days")!;
+    await user.clear(days);
+    await user.type(days, "1.5");
+    expect(days).toHaveValue("1.5");
+    expect(within(dialog).getByRole("button", { name: "Send request" })).toBeDisabled();
+    await user.clear(days);
+    await user.type(days, "1e1");
+    expect(within(dialog).getByRole("button", { name: "Send request" })).toBeDisabled();
+    expect(state.requestMembershipFreeze).not.toHaveBeenCalled();
+    await user.clear(days);
+    await user.type(days, "3");
+    expect(within(dialog).getByRole("button", { name: "Send request" })).toBeEnabled();
+  });
+
 });
 
 afterEach(() => {

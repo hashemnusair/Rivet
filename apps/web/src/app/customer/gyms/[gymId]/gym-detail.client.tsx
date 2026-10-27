@@ -25,15 +25,16 @@ import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/pro
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { isTimeInTrialWindow, trialWindowForDate } from "@/lib/public/trial-schedule";
 import { money } from "@/lib/utils/money";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 const trialSchema = z.object({
-  fullName: z.string().min(2, "Enter your full name"),
+  fullName: z.string().trim().min(2, "Enter your full name").max(TEXT_LIMITS.personName),
   email: z.string().email("Enter a valid email"),
   phone: z.string().transform(latinDigits).pipe(z.string().min(8, "Enter a valid phone number")),
   branchId: z.string().min(1, "Choose a branch"),
   preferredDate: z.string().min(1, "Choose a date"),
   preferredTime: z.string().min(1, "Choose a time"),
-  goal: z.string().min(4, "Tell the gym what you want from your trial"),
+  goal: z.string().trim().min(4, "Tell the gym what you want from your trial"),
 });
 type TrialValues = z.infer<typeof trialSchema>;
 
@@ -338,7 +339,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
               ) : null}
               <form onSubmit={submit} className="mt-4 space-y-4" noValidate>
                 <Field label={t("common.label.fullName")} htmlFor="trial-name" error={errors.fullName ? t("customerPortal.fullName") : undefined}>
-                  <Input dir="auto" id="trial-name" className="h-11 sm:h-9" autoComplete="name" aria-invalid={Boolean(errors.fullName) || undefined} {...register("fullName")} />
+                  <Input dir="auto" id="trial-name" className="h-11 sm:h-9" autoComplete="name" maxLength={TEXT_LIMITS.personName} aria-invalid={Boolean(errors.fullName) || undefined} {...register("fullName")} />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                   <Field label={t("common.label.phone")} htmlFor="trial-phone" error={errors.phone ? t("customerPortal.validPhone") : undefined}>

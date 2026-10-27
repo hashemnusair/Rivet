@@ -9,6 +9,8 @@ import { z } from "zod";
 import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { latinDigits } from "@/lib/utils/text";
+import { readNumberInput } from "@/lib/utils/number";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { qk } from "@/lib/api/keys";
 import type { MembershipPlan } from "@/lib/domain/types";
@@ -21,21 +23,31 @@ import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioCard } from "@/components/ui/radio-group";
 
-const numeric = <T extends z.ZodType<number>>(schema: T) => z.preprocess(value => typeof value === "string" ? latinDigits(value).replace(/٫/g, ".") : value, schema);
+/**
+ * Typed counts accept digits only (Arabic digits included), so "1e3", "0x10"
+ * and "1.5" are refused rather than coerced. A blank optional count is "not
+ * set"; a blank allowance means none.
+ */
+const typedCount = (blank: 0 | undefined) => (value: unknown) => {
+  if (typeof value !== "string") return value;
+  if (!latinDigits(value).trim()) return blank;
+  return readNumberInput(value, { min: 0 }) ?? Number.NaN;
+};
+const count = () => z.number({ error: enrollmentKey("wholeNumber") }).int(enrollmentKey("wholeNumber"));
 
 const schema = z
   .object({
-    name: z.string().min(2, enrollmentKey("planNameRequired")),
-    code: z.string().min(1, enrollmentKey("planCodeRequired")).max(8, enrollmentKey("planCodeLength")),
+    name: z.string().trim().min(2, enrollmentKey("planNameRequired")),
+    code: z.string().trim().min(1, enrollmentKey("planCodeRequired")).max(8, enrollmentKey("planCodeLength")),
     kind: z.enum(["time", "visits"]),
-    durationDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
-    visitAllowance: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
-    visitValidityDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(1, enrollmentKey("atLeastOne"))).optional(),
+    durationDays: z.preprocess(typedCount(undefined), count().min(1, enrollmentKey("atLeastOne")).optional()),
+    visitAllowance: z.preprocess(typedCount(undefined), count().min(1, enrollmentKey("atLeastOne")).optional()),
+    visitValidityDays: z.preprocess(typedCount(undefined), count().min(1, enrollmentKey("atLeastOne")).optional()),
     priceMajor: z.string().min(1, enrollmentKey("priceRequired")),
     branchAccess: z.enum(["all", "selected"]),
     branchIds: z.array(z.string()),
-    freezeAllowanceDays: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(0, enrollmentKey("atLeastZero")).max(180, enrollmentKey("maxFreezeDays"))),
-    includedPtSessions: numeric(z.coerce.number().int(enrollmentKey("wholeNumber")).min(0, enrollmentKey("atLeastZero")).max(100, enrollmentKey("maxPtSessions"))),
+    freezeAllowanceDays: z.preprocess(typedCount(0), count().min(0, enrollmentKey("atLeastZero")).max(180, enrollmentKey("maxFreezeDays"))),
+    includedPtSessions: z.preprocess(typedCount(0), count().min(0, enrollmentKey("atLeastZero")).max(100, enrollmentKey("maxPtSessions"))),
   })
   .superRefine((v, ctx) => {
     if (v.kind === "time" && !v.durationDays) ctx.addIssue({ code: "custom", path: ["durationDays"], message: enrollmentKey("durationRequired") });
@@ -149,10 +161,10 @@ export function PlanFormDialog({
           <DialogBody className="space-y-4">
             <FieldGrid alignFrom="base" className="grid-cols-[1fr_110px]">
               <Field label={t("memberEnrollment.planName")} required error={enrollmentErrorText(t, form.formState.errors.name?.message)}>
-                <Input placeholder={t("memberEnrollment.planExample")} {...form.register("name")} />
+                <Input placeholder={t("memberEnrollment.planExample")} maxLength={TEXT_LIMITS.planName} {...form.register("name")} />
               </Field>
               <Field label={t("memberEnrollment.planCode")} required error={enrollmentErrorText(t, form.formState.errors.code?.message)}>
-                <Input dir="ltr" placeholder="Q3" className="font-mono uppercase" {...form.register("code")} />
+                <Input dir="ltr" placeholder="Q3" className="font-mono uppercase" maxLength={8} {...form.register("code")} />
               </Field>
             </FieldGrid>
 

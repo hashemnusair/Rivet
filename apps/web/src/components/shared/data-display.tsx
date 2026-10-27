@@ -28,7 +28,8 @@ export function MoneyText({
   const formatted = format.money(money, { hideCurrency, compact, signDisplay: signed ? "exceptZero" : "auto" });
   const numberPrefix = formatted.match(/^([+−-]?[0-9,.]+)(.*)$/);
   return (
-    <bdi dir="auto" title={compact ? format.money(money) : undefined} className={cn("tabular", negative && "text-danger", className)}>
+    // A figure never splits across lines, even where the page lets long words break.
+    <bdi dir="auto" title={compact ? format.money(money) : undefined} className={cn("tabular [overflow-wrap:normal]", negative && "text-danger", className)}>
       {numberPrefix ? <><bdi dir="ltr">{numberPrefix[1]}</bdi>{numberPrefix[2]}</> : formatted}
     </bdi>
   );

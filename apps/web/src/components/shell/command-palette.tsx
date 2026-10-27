@@ -14,6 +14,7 @@ import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
 import { localizeNavigationEntry, workspaceTargetCopy } from "@/lib/i18n/navigation";
 import { workspacePageTitle } from "./workspace-recent-tracker";
 import { Badge } from "@/components/ui/badge";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { navigationAccessFromSession } from "@/features/navigation/navigation-assist";
 import { keywordSearchNavigation, permittedNavigationEntries, type NavigationEntry } from "../../../convex/navigationCatalogue";
 
@@ -104,7 +105,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   return <Command.Dialog open={open} onOpenChange={onOpenChange} label={t("palette.search.dialogLabel")} className="fixed inset-0 z-[90]" shouldFilter={false}>
     <button type="button" tabIndex={-1} aria-label={t("palette.search.closeLabel")} className="fixed inset-0 bg-night/45 backdrop-blur-[2px]" onClick={() => onOpenChange(false)} />
     <div className="fixed left-1/2 top-[max(1rem,env(safe-area-inset-top))] flex max-h-[calc(100dvh-2rem-env(safe-area-inset-top))] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-dialog animate-scale-in sm:top-[10vh] sm:max-h-[80dvh]">
-      <div className="flex items-center gap-2 border-b border-line px-4"><ArrowRight className="size-4 text-ink-3" aria-hidden /><Command.Input value={query} onValueChange={setQuery} dir={query ? "auto" : dir} placeholder={t("palette.search.placeholder")} aria-label={t("palette.search.inputLabel")} className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4" autoFocus /></div>
+      <div className="flex items-center gap-2 border-b border-line px-4"><ArrowRight className="size-4 text-ink-3" aria-hidden /><Command.Input value={query} onValueChange={setQuery} maxLength={TEXT_LIMITS.search} dir={query ? "auto" : dir} placeholder={t("palette.search.placeholder")} aria-label={t("palette.search.inputLabel")} className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4" autoFocus /></div>
       <Command.List className="min-h-0 flex-1 overflow-y-auto p-2">
         {settledQuery.length >= 2 ? <>
           {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">{t("palette.search.searching")}</p> : null}

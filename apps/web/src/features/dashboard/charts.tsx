@@ -17,7 +17,7 @@ export function BranchRevenueBars({ data }: { data: DashboardData["branchRevenue
       {data.map((b) => (
         <div key={b.branchId}>
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-[13px] font-medium"><bdi>{b.branchName}</bdi></p>
+            <p className="min-w-0 text-[13px] font-medium [overflow-wrap:anywhere]"><bdi>{b.branchName}</bdi></p>
             <MoneyText money={b.collected} className="text-[13.5px]" />
           </div>
           <div className="mt-1.5 h-2 w-full rounded-full bg-sunken">

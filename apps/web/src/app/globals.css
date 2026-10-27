@@ -269,6 +269,11 @@ html.landing-motion-ready [data-experience-notice] {
     font-family: var(--font-sans);
     font-size: 14px;
     line-height: 1.45;
+    /* Names, notes and searches are typed by people: a token with no space
+       (a pasted link, a reference, a run of letters) breaks onto the next line
+       instead of running out of its panel. Unlike `anywhere`, this leaves
+       intrinsic widths alone, so table columns and controls size as before. */
+    overflow-wrap: break-word;
   }
 
   /* A night page (the landing, sign-in, the application) paints the
