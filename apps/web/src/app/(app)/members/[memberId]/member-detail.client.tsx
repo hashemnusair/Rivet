@@ -150,7 +150,7 @@ export default function MemberDetailPageClient() {
           </TabsContent>
         </Tabs>
 
-        <aside className="space-y-4 self-start">
+        <aside className="min-w-0 space-y-4 self-start">
           {can("members.write") ? (
             <div className="flex flex-wrap gap-2" aria-label={t("memberProfile.page.contactActionsLabel")}>
               <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />

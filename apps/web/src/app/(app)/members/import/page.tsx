@@ -235,7 +235,7 @@ export default function MemberImportPage() {
         </div>
         {fileError ? <p className="text-[12px] text-danger" role="alert">{t(`memberMigration.${fileError}`)}</p> : null}
         <div className="flex flex-wrap items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setShowCsvText((current) => !current)}>{showCsvText ? t("memberMigration.hidePaste") : matrix.length ? t("memberMigration.pasteDifferent") : t("memberMigration.pasteInstead")}</Button><Button type="button" variant="ghost" size="sm" onClick={() => downloadTextFile({ content: `\uFEFF${SAMPLE_CSV.replaceAll("\n", "\r\n")}\r\n`, fileName: "rivet-member-import-template.csv", mimeType: "text/csv;charset=utf-8" })}><Download /> {" "}{t("memberMigration.sampleDownload")}</Button></div>
-        {showCsvText ? <label className="block space-y-1.5"><span className="text-[12.5px] font-medium text-ink">{t("memberMigration.pasteText")}</span><Textarea rows={7} value={csvText} onChange={(event) => updateCsvText(event.target.value)} placeholder={SAMPLE_CSV} aria-label={t("memberMigration.csvContent")} className="font-mono text-[12px]" /></label> : null}
+        {showCsvText ? <label className="block space-y-1.5"><span className="text-[12.5px] font-medium text-ink">{t("memberMigration.pasteText")}</span><Textarea rows={7} value={csvText} maxLength={MAX_FILE_BYTES} onChange={(event) => updateCsvText(event.target.value)} placeholder={SAMPLE_CSV} aria-label={t("memberMigration.csvContent")} className="font-mono text-[12px]" /></label> : null}
       </div>
     </section>
 

@@ -1,5 +1,37 @@
 # RIVET product, engineering, and operations backlog
 
+## Text field stress pass — 27 October 2026
+
+Method, coverage and evidence: [docs/24](24_TEXT_FIELD_STRESS_AUDIT.md).
+Branch `claude/sharp-edison-blgnof`; unreleased.
+
+- [x] Bound every text field (shared `Input`/`Textarea` ceilings; API limits
+  mirrored from `src/lib/domain/input-limits.ts`).
+- [x] Stop long typed or saved text from spilling out of panels and widening
+  pages (global `overflow-wrap: break-word`, money exempt; targeted fixes on the
+  surfaces listed in docs/24 §3.2).
+- [x] Keep the supplier-bill and Search RIVET queries within the API's
+  120-character limit instead of showing an error that "Try again" cannot clear.
+- [x] Refuse whitespace-only names, titles and adjustment reasons before Save.
+- [x] Plan counts: digits only in the form; whole-number ranges and a bounded
+  name in `plans.create`/`plans.update`; a cleared optional validity no longer
+  blocks saving.
+- [x] Member names trimmed and bounded to 120 in `members.create`/`members.update`.
+- [x] Member freeze request reads the typed days exactly (`1.5` is refused, not 15);
+  equipment numbers of only spaces are no longer sent as 0.
+- [ ] Add server-side length limits for the remaining free text (notes, reasons,
+  addresses, support messages, templates) with one shared Convex validator; the
+  client ceilings do not bind direct API callers.
+- [ ] Allowlist the fields `members.update` and `plans.update` accept; both
+  currently write every field sent (`{ ...input }`).
+- [ ] Decide whether a discount above the price is an error; the sale dialog and
+  the server currently cap the total at 0 without saying so.
+- [ ] Minor numeric gaps: the Follow-ups window filter silently ignores invalid
+  text; the country calling code accepts `0`/`000`; automation day/hour fields
+  have no maximum; a stock quantity of only spaces makes Save do nothing
+  without a message.
+- [ ] Settings section rail spills 16 px at 390 px (pre-existing).
+
 ## Source merge and deployment hold — 24 October 2026
 
 - [x] Verify billing/export source `2cb1519e`: all 11 CI jobs passed. Preserve

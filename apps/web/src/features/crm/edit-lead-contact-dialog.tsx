@@ -14,10 +14,11 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { TFunction } from "@/lib/i18n/provider";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 function makeSchema(t: TFunction) {
   return z.object({
-    fullName: z.string().trim().min(3, t("crmCompletion.editLead.invalidName")),
+    fullName: z.string().trim().min(3, t("crmCompletion.editLead.invalidName")).max(TEXT_LIMITS.personName),
     phone: z.string().refine((value) => isValidLeadPhone(value), t("crmCompletion.editLead.invalidPhone")),
     email: z.string().refine((value) => isValidOptionalEmail(value), t("crmCompletion.editLead.invalidEmail")).optional(),
   });
@@ -87,7 +88,7 @@ export function EditLeadContactDialog({
         <form onSubmit={form.handleSubmit((values) => { setServerError(null); mutation.mutate(values); })}>
           <DialogBody className="space-y-4">
             <Field label={t("common.label.fullName")} required error={form.formState.errors.fullName?.message}>
-              <Input autoFocus dir="auto" {...form.register("fullName")} />
+              <Input autoFocus dir="auto" maxLength={TEXT_LIMITS.personName} {...form.register("fullName")} />
             </Field>
             <Field label={t("common.label.phone")} required error={form.formState.errors.phone?.message}>
               <Input type="tel" autoComplete="tel" dir="ltr" {...form.register("phone")} />

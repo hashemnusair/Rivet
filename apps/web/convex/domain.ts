@@ -6,6 +6,7 @@ import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
 import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
 import { searchKey } from "../src/lib/utils/text";
+import { PLAN_COUNT_LIMITS, TEXT_LIMITS } from "../src/lib/domain/input-limits";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -394,6 +395,37 @@ function normalizedLeadEmail(value: unknown, actor: ActorContext): string | unde
 function normalizedLeadName(value: unknown, actor: ActorContext): string {
   const fullName = stringValue(value).trim();
   if (fullName.length < 3 || fullName.length > 120) domainError("VALIDATION_ERROR", "Full name must be between 3 and 120 characters.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Enter a full name"] } });
+  return fullName;
+}
+
+type PlanCountField = keyof typeof PLAN_COUNT_LIMITS;
+const PLAN_COUNT_LABELS: Record<PlanCountField, string> = {
+  durationDays: "Duration (days)",
+  visitAllowance: "Visits",
+  visitValidityDays: "Visit validity (days)",
+  freezeAllowanceDays: "Freeze days",
+};
+
+/** A plan count present in the input must be a whole number in its range; the form's text never reaches expiry maths unchecked. */
+function assertPlanCounts(input: Data, actor: ActorContext): void {
+  for (const field of Object.keys(PLAN_COUNT_LIMITS) as PlanCountField[]) {
+    const value = input[field];
+    if (value === undefined || value === null) continue;
+    const { min, max } = PLAN_COUNT_LIMITS[field];
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+      domainError("VALIDATION_ERROR", `${PLAN_COUNT_LABELS[field]} must be a whole number between ${min} and ${max}.`, { message: { key: "apiErrors.wholeNumberRange", params: { field: PLAN_COUNT_LABELS[field], minimum: String(min), maximum: String(max) } }, correlationId: actor.correlationId });
+    }
+  }
+}
+
+function assertPlanName(name: string, actor: ActorContext): void {
+  if (name.length > TEXT_LIMITS.planName) domainError("VALIDATION_ERROR", "Plan name is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "Plan name" } }, correlationId: actor.correlationId });
+}
+
+/** Member names are trimmed and bounded like lead and imported names; a pasted page never becomes a name. */
+function normalizedMemberName(value: unknown, actor: ActorContext): string {
+  const fullName = stringValue(value).trim();
+  if (fullName.length > TEXT_LIMITS.personName) domainError("VALIDATION_ERROR", "Full name must be between 3 and 120 characters.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Enter a full name"] } });
   return fullName;
 }
 
@@ -7890,7 +7922,7 @@ async function undoMemberImport(ctx: MutationCtx, actor: ActorContext, input: Da
 
 async function createMemberMutation(ctx: MutationCtx, actor: ActorContext, input: Data, options: { rejectDuplicates?: boolean; confirmedDuplicateMemberIds?: string[] } = {}): Promise<{ member: Data; duplicates: Data[] }> {
   requirePermission(actor, "members.write");
-  const fullName = stringValue(input.fullName).trim();
+  const fullName = normalizedMemberName(input.fullName, actor);
   const phone = normalizedLeadPhone(input.phone, actor);
   const email = normalizedLeadEmail(input.email, actor);
   const gender = optionalString(input.gender);
@@ -10627,6 +10659,11 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       delete patch.memberId;
       if (Object.prototype.hasOwnProperty.call(input, "phone")) patch.phone = normalizedLeadPhone(input.phone, actor);
       if (Object.prototype.hasOwnProperty.call(input, "email")) patch.email = normalizedLeadEmail(input.email, actor);
+      if (Object.prototype.hasOwnProperty.call(input, "fullName")) {
+        patch.fullName = normalizedMemberName(input.fullName, actor);
+        if (!patch.fullName) domainError("VALIDATION_ERROR", "Full name must be between 3 and 120 characters.", { correlationId: actor.correlationId, fieldErrors: { fullName: ["Enter a full name"] } });
+      }
+      if (Object.prototype.hasOwnProperty.call(input, "fullNameAr")) patch.fullNameAr = normalizedMemberName(input.fullNameAr, actor);
       const homeBranch = patch.homeBranchId ? await branchByPublicId(ctx, actor.organization._id, stringValue(patch.homeBranchId)) : null;
       if (patch.homeBranchId) assertBranchAccess(actor, homeBranch);
       const previous = data(record.data);
@@ -10781,6 +10818,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const name = stringValue(input.name).trim();
       const code = stringValue(input.code).trim().toUpperCase();
       if (!name || !code) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
+      assertPlanName(name, actor);
+      assertPlanCounts(input, actor);
       const branches = arrayValue(input.branchIds).map(String);
       if (stringValue(input.branchAccess, "all") === "selected") for (const branchId of branches) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const includedPtSessions = numberValue(input.includedPtSessions);
@@ -10795,6 +10834,12 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const patch: Data = { ...input };
       delete patch.planId;
       if (patch.basePrice) patch.basePrice = money(amountOf(patch.basePrice), actor.organization.currency);
+      if (patch.name !== undefined) {
+        patch.name = stringValue(patch.name).trim();
+        if (!patch.name) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
+        assertPlanName(stringValue(patch.name), actor);
+      }
+      assertPlanCounts(patch, actor);
       if (patch.includedPtSessions !== undefined && (!Number.isInteger(patch.includedPtSessions) || numberValue(patch.includedPtSessions) < 0 || numberValue(patch.includedPtSessions) > 100)) domainError("VALIDATION_ERROR", "Included PT sessions must be between 0 and 100.", { correlationId: actor.correlationId });
       if (patch.branchIds) for (const branchId of arrayValue(patch.branchIds).map(String)) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const updated = await patchRecord(ctx, actor, record, patch);

@@ -1,6 +1,8 @@
 "use client";
 import type { TFunction } from "@/lib/i18n/core";
 import { FormattingProvider, useFormat, useFormattingTimeZone } from "@/lib/i18n/format";
+import { readNumberInput } from "@/lib/utils/number";
+import { latinDigits } from "@/lib/utils/text";
 import { useLocale, useT } from "@/lib/i18n/provider";
 
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, Clock3, Copy, Dumbbell, MapPin, MessageCircle, Phone, QrCode, ScanLine, Share2, UserRoundCheck } from "lucide-react";
@@ -33,7 +35,6 @@ import type { CustomerMembership, CustomerReferralProgram, CustomerReferralRewar
 import { membershipDisplayStatus, type MembershipDisplayStatus } from "@/lib/public/membership-status";
 import { cn } from "@/lib/utils/cn";
 import { addDays, diffDays, todayISODate } from "@/lib/utils/dates";
-import { latinDigits } from "@/lib/utils/text";
 import { money } from "@/lib/utils/money";
 import { MemberClassSuggestions } from "@/features/assist/member-class-suggestions";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
@@ -842,7 +843,9 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
   const policyQuery = useApiQuery(["customerFreezePolicy", membershipId] as const, (api) => api.getCustomerFreezePolicy(membershipId));
   const [open, setOpen] = useState(false);
   const [startDate, setStartDate] = useState("");
-  const [days, setDays] = useState(7);
+  // The typed text is kept (digits made Latin): storing Number(text) turned "1." into 1, so "1.5" read as 15.
+  const [daysText, setDaysText] = useState("7");
+  const days = readNumberInput(daysText, { min: 0 }) ?? Number.NaN;
   const [reason, setReason] = useState("");
   const pending = requestsQuery.data?.find((item) => item.status === "pending");
   const latestDecided = requestsQuery.data?.find((item) => item.status !== "pending");
@@ -879,7 +882,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
           <h2 id="freeze-title" className="text-[14px] font-semibold">{t("memberProfile.followUp.evidenceKind.freeze")}</h2>
           <p className="mt-1 text-[13px] text-ink-2">{summary}</p>
         </div>
-        {!pending && policy.requestsEnabled ? <Button size="sm" variant="secondary" onClick={() => { setDays(Math.max(policy.minimumDays, Math.min(7, policy.maximumDays))); setOpen(true); }}>{t("memberExperience.requestFreeze")}</Button> : null}
+        {!pending && policy.requestsEnabled ? <Button size="sm" variant="secondary" onClick={() => { setDaysText(String(Math.max(policy.minimumDays, Math.min(7, policy.maximumDays)))); setOpen(true); }}>{t("memberExperience.requestFreeze")}</Button> : null}
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
@@ -892,7 +895,7 @@ function FreezeRequestCard({ membershipId }: { membershipId: string }) {
               <Input id="freeze-start" type="date" className="h-11 sm:h-9" min={todayISODate(timeZone)} value={startDate} onChange={(event) => setStartDate(event.target.value)} />
             </Field>
             <Field label={t("memberExperience.days")} htmlFor="freeze-days" hint={t("memberExperience.freezeRange", { minimum: policy.minimumDays, maximum: policy.maximumDays })} error={startDate && invalidDays ? t("memberExperience.freezeRange", { minimum: policy.minimumDays, maximum: policy.maximumDays }) : undefined} required>
-              <Input id="freeze-days" type="text" inputMode="numeric" dir="ltr" className="h-11 sm:h-9" value={Number.isNaN(days) ? "" : days} onChange={(event) => setDays(Number(latinDigits(event.target.value)))} />
+              <Input id="freeze-days" type="text" inputMode="numeric" dir="ltr" className="h-11 sm:h-9" value={daysText} onChange={(event) => setDaysText(latinDigits(event.target.value))} />
             </Field>
             <Field label={t("memberExperience.freezeReason")} htmlFor="freeze-reason" required>
               <Textarea id="freeze-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("memberExperience.freezeReasonPlaceholder")} />

@@ -10,6 +10,7 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import type { CustomerAttachment } from "./checkout-model";
@@ -78,8 +79,8 @@ export function CustomerAttach({ value, onChange, branchId }: { value: CustomerA
       {value.kind === "guest" ? (
         <div className="mt-3 space-y-3" data-testid="receipt-details">
           <FieldGrid className="sm:grid-cols-2">
-            <Field label={t("salesWorkspace.guestName")} required><Input value={value.fullName} onChange={(event) => onChange({ ...value, fullName: event.target.value })} placeholder={t("common.label.fullName")} autoComplete="name" className="h-11 sm:h-9" /></Field>
-            <Field label={t("memberProfile.whatsapp.phoneNumber")} required hint={t("salesWorkspace.printedOnReceipt")}><Input dir="ltr" value={value.phone} onChange={(event) => onChange({ ...value, phone: event.target.value })} placeholder="07…" autoComplete="tel" inputMode="tel" className="h-11 sm:h-9" /></Field>
+            <Field label={t("salesWorkspace.guestName")} required><Input value={value.fullName} maxLength={TEXT_LIMITS.personName} onChange={(event) => onChange({ ...value, fullName: event.target.value })} placeholder={t("common.label.fullName")} autoComplete="name" className="h-11 sm:h-9" /></Field>
+            <Field label={t("memberProfile.whatsapp.phoneNumber")} required hint={t("salesWorkspace.printedOnReceipt")}><Input dir="ltr" value={value.phone} maxLength={TEXT_LIMITS.guestPhone} onChange={(event) => onChange({ ...value, phone: event.target.value })} placeholder="07…" autoComplete="tel" inputMode="tel" className="h-11 sm:h-9" /></Field>
           </FieldGrid>
           <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ kind: "walk_in" })}><X /> {" "}{t("salesWorkspace.removeGuest")}</Button>
         </div>

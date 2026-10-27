@@ -31,9 +31,10 @@ import { useFormat } from "@/lib/i18n/format";
 import { latinDigits } from "@/lib/utils/text";
 import { leadSourceLabel } from "@/lib/i18n/labels";
 import { QuickMembershipStep } from "./quick-membership-step";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 const schema = z.object({
-  fullName: z.string().min(3, enrollmentKey("enterFullName")),
+  fullName: z.string().trim().min(3, enrollmentKey("enterFullName")).max(TEXT_LIMITS.personName),
   fullNameAr: z.string().optional(),
   phone: z
     .string()
@@ -264,10 +265,10 @@ export default function NewMemberPage() {
           <h2 className="mb-4 font-display text-[15px] font-semibold">{t("memberEnrollment.personalDetails")}</h2>
           <FieldGrid className="gap-4 sm:grid-cols-2">
             <Field label={t("members.header.fullName")} required error={enrollmentErrorText(t, form.formState.errors.fullName?.message)}>
-              <Input autoFocus placeholder={t("memberEnrollment.nameExample")} data-testid="member-name" {...form.register("fullName")} />
+              <Input autoFocus placeholder={t("memberEnrollment.nameExample")} data-testid="member-name" maxLength={TEXT_LIMITS.personName} {...form.register("fullName")} />
             </Field>
             <Field label={t("memberEnrollment.arabicName")} hint={t("memberEnrollment.arabicNameHint")}>
-              <Input dir="rtl" placeholder="ليان المصري" {...form.register("fullNameAr")} />
+              <Input dir="rtl" placeholder="ليان المصري" maxLength={TEXT_LIMITS.personName} {...form.register("fullNameAr")} />
             </Field>
             <Field label={t("members.header.phone")} required error={enrollmentErrorText(t, form.formState.errors.phone?.message)}>
               <Input

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { Monogram, Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -436,7 +437,7 @@ export function GymSpacesSection() {
           </DialogHeader>
           <DialogBody className="space-y-4">
             <Field label={t("common.label.name")} required hint={t("settingsCore.text068")}>
-              <Input autoFocus value={form.name} maxLength={80} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={t("settingsCore.text069")} />
+              <Input autoFocus value={form.name} maxLength={TEXT_LIMITS.zoneName} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={t("settingsCore.text069")} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("common.label.type")} required>

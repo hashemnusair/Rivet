@@ -15,11 +15,12 @@ import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api"
 import { useApp } from "@/lib/providers/app-providers";
 import { RelatedTaskCheck } from "@/features/followup/related-task-check";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 /** The messages are read at validation time, so they follow the reader's language. */
 function makeTaskSchema(t: TFunction) {
   return z.object({
-    title: z.string().min(3, t("memberProfile.createTask.errorTitle")),
+    title: z.string().trim().min(3, t("memberProfile.createTask.errorTitle")).max(TEXT_LIMITS.taskTitle),
     ownerId: z.string().min(1, t("memberProfile.createTask.errorOwner")),
     dueAt: z.string().min(1, t("memberProfile.createTask.errorDue")),
     type: z.enum(["follow_up", "renewal_call", "payment_collection", "trial_follow_up", "general"]),
@@ -92,7 +93,7 @@ export function CreateTaskDialog({
         <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))}>
           <DialogBody className="space-y-4">
             <Field label={t("memberProfile.createTask.titleLabel")} required error={form.formState.errors.title?.message}>
-              <Input dir="auto" {...form.register("title")} />
+              <Input dir="auto" maxLength={TEXT_LIMITS.taskTitle} {...form.register("title")} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("memberProfile.createTask.assignedTo")} required>

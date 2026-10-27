@@ -30,6 +30,7 @@ import { Monogram } from "@/components/ui/misc";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "delete" | null;
 
@@ -167,8 +168,8 @@ export function MemberHeader({
         <div className="grid shrink-0 gap-1.5">{member.photoUrl ? <span role="img" aria-label={t("memberProfile.header.photoAlt", { name: isolate(member.fullName) })} className="size-14 rounded-md bg-cover bg-center" style={{ backgroundImage: `url(${member.photoUrl})` }} /> : <Monogram name={member.fullName} size="xl" />}{can("members.write") ? <label className="inline-flex cursor-pointer items-center justify-center gap-1 text-[12px] font-medium text-ink-3 hover:text-ink"><Camera className="size-3" />{uploadPhoto.isPending ? t("memberProfile.header.uploading") : t("memberProfile.header.photo")}<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadPhoto.isPending} onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadPhoto.mutate(file); event.currentTarget.value = ""; }} /></label> : null}</div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="font-display text-[24px] font-semibold leading-none tracking-tight" dir="auto">{member.fullName}</h1>
-            {member.fullNameAr ? <span className="text-[15px] text-ink-3" dir="rtl">{member.fullNameAr}</span> : null}
+            <h1 className="min-w-0 font-display text-[24px] font-semibold leading-none tracking-tight [overflow-wrap:anywhere]" dir="auto">{member.fullName}</h1>
+            {member.fullNameAr ? <span className="min-w-0 text-[15px] text-ink-3 [overflow-wrap:anywhere]" dir="rtl">{member.fullNameAr}</span> : null}
             <MembershipStatusChip status={member.membershipStatus} />
             {currentMembership ? <PaymentStatusChip status={currentMembership.paymentStatus} /> : null}
             {member.status !== "active" ? (
@@ -182,7 +183,7 @@ export function MemberHeader({
             <a href={`tel:${member.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-[12.5px] hover:text-ink" dir="ltr">
               <Phone className="size-3.5 text-ink-3" /> {member.phone}
             </a>
-            <bdi>{branchName}</bdi>
+            <bdi className="min-w-0 [overflow-wrap:anywhere]">{branchName}</bdi>
             {member.tags.map((tag) => (
               <span key={tag} className="rounded-sm bg-sunken px-1.5 py-0.5 text-[12px] text-ink-2">
                 <bdi>{tag}</bdi>
@@ -352,8 +353,8 @@ export function MemberHeader({
           </DialogHeader>
           <DialogBody className="space-y-4">
             <FieldGrid className="sm:grid-cols-2">
-              <Field label={t("memberProfile.edit.fullName")} required><Input disabled={memberOwnsProfile} dir="auto" value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
-              <Field label={t("memberProfile.edit.arabicName")}><Input disabled={memberOwnsProfile} dir="rtl" value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
+              <Field label={t("memberProfile.edit.fullName")} required><Input disabled={memberOwnsProfile} dir="auto" maxLength={TEXT_LIMITS.personName} value={editForm.fullName} onChange={(event) => setEditForm((form) => ({ ...form, fullName: event.target.value }))} /></Field>
+              <Field label={t("memberProfile.edit.arabicName")}><Input disabled={memberOwnsProfile} dir="rtl" maxLength={TEXT_LIMITS.personName} value={editForm.fullNameAr} onChange={(event) => setEditForm((form) => ({ ...form, fullNameAr: event.target.value }))} /></Field>
               <Field label={t("common.label.phone")} required><Input disabled={memberOwnsProfile} dir="ltr" value={editForm.phone} onChange={(event) => setEditForm((form) => ({ ...form, phone: event.target.value }))} /></Field>
               <Field label={t("common.label.email")}><Input disabled={memberOwnsProfile} type="email" dir="ltr" value={editForm.email} onChange={(event) => setEditForm((form) => ({ ...form, email: event.target.value }))} /></Field>
               <Field label={t("memberProfile.edit.homeBranch")}>
