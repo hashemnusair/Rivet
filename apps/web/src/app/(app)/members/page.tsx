@@ -27,6 +27,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { NaturalMemberFilters } from "@/features/assist/natural-filters";
 import { CollectionCalls } from "@/features/assist/collection-calls";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
+import { useMembersScreen } from "@/features/ask-rivet/screens";
 
 type MemberColumn = "phone" | "branch" | "plan" | "status" | "expiry" | "balance" | "last_check_in";
 const ALL_COLUMNS: Array<{ key: MemberColumn; label: TKey }> = [
@@ -69,6 +70,7 @@ function MembersPageInner() {
   const plansQuery = useApiQuery(qk.plans({}), (api) => api.listPlans({ pageSize: 50 }));
   const query: MemberListQuery = useMemo(() => ({ search: debounced || undefined, membershipStatus: membershipStatus === "all" ? undefined : membershipStatus as MemberListQuery["membershipStatus"], planId: planId === "all" ? undefined : planId, branchId: session?.activeBranchId, status: recordStatus, sort, page, pageSize: 20 }), [debounced, membershipStatus, page, planId, recordStatus, session?.activeBranchId, sort]);
   const members = useApiQuery(qk.members(query), (api) => api.listMembers(query));
+  useMembersScreen({ search: debounced || undefined, membershipStatus, planId, status: recordStatus === "archived" ? "archived" : undefined }, members.data?.totalItems, (members.data?.items ?? []).filter((member) => selected.has(member.id)).map((member) => ({ id: member.id, fullName: member.fullName })));
   const branches = (session?.branches ?? []).map((branch) => ({ ...branch, status: "active" as const }));
   const branchName = (id: string) => branches.find((branch) => branch.id === id)?.code ?? "—";
   const visible = (key: MemberColumn) => columns.includes(key);

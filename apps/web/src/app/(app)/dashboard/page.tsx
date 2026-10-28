@@ -6,10 +6,12 @@ import { ReceptionDashboard } from "@/features/dashboard/reception-dashboard";
 import { SalesDashboard } from "@/features/dashboard/sales-dashboard";
 import { TrainerDashboard } from "@/features/dashboard/trainer-dashboard";
 import { useApp } from "@/lib/providers/app-providers";
+import { useDashboardScreen } from "@/features/ask-rivet/screens";
 
 export default function DashboardPage() {
   const { session } = useApp();
   const role = session?.roles[0];
+  useDashboardScreen();
 
   if (role === "salesperson") return <SalesDashboard />;
   if (role === "manager") return <ManagerDashboard />;

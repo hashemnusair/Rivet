@@ -52,6 +52,7 @@ import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
 import { aiWork } from "./aiWork";
+import { askRivet } from "./askRivet";
 
 /** Approved terminology: docs/arabic/STANDARD.md and DECISIONS.md. */
 export const ar: Messages = {
@@ -109,4 +110,5 @@ export const ar: Messages = {
   renewFlow,
   shell,
   aiWork,
+  askRivet,
 };

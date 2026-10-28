@@ -23,6 +23,8 @@ import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { SubscriptionAgreementGate } from "@/features/legal/subscription-agreement-gate";
 import { BillingNoticeBanner } from "@/features/billing/billing-notice";
 import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
+import { AskRivetProvider, useAskRivet } from "@/features/ask-rivet/ask-rivet-context";
+import { AskRivetPanel } from "@/features/ask-rivet/ask-rivet-panel";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const t = useT();
@@ -121,17 +123,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
     <TenantBrandProvider>
+    <AskRivetProvider>
       <div className="min-h-screen bg-paper">
       <Sidebar />
       <MobileNav open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
       {/* The fixed sidebar only exists ≥ lg; below that the drawer overlays
           instead, so the content column keeps the full viewport width. */}
-      <div
-        className={cn(
-          "min-h-screen transition-[margin] duration-200",
-          sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
-        )}
-      >
+      <WorkspaceColumn sidebarCollapsed={sidebarCollapsed}>
         {/* Keep the utility bar outside the damped edge-response layer. Desktop
             content can move a few pixels at a scroll boundary without pulling
             search and branch controls away from the fixed sidebar brand row. */}
@@ -145,11 +143,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </div>
-      </div>
+      </WorkspaceColumn>
+      <AskRivetPanel />
       </div>
       <SubscriptionAgreementGate required={agreementRequired} />
+    </AskRivetProvider>
     </TenantBrandProvider>
     {curtain}
     </>
+  );
+}
+
+/**
+ * The workspace column. On wide screens an open Ask RIVET panel docks beside
+ * it, so the column gives up the panel's width instead of being covered: the
+ * screen the person is asking about stays fully visible.
+ */
+function WorkspaceColumn({ sidebarCollapsed, children }: { sidebarCollapsed: boolean; children: React.ReactNode }) {
+  const askRivet = useAskRivet();
+  const docked = askRivet?.open ? askRivet.width : 0;
+  return (
+    <div
+      style={{ "--ask-rivet-width": `${docked}px` } as React.CSSProperties}
+      className={cn(
+        "min-h-screen transition-[margin] duration-200 min-[1440px]:me-[var(--ask-rivet-width)]",
+        sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
+      )}
+    >
+      {children}
+    </div>
   );
 }

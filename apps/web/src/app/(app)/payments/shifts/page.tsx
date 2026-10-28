@@ -35,6 +35,7 @@ import { AiRunPanel } from "@/features/assist/run-panel";
 import { CheckCashDifferenceButton, useAssistJobAvailable } from "@/features/assist/prepare-jobs";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import type { AiRunView } from "@/lib/ai/contracts";
+import { useShiftsScreen } from "@/features/ask-rivet/screens";
 
 export default function ShiftsPage() {
   return <Suspense><ShiftsWorkspace /></Suspense>;
@@ -54,6 +55,7 @@ function ShiftsWorkspace() {
   const runId = params.get("run");
   const showRun = (run: AiRunView) => { const next = new URLSearchParams(params.toString()); next.set("run", run.id); replaceQueryInPlace(router, `${pathname}?${next}`); };
   const canCheckCash = useAssistJobAvailable("cash_difference", "reconciliation.read");
+  useShiftsScreen();
   const closeRun = () => { const next = new URLSearchParams(params.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname); };
   const canPickBranch = session?.roles[0] === "owner" || session?.roles[0] === "manager";
   // Drawer branch, reconciliation date and history page live in the URL, so

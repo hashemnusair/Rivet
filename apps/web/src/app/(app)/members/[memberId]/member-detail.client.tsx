@@ -35,6 +35,7 @@ import { CreateTaskDialog } from "@/features/members/create-task-dialog";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { useMemberScreen } from "@/features/ask-rivet/screens";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -61,6 +62,7 @@ export default function MemberDetailPageClient() {
     api.listMemberships({ memberId, pageSize: 20, sort: "-startDate" }),
   );
   const usersQuery = useApiQuery(qk.users({ role: "salesperson" }), (api) => api.listUsers({ role: "salesperson", pageSize: 20 }));
+  useMemberScreen(memberQuery.data ? { id: memberQuery.data.id, fullName: memberQuery.data.fullName } : undefined);
 
   // The header's status chips and current term come from the memberships, so
   // wait for both rather than draw the header twice (it grows on a phone).

@@ -115,6 +115,10 @@ export const TENANT_TABLES: ReadonlyArray<{ table: TableNames; index?: string; s
   { table: "aiModelCache", index: "by_organization_key" },
   { table: "aiUsage", index: "by_organization_month" },
   { table: "aiFeedback", index: "by_organization" },
+  { table: "aiChats", index: "by_organization_public_id" },
+  { table: "aiChatMessages", index: "by_organization_public_id" },
+  { table: "aiChatStreams", index: "by_organization_message" },
+  { table: "aiChatFiles", index: "by_organization_public_id", storage: true },
 ];
 
 type AnyDoc = { _id: Id<TableNames>; organizationId?: Id<"organizations">; storageId?: Id<"_storage"> };

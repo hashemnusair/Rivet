@@ -576,6 +576,161 @@ label[for] {
   animation: page-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* ---------------------------------------------------------------------------
+   Ask RIVET — the conversation panel. One motion vocabulary: the mark's
+   plates lift while RIVET works, finished steps fold, words arrive whole.
+   ------------------------------------------------------------------------- */
+.ask-glyph {
+  height: 1rem;
+  width: auto;
+  overflow: visible;
+}
+
+.ask-glyph-working .ask-glyph-lift {
+  animation: ask-rep 1.5s linear infinite;
+}
+
+/* Up quickly, a beat at the top, down under control, a rest on the stack. */
+@keyframes ask-rep {
+  0%, 10% { transform: none; animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1); }
+  38% { transform: translateY(-2.4px); }
+  50% { transform: translateY(-2.4px); animation-timing-function: cubic-bezier(0.55, 0, 0.45, 1); }
+  80% { transform: translateY(0.2px); animation-timing-function: ease-out; }
+  88%, 100% { transform: none; }
+}
+
+.ask-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ask-collapse[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.ask-collapse > div {
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+/* The folded summary and the step list cross-fade as they trade places. */
+.ask-collapse[data-open] > div {
+  opacity: 1;
+  transition-delay: 60ms;
+}
+
+/* Live reasoning shows its latest lines; older lines fade out at the top. */
+.ask-thinking-window {
+  display: flex;
+  max-height: 4.7em;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 1.5em);
+}
+
+.ask-scroll,
+.ask-panel ul {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-2) transparent;
+}
+
+.ask-suggestions {
+  scrollbar-width: none;
+}
+
+.ask-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.ask-markdown {
+  font-size: 14px;
+  line-height: 1.62;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+
+.ask-markdown > .ask-block + .ask-block,
+.ask-markdown .ask-block > * + *,
+.ask-markdown li > * + * {
+  margin-top: 0.7em;
+}
+
+.ask-markdown .ask-list {
+  padding-inline-start: 1.15em;
+}
+
+.ask-markdown .ask-list > li + li {
+  margin-top: 0.32em;
+}
+
+/* List bullets are small plates, the mark's own shape. */
+.ask-markdown ul.ask-list > li {
+  position: relative;
+  list-style: none;
+}
+
+.ask-markdown ul.ask-list > li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.9em;
+  top: 0.7em;
+  width: 5px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--color-ink-4);
+}
+
+.ask-markdown ol.ask-list {
+  list-style: decimal;
+}
+
+.ask-markdown ol.ask-list > li::marker {
+  color: var(--color-ink-3);
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+}
+
+.ask-markdown .ask-heading {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+/* Toasts move clear of an open panel so they never cover the message box or Stop. */
+html[data-ask-rivet="docked"] [data-sonner-toaster][data-x-position="right"],
+html[data-ask-rivet="overlay"] [data-sonner-toaster][data-x-position="right"] {
+  right: calc(var(--ask-rivet-clearance, 0px) + 16px) !important;
+}
+
+html[data-ask-rivet="docked"] [data-sonner-toaster][data-x-position="left"],
+html[data-ask-rivet="overlay"] [data-sonner-toaster][data-x-position="left"] {
+  left: calc(var(--ask-rivet-clearance, 0px) + 16px) !important;
+}
+
+html[data-ask-rivet="full"] [data-sonner-toaster][data-y-position="bottom"] {
+  bottom: calc(env(safe-area-inset-bottom) + 176px) !important;
+}
+
+.ask-answer .ask-actions {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+.ask-answer:hover .ask-actions,
+.ask-answer:focus-within .ask-actions,
+.ask-answer[data-last] .ask-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .ask-answer .ask-actions {
+    opacity: 1;
+  }
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html {

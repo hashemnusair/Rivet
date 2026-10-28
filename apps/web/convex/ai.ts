@@ -68,6 +68,7 @@ import { CLASS_FINDER_DAYS, classOptions, type ClassOptionFacts, type ClassTimeO
 import { addDays } from "../src/lib/utils/dates";
 import { nextStandingSlot as nextSlot } from "../src/lib/ai/schedule";
 import type { MemberFollowUpContext } from "./followupAssist";
+import { chatMutation, chatQuery } from "./aiChatOps";
 
 /**
  * RIVET assistance operations on the existing `domain.query` / `domain.mutate`
@@ -229,6 +230,7 @@ async function memberBriefResult(ctx: QueryCtx, actor: ActorContext, port: AiDom
 }
 
 export async function aiQuery(ctx: QueryCtx, operation: string, input: Data, request: RequestArgs, port: AiDomainPort): Promise<unknown> {
+  if (operation.startsWith("ai.chat.")) return await chatQuery(ctx, operation, input, request);
   if (operation === "ai.platform.status") {
     // Operators only; no tenant actor is involved and no gym data is read.
     await requirePlatformAdmin(ctx, request.correlationId);
@@ -623,6 +625,7 @@ export async function approveProposalForBatch(ctx: MutationCtx, request: Request
 }
 
 export async function aiMutation(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs, port: AiDomainPort): Promise<unknown> {
+  if (operation.startsWith("ai.chat.")) return await chatMutation(ctx, operation, input, request, port);
   if (operation === "ai.platform.stop") {
     const admin = await requirePlatformAdmin(ctx, request.correlationId);
     const stopped = input.stopped === true;

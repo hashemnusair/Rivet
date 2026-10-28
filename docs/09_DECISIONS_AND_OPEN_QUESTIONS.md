@@ -228,6 +228,74 @@ commercial term, a provider approval or a gym's data.
   `communicationCompletion.tasks.*` keys. Only delegated work can store one; tasks
   people create, and older prepared tasks, keep showing their stored title.
 
+### Ask RIVET decisions — 27 October 2026
+
+Hashem asked for a conversation panel with the screen as context by default, records
+and files to attach, and polished streaming. Engineering decisions made while building
+it, for review; none changes a commercial term, a provider approval or a gym's data.
+
+- **Read-only.** Ask RIVET reads, explains, compares and drafts. Its 13 lookups are
+  reads over existing domain read operations (`members.list`, `members.get`,
+  `renewal.queue`, `transactions.list`, `dashboard`, `analytics.*` …) run **as the
+  signed-in person** through `domain.query`, so every permission, branch scope and
+  field rule is the screen's own; a refusal comes back to the model as "no access"
+  and is said plainly. The fourteenth tool, `open_screen`, only builds a link to an
+  allowlisted RIVET route. There is no tool that writes, books, takes money or sends.
+  Writes stay with the existing prepared-work flows and their approvals.
+- **One more capability, same gates.** `chat` joins the capability registry as
+  prepare-only. It needs the deployment mode, no platform stop, the gym made available,
+  gym assistance on and the capability on; in live mode it also needs both the gym's
+  "allow member details" and `RIVET_AI_PROCESSING_APPROVED=member_data`, because the
+  screen, attachments and lookups carry member data. Spend counts against the same
+  monthly cap, and each answer against the per-run cap (`runPublicId` `chat:<message>`).
+- **Private conversations, kept 30 days.** A conversation belongs to the person who
+  started it; another person, including the owner, reads it as not found. Conversations,
+  their messages and files are removed 30 days after the last message (hourly cron) and
+  with the gym's data purge.
+- **Context by default, attachments on request.** Every message carries a
+  `<rivet_context>` block RIVET writes: gym time and timezone, gym, person and what they
+  can read (in words), the screen title and route with its filters, and attached records
+  as compact summaries (ids, names, dates, exact money; no photos or internal ids; lists
+  capped at 25 rows with the total). The screen's record is attached by default and can
+  be removed; screens offer one-tap attachments above the message box; `@` attaches any
+  member or lead the person can read; images and PDFs upload to Convex storage, are
+  resized in the browser to 1,600 px, and are checked by their first bytes before they
+  are sent. Everything in the context block, lookups, notes and files is data, never
+  instructions (stated in the system prompt).
+- **Efficient by construction.** Tools and the system prompt are fixed for every gym and
+  turn, so the prefix caches (an explicit marker on the system block plus automatic
+  caching of the conversation). A record already sent in the last 10 minutes of a
+  conversation is not sent again; the model is told it is above. The three latest answers
+  replay with their lookups and results, older ones as words only, files only for the
+  latest two turns that had them, and the oldest turns are dropped past ~30k tokens with a
+  note. Reasoning blocks are replayed only inside the answer that produced them, never in
+  later turns, which keeps history edits safe from the preserved-thinking check.
+- **Claude settings.** `claude-sonnet-5-5` (the deployment's `RIVET_AI_MODEL`), adaptive
+  thinking with `display: "summarized"` so the panel can show what it is doing, effort
+  `low` by default (`RIVET_AI_CHAT_EFFORT` may raise it to `medium` or `high`), 8,000
+  output tokens per call, at most six calls per answer with the last forced to a written
+  answer (`tool_choice: none`), no SDK retries or logging, a 90 s connection timeout.
+- **Priced at cache rates.** Chat calls are priced with cache writes at 1.25× and reads
+  at 0.1× the input rate (`chatCallCostMicros`), so spend matches the Claude console;
+  the older single-call tasks keep counting cached input at the full rate.
+- **Streaming that survives a reload.** Sending saves the person's message and an empty
+  answer; the panel then calls the `aiChat.respond` action as the same person. The answer
+  streams into `aiChatStreams` (written at most every 60 ms, one write in flight), which
+  the panel watches separately from the conversation, so a long conversation is not
+  re-sent with every word; the finished answer replaces it in one write. Stop is read at
+  every write and at least once a second; an answer the panel never starts is failed after
+  45 s and one that stops reporting after 3 minutes, so a conversation can always continue.
+- **Presentation.** Model output is untrusted: no raw HTML, no images, links only to RIVET
+  records (`rivet://member/<id>`, `rivet://lead/<id>`, rendered as chips), RIVET routes
+  and marked external https pages. Text is revealed whole words at a time (Arabic letters
+  never change shape mid-word); finished markdown blocks never re-render; half-written
+  syntax is closed while it streams. The working state is the RIVET mark lifting its
+  plates, not a spinner. The panel docks beside the page from 1,440 px, overlays it on
+  smaller desktops and tablets, and is full screen on phones.
+- **Preview model.** The local preview and tests use a deterministic, labelled "test
+  answers" model that runs the same tools on seeded data in English and Arabic. It is not
+  an evaluation of Claude.
+
 ### AI decision sheet — proposed, awaiting Hashem/Elias
 
 Each line is a recommendation from the implementation agent, **not an approval**. The

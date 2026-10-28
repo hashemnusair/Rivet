@@ -39,6 +39,7 @@ import { useFormat } from "@/lib/i18n/format";
 import { latinDigits, searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { useQueuesScreen } from "@/features/ask-rivet/screens";
 
 type RenewalBucket = "expiring" | "expired";
 
@@ -69,6 +70,7 @@ function RetentionWorkspace() {
   const t = useT();
   const { params, update } = useRetentionParams();
   const view = params.get("view") === "renewals" ? "renewals" : "at-risk";
+  useQueuesScreen(view, params.get("bucket") === "expired" ? "expired" : "expiring");
   const setView = (next: string) => update({ view: next, page: undefined, member: undefined });
   return <div className="space-y-4">
     <PageHeader title={t("crm.queues.title")} description={t("crmCompletion.queues.description")} />

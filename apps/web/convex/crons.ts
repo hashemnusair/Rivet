@@ -19,5 +19,6 @@ crons.interval("resume delegated work after a stopped worker", { minutes: 1 }, i
 crons.interval("start due standing instructions", { minutes: 5 }, internal.aiRuns.dispatchStanding, {});
 crons.interval("expire prepared reports and handovers", { hours: 1 }, internal.aiRuns.expireArtifacts, {});
 crons.interval("expire kept assistant readings", { minutes: 15 }, internal.aiActions.expireModelAnswers, {});
+crons.interval("remove Ask RIVET conversations past retention", { hours: 1 }, internal.aiChat.expireChats, {});
 
 export default crons;

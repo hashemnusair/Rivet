@@ -29,6 +29,7 @@ import { useFormat } from "@/lib/i18n/format";
 import { isolate } from "@/lib/i18n/bidi";
 import { money } from "@/lib/utils/money";
 import { receiptHref } from "@/lib/utils/receipt-links";
+import { usePaymentsScreen } from "@/features/ask-rivet/screens";
 
 const METHOD_FILTERS: readonly string[] = ["all", ...Object.keys(PAYMENT_METHOD_LABELS)];
 const TYPE_FILTERS = ["all", "payment", "refund"] as const;
@@ -65,6 +66,7 @@ function TransactionsPageInner() {
   );
 
   const { data, isLoading, isError, refetch } = useApiQuery(qk.transactions(query), (api) => api.listTransactions(query));
+  usePaymentsScreen({ from: query.from, method: query.method });
 
   const pageTotal = useMemo(
     () => (data?.items ?? []).filter((p) => p.status !== "voided").reduce((s, p) => s + p.amount.amount, 0),

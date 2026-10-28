@@ -86,6 +86,10 @@ import type {
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
+import { MockChatEngine } from "./chat";
+import { ChatReadError, type ChatReadOperation } from "@/lib/ai/chat/sources";
+import { readableAreas } from "@/lib/ai/chat/prompt";
+import type * as Chat from "@/lib/ai/chat/contracts";
 import { discountNeedsApproval, effectiveRolePermissions, PERMISSION_CATALOG_VERSION, PERMISSIONS, type Permission } from "@/lib/domain/permissions";
 import { BRAND_PALETTE_PRESETS, deriveBrandTokens, isBrandPaletteKey, normalizeBrandHex } from "@/lib/domain/brand";
 import { classUtilizationReport, collectionsReport, controlTrendsReport, crmFunnelReport, peakHoursReport, renewalForecastReport, retentionReport } from "@/lib/analytics/operational-reports";
@@ -852,6 +856,7 @@ export class MockGymOSApi implements GymOSApi {
 
   private previewExports?: MockGymOSApi;
   private ai!: MockAiEngine;
+  private chat!: MockChatEngine;
 
   constructor(db?: MockDb, private readonly previewFixtures = true) {
     this.db = db ?? buildSeed();
@@ -892,6 +897,68 @@ export class MockGymOSApi implements GymOSApi {
     this.gymProfileVersions = [{ id: mockUuid(), organizationId: this.db.organization.id, version: 1, status: "published", profile: { ...this.gymPublicProfile }, publishedAt: this.gymPublicProfile.publishedAt, updatedAt: this.gymPublicProfile.updatedAt }];
     this.seedOperationalNotifications();
     this.ai = this.createAiEngine();
+    this.chat = this.createChatEngine();
+  }
+
+  /**
+   * Ask RIVET reads through the preview's own read methods, so the same
+   * permission checks and branch filters apply as on every screen.
+   */
+  private createChatEngine(): MockChatEngine {
+    const reads: Record<ChatReadOperation, (input: Record<string, unknown>) => Promise<unknown>> = {
+      "members.list": (input) => this.listMembers(input as MemberListQuery),
+      "members.get": (input) => this.getMember(String(input.memberId)),
+      "members.timeline": (input) => this.listMemberTimeline(String(input.memberId), input as TimelineQuery),
+      "leads.list": (input) => this.listLeads(input as LeadListQuery),
+      "leads.get": (input) => this.getLead(String(input.leadId)),
+      "tasks.list": (input) => this.listTasks(input as TaskListQuery),
+      "renewal.queue": (input) => this.listRenewalQueue(input as RenewalQueueQuery),
+      "retention.queue": (input) => this.listAtRiskMembers(input as T.AtRiskMemberQuery),
+      dashboard: (input) => this.getDashboard(input as unknown as DashboardQuery),
+      "transactions.list": (input) => this.listTransactions(input as TransactionListQuery),
+      "shifts.list": (input) => this.listCashShifts(input),
+      "classes.occurrences.list": (input) => this.listClassOccurrences(input as unknown as T.ClassOccurrenceQuery),
+      "analytics.peak_hours": (input) => this.getPeakHoursReport(input as unknown as T.AnalyticsReportInput),
+      "analytics.class_utilization": (input) => this.getClassUtilizationReport(input as unknown as T.AnalyticsReportInput),
+      "analytics.retention": (input) => this.getRetentionReport(input),
+      "analytics.renewal_forecast": (input) => this.getRenewalForecastReport(input),
+      "analytics.collections": (input) => this.getCollectionsReport(input as unknown as T.AnalyticsReportInput),
+      "analytics.crm_funnel": (input) => this.getCrmFunnelReport(input as unknown as T.AnalyticsReportInput),
+      "plans.list": (input) => this.listPlans(input as PlanListQuery),
+    };
+    return new MockChatEngine({
+      reader: {
+        read: async (operation, input) => {
+          try {
+            return await reads[operation](input);
+          } catch (error) {
+            const code = error instanceof ApiError ? error.code : "";
+            throw new ChatReadError(code === ERR.FORBIDDEN || code === ERR.FEATURE_NOT_AVAILABLE ? "forbidden" : code === ERR.NOT_FOUND ? "not_found" : code === ERR.VALIDATION ? "invalid" : "unavailable");
+          }
+        },
+      },
+      env: () => ({
+        today: this.today(),
+        timezone: this.db.organization.timezone || TZ,
+        currency: this.db.organization.currency,
+        ...(this.db.session.activeBranchId ? { activeBranchId: this.db.session.activeBranchId } : {}),
+        branchIds: this.db.branches.filter((branch) => this.branchIsVisible(branch.id)).map((branch) => branch.id),
+      }),
+      frame: () => {
+        const branch = this.db.branches.find((item) => item.id === this.db.session.activeBranchId);
+        return { timezone: this.db.organization.timezone || TZ, gymName: this.db.organization.name, currency: this.db.organization.currency, ...(branch ? { branchName: branch.name } : {}), person: { name: this.actor().name, role: currentRole(this.db), reads: readableAreas(permissionsFor(this.db, currentRole(this.db))) } };
+      },
+      blocked: () => {
+        const settings = this.ai.settings();
+        const chat = settings.capabilities.find((capability) => capability.key === "chat");
+        if (chat?.available) return undefined;
+        if (settings.globalStop) return "global_stop";
+        if (!settings.platformAvailable || settings.tenantMode === "off") return "tenant_off";
+        return "capability_off";
+      },
+      userId: () => this.actor().id,
+      paced: () => this.behavior.latencyMs !== 0,
+    });
   }
 
   private createAiEngine(): MockAiEngine {
@@ -4503,6 +4570,15 @@ export class MockGymOSApi implements GymOSApi {
   // RIVET assistance (explicit preview simulation; see ./ai.ts)
   // ---------------------------------------------------------------------------
 
+  listAiChats(): Promise<Chat.ChatSummaryView[]> { return this.respond(() => this.chat.list()); }
+  getAiChat(chatId: string): Promise<Chat.ChatThreadView> { return this.respond(() => this.chat.get(chatId)); }
+  async subscribeAiChat(chatId: string, onValue: (chat: Chat.ChatThreadView) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.chat.subscribe(chatId, onValue, onError); }
+  async subscribeAiChatStream(messageId: string, onValue: (stream: Chat.ChatStreamView | null) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.chat.subscribeStream(messageId, onValue, onError); }
+  sendAiChatMessage(input: Chat.SendChatInput): Promise<Chat.SendChatResult> { return this.respond(() => this.chat.send(input)); }
+  retryAiChatMessage(messageId: string): Promise<Chat.SendChatResult> { return this.respond(() => this.chat.retry(messageId)); }
+  stopAiChatMessage(messageId: string): Promise<void> { return this.respond(() => this.chat.stop(messageId)); }
+  deleteAiChat(chatId: string): Promise<void> { return this.respond(() => this.chat.delete(chatId)); }
+  uploadAiChatFile(file: Blob, input: { name: string; mediaType: Chat.ChatFileType }): Promise<Chat.ChatFileRegisterResult> { return this.respond(() => this.chat.upload(file, input)); }
   getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
   updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }
   getMemberBrief(memberId: T.UUID): Promise<AI.AiMemberBriefResult> { return this.respond(() => this.ai.memberBrief(memberId)); }
@@ -4580,6 +4656,8 @@ export class MockGymOSApi implements GymOSApi {
     this.operationalNotifications = [];
     this.ai?.dispose();
     this.ai = this.createAiEngine();
+    this.chat?.dispose();
+    this.chat = this.createChatEngine();
     this.seedOperationalNotifications();
     this.trialBookings = INITIAL_TRIAL_BOOKINGS.map((booking) => ({ ...booking }));
     this.membershipSaleIdempotency.clear();

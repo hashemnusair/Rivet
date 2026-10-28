@@ -63,6 +63,7 @@ import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
 import type * as T from "@/lib/domain/types";
 import type * as AI from "@/lib/ai/contracts";
+import type * as Chat from "@/lib/ai/chat/contracts";
 import type { CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import type { CreatePlatformProspectInput, ImportPilotProspectsResult, PlatformProspect, PlatformProspectHistoryEntry, PlatformProspectsView, UpdatePlatformProspectInput } from "@/lib/platform/prospects";
@@ -98,6 +99,7 @@ export interface ConvexTransport {
   action(reference: typeof api.platformProvisioningAction.provision, args: ProvisionGymInput & { correlationId: string }): Promise<unknown>;
   action(reference: typeof api.invitations.send, args: InvitationActionArgs): Promise<unknown>;
   action(reference: typeof api.aiActions.prepare, args: { operation: "extract_note" | "interpret_revision" | "interpret_filters"; input: Record<string, unknown>; organizationId?: string; activeBranchId?: string; correlationId: string }): Promise<unknown>;
+  action(reference: typeof api.aiChat.respond, args: { messageId: string; organizationId?: string; activeBranchId?: string; correlationId: string }): Promise<unknown>;
   action(reference: typeof api.media.finalizeUpload, args: { organizationId: string; activeBranchId?: string; correlationId: string; ownerType: T.MediaAssetOwnerType; ownerPublicId: string; altText?: string; storageId: string }): Promise<unknown>;
 }
 
@@ -348,6 +350,50 @@ export class ConvexGymOSApi implements GymOSApi {
     } catch (error) {
       throw error instanceof ApiError ? error : errorFromConvex(error);
     }
+  }
+
+  listAiChats(): Promise<Chat.ChatSummaryView[]> { return this.query("ai.chat.list"); }
+  getAiChat(chatId: string): Promise<Chat.ChatThreadView> { return this.query("ai.chat.get", { chatId }); }
+  subscribeAiChat(chatId: string, onValue: (chat: Chat.ChatThreadView) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("ai.chat.get", { chatId }, onValue, onError); }
+  subscribeAiChatStream(messageId: string, onValue: (stream: Chat.ChatStreamView | null) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("ai.chat.stream", { messageId }, onValue, onError); }
+
+  /**
+   * The answer runs in an action as the signed-in person, so every record it
+   * reads goes through that person's access. It is started and not awaited:
+   * the panel follows it through the stream subscription, and the server marks
+   * an answer that never starts as failed.
+   */
+  private startAiChatAnswer(messageId: string): void {
+    if (!this.transport) return;
+    void this.transport.action(api.aiChat.respond, { messageId, organizationId: this.organizationId, activeBranchId: this.activeBranchId, correlationId: correlationId() }).catch(() => undefined);
+  }
+
+  async sendAiChatMessage(input: Chat.SendChatInput): Promise<Chat.SendChatResult> {
+    const result = await this.mutate<Chat.SendChatResult>("ai.chat.send", input);
+    this.startAiChatAnswer(result.assistantMessageId);
+    return result;
+  }
+
+  async retryAiChatMessage(messageId: string): Promise<Chat.SendChatResult> {
+    const result = await this.mutate<Chat.SendChatResult>("ai.chat.retry", { messageId });
+    this.startAiChatAnswer(result.assistantMessageId);
+    return result;
+  }
+
+  async stopAiChatMessage(messageId: string): Promise<void> { await this.mutate("ai.chat.stop", { messageId }); }
+  async deleteAiChat(chatId: string): Promise<void> { await this.mutate("ai.chat.delete", { chatId }); }
+
+  async uploadAiChatFile(file: Blob, input: { name: string; mediaType: Chat.ChatFileType }): Promise<Chat.ChatFileRegisterResult> {
+    const url = await this.mutate<string>("ai.chat.file.upload_url", {});
+    let storageId: string;
+    try {
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": input.mediaType }, body: file });
+      if (!response.ok) return { ok: false, reason: "unavailable" };
+      storageId = String(((await response.json()) as { storageId?: unknown }).storageId ?? "");
+    } catch {
+      return { ok: false, reason: "unavailable" };
+    }
+    return await this.mutate<Chat.ChatFileRegisterResult>("ai.chat.file.register", { storageId, name: input.name, mediaType: input.mediaType });
   }
 
   getAiSettings(): Promise<AI.AiSettingsView> { return this.query("ai.settings.get"); }

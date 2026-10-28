@@ -1048,5 +1048,13 @@ export const apiErrors = {
   "classLeaveWaitlist": "You will leave the waitlist. Nothing else changes.",
   "classLateCancellation": "This is inside the gym’s {hours}-hour cutoff, so it is recorded as a late cancellation. No fee or membership penalty applies, and your place is offered to the waitlist.",
   "classPlaceReleased": "Your place is released and offered to the waitlist.",
-  "provisioningRequiresManualCorrectionBeforeItCanBeRetried": "Provisioning requires manual correction before it can be retried."
+  "provisioningRequiresManualCorrectionBeforeItCanBeRetried": "Provisioning requires manual correction before it can be retried.",
+  "chatWriteAMessageFirst": "Write a message first.",
+  "chatShortenTheMessage": "This message is too long. Shorten it and try again.",
+  "chatAnswerInProgress": "Wait for the current answer to finish, or stop it first.",
+  "chatConversationFull": "This conversation is full. Start a new one.",
+  "chatFileType": "Attach a PNG, JPEG, WebP or GIF image, or a PDF.",
+  "chatFileTooLarge": "Images can be up to 5 MB and PDFs up to 10 MB.",
+  "chatTooManyFiles": "Too many files are waiting to be sent. Send or remove some first.",
+  "chatFileUnavailable": "This file is no longer available. Attach it again."
 };

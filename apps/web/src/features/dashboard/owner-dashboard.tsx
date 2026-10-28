@@ -67,8 +67,9 @@ export function OwnerDashboard() {
         description={scopeText}
       />
 
-      {/* KPI strip — one ruled panel, not six cards */}
-      <section aria-label={t("dashboard.owner.keyNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-3 sm:divide-x lg:grid-cols-6">
+      {/* KPI strip — one ruled panel, not six cards. It answers to its own width, so a docked Ask RIVET panel or a small laptop gets three columns instead of six squeezed ones. */}
+      <div className="@container">
+      <section aria-label={t("dashboard.owner.keyNumbers")} className="panel grid grid-cols-2 divide-line @xl:grid-cols-3 @xl:divide-x @5xl:grid-cols-6">
         <KpiCell label={t("dashboard.owner.collectedToday")} loading={isLoading}>
           <MoneyText money={kpis?.revenueToday ?? money(0)} />
         </KpiCell>
@@ -99,6 +100,7 @@ export function OwnerDashboard() {
           {format.number(kpis?.checkInsToday ?? 0)}
         </KpiCell>
       </section>
+      </div>
 
       <NeedsAttention branchId={branchId} />
 

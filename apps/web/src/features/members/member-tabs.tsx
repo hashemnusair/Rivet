@@ -79,9 +79,10 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
 
 function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="px-4 py-3.5">
+    <div className="@container min-w-0 px-4 py-3.5">
       <p className="context-label">{label}</p>
-      <div className="mt-1 text-[20px] font-medium tabular">{value}</div>
+      {/* The value answers to its own cell: a narrow column (a docked Ask RIVET panel, a small laptop) gets a smaller figure instead of one that overlaps the next cell. */}
+      <div className="mt-1 text-[16px] font-medium tabular @[8.5rem]:text-[20px]">{value}</div>
     </div>
   );
 }

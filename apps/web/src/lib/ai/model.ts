@@ -39,6 +39,15 @@ export function callCostMicros(usage: { inputTokens?: number; outputTokens?: num
   return Math.ceil(((usage.inputTokens ?? 0) * price.input + (usage.outputTokens ?? 0) * price.output) / 1_000_000);
 }
 
+/**
+ * Cost of one conversation call, which reuses a cached prompt: cache writes
+ * are billed at 1.25 times the input rate and cache reads at 0.1 times. Rounded
+ * up so spend is never under-counted.
+ */
+export function chatCallCostMicros(usage: { inputTokens: number; cacheWriteTokens: number; cacheReadTokens: number; outputTokens: number }, price: { input: number; output: number }): number {
+  return Math.ceil((usage.inputTokens * price.input + usage.cacheWriteTokens * price.input * 1.25 + usage.cacheReadTokens * price.input * 0.1 + usage.outputTokens * price.output) / 1_000_000);
+}
+
 export interface AiAdapterConfig {
   mode: AiAdapterMode;
   protocol?: AiProtocol;

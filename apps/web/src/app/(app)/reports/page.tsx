@@ -30,6 +30,7 @@ import { ReportScopeBar, parseReportScope, reportScopeFrom, reportScopeHref, typ
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import { AiRunPanel } from "@/features/assist/run-panel";
 import { PrepareReportButton, useAssistJobAvailable } from "@/features/assist/prepare-jobs";
+import { useReportsScreen } from "@/features/ask-rivet/screens";
 
 function paymentMethodLabel(method: string, t: TFunction): string {
   return ["cash", "card", "bank_transfer", "cliq", "other"].includes(method) ? t(`domain.paymentMethod.${method}` as TKey) : method;
@@ -65,6 +66,7 @@ function ReportsPageInner() {
   const scope = useMemo(() => parseReportScope(searchParams, { branches, defaultBranchId, timeZone }), [searchParams, branches, defaultBranchId, timeZone]);
   const from = reportScopeFrom(scope);
   const to = scope.to;
+  useReportsScreen({ from, to });
   const branchInput = scope.branchId === "all" ? undefined : scope.branchId;
   const [transactionPage, setTransactionPage] = useState(1);
   // The URL is the source of truth, but it updates a tick after replace();
@@ -213,14 +215,14 @@ function ReportsPageInner() {
 
         {dashboard && rangeQuery.data ? <>
           {/* Unresolved money and reversals first; healthy totals after. */}
-          <section className="panel grid grid-cols-2 divide-line sm:grid-cols-3 xl:grid-cols-6" aria-label={t("reportsWorkspace.totals")}>
+          <div className="@container"><section className="panel grid grid-cols-2 divide-line @xl:grid-cols-3 @5xl:grid-cols-6" aria-label={t("reportsWorkspace.totals")}>
             <ReportStat label={t("reportsWorkspace.unpaid")} value={<MoneyText money={dashboard.kpis.outstandingTotal} compact />} tone={dashboard.kpis.outstandingTotal.amount > 0 ? "warning" : undefined} context={t("reportsWorkspace.owedAnyDate")} href={ledgerHref({ type: "payment" })} />
             <ReportStat label={t("memberProfile.pt.orderStatus.refunded")} value={<MoneyText money={money(totals.refunded, currency)} compact />} tone={totals.refunded > 0 ? "warning" : undefined} context={t("reportsWorkspace.refundCount", { count: totals.refundCount })} href={ledgerHref({ type: "refund" })} />
             <ReportStat label={t("reportsWorkspace.cancelledPayments")} value={<MoneyText money={money(totals.voided, currency)} compact />} tone={totals.voided > 0 ? "warning" : undefined} context={t("reportsWorkspace.payments", { count: totals.voidCount })} />
             <ReportStat label={t("dashboard.owner.collected")} value={<MoneyText money={money(totals.collected, currency)} compact />} context={t("reportsWorkspace.payments", { count: totals.paymentCount })} />
             <ReportStat label={t("reportsWorkspace.afterRefunds")} value={<MoneyText money={money(totals.collected - totals.refunded, currency)} compact signed={totals.collected - totals.refunded < 0} />} context={t("reportsWorkspace.collectedMinusRefunds")} />
             <ReportStat label={t("common.time.thisMonth")} value={<MoneyText money={dashboard.kpis.revenueThisMonth} compact />} context={t("reportsWorkspace.newMembers", { count: dashboard.kpis.newMembersThisMonth })} />
-          </section>
+          </section></div>
 
           <div className="grid gap-5 xl:grid-cols-2">
             <BreakdownPanel currency={currency} sectionLabel={t("reportsWorkspace.paymentsCollected")} title={t("reportsWorkspace.byMethod")} empty={t("reportsWorkspace.noPayments")} rows={totals.byMethod.map((row) => ({ key: row.key, label: paymentMethodLabel(row.key, t), count: row.count, amount: row.amount, refunds: row.refunds, href: ledgerHref({ method: row.key }) }))} />

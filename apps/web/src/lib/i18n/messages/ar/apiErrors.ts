@@ -1050,5 +1050,13 @@ export const apiErrors: typeof EnApiErrors = {
   "classLeaveWaitlist": "ستُزال من قائمة الانتظار، وتبقى بقية التفاصيل كما هي.",
   "classLateCancellation": "تجاوز الإلغاء المهلة المحدّدة قبل الحصة بـ{hours} ساعة، لذا سيُسجّل إلغاءً متأخرًا. لا تُفرض رسوم أو عقوبة على الاشتراك، ويُعرض مقعدك على قائمة الانتظار.",
   "classPlaceReleased": "سيُتاح مقعدك للموجودين على قائمة الانتظار.",
-  "provisioningRequiresManualCorrectionBeforeItCanBeRetried": "يتطلب إعداد النادي تصحيحًا يدويًا قبل إعادة المحاولة."
+  "provisioningRequiresManualCorrectionBeforeItCanBeRetried": "يتطلب إعداد النادي تصحيحًا يدويًا قبل إعادة المحاولة.",
+  "chatWriteAMessageFirst": "اكتب رسالة أولًا.",
+  "chatShortenTheMessage": "هذه الرسالة طويلة. اختصرها وأعد المحاولة.",
+  "chatAnswerInProgress": "انتظر حتى تكتمل الإجابة الحالية أو أوقفها أولًا.",
+  "chatConversationFull": "امتلأت هذه المحادثة. ابدأ محادثة جديدة.",
+  "chatFileType": "أرفق صورة بصيغة PNG أو JPEG أو WebP أو GIF، أو ملف PDF.",
+  "chatFileTooLarge": "يمكن أن يصل حجم الصورة إلى 5 ميغابايت وحجم ملف PDF إلى 10 ميغابايت.",
+  "chatTooManyFiles": "توجد ملفات كثيرة بانتظار الإرسال. أرسل بعضها أو احذفه أولًا.",
+  "chatFileUnavailable": "لم يعد هذا الملف متاحًا. أرفقه مرة أخرى."
 };
