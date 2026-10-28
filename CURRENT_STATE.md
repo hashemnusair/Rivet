@@ -1,5 +1,23 @@
 # GymOS / RIVET current implementation state
 
+## Vercel automatic deployments restored — 29 October 2026
+
+Hashem explicitly requested restoring Vercel autodeploy. This supersedes the
+24 October source-only deployment hold and its instructions to retain that hold.
+`rivet-web` remains connected to `hashemnusair/Rivet`, root `apps/web`, production
+branch `main`. `apps/web/vercel.json` now sets `git.deploymentEnabled: true` and the
+project Ignored Build Step is restored to its previous unset value (verified by
+readback). Automatic production-domain assignment and GitHub deployment creation
+are enabled. Pushes to `main` deploy Production; other branches can create Previews.
+Convex releases remain separate and use the guarded deployment procedure.
+
+This is a deployment-policy/configuration change, based on `c653b53b`; no runtime
+code or provider credentials change. The matching Wazen backend release is already
+recorded below. Verification: JSON policy assertions, `git diff --check`, provider
+setting readback, and the Git-triggered deployment after publication. The resulting
+deployment receipt is recorded in the chat; application tests are not applicable
+to these configuration and handoff changes. Read this entry and docs/12 first.
+
 ## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; on `main` as `0f938e4a`; backend released, frontend pending)
 
 Elias asked to rename Ask RIVET to **Wazen** (وزن), to stop it squeezing the page, to

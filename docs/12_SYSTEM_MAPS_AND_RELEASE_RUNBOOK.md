@@ -1,6 +1,29 @@
 # 12 — System Maps and Release Runbook
 
-## Git deployment hold — 24 October 2026
+## Git automatic deployments restored — 29 October 2026
+
+Hashem explicitly requested restoring automatic deployments. This supersedes the
+24 October hold below and all historical instructions to keep that hold in place.
+The verified target is `rivet-web` (`prj_dVyAughprKk3YwuHc1UrXp1Rcaah`) in team
+`team_hlhaLaU5AqDpSTDOCI4Oy7Qq`, GitHub `hashemnusair/Rivet`, root `apps/web`,
+production branch `main`.
+
+- `apps/web/vercel.json` sets `git.deploymentEnabled: true`.
+- Project Ignored Build Step is unset (`commandForIgnoringBuildStep: null`),
+  restored from `exit 0` and verified by provider readback.
+- GitHub deployment creation and automatic production-domain assignment are
+  enabled. Pushes to `main` deploy Production; other branches can create Previews.
+- Convex remains a separate release through `pnpm convex:deploy`; release a
+  required backend change before merging its dependent frontend into `main`.
+
+Do not restore the old global deployment hold as part of routine implementation.
+For future source-only work, agree on its branch/deployment policy explicitly.
+Preview isolation and all existing secret-safe release rules still apply.
+The Wazen backend is already released at `0f938e4a`; this configuration change
+restores the Git-triggered frontend path. Deployment outcome belongs in the chat
+receipt; historical acceptance evidence below retains its original scope.
+
+## Historical Git deployment hold — 24 October 2026 (superseded 29 October)
 
 Hashem authorized a source merge and later AI branch publication, with **no
 deployment**. `rivet-web` remains linked to GitHub `hashemnusair/Rivet`, root

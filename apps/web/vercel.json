@@ -4,7 +4,7 @@
   "buildCommand": "pnpm build",
   "regions": ["dub1"],
   "git": {
-    "deploymentEnabled": false
+    "deploymentEnabled": true
   },
   "github": {
     "silent": true
