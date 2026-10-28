@@ -23,10 +23,11 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, Dia
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
 function makeSchema(t: TFunction, currency: string) {
   return z.object({
-    fullName: z.string().min(3, t("crmCompletion.validation.fullName")),
+    fullName: z.string().trim().min(3, t("crmCompletion.validation.fullName")).max(TEXT_LIMITS.personName),
     phone: z.string().refine((value) => isValidLeadPhone(value), t("crmCompletion.validation.validPhone")),
     email: z.string().refine((value) => isValidOptionalEmail(value), t("crmCompletion.validation.validEmail")).optional(),
     branchId: z.string().min(1, t("crmCompletion.validation.branch")),
@@ -142,7 +143,7 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           <DialogBody className="space-y-4">
             <FieldGrid className="sm:grid-cols-2">
               <Field label={t("crm.newLead.fullName")} required error={form.formState.errors.fullName?.message}>
-                <Input autoFocus dir="auto" {...form.register("fullName")} />
+                <Input autoFocus dir="auto" maxLength={TEXT_LIMITS.personName} {...form.register("fullName")} />
               </Field>
               <Field label={t("crm.newLead.phone")} required error={form.formState.errors.phone?.message}>
                 <Input type="tel" autoComplete="tel" dir="ltr" placeholder="+962 7…" {...form.register("phone")} />

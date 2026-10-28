@@ -31,6 +31,7 @@ import { useFormat } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { Button } from "@/components/ui/button";
+import { INPUT_MAX_LENGTH } from "@/components/ui/input";
 import { Kbd, Monogram } from "@/components/ui/misc";
 import { ForbiddenState, StatePanel } from "@/components/ui/states";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
@@ -296,6 +297,7 @@ export default function ReceptionPage() {
                 setQuery(e.target.value);
               }}
               dir="auto"
+              maxLength={INPUT_MAX_LENGTH}
               placeholder={t("deskCompletion.reception.lookup.placeholder")}
               aria-label={t("deskCompletion.reception.lookup.label")}
               autoComplete="off"
@@ -567,9 +569,11 @@ function ReceptionBranchState({
                 loading={selectingBranchId === candidate.id}
                 disabled={selectingBranchId !== null}
                 onClick={() => onSelect(candidate.id)}
+                className="max-w-full"
+                title={candidate.name}
               >
                 <Building2 aria-hidden />
-                <bdi>{candidate.name}</bdi>
+                <bdi className="min-w-0 max-w-60 truncate">{candidate.name}</bdi>
               </Button>
             ))}
             {error ? <p className="basis-full pt-1 text-[12px] text-danger" role="alert">{error}</p> : null}

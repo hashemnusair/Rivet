@@ -43,7 +43,7 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
   );
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
       <section className="panel grid grid-cols-2 self-start [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line">
         <StatCell label={t("memberProfile.overview.checkIns30")} value={member.stats.checkInsLast30Days} />
         <StatCell label={t("memberProfile.overview.checkInsAll")} value={member.stats.totalCheckIns} />

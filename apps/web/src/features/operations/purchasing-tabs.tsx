@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { DeleteDialog, FormPanel, LoadingGrid, ReadOnlyNotice, SectionHeader, StatusBadge, minorValue, useOperationsNumberProblems, newKey, type OperationsMutations } from "./operations-shared";
@@ -29,7 +30,7 @@ export function SupplierForm({ defaultBranchId, branches, supplier, pending, onC
   return (
     <FormPanel title={editing ? t("stockWorkspace.editSupplier") : t("stockWorkspace.addSupplier")} description={t("stockWorkspace.supplierHint")} onCancel={onCancel}>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); onSubmit({ id: supplier?.id, name: form.name, contactName: form.contactName || undefined, email: form.email || undefined, phone: latinDigits(form.phone) || undefined, terms: form.terms || undefined, branchIds: form.branchIds }); }}>
-        <Field label={t("stockWorkspace.supplierName")} required><Input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required placeholder={t("stockWorkspace.supplierExample")} /></Field>
+        <Field label={t("stockWorkspace.supplierName")} required><Input value={form.name} maxLength={TEXT_LIMITS.supplierName} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required placeholder={t("stockWorkspace.supplierExample")} /></Field>
         <Field label={t("stockWorkspace.contactName")}><Input value={form.contactName} onChange={(event) => setForm((current) => ({ ...current, contactName: event.target.value }))} placeholder={t("stockWorkspace.contactExample")} /></Field>
         <Field label={t("common.label.email")}><Input type="email" dir="ltr" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="orders@example.com" /></Field>
         <Field label={t("common.label.phone")}><Input type="tel" dir="ltr" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: latinDigits(event.target.value) }))} placeholder="+962 …" /></Field>

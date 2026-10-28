@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
@@ -443,7 +444,7 @@ function ClassesWorkspace() {
             {editor ? (
               <DialogBody className="grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="grid gap-1.5 text-[12px] font-medium">{t("classWorkspace.className")}<Input value={editor.name} maxLength={80} autoFocus onChange={(event) => setEditor({ ...editor, name: event.target.value })} placeholder={t("classWorkspace.classExample")} /></label>
+                  <label className="grid gap-1.5 text-[12px] font-medium">{t("classWorkspace.className")}<Input value={editor.name} maxLength={TEXT_LIMITS.className} autoFocus onChange={(event) => setEditor({ ...editor, name: event.target.value })} placeholder={t("classWorkspace.classExample")} /></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">{t("classWorkspace.coach")}<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.coachId} disabled={coachesQuery.isError} onChange={(event) => setEditor({ ...editor, coachId: event.target.value })}><option value="">{coachesQuery.isError ? t("classWorkspace.coachesNotLoaded") : t("classWorkspace.noCoach")}</option>{coaches.map((coach) => <option key={coach.id} value={coach.id}>{coach.name}</option>)}</select>{coachesQuery.isError ? <span className="text-[12px] font-normal text-danger">{t("classWorkspace.coachLoadHint")}</span> : null}</label>
                   <label className="grid gap-1.5 text-[12px] font-medium">{t("classWorkspace.day")}<select className="h-10 rounded-md border border-line-2 bg-surface px-3 text-[13px]" value={editor.dayOfWeek} onChange={(event) => setEditor({ ...editor, dayOfWeek: Number(event.target.value) })}>{DAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></label>
                   <label className="grid gap-1.5 text-[12px] font-medium">{t("renewFlow.adjust.planChange.starts")}<Input type="time" lang={locale} dir="ltr" value={minuteLabel(editor.startMinute)} onChange={(event) => { const [hour, minute] = event.target.value.split(":").map(Number); if (Number.isFinite(hour) && Number.isFinite(minute)) setEditor({ ...editor, startMinute: hour! * 60 + minute! }); }} /></label>
@@ -457,7 +458,7 @@ function ClassesWorkspace() {
                   </label>
                 </div>
                 {editor.startMinute + editor.durationMinutes > 1440 ? <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-[12px] text-warning-deep">{t("classWorkspace.overnightHint")}</p> : null}
-                <label className="grid gap-1.5 text-[12px] font-medium">{t("common.label.notes")}<Textarea value={editor.notes} maxLength={500} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder={t("classWorkspace.notesExample")} /></label>
+                <label className="grid gap-1.5 text-[12px] font-medium">{t("common.label.notes")}<Textarea value={editor.notes} maxLength={TEXT_LIMITS.classNotes} onChange={(event) => setEditor({ ...editor, notes: event.target.value })} placeholder={t("classWorkspace.notesExample")} /></label>
               </DialogBody>
             ) : null}
             <DialogFooter>
@@ -668,7 +669,7 @@ function CoachForm({ onSubmit, pending }: { onSubmit: (input: { name: string; ph
     <div className="grid gap-2 rounded-md border border-dashed border-line-2 p-3">
       <p className="text-[12px] font-medium">{t("classWorkspace.addCoachTitle")}</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("common.label.name")} aria-label={t("classWorkspace.coachName")} />
+        <Input value={name} maxLength={TEXT_LIMITS.coachName} onChange={(event) => setName(event.target.value)} placeholder={t("common.label.name")} aria-label={t("classWorkspace.coachName")} />
         <Input dir="ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(latinDigits(event.target.value))} placeholder={t("classWorkspace.phoneOptional")} aria-label={t("classWorkspace.coachPhone")} />
         <Input value={specialty} onChange={(event) => setSpecialty(event.target.value)} placeholder={t("classWorkspace.specialtyOptional")} aria-label={t("classWorkspace.coachSpecialty")} />
       </div>

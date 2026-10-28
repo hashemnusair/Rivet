@@ -222,7 +222,7 @@ export default function GymAdminDetail({ gymId }: { gymId: string }) {
                     <li key={branch.id} className="flex items-start justify-between gap-3 px-4 py-3.5 sm:px-5">
                       <div className="min-w-0">
                         <p className="text-[13.5px] font-semibold"><bdi>{branch.name}</bdi></p>
-                        <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-3"><MapPin className="size-3.5 shrink-0" aria-hidden /><bdi>{branch.address || t("platformFinance.detail.addressUnavailable")}</bdi></p>
+                        <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-3"><MapPin className="size-3.5 shrink-0" aria-hidden /><bdi className="min-w-0 [overflow-wrap:anywhere]">{branch.address || t("platformFinance.detail.addressUnavailable")}</bdi></p>
                         <p className="mt-0.5 text-[12.5px] text-ink-3">{t("platformFinance.detail.code")} <span className="font-mono text-[12px]" dir="ltr">{branch.code}</span></p>
                       </div>
                       <DirectoryStatus status={branch.status} />

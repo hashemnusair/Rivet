@@ -31,6 +31,7 @@ import {
   type ReviewVote,
 } from "../../../convex/arabicReviewModel";
 import { Button } from "@/components/ui/button";
+import { INPUT_MAX_LENGTH } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 
 type SaveInput = {
@@ -456,6 +457,7 @@ export function ReviewRoomView({
           <input
             className={`${fieldClass} mt-1`}
             value={search}
+            maxLength={INPUT_MAX_LENGTH}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Membership, refund, offline…"
           />

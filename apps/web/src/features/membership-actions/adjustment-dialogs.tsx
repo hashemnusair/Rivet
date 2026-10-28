@@ -29,7 +29,7 @@ import { emphasize, useReadableDate } from "./renew-flow-format";
 
 const makeTransferSchema = (t: TFunction) => z.object({
   branchId: z.string().min(1, t("renewFlow.adjust.transfer.chooseNewBranch")),
-  reason: z.string().min(3, t("renewFlow.adjust.transfer.reasonRequired")),
+  reason: z.string().trim().min(3, t("renewFlow.adjust.transfer.reasonRequired")),
 });
 type TransferValues = z.infer<ReturnType<typeof makeTransferSchema>>;
 
@@ -103,7 +103,7 @@ export function TransferMembershipDialog({
 const makeFreezeSchema = (t: TFunction) => z.object({
   startDate: z.string().min(1, t("renewFlow.adjust.freeze.chooseDate")),
   endDate: z.string().min(1, t("renewFlow.adjust.freeze.chooseDate")),
-  reason: z.string().min(3, t("renewFlow.adjust.freeze.reasonRequired")),
+  reason: z.string().trim().min(3, t("renewFlow.adjust.freeze.reasonRequired")),
 });
 type FreezeValues = z.infer<ReturnType<typeof makeFreezeSchema>>;
 
@@ -223,7 +223,7 @@ export function FreezeDialog({
 
 const makeExtendSchema = (t: TFunction) => z.object({
   days: z.coerce.number<number>().int().min(1, t("renewFlow.adjust.extend.atLeast")).max(365, t("renewFlow.adjust.extend.atMost")),
-  reason: z.string().min(3, t("renewFlow.adjust.extend.reasonRequired")),
+  reason: z.string().trim().min(3, t("renewFlow.adjust.extend.reasonRequired")),
 });
 type ExtendValues = z.infer<ReturnType<typeof makeExtendSchema>>;
 
@@ -301,7 +301,7 @@ export function ExtendDialog({
   );
 }
 
-const makeReasonSchema = (message: string) => z.object({ reason: z.string().min(3, message) });
+const makeReasonSchema = (message: string) => z.object({ reason: z.string().trim().min(3, message) });
 type ReasonValues = z.infer<ReturnType<typeof makeReasonSchema>>;
 
 export function CancelMembershipDialog({
@@ -437,7 +437,7 @@ export function UnfreezeDialog({
 const makePlanChangeSchema = (t: TFunction) => z.object({
   planId: z.string().min(1, t("renewFlow.sale.errors.choosePlan")),
   effectiveDate: z.enum(["next_renewal", "immediate"]),
-  reason: z.string().min(3, t("renewFlow.adjust.planChange.reasonRequired")),
+  reason: z.string().trim().min(3, t("renewFlow.adjust.planChange.reasonRequired")),
 });
 type PlanChangeValues = z.infer<ReturnType<typeof makePlanChangeSchema>>;
 

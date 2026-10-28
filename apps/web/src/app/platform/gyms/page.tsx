@@ -160,7 +160,7 @@ function GymCard({ gym }: { gym: MarketplaceGym }) {
         <SubscriptionStatusBadge status={gym.subscriptionStatus} aria-label={t("platformFinance.gyms.status", { status: isolate(subscriptionStatusLabel(gym.subscriptionStatus)) })} />
       </div>
       <h2 id={titleId} className="mt-4 truncate text-[15px] font-semibold">{gym.name}</h2>
-      <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-3"><MapPin className="size-3.5 shrink-0" aria-hidden />{gym.areas.length > 0 ? gym.areas.join(" · ") : t("platformFinance.gyms.areaNotConfigured")}</p>
+      <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-ink-3"><MapPin className="size-3.5 shrink-0" aria-hidden /><span className="min-w-0 [overflow-wrap:anywhere]">{gym.areas.length > 0 ? gym.areas.join(" · ") : t("platformFinance.gyms.areaNotConfigured")}</span></p>
       <dl className="mt-4 grid grid-cols-3 gap-px border-y border-line bg-line py-px">
         <Metric icon={<Building2 />} value={f.number(gym.branchCount)} label={t("platformFinance.gyms.branches", { count: gym.branchCount })} />
         <Metric icon={<Users />} value={f.number(gym.memberCount)} label={t("platformFinance.gyms.members", { count: gym.memberCount })} />

@@ -139,6 +139,7 @@ import {
 import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
+import { PLAN_COUNT_LIMITS, TEXT_LIMITS } from "@/lib/domain/input-limits";
 import {
   currentRole,
   currentUser,
@@ -6337,6 +6338,7 @@ export class MockGymOSApi implements GymOSApi {
           },
         });
       }
+      if (input.fullName.trim().length > TEXT_LIMITS.personName) throw ApiError.of(ERR.VALIDATION, "Full name must be between 3 and 120 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
       const branch = this.db.branches.find((b) => b.id === input.homeBranchId);
       if (!branch || branch.status !== "active" || !this.branchIsVisible(branch.id)) throw ApiError.of(ERR.NOT_FOUND, "Branch not found.");
       let referredByName: string | undefined;
@@ -6451,10 +6453,12 @@ export class MockGymOSApi implements GymOSApi {
       this.require("members.write");
       const m = this.db.members.find((x) => x.id === memberId);
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      if (input.fullName !== undefined && (!input.fullName.trim() || input.fullName.trim().length > TEXT_LIMITS.personName)) throw ApiError.of(ERR.VALIDATION, "Full name must be between 3 and 120 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
       const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;
       const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
       Object.assign(m, {
         ...input,
+        ...(input.fullName === undefined ? {} : { fullName: input.fullName.trim() }),
         phone: input.phone === undefined ? m.phone : normalizePhoneForStorage(input.phone, this.db.organization.phoneCountryCallingCode),
         email: input.email === undefined ? m.email : normalizeOptionalEmail(input.email),
       });
@@ -6653,9 +6657,20 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  /** Same plan bounds as Convex `plans.create` / `plans.update`. */
+  private assertPlanInput(input: T.UpdatePlanInput): void {
+    if (input.name !== undefined && (!input.name.trim() || input.name.trim().length > TEXT_LIMITS.planName)) throw ApiError.of(ERR.VALIDATION, input.name.trim() ? "Plan name is invalid." : "Plan name and code are required.");
+    for (const field of Object.keys(PLAN_COUNT_LIMITS) as (keyof typeof PLAN_COUNT_LIMITS)[]) {
+      const value = input[field];
+      const { min, max } = PLAN_COUNT_LIMITS[field];
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < min || value > max)) throw ApiError.of(ERR.VALIDATION, `${field} must be a whole number between ${min} and ${max}.`);
+    }
+  }
+
   createPlan(input: T.CreatePlanInput): Promise<T.MembershipPlan> {
     return this.respond(() => {
       this.require("settings.manage");
+      this.assertPlanInput(input);
       const plan: T.MembershipPlan = {
         id: mockUuid(),
         organizationId: this.db.organization.id,
@@ -6682,6 +6697,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("settings.manage");
       const plan = this.db.plans.find((p) => p.id === planId);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      this.assertPlanInput(input);
       const before = { basePrice: plan.basePrice.amount, status: plan.status };
       Object.assign(plan, input);
       this.audit({

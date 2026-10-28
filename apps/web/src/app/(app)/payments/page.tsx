@@ -230,7 +230,7 @@ function TransactionCompactRow({ transaction }: { transaction: TransactionSummar
     <li className="space-y-3 px-4 py-3.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {memberId ? <Link href={`/members/${memberId}`} className="truncate text-[13.5px] font-semibold text-ink hover:underline">{transaction.memberName}</Link> : <p className="truncate text-[13.5px] font-semibold text-ink">{transaction.memberName}</p>}
+          {memberId ? <Link href={`/members/${memberId}`} className="block truncate text-[13.5px] font-semibold text-ink hover:underline">{transaction.memberName}</Link> : <p className="truncate text-[13.5px] font-semibold text-ink">{transaction.memberName}</p>}
           <p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={transaction.occurredAt} /> · {transaction.branchName.split("— ")[1] ?? transaction.branchName}</p>
         </div>
         <MoneyText money={transaction.amount} className="shrink-0 text-[13.5px] font-semibold" />
@@ -239,7 +239,7 @@ function TransactionCompactRow({ transaction }: { transaction: TransactionSummar
         <TransactionStatusChip status={transaction.status} />
         <span>{transactionTypeLabel(t, transaction.type)}</span>
         <span>{paymentMethodLabel(t, transaction.method)}</span>
-        <span>{t("salesWorkspace.by")}{" "}{transaction.collectedByName}</span>
+        <span className="min-w-0 [overflow-wrap:anywhere]">{t("salesWorkspace.by")}{" "}{transaction.collectedByName}</span>
         <Link href={receiptHref(transaction.receiptId)} className="ms-auto font-mono text-[12px] font-medium underline decoration-line-3 underline-offset-2 hover:text-ink" data-testid="receipt-link">{transaction.receiptNumber}</Link>
       </div>
     </li>

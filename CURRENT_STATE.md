@@ -52,6 +52,36 @@ environment variable was changed and no gym was made available by this work.
 - **Not done:** merge review, release, live Claude acceptance on Test Gym (docs/12), and a
   live answer evaluation set (docs/13 AI-6.6).
 
+## Text field stress pass — 27 October 2026 (branch `claude/sharp-edison-blgnof`, not yet released)
+
+Every text field in the staff dashboard, platform console, member portal and
+signed-out pages was swept with hostile input (very long tokens and prose,
+emoji, mixed Arabic, HTML/script, whitespace, extreme numbers), and every page
+that shows typed text was scanned with very long saved values at 1440 and
+390 px. Full method, findings and remaining work:
+`docs/24_TEXT_FIELD_STRESS_AUDIT.md`.
+
+- No payload caused a crash, console error or script execution.
+- Fixed in this change: shared default `maxLength` ceilings on `Input` and
+  `Textarea` (explicit limits win); API limits mirrored from
+  `src/lib/domain/input-limits.ts`; a global `overflow-wrap: break-word`
+  (money figures exempt); targeted wrapping on the member and lead headers,
+  breadcrumbs, duplicates, follow-ups, reception branch chips, dashboard branch
+  bars, inventory, payments, members table and platform gym pages; supplier-bill
+  and palette searches can no longer exceed the 120-character API limit;
+  whitespace-only names, titles and adjustment reasons are refused before Save;
+  plan form counts are digits-only and a cleared optional validity no longer
+  blocks saving; the member freeze request no longer reads `1.5` as 15;
+  equipment numbers of only spaces are no longer sent as 0.
+- API: `plans.create`/`plans.update` now validate duration (1–3,650), visits
+  (1–1,000), validity (1–3,650) and freeze days (0–180) and bound the plan name
+  to 80; `members.create`/`members.update` trim the name, refuse a blank one on
+  update and bound it to 120 like leads and imports. The mock adapter mirrors
+  both. No new interface copy; existing localized messages are reused.
+- Remaining (see doc §4): server-side length limits for most free text;
+  `members.update`/`plans.update` accept any field (`{ ...input }`) and need an
+  allowlist; discount above price silently totals 0; minor numeric filters.
+
 ## AI-native implementation — released to production 26 October 2026 (assistance available to no gym yet)
 
 **Release in progress (26 October 2026, Amman time).** Hashem approved merging PR #30

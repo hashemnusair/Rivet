@@ -171,12 +171,12 @@ export default function LeadDetailPageClient() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-[26px] font-semibold leading-tight break-words tracking-tight" dir="auto">{lead.fullName}</h1>
+              <h1 className="min-w-0 font-display text-[26px] font-semibold leading-tight tracking-tight [overflow-wrap:anywhere]" dir="auto">{lead.fullName}</h1>
               <LeadStageChip stage={lead.stage} />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2">
               <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-[13px] hover:text-ink" dir="ltr"><Phone className="size-3.5 text-ink-3" /> {lead.phone}</a>
-              <span dir="auto">{lead.branchName}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]" dir="auto">{lead.branchName}</span>
               <span>{leadSourceLabel(t, lead.source)}</span>
             </div>
           </div>

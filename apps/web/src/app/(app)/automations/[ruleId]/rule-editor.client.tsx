@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ErrorState, ForbiddenState, NotFoundState } from "@/components/ui/states";
@@ -173,7 +174,7 @@ export default function RuleEditorPageClient() {
           {!canManage ? <p role="status" className="mb-4 text-[12px] text-warning-deep">{t("staffTools.automations.editor.permission")}</p> : null}
           <div className="space-y-4">
             <Field label={t("common.label.name")}>
-              <Input value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} disabled={!canManage} />
+              <Input value={name} maxLength={TEXT_LIMITS.automationRuleName} onChange={(e) => { setName(e.target.value); setDirty(true); }} disabled={!canManage} />
             </Field>
 
             <Field label={paramLabel} hint={rule.trigger === "membership_expired" ? t("staffTools.automations.editor.zeroForToday") : undefined}>
