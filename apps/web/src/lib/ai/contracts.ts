@@ -22,6 +22,7 @@ export type AiTenantMode = "off" | "prepare" | "execute";
 export const AI_TENANT_MODES: readonly AiTenantMode[] = ["off", "prepare", "execute"];
 
 export type AiCapabilityKey =
+  | "chat"
   | "member_context"
   | "note_extraction"
   | "followup_batch"
@@ -558,6 +559,9 @@ export const AI_QUERY_OPERATIONS = [
   "ai.platform.availability",
   "ai.outcomes.summary",
   "ai.member.headlines",
+  "ai.chat.list",
+  "ai.chat.get",
+  "ai.chat.stream",
 ] as const;
 
 export const AI_MUTATION_OPERATIONS = [
@@ -580,6 +584,12 @@ export const AI_MUTATION_OPERATIONS = [
   "ai.task.mark_unnecessary",
   "ai.platform.stop",
   "ai.platform.availability.set",
+  "ai.chat.send",
+  "ai.chat.stop",
+  "ai.chat.retry",
+  "ai.chat.delete",
+  "ai.chat.file.upload_url",
+  "ai.chat.file.register",
 ] as const;
 
 export type AiQueryOperation = (typeof AI_QUERY_OPERATIONS)[number];

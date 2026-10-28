@@ -51,6 +51,7 @@ import { palette } from "./palette";
 import { renewFlow } from "./renewFlow";
 import { shell } from "./shell";
 import { aiWork } from "./aiWork";
+import { askRivet } from "./askRivet";
 
 /**
  * English is the source of truth: `Messages` is derived from it, so the Arabic
@@ -114,6 +115,7 @@ export const en = {
   renewFlow,
   shell,
   aiWork,
+  askRivet,
 };
 
 export type Messages = typeof en;

@@ -1,5 +1,57 @@
 # GymOS / RIVET current implementation state
 
+## Ask RIVET — conversation panel (27–28 October 2026, branch `codex/rivet-chat`, not merged or released)
+
+Hashem asked for a best-in-class chat inside RIVET with the screen as context by
+default, records and files to attach, and smooth streaming. Built on branch
+`codex/rivet-chat` in the `gym-os-ai-native` worktree from `main` `44c473c0`. Decisions:
+docs/09 "Ask RIVET decisions". Status: docs/13 AI-6. Release and acceptance: docs/12
+"Ask RIVET release and acceptance". Nothing was merged, deployed or enabled; no Convex
+environment variable was changed and no gym was made available by this work.
+
+- **What it is.** "Ask RIVET" in the top bar (⌘J) opens a panel that docks beside the
+  page from 1,440 px, overlays it on smaller screens and is full screen on phones. It
+  knows the screen (route, filters, the record in focus), offers one-tap attachments from
+  the screen above the message box, attaches members and leads with `@`, and takes images
+  and PDFs (resized in the browser, checked by their bytes on the server). Claude Sonnet
+  5.5 answers with adaptive thinking shown as a live work log, read-only lookups over the
+  existing domain reads run as the person asking, record links rendered as chips, links
+  to RIVET screens, drafts with a copy button, stop, retry, conversation history and
+  English/Arabic copy.
+- **Server.** `convex/aiChat.ts` (prepare, claim, stream, finish, watchdogs, retention,
+  the `respond` action), `convex/aiChatOps.ts` (operations on the domain transport and
+  shared gates), `convex/aiChatModel.ts` (the streamed Messages API call). New tables
+  `aiChats`, `aiChatMessages`, `aiChatStreams`, `aiChatFiles` (in the purge inventory),
+  capability `chat` (prepare-only), cron "remove Ask RIVET conversations past retention".
+- **Shared core.** `src/lib/ai/chat/` (contracts, sources, tools, compact summaries,
+  prompt and context frame, history windowing, the answer loop, streaming helpers and the
+  preview model). The preview adapter runs the same loop (`src/lib/mock/chat.ts`).
+- **Panel.** `src/features/ask-rivet/`; screens register context through
+  `features/ask-rivet/screens.ts` (member, members, dashboard, leads, lead, follow-ups,
+  payments, cash drawer, classes, reports, plans).
+- **Layout fixes found while docking.** The top bar now sizes its name and labels to its
+  own width; the owner/manager dashboard and report total strips and the member profile
+  figures size to their container, which also fixes their overlap at 1,024–1,280 px
+  screens without the panel. Toasts move clear of an open panel.
+- **Dependencies.** `react-markdown` 10.1.0 and `remark-gfm` 4.0.1 (lockfile updated).
+- **Verification (local, preview and test backends only; 28 October 2026):** full Vitest
+  suite 2,680 passed (chat core 26, Convex `ai.chat.test.ts` 16 including a stubbed
+  Claude stream priced at cache rates and every gate, panel component tests 6); the whole
+  credential-free Playwright suite against a production mock-preview build exactly as CI
+  builds it, 261 passed and 14 credential-gated skipped, including `e2e/ask-rivet.spec.ts`
+  (6 journeys: hidden until enabled, docked answer with linked records, stop, `@` and
+  suggestions, search, Arabic on a phone) and every existing assistance journey;
+  `pnpm typecheck`, `pnpm convex:typecheck`, `pnpm lint` (secret-output audit passed),
+  plain `pnpm build`, `pnpm audit --prod` (no known vulnerabilities),
+  `python3 docs/arabic/verify-lock.py`, `git diff --check`, and credential-free codegen
+  against the worktree-local anonymous backend (only the three new modules added to
+  `_generated/api.d.ts`). Browser review at 1,440 / 1,024 / 390 px in English and Arabic.
+- **Guard findings fixed:** the public `respond` action now checks for a signed-in caller
+  before anything else (the security-surface guard); `GIF` added to the Arabic
+  technical-token allowlist beside `PNG`/`JPEG`/`WebP`.
+- **Not done:** merge review, release, live Claude acceptance on Test Gym (docs/12), and a
+  live answer evaluation set (docs/13 AI-6.6).
+
 ## AI-native implementation — released to production 26 October 2026 (assistance available to no gym yet)
 
 **Release in progress (26 October 2026, Amman time).** Hashem approved merging PR #30

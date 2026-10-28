@@ -86,6 +86,7 @@ during "AI release to production" below, after the backend release.
 | `RIVET_AI_PROCESSING_APPROVED` | — | Unset (synthetic data only) until processing terms are approved; then `member_data` | Unset until the docs/09 data-processing decision is made; then `member_data` (availability keeps every gym except Hashem Test off) | Never |
 | `RIVET_AI_TIMEOUT_MS`, `RIVET_AI_MAX_RUN_COST_MICROS` | — | Optional | Timeout unset (default); run cap as decided (proposed `500000`, $0.50) | Never |
 | `RIVET_AI_MAX_MONTHLY_COST_MICROS` | — | **Required for any live call**: the approved per-gym monthly budget in micro-units of the provider's billing currency (micro-dollars for Claude: `5000000` is $5); unset means live mode spends nothing | As decided (proposed `5000000`, $5 per gym per month) | Never |
+| `RIVET_AI_CHAT_EFFORT` | — | Optional: `low` (default), `medium` or `high` for Ask RIVET answers | Unset (`low`) unless answer quality on Test Gym calls for more; higher effort thinks longer before the first word and costs more | Never |
 
 Inspect names only with `pnpm convex:env:names` (or the appropriate selector) and
 never `convex env get`. Gym availability (platform admin, `/platform/assistance`),
@@ -353,6 +354,36 @@ the pilot release record above (one row per field; leave unknowns blank).
    through the same guarded dry run and deploy, after reading what the dry run would
    remove. This also withdraws the billing and export fixes listed above. The snapshot
    from step a is the way back for data.
+
+### Ask RIVET release and acceptance (branch `codex/rivet-chat`, not yet run)
+
+Ask RIVET (docs/09 "Ask RIVET decisions", docs/13 AI-6) needs no new provider or
+environment variable: it uses the deployment's existing `RIVET_AI_*` settings, the
+same per-gym availability, gym switch, member-data approval and spend caps. It adds
+four tables (`aiChats`, `aiChatMessages`, `aiChatStreams`, `aiChatFiles`), their
+indexes, an hourly retention cron and the public action `aiChat.respond`. Nothing is
+backfilled and no existing record changes.
+
+1. Merge to `main` only after Hashem's review; CI must pass all jobs.
+2. Backend first, from a clean checkout of the merged `main`: the guarded dry run with
+   `pnpm convex:deploy` must show only the added tables' indexes and no deletion; then
+   deploy and run `health:check --prod`. Until the frontend ships, nothing calls it.
+3. Frontend: one production deployment of the same SHA (the deployment hold and the
+   Hobby-plan note in "AI release to production" step c apply).
+4. On Test Gym, as its owner (assistance already on, member details allowed): Settings →
+   Assistance shows "Ask RIVET" on. Open a member, press ⌘J: the member is attached,
+   the questions name them. Ask "Brief me before I call …": the steps show while Claude
+   works, fold when it answers, and the member is a link. Ask "Which members owe
+   money?" and follow the list link. Attach a screenshot and ask about it. Stop an
+   answer mid-way. Switch to Arabic and ask in Arabic. On a phone the panel is full
+   screen. Settings → Assistance usage grows by the answers' cost, and matches the
+   Claude console within a cent.
+5. Stops: turning Ask RIVET off in the gym's assistance settings hides it; the platform
+   stop fails an answer at its next step with "RIVET paused assistance"; removing Test
+   Gym's availability hides it.
+6. Record the result in CURRENT_STATE and the pilot record. Rollback is the existing
+   order: platform stop or the gym switch, then unset `RIVET_AI_MODE`, then the
+   frontend, then the backend.
 
 ## Mixed owner access — review follow-up, 24 October 2026 (unreleased)
 

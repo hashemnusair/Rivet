@@ -490,6 +490,40 @@ Recorded as found during implementation; each entry names its subitem and eviden
 - No milestone is complete. Current status per subitem is above; evidence and
   remaining work are in CURRENT_STATE.
 
+### AI-6 — Ask RIVET, the conversation panel (27 October 2026)
+
+Hashem's request: a best-in-class chat with the screen as context by default, records,
+images and PDFs to attach, and smooth streaming. Decisions in docs/09 "Ask RIVET
+decisions". **Status: implemented on branch `codex/rivet-chat` and verified locally;
+not merged, not released, not tried with live Claude on production.**
+
+- [x] **AI-6.1 Contracts, context sources and lookups** *(`src/lib/ai/chat/`: 15 context
+  sources over existing domain reads, 13 read-only tools plus `open_screen`, compact record
+  summaries, the context frame, history windowing, the answer loop and the preview model;
+  `chat-core.test.ts` 25 tests.)*
+- [x] **AI-6.2 Server: streaming, persistence, gates, spend** *(`convex/aiChat.ts`,
+  `convex/aiChatOps.ts`, `convex/aiChatModel.ts`; four new tables in `schema.ts` and the
+  purge inventory; hourly retention cron. `convex/ai.chat.test.ts` 15 tests: the full
+  answer as the person, privacy between staff and gyms, access-limited lookups, context
+  dedupe, one answer at a time, stop/retry/delete, watchdogs, upload checks, every gate,
+  the member-data rule, the spend cap, and a stubbed Claude stream priced at cache rates.)*
+- [x] **AI-6.3 Panel** *(`src/features/ask-rivet/`: launcher, ⌘J, docked/overlay/full-screen
+  panel, conversations list, composer with screen attachments, `@` mentions, uploads,
+  stop; streaming markdown, work log and RIVET-mark working state; English and Arabic
+  copy in `askRivet`. Component tests 6; Playwright `e2e/ask-rivet.spec.ts` 6 journeys,
+  including Arabic on a phone.)*
+- [x] **AI-6.4 Screen context** *(Member profile, members list (filters and selection),
+  dashboard, leads, lead profile, follow-ups, payments, cash drawer, classes, reports and
+  plans register their record, attachments and suggested questions; every other screen
+  sends its route and name. Search (⌘K) offers "Ask RIVET: …".)*
+- [ ] **AI-6.5 Production acceptance on Test Gym with live Claude** — after merge, backend
+  then frontend release (docs/12 "Ask RIVET release and acceptance"). Not started.
+- [ ] **AI-6.6 Live answer evaluation** — a held-out set of questions with expected
+  records and figures, run against the deployment like `aiEvaluation:runLive`. Not built.
+- Known limits: answers are read-only by design; the preview model recognises a fixed set
+  of intents; conversations are not shared between staff; a busy screen may register its
+  record a moment after the panel opens, so suggested questions can change once.
+
 ## Review follow-up — 24 October 2026, source verified and unreleased
 
 - [x] Replace the unusable submitted-claim edit action with an owner correction

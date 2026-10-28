@@ -40,6 +40,7 @@ import { OfferWorkPanel } from "@/features/crm/offer-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
 import { useFormat } from "@/lib/i18n/format";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { useLeadScreen } from "@/features/ask-rivet/screens";
 
 type TrialOutcome = Extract<TrialBookingStatus, "completed" | "no_show" | "cancelled">;
 
@@ -88,6 +89,7 @@ export default function LeadDetailPageClient() {
   });
   const settingsQuery = useApiQuery(qk.settings, (api) => api.getOrganizationSettings());
   const plansQuery = useApiQuery(qk.plans({ status: "active", pageSize: 100 }), (api) => api.listPlans({ status: "active", pageSize: 100 }));
+  useLeadScreen(leadQuery.data ? { id: leadQuery.data.id, fullName: leadQuery.data.fullName } : undefined);
 
   const trialWindow = useMemo(() => {
     const weekday = weekdayForDate(trialDate);

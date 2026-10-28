@@ -15,6 +15,8 @@ import { localizeNavigationEntry, workspaceTargetCopy } from "@/lib/i18n/navigat
 import { workspacePageTitle } from "./workspace-recent-tracker";
 import { Badge } from "@/components/ui/badge";
 import { navigationAccessFromSession } from "@/features/navigation/navigation-assist";
+import { useAskRivet } from "@/features/ask-rivet/ask-rivet-context";
+import { RivetGlyph } from "@/features/ask-rivet/rivet-glyph";
 import { keywordSearchNavigation, permittedNavigationEntries, type NavigationEntry } from "../../../convex/navigationCatalogue";
 
 type PaletteTarget = Pick<WorkspaceSearchResult, "kind" | "id" | "title" | "subtitle" | "subtitleParts" | "href">;
@@ -42,6 +44,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { canAny } = usePermissions();
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
+  const askRivet = useAskRivet();
   const settledQuery = useDebouncedValue(query.trim(), 200);
   const catalogue = useMemo(() => permittedNavigationEntries(navigationAccessFromSession(session)).map(entry => localizeNavigationEntry(t, entry)), [session, t]);
   const places = useMemo(() => (settledQuery.length >= 2 ? keywordSearchNavigation(catalogue, settledQuery, 6) : []), [catalogue, settledQuery]);
@@ -107,6 +110,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <div className="flex items-center gap-2 border-b border-line px-4"><ArrowRight className="size-4 text-ink-3" aria-hidden /><Command.Input value={query} onValueChange={setQuery} dir={query ? "auto" : dir} placeholder={t("palette.search.placeholder")} aria-label={t("palette.search.inputLabel")} className="h-12 w-full bg-transparent text-[14px] outline-none placeholder:text-ink-4" autoFocus /></div>
       <Command.List className="min-h-0 flex-1 overflow-y-auto p-2">
         {settledQuery.length >= 2 ? <>
+          {askRivet?.available ? <Command.Group heading={<GroupHeading>{t("askRivet.name")}</GroupHeading>}><PaletteItem onSelect={() => { onOpenChange(false); askRivet.ask(query.trim(), { send: true }); }} icon={RivetGlyph} title={t("askRivet.palette", { query: isolate(query.trim()) })} /></Command.Group> : null}
           {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">{t("palette.search.searching")}</p> : null}
           {search.isError ? <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger"><p>{t("palette.search.errorMessage")}</p><button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => { void search.refetch(); }}>{t("palette.search.errorRetry")}</button></div> : null}
           {!search.isLoading && !search.isError && search.data?.length === 0 && catalogueMatches.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">{t("palette.search.noMatches", { query: isolate(settledQuery) })}</p> : null}

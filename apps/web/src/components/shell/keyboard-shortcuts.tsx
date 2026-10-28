@@ -8,6 +8,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, Dia
 
 const SHORTCUTS: Array<{ id: string; keys: string[]; label: TKey }> = [
   { id: "open-search", keys: ["⌘", "K"], label: "palette.shortcuts.openSearch" },
+  { id: "ask-rivet", keys: ["⌘", "J"], label: "askRivet.shortcut" },
   { id: "move", keys: ["↑", "↓"], label: "palette.shortcuts.moveThroughResults" },
   { id: "open-result", keys: ["Enter"], label: "palette.shortcuts.openResult" },
   { id: "close", keys: ["Esc"], label: "palette.shortcuts.closeWindow" },

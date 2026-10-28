@@ -34,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
+import { useLeadsScreen } from "@/features/ask-rivet/screens";
 
 type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; labelKey: TKey; hintKey: TKey }> = [
@@ -108,6 +109,7 @@ function PipelinePageInner() {
     [session?.activeBranchId, debounced, page],
   );
   const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
+  useLeadsScreen({ search: searchKey(debounced) || undefined });
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
   const { data, isLoading, isError, isBackgroundError, error, refetch } = useRealtimeApiQuery({
     queryKey: leadQueryKey,

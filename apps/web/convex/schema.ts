@@ -2314,4 +2314,83 @@ export default defineSchema({
     .index("by_organization", ["organizationId", "createdAt"])
     .index("by_organization_subject", ["organizationId", "subjectKind", "subjectId"]),
 
+  // Ask RIVET conversations. Private to the person who started them and
+  // removed 30 days after the last message, with their files.
+  aiChats: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    userId: v.id("users"),
+    title: v.string(),
+    messageCount: v.number(),
+    /** Records sent in full earlier in the conversation: context key → when. */
+    sentContext: v.optional(v.record(v.string(), v.number())),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_user_updated", ["organizationId", "userId", "updatedAt"])
+    .index("by_expires", ["expiresAt"]),
+
+  aiChatMessages: defineTable({
+    organizationId: v.id("organizations"),
+    chatPublicId: v.string(),
+    publicId: v.string(),
+    clientId: v.optional(v.string()),
+    seq: v.number(),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    /** The person's words, or the answer's text. */
+    text: v.string(),
+    /** A person's message: the composed text the assistant read, written when the answer starts. */
+    modelText: v.optional(v.string()),
+    /** An answer: its work log and text, as shown. */
+    parts: v.optional(v.any()),
+    /** An answer: its calls and lookups without reasoning, replayed by later turns. */
+    turnMessages: v.optional(v.any()),
+    context: v.optional(v.any()),
+    screen: v.optional(v.object({ route: v.string(), title: v.string() })),
+    fileIds: v.optional(v.array(v.string())),
+    locale: v.optional(v.union(v.literal("en"), v.literal("ar"))),
+    status: v.union(v.literal("pending"), v.literal("streaming"), v.literal("complete"), v.literal("stopped"), v.literal("failed")),
+    errorCategory: v.optional(v.string()),
+    source: v.optional(v.union(v.literal("fixture"), v.literal("live"))),
+    modelCalls: v.optional(v.number()),
+    costMicros: v.optional(v.number()),
+    stopRequestedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_organization_chat_seq", ["organizationId", "chatPublicId", "seq"])
+    .index("by_organization_public_id", ["organizationId", "publicId"]),
+
+  // The answer being written, kept apart so the conversation itself is not
+  // re-read with every word. Removed when the answer finishes.
+  aiChatStreams: defineTable({
+    organizationId: v.id("organizations"),
+    messagePublicId: v.string(),
+    parts: v.any(),
+    version: v.number(),
+    updatedAt: v.number(),
+  }).index("by_organization_message", ["organizationId", "messagePublicId"]),
+
+  aiChatFiles: defineTable({
+    organizationId: v.id("organizations"),
+    publicId: v.string(),
+    userId: v.id("users"),
+    storageId: v.id("_storage"),
+    name: v.string(),
+    mediaType: v.string(),
+    size: v.number(),
+    chatPublicId: v.optional(v.string()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_organization_public_id", ["organizationId", "publicId"])
+    .index("by_organization_user", ["organizationId", "userId", "createdAt"])
+    .index("by_organization_chat", ["organizationId", "chatPublicId"])
+    .index("by_storage", ["storageId"])
+    .index("by_expires", ["expiresAt"]),
+
 });

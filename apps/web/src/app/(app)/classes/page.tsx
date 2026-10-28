@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils/cn";
 import { getApi } from "@/lib/api/client";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { useClassesScreen } from "@/features/ask-rivet/screens";
 
 // Default visible day; the window stretches automatically when a class is
 // scheduled outside it, so nothing can render off-grid.
@@ -114,6 +115,7 @@ function ClassesWorkspace() {
   const validDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && Number.isFinite(Date.parse(requestedDate)) && new Date(requestedDate).toISOString().slice(0, 10) === requestedDate;
   const weekStart = validDate ? requestedDate : todayISODate(session?.organization.timezone);
   const weekEnd = addDays(weekStart, 6);
+  useClassesScreen(weekStart);
   const occurrencesQuery = useApiQuery(qk.classOccurrences(branchId ?? "none", weekStart, weekEnd, undefined), (api) => api.listClassOccurrences({ branchId: branchId!, fromDate: weekStart, toDate: weekEnd }), { enabled: Boolean(branchId) });
   const calendarBoundsQuery = useApiQuery(qk.classCalendarBounds, (api) => api.getClassCalendarBounds());
 

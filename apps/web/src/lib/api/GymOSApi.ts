@@ -1546,6 +1546,19 @@ export interface GymOSApi {
 
   // RIVET assistance and delegated work (docs/23). Convex authorizes every
   // call; the mock simulates the same states with explicit fixtures.
+  /** Ask RIVET: the signed-in person's own conversations, newest first. */
+  listAiChats(): Promise<import("@/lib/ai/chat/contracts").ChatSummaryView[]>;
+  getAiChat(chatId: string): Promise<import("@/lib/ai/chat/contracts").ChatThreadView>;
+  subscribeAiChat(chatId: string, onValue: (chat: import("@/lib/ai/chat/contracts").ChatThreadView) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  /** The answer being written; null once it is saved into the conversation. */
+  subscribeAiChatStream(messageId: string, onValue: (stream: import("@/lib/ai/chat/contracts").ChatStreamView | null) => void, onError?: (error: unknown) => void): Promise<() => void>;
+  /** Saves the message and starts the answer. */
+  sendAiChatMessage(input: import("@/lib/ai/chat/contracts").SendChatInput): Promise<import("@/lib/ai/chat/contracts").SendChatResult>;
+  /** Asks the latest answer again and starts it. */
+  retryAiChatMessage(messageId: string): Promise<import("@/lib/ai/chat/contracts").SendChatResult>;
+  stopAiChatMessage(messageId: string): Promise<void>;
+  deleteAiChat(chatId: string): Promise<void>;
+  uploadAiChatFile(file: Blob, input: { name: string; mediaType: import("@/lib/ai/chat/contracts").ChatFileType }): Promise<import("@/lib/ai/chat/contracts").ChatFileRegisterResult>;
   getAiSettings(): Promise<import("@/lib/ai/contracts").AiSettingsView>;
   updateAiSettings(input: import("@/lib/ai/contracts").UpdateAiSettingsInput): Promise<import("@/lib/ai/contracts").AiSettingsView>;
   getMemberBrief(memberId: UUID): Promise<import("@/lib/ai/contracts").AiMemberBriefResult>;

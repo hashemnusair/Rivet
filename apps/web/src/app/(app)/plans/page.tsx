@@ -19,6 +19,7 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { planDurationText } from "@/lib/i18n/member-enrollment";
 import { PlanFormDialog } from "@/features/plans/plan-form-dialog";
+import { usePlansScreen } from "@/features/ask-rivet/screens";
 
 export default function PlansPage() {
   return <Suspense><PlansWorkspace /></Suspense>;
@@ -35,6 +36,7 @@ function PlansWorkspace() {
   // The archived view is URL-backed so a refresh or Back returns to it.
   const showArchived = params.get("status") === "archived";
   const setShowArchived = (archived: boolean) => replaceParams({ status: archived ? "archived" : undefined });
+  usePlansScreen();
 
   const query = useApiQuery(qk.plans({ archived: showArchived }), (api) =>
     api.listPlans({ status: showArchived ? "archived" : "active", pageSize: 50 }),

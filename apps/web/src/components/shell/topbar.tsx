@@ -31,6 +31,7 @@ import { CommandPalette } from "./command-palette";
 import { NotificationCenter } from "./notification-center";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { WorkspaceRecentTracker } from "./workspace-recent-tracker";
+import { AskRivetLauncher } from "@/features/ask-rivet/launcher";
 
 const DEMO_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const satisfies readonly RoleKey[];
 
@@ -70,7 +71,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   return (
     <header
       data-testid="app-topbar"
-      className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4 lg:h-16"
+      className="@container sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4 lg:h-16"
     >
       {/* Navigation drawer — below lg the sidebar is hidden */}
       <Button
@@ -153,6 +154,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
       <div className="flex-1" />
 
+      {session ? <AskRivetLauncher /> : null}
       {session ? <NotificationCenter /> : null}
       {session ? <KeyboardShortcuts /> : null}
 
@@ -264,13 +266,13 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               aria-label={t("shell.account.menu")}
             >
               <Monogram name={session.user.name} size="sm" />
-              <span className="hidden lg:block text-start leading-tight">
+              <span className="hidden whitespace-nowrap text-start leading-tight @[50rem]:block">
                 <span className="block text-[13px] font-medium text-ink">{session.user.name}</span>
                 <span className="block text-[12px] font-medium text-ink-3">
                   {role ? roleLabel(t, role) : ""}
                 </span>
               </span>
-              <ChevronDown className="size-3.5 text-ink-3 hidden lg:block" aria-hidden />
+              <ChevronDown className="hidden size-3.5 text-ink-3 @[50rem]:block" aria-hidden />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">

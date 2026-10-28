@@ -40,6 +40,8 @@ export interface ToolDefinition {
 }
 
 export const TOOLS: Record<string, ToolDefinition> = {
+  // Ask RIVET reads through the existing domain reads as the person asking; each read checks its own permission.
+  "chat.ask": { key: "chat.ask", version: "1", capability: "chat", sideEffect: "read", permissions: [], approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "member.context": { key: "member.context", version: "1", capability: "member_context", sideEffect: "read", permissions: ["members.read"], domainOperation: "members.followup_context", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "note.extract": { key: "note.extract", version: "1", capability: "note_extraction", sideEffect: "prepare", permissions: ["members.write"], approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
   "renewal.candidates": { key: "renewal.candidates", version: "1", capability: "followup_batch", sideEffect: "read", permissions: ["crm.read"], module: "revenue", domainOperation: "renewal.queue", approval: "none", idempotent: false, verification: "none", compensation: "none", preconditions: [] },
@@ -104,10 +106,10 @@ export function runOriginHref(playbook: AiPlaybookKey, runId: string): string {
   }
 }
 
-export const CAPABILITY_KEYS: readonly AiCapabilityKey[] = ["member_context", "note_extraction", "followup_batch", "report_job", "handover_job", "cash_difference", "sales_followups", "ops_triage", "import_assist", "class_finder", "nl_filters", "collections_prep", "member_class_finder", "platform_review"];
+export const CAPABILITY_KEYS: readonly AiCapabilityKey[] = ["chat", "member_context", "note_extraction", "followup_batch", "report_job", "handover_job", "cash_difference", "sales_followups", "ops_triage", "import_assist", "class_finder", "nl_filters", "collections_prep", "member_class_finder", "platform_review"];
 
 /** Capabilities that never mutate business records; `prepare` is enough for them. */
-export const PREPARE_ONLY_CAPABILITIES: ReadonlySet<AiCapabilityKey> = new Set(["member_context", "nl_filters", "import_assist", "collections_prep", "member_class_finder", "platform_review"]);
+export const PREPARE_ONLY_CAPABILITIES: ReadonlySet<AiCapabilityKey> = new Set(["chat", "member_context", "nl_filters", "import_assist", "collections_prep", "member_class_finder", "platform_review"]);
 
 export interface AuthorityInput {
   adapterMode: AiAdapterMode;
