@@ -290,11 +290,69 @@ it, for review; none changes a commercial term, a provider approval or a gym's d
   and marked external https pages. Text is revealed whole words at a time (Arabic letters
   never change shape mid-word); finished markdown blocks never re-render; half-written
   syntax is closed while it streams. The working state is the RIVET mark lifting its
-  plates, not a spinner. The panel docks beside the page from 1,440 px, overlays it on
-  smaller desktops and tablets, and is full screen on phones.
+  plates, not a spinner. The panel docked beside the page from 1,440 px, overlaid it on
+  smaller desktops and tablets, and was full screen on phones (replaced on 28 October by
+  Wazen's floating window, below).
 - **Preview model.** The local preview and tests use a deterministic, labelled "test
   answers" model that runs the same tools on seeded data in English and Arabic. It is not
   an evaluation of Claude.
+
+### Wazen decisions — 28 October 2026
+
+Elias asked for Ask RIVET to become **Wazen** (وزن), a popup that never squeezes the page,
+and for Hashem's three follow-ups: separate conversations with their own context, a chatbox
+on the home screen, and minimal actions. Elias chose the actions (renew; freeze and end a
+freeze), that a renewal adds to what the member owes rather than taking payment, and that
+the chatbox lives in the bottom-right corner. These supersede the "Read-only" and
+docking points of the Ask RIVET decisions above; the rest stand.
+
+- **Name.** Wazen in English, وزن in Arabic, everywhere a person reads it (window, search,
+  shortcut list, assistance settings, audit labels, the system prompt). Code keeps its
+  `ask-rivet` / `askRivet` names to avoid churn.
+- **A floating window, never docked.** The page keeps its full width at every size. A
+  launcher sits in the bottom corner (bottom-left in Arabic); the window opens from that
+  corner at 420 × 680 px, and "Make larger" grows it to 1,040 × 900 px (within 16 px of
+  the edges) with the conversation list beside the chat from 900 px wide. Below 640 px
+  wide or 540 px tall it is full screen. Following a link shrinks the large window so the
+  screen shows, and closes it on a phone. The size is remembered per browser; the open
+  state and conversation per tab, as before. Pages end with room to scroll their last row
+  clear of the launcher; toasts sit above the launcher, beside an open window when there
+  is room, otherwise above its message box.
+- **Conversations.** Each conversation keeps its own history and context on the server
+  (unchanged); the window now lists them under day headings with search, rename (new
+  `ai.chat.rename`, owner only, 80 characters) and delete, as a view in the small window
+  and a side list in the large one. A half-written message survives a look at the list.
+- **Home screen.** On the dashboard the launcher is a message box ("Ask Wazen anything…")
+  in the same corner; sending opens the window with the question. Phones get the round
+  button. The dashboard layout itself is unchanged.
+- **Confirmed actions, three of them.** `propose_renewal`, `propose_freeze` and
+  `propose_unfreeze` only read, as the person, and check the change the way the server
+  would (renewal target and date rules, the plan still sold, freeze within the term and
+  the plan's remaining freeze days, a freeze in progress to end). The person needs
+  `memberships.sell` (renew) or `memberships.freeze` (freeze, end a freeze), or no card is
+  offered. The answer then shows a card. Only the person's **Confirm** runs the existing operation
+  (`memberships.renew`, `.freeze`, `.unfreeze`) through `aiDomainPort.executeApproved`,
+  as them, in the same transaction that marks the card done, with the operation's own
+  permission checks, validation, timeline and audit, plus an `ai.chat.action.confirm`
+  audit row that names Wazen. Inputs are rebuilt from the stored card only; a renewal
+  carries the idempotency key `wazen:<message>:<part>`.
+- **Guards.** A card can be confirmed for 30 minutes after its answer finished, once, by
+  the person whose conversation it is, while assistance is still available, and only if
+  the term's end date and status are still what Wazen read; otherwise it refuses and
+  nothing changes. At most three proposals per answer. Freeze and end-freeze reasons are
+  the person's own words; the prompt forbids inventing one and the tools require it.
+  Wazen cannot change prices, plans, dates or discounts, take or refund money, cancel, or
+  message anyone.
+- **Money.** A renewal uses the plan's listed price and is charged to the member; nothing
+  is paid. Its charge falls due when the new term starts, so the card says so and offers
+  "Collect payment" only when the term starts today.
+- **The assistant learns the outcome.** The next message's context lists earlier
+  proposals and whether they were confirmed (with the saved dates) or dismissed, so Wazen
+  never re-proposes or claims a change it did not see happen.
+- **Member profile layout.** Contact actions (WhatsApp, log contact, note, task) moved into
+  the header card; the four figures are one strip; "Find a class" became a **Classes** tab
+  beside PT (shown only where the class finder is available); the details column sits
+  beside the tabs from 1,280 px and two across under them on laptops and tablets.
 
 ### AI decision sheet — proposed, awaiting Hashem/Elias
 

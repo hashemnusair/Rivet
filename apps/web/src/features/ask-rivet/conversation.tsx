@@ -11,7 +11,7 @@ import { ContextChip } from "./context-chip";
 
 export type ConversationItem =
   | { key: string; role: "user"; text: string; context: ChatContextItem[]; attachments: ChatAttachmentView[] }
-  | { key: string; role: "assistant"; messageId?: string; status: ChatMessageView["status"]; parts: ChatPart[]; error?: AiErrorCategory; canRetry: boolean };
+  | { key: string; role: "assistant"; messageId?: string; completedAt?: string; status: ChatMessageView["status"]; parts: ChatPart[]; error?: AiErrorCategory; canRetry: boolean };
 
 /** Distance from the bottom, in pixels, within which the view keeps following new words. */
 const FOLLOW_SLACK = 72;
@@ -84,7 +84,7 @@ export function Conversation({ items, empty, onRetry, onNavigate }: { items: Con
         <div ref={contentRef} className={cn("mx-auto w-full max-w-[720px] px-3 sm:px-4", items.length ? "space-y-5 pb-6 pt-4" : "h-full")}>
           {items.length ? items.map((item) => item.role === "user"
             ? <UserMessage key={item.key} text={item.text} context={item.context} attachments={item.attachments} />
-            : <AssistantMessage key={item.key} status={item.status} parts={item.parts} error={item.error} canRetry={item.canRetry && item === lastAssistant} onRetry={item.messageId ? () => onRetry(item.messageId!) : undefined} onNavigate={onNavigate} />) : empty}
+            : <AssistantMessage key={item.key} messageId={item.messageId} completedAt={item.completedAt} status={item.status} parts={item.parts} error={item.error} canRetry={item.canRetry && item === lastAssistant} onRetry={item.messageId ? () => onRetry(item.messageId!) : undefined} onNavigate={onNavigate} />) : empty}
         </div>
       </div>
       <button

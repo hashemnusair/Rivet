@@ -1546,7 +1546,7 @@ export interface GymOSApi {
 
   // RIVET assistance and delegated work (docs/23). Convex authorizes every
   // call; the mock simulates the same states with explicit fixtures.
-  /** Ask RIVET: the signed-in person's own conversations, newest first. */
+  /** Wazen (Ask RIVET in code): the signed-in person's own conversations, newest first. */
   listAiChats(): Promise<import("@/lib/ai/chat/contracts").ChatSummaryView[]>;
   getAiChat(chatId: string): Promise<import("@/lib/ai/chat/contracts").ChatThreadView>;
   subscribeAiChat(chatId: string, onValue: (chat: import("@/lib/ai/chat/contracts").ChatThreadView) => void, onError?: (error: unknown) => void): Promise<() => void>;
@@ -1558,6 +1558,9 @@ export interface GymOSApi {
   retryAiChatMessage(messageId: string): Promise<import("@/lib/ai/chat/contracts").SendChatResult>;
   stopAiChatMessage(messageId: string): Promise<void>;
   deleteAiChat(chatId: string): Promise<void>;
+  renameAiChat(chatId: string, title: string): Promise<import("@/lib/ai/chat/contracts").ChatSummaryView>;
+  /** Confirms or dismisses a change Wazen proposed; confirming runs the existing operation as the signed-in person. */
+  decideAiChatAction(input: import("@/lib/ai/chat/contracts").DecideChatActionInput): Promise<import("@/lib/ai/chat/contracts").ChatAction>;
   uploadAiChatFile(file: Blob, input: { name: string; mediaType: import("@/lib/ai/chat/contracts").ChatFileType }): Promise<import("@/lib/ai/chat/contracts").ChatFileRegisterResult>;
   getAiSettings(): Promise<import("@/lib/ai/contracts").AiSettingsView>;
   updateAiSettings(input: import("@/lib/ai/contracts").UpdateAiSettingsInput): Promise<import("@/lib/ai/contracts").AiSettingsView>;

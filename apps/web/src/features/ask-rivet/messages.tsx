@@ -8,6 +8,7 @@ import { chatAnswerText, isChatMessageWorking, type ChatAttachmentView, type Cha
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import { useAiErrorText } from "@/features/assist/ai-message";
+import { ActionCard } from "./action-card";
 import { ContextChip } from "./context-chip";
 import { StreamingMarkdown } from "./markdown";
 import { RivetGlyph } from "./rivet-glyph";
@@ -99,13 +100,14 @@ function CopyAnswer({ text }: { text: string }) {
   );
 }
 
-export const AssistantMessage = memo(function AssistantMessage({ status, parts, error, canRetry, onRetry, onNavigate }: { status: ChatMessageView["status"]; parts: ChatPart[]; error?: AiErrorCategory; canRetry: boolean; onRetry?: () => void; onNavigate?: () => void }) {
+export const AssistantMessage = memo(function AssistantMessage({ messageId, completedAt, status, parts, error, canRetry, onRetry, onNavigate }: { messageId?: string; completedAt?: string; status: ChatMessageView["status"]; parts: ChatPart[]; error?: AiErrorCategory; canRetry: boolean; onRetry?: () => void; onNavigate?: () => void }) {
   const { t } = useLocale();
   const errorText = useAiErrorText();
   const working = isChatMessageWorking(status);
   const list = groups(parts);
   const lastText = [...list].reverse().find((group) => group.kind === "text");
   const links = parts.filter((part): part is ToolPart => part.type === "tool" && Boolean(part.link)).map((part) => part.link!);
+  const actions = parts.filter((part): part is ToolPart & { action: NonNullable<ToolPart["action"]> } => part.type === "tool" && Boolean(part.action));
   const answer = chatAnswerText(parts);
   return (
     <div className="ask-answer space-y-2.5" data-testid="ask-answer" data-status={status} data-last={canRetry || undefined} aria-busy={working || undefined}>
@@ -118,6 +120,11 @@ export const AssistantMessage = memo(function AssistantMessage({ status, parts, 
       {list.map((group, index) => group.kind === "work"
         ? <WorkLog key={group.key} parts={group.parts} live={working && index === list.length - 1} />
         : <AnswerText key={group.key} part={group.part} streaming={working && group === lastText} onNavigate={onNavigate} />)}
+      {!working && actions.length ? (
+        <div className="space-y-2" data-testid="ask-actions">
+          {actions.map((part) => <ActionCard key={part.id} messageId={messageId} partId={part.id} action={part.action} completedAt={status === "complete" ? completedAt : undefined} onNavigate={onNavigate} />)}
+        </div>
+      ) : null}
       {!working ? <ScreenLinks links={links} onNavigate={onNavigate} /> : null}
       {status === "failed" ? (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] leading-5 text-ink-2" role="status" data-testid="ask-error">

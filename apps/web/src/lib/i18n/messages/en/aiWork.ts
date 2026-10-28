@@ -220,7 +220,7 @@ export const aiWork = {
     },
     capabilitiesTitle: "What RIVET may do",
     capability: {
-      chat: "Ask RIVET",
+      chat: "Wazen",
       member_context: "Member details before a call",
       note_extraction: "Fill the contact form from a note",
       followup_batch: "Prepare renewal follow-ups",

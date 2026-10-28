@@ -35,6 +35,7 @@ export type ChatReadOperation =
   | "members.list"
   | "members.get"
   | "members.timeline"
+  | "memberships.list"
   | "leads.list"
   | "leads.get"
   | "tasks.list"
@@ -52,7 +53,7 @@ export type ChatReadOperation =
   | "analytics.crm_funnel"
   | "plans.list";
 
-export const CHAT_READ_OPERATIONS: readonly ChatReadOperation[] = ["members.list", "members.get", "members.timeline", "leads.list", "leads.get", "tasks.list", "renewal.queue", "retention.queue", "dashboard", "transactions.list", "shifts.list", "classes.occurrences.list", "analytics.peak_hours", "analytics.class_utilization", "analytics.retention", "analytics.renewal_forecast", "analytics.collections", "analytics.crm_funnel", "plans.list"];
+export const CHAT_READ_OPERATIONS: readonly ChatReadOperation[] = ["members.list", "members.get", "members.timeline", "memberships.list", "leads.list", "leads.get", "tasks.list", "renewal.queue", "retention.queue", "dashboard", "transactions.list", "shifts.list", "classes.occurrences.list", "analytics.peak_hours", "analytics.class_utilization", "analytics.retention", "analytics.renewal_forecast", "analytics.collections", "analytics.crm_funnel", "plans.list"];
 
 export type ChatReadFailure = NonNullable<ChatToolOutcome["failure"]>;
 
@@ -77,6 +78,8 @@ export interface ChatEnv {
   activeBranchId?: string;
   /** Branches the person can see, for reads that need one. */
   branchIds: string[];
+  /** The person's permission keys, so the assistant only proposes changes they could make. */
+  permissions?: string[];
 }
 
 export interface SourceResult {

@@ -390,6 +390,8 @@ test.describe("RIVET assistance", () => {
     await page.getByTestId("member-filters").waitFor();
     await page.locator('main a[href^="/members/"]:not([href^="/members/duplicates"]):not([href^="/members/import"]):not([href^="/members/new"])').filter({ visible: true }).first().click();
     await expect(page).toHaveURL(/\/members\/[^/?]+/);
+    // Finding a class is its own tab, beside PT bookings.
+    await page.getByRole("tab", { name: "Classes" }).click();
     const finder = page.getByTestId("class-finder");
     await finder.getByTestId("class-finder-find").click();
     const option = finder.getByTestId("class-option").first();

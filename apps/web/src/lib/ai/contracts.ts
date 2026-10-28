@@ -588,6 +588,8 @@ export const AI_MUTATION_OPERATIONS = [
   "ai.chat.stop",
   "ai.chat.retry",
   "ai.chat.delete",
+  "ai.chat.rename",
+  "ai.chat.action",
   "ai.chat.file.upload_url",
   "ai.chat.file.register",
 ] as const;

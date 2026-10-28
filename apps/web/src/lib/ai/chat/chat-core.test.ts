@@ -104,7 +104,7 @@ describe("context sources", () => {
 
 describe("tools", () => {
   it("are declared once, in a fixed order, with closed input schemas", () => {
-    expect(CHAT_TOOLS.map((tool) => tool.name)).toEqual(["search_members", "get_member", "search_leads", "get_lead", "list_tasks", "renewals_due", "at_risk_members", "today_overview", "list_payments", "cash_shifts", "class_schedule", "gym_report", "list_plans", "open_screen"]);
+    expect(CHAT_TOOLS.map((tool) => tool.name)).toEqual(["search_members", "get_member", "search_leads", "get_lead", "list_tasks", "renewals_due", "at_risk_members", "today_overview", "list_payments", "cash_shifts", "class_schedule", "gym_report", "list_plans", "open_screen", "propose_renewal", "propose_freeze", "propose_unfreeze"]);
     for (const tool of CHAT_TOOLS) expect(tool.input_schema.additionalProperties).toBe(false);
   });
 

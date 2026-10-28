@@ -78,6 +78,7 @@ export const activityLog: typeof EnglishActivityLog = {
     aiStandingRevoke: "إلغاء تفعيل عمل متكرر",
     aiStandingTransfer: "نقل عمل متكرر إلى شخص آخر",
     aiProposalApprove: "اعتماد تغيير مُعدّ",
+    aiChatActionConfirm: "تأكيد تغيير من وزن",
     aiProposalReject: "رفض تغيير مُعدّ",
     aiProposalsApproveAll: "اعتماد تغييرات مُعدّة معًا",
     aiContactUnnecessary: "تحديد تواصل مُعدّ بأنه غير مطلوب",

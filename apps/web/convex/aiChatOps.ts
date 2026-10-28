@@ -15,6 +15,8 @@ import {
   CHAT_PDF_MAX_BYTES,
   CHAT_RETENTION_MS,
   CHAT_TEXT_MAX,
+  chatActionOpen,
+  type ChatAction,
   type ChatAttachmentView,
   type ChatContextItem,
   type ChatFileRegisterResult,
@@ -27,9 +29,10 @@ import {
   type SendChatResult,
 } from "../src/lib/ai/chat/contracts";
 import { parseContextItem } from "../src/lib/ai/chat/sources";
+import { actionBasisHolds, actionOperation, actionResult, withAction } from "../src/lib/ai/chat/actions";
 
 /**
- * Ask RIVET operations on the domain transport, and the policy and record
+ * Ask RIVET (shown to people as Wazen) operations on the domain transport, and the policy and record
  * helpers the answer action shares. This module never imports `domain.ts`,
  * which dispatches to it.
  *
@@ -258,6 +261,53 @@ async function retryMessage(ctx: MutationCtx, actor: ActorContext, input: Data, 
   return { chatId: chat.publicId, userMessageId: question?.publicId ?? "", assistantMessageId: message.publicId };
 }
 
+/** Longest conversation name a person can give. */
+export const CHAT_TITLE_MAX = 80;
+
+const ACTION_AUDIT: Record<ChatAction["kind"], string> = {
+  renew_membership: "Renewal",
+  freeze_membership: "Freeze",
+  unfreeze_membership: "Early end of a freeze",
+};
+
+/**
+ * The person's decision on a change the assistant proposed. Dismissing only
+ * marks the card. Confirming checks the card is still current, then runs the
+ * existing operation as this person in the same transaction, with its own
+ * permission checks, validation, timeline and audit; anything it refuses
+ * leaves both the record and the card unchanged.
+ */
+async function decideAction(ctx: MutationCtx, actor: ActorContext, input: Data, request: RequestArgs, port: AiDomainPort): Promise<ChatAction> {
+  const { chat, message } = await ownMessage(ctx, actor, text(input.messageId));
+  const partId = text(input.partId);
+  const decision = input.decision === "confirm" || input.decision === "dismiss" ? input.decision : undefined;
+  if (!decision) domainError("VALIDATION_ERROR", "Choose confirm or dismiss.", { correlationId: actor.correlationId });
+  const parts = Array.isArray(message.parts) ? (message.parts as ChatPart[]) : [];
+  const part = parts.find((item) => item.type === "tool" && item.id === partId);
+  const action = part?.type === "tool" ? part.action : undefined;
+  if (message.role !== "assistant" || !action) domainError("NOT_FOUND", "This record could not be found", { correlationId: actor.correlationId });
+  if (action.status !== "proposed") domainError("CONFLICT", "This was already decided.", { correlationId: actor.correlationId });
+  const now = Date.now();
+  if (decision === "dismiss") {
+    const next: ChatAction = { ...action, status: "dismissed", decidedAt: new Date(now).toISOString() };
+    await ctx.db.patch(message._id, { parts: withAction(parts, partId, next), updatedAt: now });
+    return next;
+  }
+  if (message.status !== "complete" || !chatActionOpen(action, iso(message.completedAt), now)) domainError("CONFLICT", "This is out of date. Ask Wazen again.", { correlationId: actor.correlationId });
+  const blocked = await chatBlocked(ctx, actor, await port.entitledModules(ctx, actor));
+  if (blocked) refuse(actor, blocked);
+  const basis = await port.membershipBasis(ctx, actor, action.membershipId);
+  if (!actionBasisHolds(action, basis)) domainError("CONFLICT", "This membership changed after Wazen checked it. Ask Wazen again.", { correlationId: actor.correlationId });
+  const { operation, input: operationInput } = actionOperation(action, `wazen:${message.publicId}:${partId}`);
+  const result = await port.executeApproved(ctx, operation, operationInput, request);
+  const next: ChatAction = { ...action, status: "done", decidedAt: new Date(now).toISOString(), result: actionResult(action, result) };
+  await ctx.db.patch(message._id, { parts: withAction(parts, partId, next), updatedAt: now });
+  await ctx.db.patch(chat._id, { updatedAt: now, expiresAt: now + CHAT_RETENTION_MS });
+  // The operation wrote its own audit; this one records that the change came from a Wazen card.
+  await port.insertAudit(ctx, actor, { category: "ai", action: "ai.chat.action.confirm", entityType: "membership", entityId: action.membershipId, entityLabel: action.memberName, summary: `${ACTION_AUDIT[action.kind]} confirmed from a Wazen proposal`, ...(action.reason ? { reason: action.reason } : {}), ...(basis.branchId ? { branchId: basis.branchId } : {}) });
+  return next;
+}
+
 export async function deleteChat(ctx: MutationCtx, organizationId: Id<"organizations">, chat: Doc<"aiChats">): Promise<void> {
   for (const row of await chatMessages(ctx, organizationId, chat.publicId)) {
     const stream = await ctx.db.query("aiChatStreams").withIndex("by_organization_message", (q) => q.eq("organizationId", organizationId).eq("messagePublicId", row.publicId)).unique();
@@ -287,6 +337,14 @@ export async function chatMutation(ctx: MutationCtx, operation: string, input: D
       if (message.status === "pending") await ctx.db.patch(message._id, { status: "stopped", stopRequestedAt: now, updatedAt: now, completedAt: now });
       else if (message.status === "streaming") await ctx.db.patch(message._id, { stopRequestedAt: now, updatedAt: now });
       return null;
+    }
+    case "ai.chat.action": return await decideAction(ctx, actor, input, request, port);
+    case "ai.chat.rename": {
+      const chat = await ownChat(ctx, actor, text(input.chatId));
+      const title = text(input.title).replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").slice(0, CHAT_TITLE_MAX).trim();
+      if (!title) domainError("VALIDATION_ERROR", "Write a name first.", { correlationId: actor.correlationId });
+      await ctx.db.patch(chat._id, { title });
+      return { id: chat.publicId, title, updatedAt: new Date(chat.updatedAt).toISOString(), messageCount: chat.messageCount } satisfies ChatSummaryView;
     }
     case "ai.chat.delete": {
       const chat = await ownChat(ctx, actor, text(input.chatId));

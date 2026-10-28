@@ -1,13 +1,16 @@
 import { z } from "zod";
-import type { ChatContextItem, ChatScreenLink, ChatToolKey, ChatToolOutcome } from "./contracts";
+import type { ChatAction, ChatContextItem, ChatScreenLink, ChatToolKey, ChatToolOutcome } from "./contracts";
 import { serialize } from "./compact";
 import { LEAD_STAGES, loadSource, PAYMENT_METHODS, REPORTS, type ChatEnv, type ChatReader } from "./sources";
+import { isActionTool, proposeAction } from "./actions";
 
 /**
  * The lookups the assistant may make while answering. Every tool is a read
  * over a named source (see sources.ts), run as the person asking; there is
  * no tool that changes a record or contacts anyone. `open_screen` only builds
- * a link to an existing RIVET screen for the person to follow.
+ * a link to an existing RIVET screen for the person to follow, and the
+ * `propose_*` tools only check a change and put a card in front of the
+ * person (see actions.ts); their confirmation is what runs it.
  *
  * The list is fixed and ordered so the request prefix stays identical across
  * turns and can be cached.
@@ -45,6 +48,9 @@ const INPUTS = {
   gym_report: z.object({ report: z.enum(REPORTS), from: isoDate.optional(), to: isoDate.optional() }).strict(),
   list_plans: z.object({}).strict(),
   open_screen: z.object({ screen: z.enum(SCREENS), record_id: id.optional(), membership: membership.optional(), query: query.optional(), label: z.string().trim().min(1).max(80) }).strict(),
+  propose_renewal: z.object({ member_id: id }).strict(),
+  propose_freeze: z.object({ member_id: id, start_date: isoDate, end_date: isoDate, reason: z.string().trim().min(3).max(240) }).strict(),
+  propose_unfreeze: z.object({ member_id: id, reason: z.string().trim().min(3).max(240) }).strict(),
 } satisfies Record<ChatToolKey, z.ZodType>;
 
 export const CHAT_TOOLS: readonly ChatToolSpec[] = [
@@ -62,6 +68,9 @@ export const CHAT_TOOLS: readonly ChatToolSpec[] = [
   { name: "gym_report", description: "A management report: peak_hours, class_utilization, collections or crm_funnel for a date range (default the last 30 days); retention or renewal_forecast as of today.", input_schema: { type: "object", properties: { report: { type: "string", enum: [...REPORTS] }, from: dateProp("First day"), to: dateProp("Last day") }, required: ["report"], additionalProperties: false } },
   { name: "list_plans", description: "Active membership plans with prices and subscriber counts.", input_schema: { type: "object", properties: {}, additionalProperties: false } },
   { name: "open_screen", description: "Offer the person a link to a RIVET screen where they can see or act on something (a member, a lead, a filtered member list, payments, classes, reports). Use it when the next step happens in RIVET; it does not change anything.", input_schema: { type: "object", properties: { screen: { type: "string", enum: [...SCREENS] }, record_id: { type: "string", description: "For member or lead." }, membership: { type: "string", enum: [...membership.options], description: "For members: a list filter." }, query: { type: "string", description: "For members: a search." }, label: { type: "string", description: "Short link text, in the person's language." } }, required: ["screen", "label"], additionalProperties: false } },
+  { name: "propose_renewal", description: "Propose renewing one member's membership: the same plan at its listed price, starting the day after the current term ends (or today if it has ended). Only when the person asks for the renewal. RIVET checks it and shows the person a card to confirm; nothing changes until they do. The price is charged to the member, due when the new term starts; no payment is taken.", input_schema: { type: "object", properties: { member_id: { type: "string" } }, required: ["member_id"], additionalProperties: false } },
+  { name: "propose_freeze", description: "Propose freezing one member's current membership between two dates, with the reason the person gave. The term's end moves later by the frozen days. Only when the person asks for the freeze; ask for the dates or the reason first if they did not say them. RIVET checks it and shows a card to confirm; nothing changes until they do.", input_schema: { type: "object", properties: { member_id: { type: "string" }, start_date: dateProp("First frozen day, today or later"), end_date: dateProp("Last frozen day"), reason: { type: "string", description: "The reason in the person's own words; never invented." } }, required: ["member_id", "start_date", "end_date", "reason"], additionalProperties: false } },
+  { name: "propose_unfreeze", description: "Propose ending a member's freeze that is in progress today, early. Unused frozen days come off the term. Only when the person asks; ask for the reason first if they did not give one. RIVET shows a card to confirm; nothing changes until they do.", input_schema: { type: "object", properties: { member_id: { type: "string" }, reason: { type: "string", description: "The reason in the person's own words; never invented." } }, required: ["member_id", "reason"], additionalProperties: false } },
 ];
 
 export function isChatToolKey(name: string): name is ChatToolKey {
@@ -110,6 +119,7 @@ export interface ToolRun {
   input: Record<string, string | number | boolean>;
   outcome: ChatToolOutcome;
   link?: ChatScreenLink;
+  action?: ChatAction;
 }
 
 function flatInput(value: Record<string, unknown>): Record<string, string | number | boolean> {
@@ -121,7 +131,7 @@ function flatInput(value: Record<string, unknown>): Record<string, string | numb
   return out;
 }
 
-function sourcesFor(name: Exclude<ChatToolKey, "open_screen">, input: Record<string, unknown>): Array<Pick<ChatContextItem, "kind" | "id" | "params">> {
+function sourcesFor(name: Exclude<ChatToolKey, "open_screen" | "propose_renewal" | "propose_freeze" | "propose_unfreeze">, input: Record<string, unknown>): Array<Pick<ChatContextItem, "kind" | "id" | "params">> {
   const defined = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Record<string, string | number | boolean>;
   switch (name) {
     case "search_members": return [{ kind: "member_list", params: defined({ search: input.query || undefined, membershipStatus: input.membership, planId: input.plan_id }) }];
@@ -154,6 +164,10 @@ export async function runChatTool(reader: ChatReader, env: ChatEnv, name: string
     const link = screenLink(parsed.data as z.infer<(typeof INPUTS)["open_screen"]>);
     if (!link) return { content: JSON.stringify({ error: "member and lead links need record_id" }), isError: true, input, outcome: { failure: "invalid" } };
     return { content: JSON.stringify({ shown: true, href: link.href }), isError: false, input, outcome: {}, link };
+  }
+  if (isActionTool(name)) {
+    const run = await proposeAction(reader, env, name, parsed.data);
+    return { content: run.content, isError: run.isError, input, outcome: run.outcome, ...(run.action ? { action: run.action } : {}) };
   }
   const results = await Promise.all(sourcesFor(name, parsed.data).map((item) => loadSource(reader, item, env)));
   const primary = results[0]!;

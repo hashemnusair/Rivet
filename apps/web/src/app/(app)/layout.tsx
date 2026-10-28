@@ -25,6 +25,7 @@ import { BillingNoticeBanner } from "@/features/billing/billing-notice";
 import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 import { AskRivetProvider, useAskRivet } from "@/features/ask-rivet/ask-rivet-context";
 import { AskRivetPanel } from "@/features/ask-rivet/ask-rivet-panel";
+import { AskRivetLauncher, AskRivetPhoneLauncher } from "@/features/ask-rivet/launcher";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const t = useT();
@@ -144,6 +145,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
         </div>
       </WorkspaceColumn>
+      <AskRivetLauncher />
+      <AskRivetPhoneLauncher />
       <AskRivetPanel />
       </div>
       <SubscriptionAgreementGate required={agreementRequired} />
@@ -155,19 +158,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The workspace column. On wide screens an open Ask RIVET panel docks beside
- * it, so the column gives up the panel's width instead of being covered: the
- * screen the person is asking about stays fully visible.
+ * The workspace column. Wazen floats above it in the bottom corner and never
+ * takes its width, so screens keep their own layout; where Wazen is
+ * available the page ends with room to scroll its last row clear of the
+ * launcher.
  */
 function WorkspaceColumn({ sidebarCollapsed, children }: { sidebarCollapsed: boolean; children: React.ReactNode }) {
   const askRivet = useAskRivet();
-  const docked = askRivet?.open ? askRivet.width : 0;
   return (
     <div
-      style={{ "--ask-rivet-width": `${docked}px` } as React.CSSProperties}
       className={cn(
-        "min-h-screen transition-[margin] duration-200 min-[1440px]:me-[var(--ask-rivet-width)]",
+        "min-h-screen",
         sidebarCollapsed ? "lg:ms-[60px]" : "lg:ms-[228px]",
+        askRivet?.available && "[&_main]:pb-24",
       )}
     >
       {children}

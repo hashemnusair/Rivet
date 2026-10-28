@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * Ask RIVET in the credential-free preview. The preview runs the same answer
+ * Wazen (Ask RIVET in code) in the credential-free preview. The preview runs the same answer
  * loop, tools and context sources as the server with RIVET's labelled test
  * model, so these journeys verify the panel, its context and its states; the
  * server path and Claude are covered in convex/ai.chat.test.ts.
@@ -57,7 +57,7 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-test.describe("Ask RIVET", () => {
+test.describe("Wazen", () => {
   test("stays hidden until RIVET makes the gym available and the gym turns assistance on", async ({ page }) => {
     await enterOwner(page);
     await expect(page.getByTestId("app-topbar")).toBeVisible();
@@ -78,7 +78,7 @@ test.describe("Ask RIVET", () => {
     await page.keyboard.press("ControlOrMeta+j");
     const panel = page.getByTestId("ask-rivet-panel");
     await expect(panel).toHaveAttribute("data-state", "open");
-    await expect(panel).toHaveAttribute("data-mode", "docked");
+    await expect(panel).toHaveAttribute("data-mode", "popup");
     await expect(panel.getByTestId("ask-attached")).toContainText(name);
     await expect(panel.getByTestId("ask-test-badge")).toBeVisible();
     await expect(panel.getByTestId("ask-prompts")).toContainText(name.split(" ")[0]!);
@@ -101,7 +101,7 @@ test.describe("Ask RIVET", () => {
     await expect(second.getByRole("table")).toBeVisible();
     await second.getByTestId("ask-screen-link").click();
     await expect(page).toHaveURL(/\/members\?membership=outstanding/);
-    // Docked beside the page, the panel stays open while the person follows links.
+    // Floating in the corner, the window stays open while the person follows links.
     await expect(panel).toHaveAttribute("data-state", "open");
     await expect(panel.getByTestId("ask-title")).toContainText(/Brief me|before/);
     expect(errors).toEqual([]);
@@ -152,7 +152,7 @@ test.describe("Ask RIVET", () => {
     await turnOnAssistance(page);
     await page.keyboard.press("ControlOrMeta+k");
     await page.getByRole("combobox", { name: /search/i }).fill("What needs my attention today?");
-    await page.getByRole("option", { name: /Ask RIVET: “What needs my attention today\?”/ }).click();
+    await page.getByRole("option", { name: /Ask Wazen: “What needs my attention today\?”/ }).click();
     const panel = page.getByTestId("ask-rivet-panel");
     await expect(panel).toHaveAttribute("data-state", "open");
     await expect(panel.getByTestId("ask-user-message")).toContainText("What needs my attention today?");
@@ -184,5 +184,92 @@ test.describe("Ask RIVET", () => {
     await answer.getByTestId("ask-record-link").first().click();
     await expect(page).toHaveURL(/\/members\/[^/]+$/);
     await expect(panel).toHaveAttribute("data-state", "closed");
+  });
+
+  test("floats over the page at every desktop and tablet size without moving it", async ({ page }) => {
+    await makeGymAvailable(page);
+    await enterOwner(page);
+    await turnOnAssistance(page);
+    await openFirstMember(page);
+    const panel = page.getByTestId("ask-rivet-panel");
+    for (const [width, height] of [[1920, 1080], [1440, 900], [1280, 800], [1024, 768], [768, 1024]] as const) {
+      await page.setViewportSize({ width, height });
+      const column = async () => {
+        const box = (await page.locator("main").boundingBox())!;
+        return { x: box.x, width: box.width };
+      };
+      const before = await column();
+      await page.getByTestId("ask-rivet-launcher").click();
+      await expect(panel).toHaveAttribute("data-state", "open");
+      await expect(panel).toHaveAttribute("data-mode", "popup");
+      // The page keeps its width: nothing reflows under the window.
+      expect(await column()).toEqual(before);
+      for (const size of ["compact", "large"] as const) {
+        await expect(panel).toHaveAttribute("data-size", size);
+        await page.waitForTimeout(320);
+        const box = (await panel.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        expect(box.y + box.height).toBeLessThanOrEqual(height);
+        await expect(panel.getByTestId("ask-input")).toBeVisible();
+        if (size === "compact") await panel.getByTestId("ask-size").click();
+      }
+      await expect(panel.getByTestId("ask-rail")).toHaveCount(width >= 900 ? 1 : 0);
+      await panel.getByTestId("ask-size").click();
+      await panel.getByTestId("ask-close").click();
+      await expect(panel).toHaveAttribute("data-state", "closed");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+    }
+  });
+
+  test("renews a membership only after the person confirms the card", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await makeGymAvailable(page);
+    await enterOwner(page);
+    await turnOnAssistance(page);
+    await openFirstMember(page);
+    await expect(page.getByTestId("member-next-term")).toHaveCount(0);
+    await page.getByTestId("ask-rivet-launcher").click();
+    const panel = page.getByTestId("ask-rivet-panel");
+    await panel.getByTestId("ask-input").fill("Renew his membership");
+    await page.keyboard.press("Enter");
+    const card = panel.getByTestId("ask-action");
+    await expect(card).toHaveAttribute("data-status", "proposed", { timeout: 20_000 });
+    await expect(card).toContainText("Nothing changes until you confirm.");
+    // Nothing has changed on the page yet.
+    await expect(page.getByTestId("member-next-term")).toHaveCount(0);
+    await card.getByTestId("ask-action-confirm").click();
+    await expect(card).toHaveAttribute("data-status", "done");
+    await expect(card).toContainText("Membership renewed");
+    // The member's page shows the new term at once. It starts after the current one, so its
+    // charge is due then and the card does not offer to collect it today.
+    await expect(page.getByTestId("member-next-term")).toBeVisible();
+    await expect(card.getByTestId("ask-action-collect")).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
+
+  test("asks from the home screen's chatbox", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await makeGymAvailable(page);
+    await enterOwner(page);
+    await turnOnAssistance(page);
+    await page.goto("/dashboard");
+    const box = page.getByTestId("ask-rivet-chatbox");
+    await expect(box).toBeVisible();
+    await page.getByTestId("ask-rivet-chatbox-input").fill("What needs my attention today?");
+    await page.keyboard.press("Enter");
+    const panel = page.getByTestId("ask-rivet-panel");
+    await expect(panel).toHaveAttribute("data-state", "open");
+    await expect(box).toHaveAttribute("inert", "");
+    await expect(panel.getByTestId("ask-user-message")).toContainText("What needs my attention today?");
+    await expect(panel.getByTestId("ask-answer").last()).toHaveAttribute("data-status", "complete", { timeout: 20_000 });
+    // The conversation is kept: closing and reopening shows it, and the list has it.
+    await panel.getByTestId("ask-close").click();
+    await page.getByTestId("ask-rivet-chatbox").getByRole("button").click();
+    await expect(panel.getByTestId("ask-user-message")).toContainText("What needs my attention today?");
+    await panel.getByTestId("ask-history").click();
+    await expect(panel.getByTestId("ask-thread")).toHaveCount(1);
   });
 });

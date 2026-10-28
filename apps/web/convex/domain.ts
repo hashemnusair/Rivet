@@ -1984,6 +1984,11 @@ export const aiDomainPort: AiDomainPort = {
   classOptionFacts: classOptionFactsFor,
   sourceVersions: aiSourceVersions,
   executeApproved: async (ctx, operation, input, request) => await mutationData(ctx, operation, input, request),
+  membershipBasis: async (ctx, actor, membershipId) => {
+    const record = await recordOf(ctx, actor, "membership", membershipId);
+    const value = data(record.data);
+    return { endDate: stringValue(value.endDate), status: statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK)), ...(optionalString(value.homeBranchId) ? { branchId: stringValue(value.homeBranchId) } : {}) };
+  },
   closePreparedTaskAsNotNeeded: async (ctx, actor, taskId) => {
     const record = await recordOf(ctx, actor, "task", taskId);
     const task = data(record.data);

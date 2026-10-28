@@ -36,6 +36,8 @@ import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { FollowUpContextPanel } from "@/features/followup/follow-up-context";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import { useMemberScreen } from "@/features/ask-rivet/screens";
+import { ClassFinder } from "@/features/assist/class-finder";
+import { capabilityAvailable, useAiSettings } from "@/features/assist/use-assist";
 
 export default function MemberDetailPageClient() {
   const { memberId } = useParams<{ memberId: string }>();
@@ -52,7 +54,10 @@ export default function MemberDetailPageClient() {
   // A tab the role cannot read is left out of the strip, like a sidebar
   // destination the role lacks. A deep link to it still lands on that tab so
   // the permission wall explains the link instead of silently showing Overview.
-  const visibleTabs = MEMBER_TABS.filter((tab) => !tab.permission || can(tab.permission));
+  // Finding a class is a booking tool, so it sits beside PT bookings, and only where the gym has it.
+  const aiSettings = useAiSettings();
+  const classFinder = capabilityAvailable(aiSettings.data, "class_finder");
+  const visibleTabs = MEMBER_TABS.filter((tab) => (!tab.permission || can(tab.permission)) && (tab.value !== "classes" || classFinder));
   const requested = MEMBER_TABS.find((tab) => tab.value === requestedTab);
   const activeTab = requested?.value ?? "overview";
   const paymentsBlocked = !can("reports.financial.read");
@@ -107,9 +112,29 @@ export default function MemberDetailPageClient() {
     <div className="space-y-4">
       <Breadcrumbs items={[{ label: t("nav.item.members"), href: "/members" }, { label: isolate(member.fullName) }]} />
 
-      <MemberHeader member={member} currentMembership={currentMembership} renewalTarget={renewalTarget} upcomingMembership={upcomingMembership} branchName={branchName} />
+      <MemberHeader
+        member={member}
+        currentMembership={currentMembership}
+        renewalTarget={renewalTarget}
+        upcomingMembership={upcomingMembership}
+        branchName={branchName}
+        contactActions={can("members.write") ? (
+          <div className="flex flex-wrap items-center gap-2 max-sm:grid max-sm:grid-cols-2 max-sm:[&_button]:w-full" role="group" aria-label={t("memberProfile.page.contactActionsLabel")}>
+            <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />
+            <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") replaceQueryInPlace(router, `/members/${memberId}`); }} />
+            <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
+              <StickyNote /> {t("memberProfile.page.addNote")}
+            </Button>
+            {can("crm.write") ? (
+              <Button variant="secondary" size="sm" onClick={() => setTaskOpen(true)}>
+                <CalendarClock /> {t("memberProfile.page.createTask")}
+              </Button>
+            ) : null}
+          </div>
+        ) : undefined}
+      />
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Tabs className="min-w-0" value={activeTab} onValueChange={(tab) => {
           const params = new URLSearchParams(searchParams.toString());
           if (tab === "overview") params.delete("tab");
@@ -146,29 +171,18 @@ export default function MemberDetailPageClient() {
           <TabsContent value="checkins">
             <CheckInsTab memberId={member.id} />
           </TabsContent>
+          <TabsContent value="classes">
+            {classFinder ? <ClassFinder memberId={member.id} /> : null}
+          </TabsContent>
           <TabsContent value="pt">
             {/* Keyed by the preselect so a "Book with" link works while the tab is already open. */}
             <PersonalTrainingTab key={`${searchParams.get("trainer") ?? ""}:${searchParams.get("book") ?? ""}`} membershipId={currentMembership?.id} preselectTrainerId={searchParams.get("trainer") ?? undefined} openBookingOnMount={searchParams.get("book") === "1"} />
           </TabsContent>
         </Tabs>
 
-        <aside className="min-w-0 space-y-4 self-start">
-          {can("members.write") ? (
-            <div className="flex flex-wrap gap-2" aria-label={t("memberProfile.page.contactActionsLabel")}>
-              <WhatsAppHandoff subject="member" subjectId={member.id} recipientName={member.fullName} recipientPreferredLanguage={member.preferredLanguage} phone={member.phone} />
-              <LogContactDialog subject="member" memberId={member.id} open={contactOpen} onOpenChange={(next) => { setContactOpen(next); if (!next && searchParams.get("action") === "contact") replaceQueryInPlace(router, `/members/${memberId}`); }} />
-              <Button variant="secondary" size="sm" onClick={() => setNoteOpen(true)}>
-                <StickyNote /> {t("memberProfile.page.addNote")}
-              </Button>
-              {can("crm.write") ? (
-                <Button variant="secondary" size="sm" onClick={() => setTaskOpen(true)}>
-                  <CalendarClock /> {t("memberProfile.page.createTask")}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <section className="panel p-4">
+        {/* Beside the tabs on wide screens; under them, two across, on laptops and tablets. */}
+        <aside className="grid min-w-0 content-start gap-4 self-start md:grid-cols-2 xl:grid-cols-1" aria-label={t("memberProfile.page.detailsHeading")}>
+          <section className="panel p-4 md:row-span-2 xl:row-span-1">
             <h3 className="mb-3 font-display text-[13px] font-semibold">{t("memberProfile.page.detailsHeading")}</h3>
             <MemberDetailsPanel member={member} branchName={branchName} salespersonName={salesperson?.name} />
           </section>
@@ -235,5 +249,6 @@ const MEMBER_TABS: ReadonlyArray<{ value: string; labelKey: TKey; permission?: P
   // Payments page hides the same way for the same roles.
   { value: "payments", labelKey: "memberProfile.tabs.payments", permission: "reports.financial.read" },
   { value: "checkins", labelKey: "memberProfile.tabs.checkins" },
+  { value: "classes", labelKey: "memberProfile.tabs.classes" },
   { value: "pt", labelKey: "memberProfile.tabs.pt" },
 ];

@@ -78,6 +78,7 @@ export const activityLog = {
     aiStandingRevoke: "Repeating work turned off",
     aiStandingTransfer: "Repeating work given to someone else",
     aiProposalApprove: "Prepared change approved",
+    aiChatActionConfirm: "Change confirmed from Wazen",
     aiProposalReject: "Prepared change rejected",
     aiProposalInvalidate: "Prepared change no longer matched the records",
     aiProposalsApproveAll: "Prepared changes approved together",

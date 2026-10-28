@@ -9,11 +9,12 @@ import { useLocale } from "@/lib/i18n/provider";
 import { capabilityAvailable, useAiSettings } from "@/features/assist/use-assist";
 
 /**
- * Ask RIVET's shared state: whether the panel is open, which conversation it
- * shows, how wide it is, and what the current screen contributes. Screens
- * register the record in focus, the things a person may want to attach and a
- * few questions worth asking there; everything else falls back to the
- * route's own name, so the assistant always knows where the person is.
+ * Wazen's shared state (Ask RIVET in code): whether the chat window is open,
+ * which conversation it shows, how large it is, and what the current screen
+ * contributes. Screens register the record in focus, the things a person may
+ * want to attach and a few questions worth asking there; everything else
+ * falls back to the route's own name, so the assistant always knows where the
+ * person is.
  */
 
 export interface AskRivetScreenRegistration {
@@ -47,18 +48,18 @@ interface AskRivetValue {
   /** A question to put in the box (from search or a suggestion), with a counter so the same text can be asked twice. */
   request?: { text: string; send: boolean; nonce: number };
   ask: (text: string, options?: { send?: boolean }) => void;
-  width: number;
-  setWidth: (width: number) => void;
+  /** The floating window: compact in the corner, or large with the conversation list beside it. */
+  size: PanelSize;
+  setSize: (size: PanelSize) => void;
 }
+
+export type PanelSize = "compact" | "large";
 
 const AskRivetContext = createContext<AskRivetValue | null>(null);
 
 const OPEN_KEY = "rivet.askRivet.open";
 const CHAT_KEY = "rivet.askRivet.chat";
-const WIDTH_KEY = "rivet.askRivet.width";
-export const PANEL_MIN_WIDTH = 360;
-export const PANEL_MAX_WIDTH = 640;
-export const PANEL_DEFAULT_WIDTH = 424;
+const SIZE_KEY = "rivet.askRivet.size";
 
 function readStorage(storage: "local" | "session", key: string): string | null {
   try {
@@ -94,7 +95,7 @@ export function AskRivetProvider({ children }: { children: ReactNode }) {
   const routeTitle = useRouteTitle(pathname);
   const [open, setOpenState] = useState(false);
   const [chatId, setChatIdState] = useState<string | undefined>(undefined);
-  const [width, setWidthState] = useState(PANEL_DEFAULT_WIDTH);
+  const [size, setSizeState] = useState<PanelSize>("compact");
   const [registrations, setRegistrations] = useState<Array<{ key: string; registration: AskRivetScreenRegistration }>>([]);
   const [request, setRequest] = useState<AskRivetValue["request"]>();
   const nonce = useRef(0);
@@ -105,8 +106,7 @@ export function AskRivetProvider({ children }: { children: ReactNode }) {
 
   // Restore the panel after a reload, in the same tab.
   useEffect(() => {
-    const savedWidth = Number(readStorage("local", WIDTH_KEY));
-    if (savedWidth >= PANEL_MIN_WIDTH && savedWidth <= PANEL_MAX_WIDTH) setWidthState(savedWidth);
+    if (readStorage("local", SIZE_KEY) === "large") setSizeState("large");
     if (readStorage("session", OPEN_KEY) === "1") setOpenState(true);
     const savedChat = readStorage("session", CHAT_KEY);
     if (savedChat) setChatIdState(savedChat);
@@ -124,10 +124,9 @@ export function AskRivetProvider({ children }: { children: ReactNode }) {
     setChatIdState(next);
     writeStorage("session", CHAT_KEY, next ?? null);
   }, []);
-  const setWidth = useCallback((next: number) => {
-    const clamped = Math.round(Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, next)));
-    setWidthState(clamped);
-    writeStorage("local", WIDTH_KEY, String(clamped));
+  const setSize = useCallback((next: PanelSize) => {
+    setSizeState(next);
+    writeStorage("local", SIZE_KEY, next === "large" ? next : null);
   }, []);
 
   const register = useCallback((key: string, registration: AskRivetScreenRegistration) => {
@@ -143,7 +142,7 @@ export function AskRivetProvider({ children }: { children: ReactNode }) {
     setOpen(true);
   }, [setOpen]);
 
-  // ⌘J / Ctrl+J opens and closes the panel from anywhere in the workspace.
+  // ⌘J / Ctrl+J opens and closes the window from anywhere in the workspace.
   useEffect(() => {
     if (!available) return;
     const onKey = (event: KeyboardEvent) => {
@@ -170,7 +169,7 @@ export function AskRivetProvider({ children }: { children: ReactNode }) {
     };
   }, [pathname, registrations, routeTitle]);
 
-  const value = useMemo<AskRivetValue>(() => ({ available, ...(blocked ? { blocked } : {}), open: open && available, setOpen, toggle, chatId, setChatId, screen, register, unregister, request, ask, width, setWidth }), [available, blocked, open, setOpen, toggle, chatId, setChatId, screen, register, unregister, request, ask, width, setWidth]);
+  const value = useMemo<AskRivetValue>(() => ({ available, ...(blocked ? { blocked } : {}), open: open && available, setOpen, toggle, chatId, setChatId, screen, register, unregister, request, ask, size, setSize }), [available, blocked, open, setOpen, toggle, chatId, setChatId, screen, register, unregister, request, ask, size, setSize]);
   return <AskRivetContext.Provider value={value}>{children}</AskRivetContext.Provider>;
 }
 
@@ -185,7 +184,7 @@ export function useAskRivet(): AskRivetValue | null {
 }
 
 /**
- * Tells Ask RIVET what this screen is about. Call it once per screen with
+ * Tells Wazen what this screen is about. Call it once per screen with
  * values derived from what the screen already loaded; it updates as they
  * change and is withdrawn when the screen unmounts.
  */

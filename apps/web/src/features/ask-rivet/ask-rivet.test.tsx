@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: 
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
-  // A wide desktop: the panel docks.
+  // A wide desktop: the window floats in the corner, large enough for the conversation list.
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: /min-width/.test(query), media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }));
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(performance.now()), 0));
   vi.stubGlobal("cancelAnimationFrame", (id: number) => window.clearTimeout(id));
@@ -71,7 +71,7 @@ async function makeAvailable(api: MockGymOSApi, capabilities: Record<string, "of
   await api.updateAiSettings({ tenantMode: "execute", expectedRevision: settings.revision, capabilities });
 }
 
-describe("the Ask RIVET panel", () => {
+describe("Wazen, the chat window (Ask RIVET in code)", () => {
   it("does not appear for a gym RIVET has not made available", async () => {
     await renderWithApp(<Shell />);
     await waitFor(() => expect(screen.queryByTestId("ask-rivet-launcher")).toBeNull());
@@ -121,5 +121,105 @@ describe("the Ask RIVET panel", () => {
     await user.click(screen.getByTestId("ask-rivet-launcher"));
     await user.click(screen.getByTestId("ask-close"));
     expect(screen.getByTestId("ask-rivet-panel")).toHaveAttribute("data-state", "closed");
+  });
+
+  it("floats over the page instead of taking its width, and grows to show the conversation list", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<Shell />, { prepare: (api) => makeAvailable(api) });
+    await user.click(await screen.findByTestId("ask-rivet-launcher"));
+    const panel = screen.getByTestId("ask-rivet-panel");
+    expect(panel).toHaveAttribute("data-mode", "popup");
+    expect(panel).toHaveAttribute("data-size", "compact");
+    expect(within(panel).queryByTestId("ask-rail")).toBeNull();
+    await user.click(within(panel).getByTestId("ask-size"));
+    expect(panel).toHaveAttribute("data-size", "large");
+    expect(within(panel).getByTestId("ask-rail")).toBeInTheDocument();
+    expect(window.localStorage.getItem("rivet.askRivet.size")).toBe("large");
+    await user.click(within(panel).getByTestId("ask-size"));
+    expect(panel).toHaveAttribute("data-size", "compact");
+  });
+
+  it("keeps each conversation separate: start another, then go back to the first and rename it", async () => {
+    const user = userEvent.setup();
+    await renderWithApp(<Shell />, { prepare: (api) => makeAvailable(api) });
+    await user.click(await screen.findByTestId("ask-rivet-launcher"));
+    const panel = screen.getByTestId("ask-rivet-panel");
+    const ask = async (text: string) => {
+      await user.type(within(panel).getByTestId("ask-input"), `${text}{Enter}`);
+      await waitFor(() => expect(within(panel).getAllByTestId("ask-answer").at(-1)).toHaveAttribute("data-status", "complete"), { timeout: 5_000 });
+    };
+    await ask("Which members owe money?");
+    await user.click(within(panel).getByTestId("ask-new"));
+    expect(within(panel).queryByTestId("ask-answer")).toBeNull();
+    await ask("What needs my attention today?");
+    expect(within(panel).getAllByTestId("ask-user-message")).toHaveLength(1);
+
+    await user.click(within(panel).getByTestId("ask-history"));
+    const threads = await within(panel).findAllByTestId("ask-thread");
+    expect(threads.map((row) => row.textContent)).toEqual([expect.stringContaining("What needs my attention today?"), expect.stringContaining("Which members owe money?")]);
+    await user.click(within(threads[1]!).getAllByRole("button")[0]!);
+    await waitFor(() => expect(within(panel).getByTestId("ask-user-message")).toHaveTextContent("Which members owe money?"));
+    expect(within(panel).getByTestId("ask-title")).toHaveTextContent("Which members owe money?");
+
+    await user.click(within(panel).getByTestId("ask-history"));
+    await user.click(within((await within(panel).findAllByTestId("ask-thread"))[1]!).getByTestId("ask-thread-rename"));
+    const name = within(panel).getByTestId("ask-thread-rename-input");
+    await user.clear(name);
+    await user.type(name, "Money owed{Enter}");
+    await waitFor(() => expect(within(panel).getAllByTestId("ask-thread")[1]).toHaveTextContent("Money owed"));
+  });
+});
+
+describe("Wazen's proposed changes", () => {
+  let memberId = "";
+  let memberName = "";
+
+  function RealMember() {
+    useAskRivetScreen({ title: memberName, focus: { kind: "member", id: memberId, label: memberName } });
+    return null;
+  }
+
+  /** A seeded member whose latest term is active, so a renewal can chain from it. */
+  async function pickMember(api: MockGymOSApi) {
+    await makeAvailable(api);
+    const terms = await api.listMemberships({ status: "active", pageSize: 50 });
+    const term = terms.items.find((item) => !terms.items.some((other) => other.memberId === item.memberId && other.endDate > item.endDate));
+    memberId = term!.memberId;
+    memberName = term!.memberName;
+  }
+
+  it("shows a renewal as a card and renews only when the person confirms", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<AskRivetProvider><RealMember /><AskRivetLauncher /><AskRivetPanel /></AskRivetProvider>, { prepare: pickMember });
+    const before = (await api.listMemberships({ memberId, pageSize: 50 })).items.length;
+    await user.click(await screen.findByTestId("ask-rivet-launcher"));
+    const panel = screen.getByTestId("ask-rivet-panel");
+    await user.type(within(panel).getByTestId("ask-input"), "Renew his membership{Enter}");
+    const card = await within(panel).findByTestId("ask-action", {}, { timeout: 5_000 });
+    expect(card).toHaveAttribute("data-kind", "renew_membership");
+    expect(card).toHaveTextContent(memberName);
+    expect(card).toHaveTextContent("Nothing changes until you confirm.");
+    expect((await api.listMemberships({ memberId, pageSize: 50 })).items).toHaveLength(before);
+
+    await user.click(within(card).getByTestId("ask-action-confirm"));
+    await waitFor(() => expect(within(panel).getByTestId("ask-action")).toHaveAttribute("data-status", "done"));
+    expect(within(panel).getByTestId("ask-action")).toHaveTextContent("Membership renewed");
+    // The new term starts after the current one, so nothing is collectible today.
+    expect(within(panel).queryByTestId("ask-action-collect")).toBeNull();
+    expect((await api.listMemberships({ memberId, pageSize: 50 })).items).toHaveLength(before + 1);
+  });
+
+  it("changes nothing when the person says not now", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<AskRivetProvider><RealMember /><AskRivetLauncher /><AskRivetPanel /></AskRivetProvider>, { prepare: pickMember });
+    const before = (await api.listMemberships({ memberId, pageSize: 50 })).items.length;
+    await user.click(await screen.findByTestId("ask-rivet-launcher"));
+    const panel = screen.getByTestId("ask-rivet-panel");
+    await user.type(within(panel).getByTestId("ask-input"), "Renew his membership{Enter}");
+    const card = await within(panel).findByTestId("ask-action", {}, { timeout: 5_000 });
+    await user.click(within(card).getByTestId("ask-action-dismiss"));
+    await waitFor(() => expect(within(panel).getByTestId("ask-action")).toHaveAttribute("data-status", "dismissed"));
+    expect(within(panel).queryByTestId("ask-action-confirm")).toBeNull();
+    expect((await api.listMemberships({ memberId, pageSize: 50 })).items).toHaveLength(before);
   });
 });

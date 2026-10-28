@@ -1,26 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { History, ImageUp, SquarePen, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { ArrowLeft, History, ImageUp, Maximize2, Minimize2, SquarePen, X } from "lucide-react";
 import { getApi } from "@/lib/api/client";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
 import type { AiErrorCategory } from "@/lib/ai/contracts";
 import { isChatMessageWorking, type ChatAttachmentView, type ChatContextItem } from "@/lib/ai/chat/contracts";
 import { useInvalidate } from "@/lib/hooks/use-api";
-import { useFormat } from "@/lib/i18n/format";
-import { useLocale, type TKey } from "@/lib/i18n/provider";
+import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAiSettings } from "@/features/assist/use-assist";
-import { currentRoute, PANEL_MAX_WIDTH, PANEL_MIN_WIDTH, useAskRivet } from "./ask-rivet-context";
+import { currentRoute, useAskRivet } from "./ask-rivet-context";
 import { Composer, type ComposerHandle, type ComposerSend } from "./composer";
 import { Conversation, EmptyConversation, type ConversationItem } from "./conversation";
 import { RivetGlyph } from "./rivet-glyph";
-import { forgetThread, useChatList, useChatStream, useChatThread } from "./use-chat";
+import { ThreadList } from "./threads";
+import { useChatStream, useChatThread } from "./use-chat";
 
-export type PanelMode = "docked" | "overlay" | "full";
+/**
+ * A floating window in the corner wherever there is room for one, so the page
+ * underneath keeps its full width and never reflows; full screen on phones
+ * and very short windows.
+ */
+export type PanelMode = "popup" | "full";
 
 function subscribeMedia(query: string) {
   return (callback: () => void) => {
@@ -34,15 +38,8 @@ function useMedia(query: string): boolean {
   return useSyncExternalStore(subscribeMedia(query), () => window.matchMedia(query).matches, () => false);
 }
 
-/**
- * Docked beside the page from 1440 px, where the page keeps at least ~790 px
- * beside an open sidebar; over the page on smaller desktops and tablets; full
- * screen on phones.
- */
 export function usePanelMode(): PanelMode {
-  const wide = useMedia("(min-width: 1440px)");
-  const tablet = useMedia("(min-width: 768px)");
-  return wide ? "docked" : tablet ? "overlay" : "full";
+  return useMedia("(min-width: 640px) and (min-height: 540px)") ? "popup" : "full";
 }
 
 interface Optimistic {
@@ -63,111 +60,72 @@ function errorReason(error: unknown): AiErrorCategory {
   return "model_unavailable";
 }
 
-function ConversationsMenu({ activeId, onSelect, onDeleted }: { activeId?: string; onSelect: (chatId: string) => void; onDeleted: (chatId: string) => void }) {
-  const { t } = useLocale();
-  const format = useFormat();
-  const [open, setOpen] = useState(false);
-  const list = useChatList(open);
-  const invalidate = useInvalidate();
+function HeaderButton({ label, onClick, disabled, active, testId, children }: { label: string; onClick: () => void; disabled?: boolean; active?: boolean; testId: string; children: React.ReactNode }) {
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button type="button" className="inline-flex size-8 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-ink data-[state=open]:bg-sunken data-[state=open]:text-ink" aria-label={t("askRivet.history")} title={t("askRivet.history")} data-testid="ask-history">
-          <History className="size-4" aria-hidden />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
-        <p className="border-b border-line px-3 py-2 text-[12px] font-medium text-ink-3">{t("askRivet.history")}</p>
-        {list.data?.length ? (
-          <ul className="max-h-80 overflow-y-auto py-1" data-testid="ask-history-list">
-            {list.data.map((chat) => (
-              <li key={chat.id} className={cn("group/chat flex items-center gap-1 pe-1", chat.id === activeId && "bg-sunken/70")}>
-                <button type="button" onClick={() => { onSelect(chat.id); setOpen(false); }} className="min-w-0 flex-1 px-3 py-2 text-start focus-visible:outline-2 focus-visible:outline-ink">
-                  <bdi className="block truncate text-[13px] text-ink">{chat.title}</bdi>
-                  <span className="block text-[11.5px] text-ink-3">{format.relative(chat.updatedAt)}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await getApi().deleteAiChat(chat.id).catch(() => undefined);
-                    forgetThread(chat.id);
-                    onDeleted(chat.id);
-                    await invalidate([qk.aiChats]);
-                  }}
-                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-ink-3 opacity-0 transition-[opacity,color] hover:bg-sunken hover:text-ink focus-visible:opacity-100 group-hover/chat:opacity-100 [@media(hover:none)]:opacity-100"
-                  aria-label={`${t("askRivet.deleteChat")}: ${chat.title}`}
-                >
-                  <Trash2 className="size-3.5" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="px-3 py-3 text-[12.5px] text-ink-3">{list.isLoading ? t("common.state.loading" as TKey) : t("askRivet.historyEmpty")}</p>}
-      </PopoverContent>
-    </Popover>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      aria-pressed={active}
+      className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-ink disabled:pointer-events-none disabled:opacity-40", active && "bg-sunken text-ink")}
+      data-testid={testId}
+    >
+      {children}
+    </button>
   );
 }
 
-function Resizer({ width, onWidth }: { width: number; onWidth: (width: number) => void }) {
-  const { t } = useLocale();
-  const dragging = useRef(false);
-  const frame = useRef<number | undefined>(undefined);
-  const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    dragging.current = true;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  };
-  const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragging.current) return;
-    const rtl = document.documentElement.dir === "rtl";
-    const next = rtl ? event.clientX : window.innerWidth - event.clientX;
-    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => onWidth(next));
-  };
-  const end = (event: ReactPointerEvent<HTMLDivElement>) => {
-    dragging.current = false;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  };
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={t("askRivet.resize")}
-      aria-valuemin={PANEL_MIN_WIDTH}
-      aria-valuemax={PANEL_MAX_WIDTH}
-      aria-valuenow={width}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onKeyDown={(event) => {
-        const rtl = document.documentElement.dir === "rtl";
-        if (event.key === "ArrowLeft") onWidth(width + (rtl ? -16 : 16));
-        if (event.key === "ArrowRight") onWidth(width + (rtl ? 16 : -16));
-      }}
-      className="group/resize absolute inset-y-0 start-0 z-10 w-2 -translate-x-1/2 cursor-col-resize touch-none outline-none rtl:translate-x-1/2"
-    >
-      <span className="absolute inset-y-0 start-1/2 w-px bg-transparent transition-colors group-hover/resize:bg-line-3 group-focus-visible/resize:bg-ink" />
-    </div>
-  );
+/** Toasts keep clear of the window: beside it when there is room, otherwise above its message box. */
+function useToastClearance(panel: React.RefObject<HTMLElement | null>, open: boolean, mode: PanelMode, size: string) {
+  useEffect(() => {
+    const root = document.documentElement;
+    const place = () => {
+      if (!open) {
+        root.dataset.askRivet = "launcher";
+        root.style.removeProperty("--ask-rivet-clearance");
+        return;
+      }
+      const width = panel.current?.offsetWidth ?? 0;
+      const beside = mode === "popup" && window.innerWidth - width - 48 >= 360;
+      root.dataset.askRivet = beside ? "popup" : "cover";
+      if (beside) root.style.setProperty("--ask-rivet-clearance", `${width + 16}px`);
+      else root.style.removeProperty("--ask-rivet-clearance");
+    };
+    place();
+    // The window animates to its new size; measure again once it has settled.
+    const settle = window.setTimeout(place, 300);
+    window.addEventListener("resize", place);
+    return () => {
+      window.clearTimeout(settle);
+      window.removeEventListener("resize", place);
+      delete root.dataset.askRivet;
+      root.style.removeProperty("--ask-rivet-clearance");
+    };
+  }, [panel, open, mode, size]);
 }
 
 export function AskRivetPanel() {
   const context = useAskRivet();
   const { t, locale } = useLocale();
   const mode = usePanelMode();
+  const roomForList = useMedia("(min-width: 900px)");
   const settings = useAiSettings(Boolean(context?.available));
   const invalidate = useInvalidate();
   const composer = useRef<ComposerHandle>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [optimistic, setOptimistic] = useState<Optimistic | undefined>();
+  const [view, setView] = useState<"chat" | "threads">("chat");
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const open = Boolean(context?.open);
   const chatId = context?.chatId;
+  const size = mode === "popup" ? context?.size ?? "compact" : "compact";
+  const large = mode === "popup" && size === "large";
+  // The large window keeps the conversation list beside the chat; otherwise it is a view of its own.
+  const rail = large && roomForList;
+  const showThreads = !rail && view === "threads";
   const { thread, error: threadError } = useChatThread(open ? chatId : undefined);
 
   // A conversation that no longer exists (deleted elsewhere, or expired) starts a new one.
@@ -186,7 +144,7 @@ export function AskRivetPanel() {
   const items = useMemo<ConversationItem[]>(() => {
     const list: ConversationItem[] = messages.map((message, index) => message.role === "user"
       ? { key: message.clientId ?? message.id, role: "user", text: message.text, context: message.context, attachments: message.attachments }
-      : { key: message.clientId ?? message.id, role: "assistant", messageId: message.id, status: message.status, parts: message.id === streaming?.id ? (streamParts ?? message.parts) : message.parts, ...(message.error ? { error: message.error } : {}), canRetry: index === messages.length - 1 });
+      : { key: message.clientId ?? message.id, role: "assistant", messageId: message.id, ...(message.completedAt ? { completedAt: message.completedAt } : {}), status: message.status, parts: message.id === streaming?.id ? (streamParts ?? message.parts) : message.parts, ...(message.error ? { error: message.error } : {}), canRetry: index === messages.length - 1 });
     if (optimistic && !reconciled) {
       list.push({ key: optimistic.clientId, role: "user", text: optimistic.text, context: optimistic.context, attachments: optimistic.attachments });
       list.push({ key: `${optimistic.clientId}:answer`, role: "assistant", status: optimistic.error ? "failed" : "pending", parts: [], ...(optimistic.error ? { error: optimistic.error } : {}), canRetry: false });
@@ -195,49 +153,48 @@ export function AskRivetPanel() {
   }, [messages, optimistic, reconciled, streamParts, streaming?.id]);
 
   const working = Boolean(streaming) || Boolean(optimistic && !optimistic.error && !reconciled);
-  const overlay = mode !== "docked";
   const close = useCallback(() => context?.setOpen(false), [context]);
-  const onNavigate = useCallback(() => { if (overlay) close(); }, [overlay, close]);
+  // Following a link: a phone shows the screen instead; a large window steps aside so the screen is visible.
+  const onNavigate = useCallback(() => {
+    if (mode === "full") close();
+    else if (large) context?.setSize("compact");
+  }, [mode, large, close, context]);
 
-  // Focus the message box when the panel opens; hand focus back to the launcher when it closes.
+  // Focus the message box when the window opens; hand focus back to the launcher when it closes.
   const wasOpen = useRef(open);
   useEffect(() => {
     if (open && !wasOpen.current) window.setTimeout(() => composer.current?.focus(), 60);
     if (!open && wasOpen.current) {
+      setView("chat");
       const active = document.activeElement;
-      if (!active || active === document.body || document.getElementById("ask-rivet-panel")?.contains(active)) document.getElementById("ask-rivet-launcher")?.focus();
+      // The launcher that is showing at this width: the corner button, the home screen's box, or the phone button.
+      const launcher = [...document.querySelectorAll<HTMLElement>("[data-ask-launcher]")].find((element) => element.offsetParent !== null);
+      if (!active || active === document.body || panelRef.current?.contains(active)) launcher?.focus();
     }
     wasOpen.current = open;
   }, [open]);
 
-  // Toasts share the panel's corner; while it is open they move clear of the message box (see globals.css).
-  const width = context?.width;
-  useEffect(() => {
-    const root = document.documentElement;
-    if (open) {
-      root.dataset.askRivet = mode;
-      root.style.setProperty("--ask-rivet-clearance", `${mode === "overlay" ? Math.min(width ?? 0, 480) : width ?? 0}px`);
-    } else {
-      delete root.dataset.askRivet;
-      root.style.removeProperty("--ask-rivet-clearance");
-    }
-    return () => {
-      delete root.dataset.askRivet;
-      root.style.removeProperty("--ask-rivet-clearance");
-    };
-  }, [open, mode, width]);
+  useToastClearance(panelRef, open, mode, size);
 
-  // Escape closes the panel when focus is inside it and nothing inside claimed the key.
+  // Escape closes the window when focus is inside it (or it covers the screen) and nothing inside claimed the key.
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      const panel = document.getElementById("ask-rivet-panel");
-      if (overlay || panel?.contains(document.activeElement)) close();
+      if (mode === "full" || panelRef.current?.contains(document.activeElement)) {
+        if (showThreads) setView("chat");
+        else close();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, overlay, close]);
+  }, [open, mode, close, showThreads]);
+
+  // A question asked from elsewhere (search, the dashboard) belongs in the conversation, not the list.
+  const requestNonce = context?.request?.nonce;
+  useEffect(() => {
+    if (requestNonce) setView("chat");
+  }, [requestNonce]);
 
   const send = useCallback(async (input: ComposerSend): Promise<boolean> => {
     if (!context) return false;
@@ -272,6 +229,14 @@ export function AskRivetPanel() {
   const newChat = useCallback(() => {
     context?.setChatId(undefined);
     setOptimistic(undefined);
+    setView("chat");
+    window.setTimeout(() => composer.current?.focus(), 0);
+  }, [context]);
+
+  const selectChat = useCallback((id: string) => {
+    setOptimistic(undefined);
+    context?.setChatId(id);
+    setView("chat");
     window.setTimeout(() => composer.current?.focus(), 0);
   }, [context]);
 
@@ -290,6 +255,7 @@ export function AskRivetPanel() {
     event.preventDefault();
     dragDepth.current = 0;
     setDragging(false);
+    setView("chat");
     composer.current?.addFiles(Array.from(event.dataTransfer.files));
   };
 
@@ -297,58 +263,87 @@ export function AskRivetPanel() {
   const testAnswers = (thread?.source ?? settings.data?.adapterMode) === "fixture";
   const prompts = context.screen.prompts.length ? context.screen.prompts : [t("askRivet.prompts.default.p1"), t("askRivet.prompts.default.p2"), t("askRivet.prompts.default.p3")];
   const title = thread?.title ?? (optimistic ? optimistic.text : undefined);
+  const threads = (autoFocusSearch: boolean, className?: string) => (
+    <ThreadList activeId={chatId} onSelect={selectChat} onNew={newChat} onDeleted={(id) => { if (id === chatId) newChat(); }} autoFocusSearch={autoFocusSearch} className={className} />
+  );
 
   return (
-    <aside
+    <section
+      ref={panelRef}
       id="ask-rivet-panel"
+      role="dialog"
+      aria-modal={mode === "full" || undefined}
       aria-label={t("askRivet.name")}
       data-testid="ask-rivet-panel"
       data-state={open ? "open" : "closed"}
       data-mode={mode}
+      data-size={size}
       inert={!open || undefined}
       onDragEnter={onDragEnter}
       onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      style={mode === "full" ? undefined : { width: mode === "docked" ? context.width : Math.min(context.width, 480) }}
       className={cn(
-        "ask-panel fixed z-40 flex flex-col bg-paper transition-[transform,visibility] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        mode === "full" ? "inset-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" : "inset-y-0 end-0 max-w-[calc(100vw-48px)] border-s border-line",
-        mode === "overlay" && "shadow-dialog",
-        open ? "visible translate-x-0" : "invisible translate-x-full rtl:-translate-x-full",
+        "ask-panel fixed z-50 flex overflow-hidden bg-paper",
+        mode === "full" ? "inset-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" : "ask-popup bottom-4 end-4 rounded-xl border border-line-2 shadow-dialog",
       )}
     >
-      {mode === "docked" ? <Resizer width={context.width} onWidth={context.setWidth} /> : null}
-      <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-line ps-3.5 pe-2 sm:ps-4 lg:h-16">
-        <RivetGlyph className="h-[18px] text-ink" />
-        <div className="ms-1 min-w-0 flex-1">
-          <p className="truncate font-display text-[14px] font-semibold leading-tight text-ink" data-testid="ask-title"><bdi>{title ?? t("askRivet.name")}</bdi></p>
-          {title ? <p className="text-[11.5px] leading-tight text-ink-3">{t("askRivet.name")}</p> : null}
-        </div>
-        {testAnswers ? <Badge variant="outline" className="shrink-0" title={t("askRivet.testAnswersHint")} data-testid="ask-test-badge">{t("askRivet.testAnswers")}</Badge> : null}
-        <ConversationsMenu activeId={chatId} onSelect={(id) => { setOptimistic(undefined); context.setChatId(id); }} onDeleted={(id) => { if (id === chatId) newChat(); }} />
-        <button type="button" onClick={newChat} disabled={!chatId && !optimistic} className="inline-flex size-8 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-ink disabled:pointer-events-none disabled:opacity-40" aria-label={t("askRivet.newChat")} title={t("askRivet.newChat")} data-testid="ask-new">
-          <SquarePen className="size-4" aria-hidden />
-        </button>
-        <button type="button" onClick={close} className="inline-flex size-8 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-ink" aria-label={t("askRivet.close")} title={t("askRivet.close")} data-testid="ask-close">
-          <X className="size-4" aria-hidden />
-        </button>
-      </header>
-      <div className="relative min-h-0 flex-1">
-        <Conversation
-          items={items}
-          onRetry={retry}
-          onNavigate={onNavigate}
-          empty={<EmptyConversation title={context.screen.title} focus={context.screen.focus} prompts={prompts} onPrompt={(prompt) => context.ask(prompt, { send: true })} />}
-        />
-      </div>
-      <Composer ref={composer} screen={context.screen} working={working} onSend={send} onStop={stop} request={context.request} onEscape={close} />
-      {dragging ? (
-        <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-3 bg-paper/95 text-[13px] font-medium text-ink-2" data-testid="ask-drop">
-          <ImageUp className="size-5 text-ink-3" aria-hidden />
-          {t("askRivet.composer.dropFiles")}
-        </div>
+      {rail ? (
+        <aside className="flex w-[244px] shrink-0 flex-col border-e border-line bg-sunken/35" aria-label={t("askRivet.history")} data-testid="ask-rail">
+          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-4">
+            <RivetGlyph className="h-[18px] text-ink" />
+            <span className="font-display text-[14px] font-semibold text-ink">{t("askRivet.name")}</span>
+          </div>
+          {threads(false, "min-h-0 flex-1")}
+        </aside>
       ) : null}
-    </aside>
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center gap-1 border-b border-line pe-2 ps-3.5">
+          {showThreads ? (
+            <>
+              <HeaderButton label={t("askRivet.back")} onClick={() => setView("chat")} testId="ask-back"><ArrowLeft className="size-4 rtl:-scale-x-100" aria-hidden /></HeaderButton>
+              <p className="ms-1 min-w-0 flex-1 truncate font-display text-[14px] font-semibold text-ink">{t("askRivet.history")}</p>
+            </>
+          ) : (
+            <>
+              {rail ? null : <RivetGlyph className="h-[18px] text-ink" />}
+              <div className={cn("min-w-0 flex-1", !rail && "ms-1.5")}>
+                <p className="truncate font-display text-[14px] font-semibold leading-tight text-ink" data-testid="ask-title"><bdi>{title ?? (rail ? t("askRivet.newChat") : t("askRivet.name"))}</bdi></p>
+                {title && !rail ? <p className="text-[11.5px] leading-tight text-ink-3">{t("askRivet.name")}</p> : null}
+              </div>
+            </>
+          )}
+          {testAnswers ? <Badge variant="outline" className="me-1 hidden shrink-0 min-[400px]:inline-flex" title={t("askRivet.testAnswersHint")} data-testid="ask-test-badge">{t("askRivet.testAnswers")}</Badge> : null}
+          {rail ? null : <HeaderButton label={t("askRivet.history")} onClick={() => setView(showThreads ? "chat" : "threads")} active={showThreads} testId="ask-history"><History className="size-4" aria-hidden /></HeaderButton>}
+          {rail ? null : <HeaderButton label={t("askRivet.newChat")} onClick={newChat} disabled={!chatId && !optimistic && !showThreads} testId="ask-new"><SquarePen className="size-4" aria-hidden /></HeaderButton>}
+          {mode === "popup" ? (
+            <HeaderButton label={large ? t("askRivet.shrink") : t("askRivet.expand")} onClick={() => context.setSize(large ? "compact" : "large")} testId="ask-size">
+              {large ? <Minimize2 className="size-4" aria-hidden /> : <Maximize2 className="size-4" aria-hidden />}
+            </HeaderButton>
+          ) : null}
+          <HeaderButton label={t("askRivet.close")} onClick={close} testId="ask-close"><X className="size-4" aria-hidden /></HeaderButton>
+        </header>
+        {showThreads ? threads(true, "min-h-0 flex-1") : (
+          <div className="relative min-h-0 flex-1">
+            <Conversation
+              items={items}
+              onRetry={retry}
+              onNavigate={onNavigate}
+              empty={<EmptyConversation title={context.screen.title} focus={context.screen.focus} prompts={prompts} onPrompt={(prompt) => context.ask(prompt, { send: true })} />}
+            />
+          </div>
+        )}
+        {/* Kept mounted under the list so a half-written message and its attachments survive a look at earlier conversations. */}
+        <div className={cn(showThreads && "hidden")}>
+          <Composer ref={composer} screen={context.screen} working={working} onSend={send} onStop={stop} request={context.request} onEscape={close} />
+        </div>
+        {dragging ? (
+          <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-3 bg-paper/95 text-[13px] font-medium text-ink-2" data-testid="ask-drop">
+            <ImageUp className="size-5 text-ink-3" aria-hidden />
+            {t("askRivet.composer.dropFiles")}
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }

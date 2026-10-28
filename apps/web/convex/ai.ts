@@ -117,6 +117,8 @@ export interface AiDomainPort {
   sourceVersions(ctx: ReadCtx, actor: ActorContext, sources: Array<{ table: string; id: string }>): Promise<number[]>;
   /** Runs an existing domain operation as the signed-in approver, with every check it already has. */
   executeApproved(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown>;
+  /** A membership's end date and effective status today, read through the person's own scope. */
+  membershipBasis(ctx: ReadCtx, actor: ActorContext, membershipId: string): Promise<{ endDate: string; status: string; branchId?: string }>;
   /**
    * A task RIVET prepared, read through the person's own scope, closed as not
    * needed if it is still open. Refuses tasks people created themselves.

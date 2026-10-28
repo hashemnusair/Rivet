@@ -382,6 +382,8 @@ export class ConvexGymOSApi implements GymOSApi {
 
   async stopAiChatMessage(messageId: string): Promise<void> { await this.mutate("ai.chat.stop", { messageId }); }
   async deleteAiChat(chatId: string): Promise<void> { await this.mutate("ai.chat.delete", { chatId }); }
+  renameAiChat(chatId: string, title: string): Promise<Chat.ChatSummaryView> { return this.mutate("ai.chat.rename", { chatId, title }); }
+  decideAiChatAction(input: Chat.DecideChatActionInput): Promise<Chat.ChatAction> { return this.mutate("ai.chat.action", input); }
 
   async uploadAiChatFile(file: Blob, input: { name: string; mediaType: Chat.ChatFileType }): Promise<Chat.ChatFileRegisterResult> {
     const url = await this.mutate<string>("ai.chat.file.upload_url", {});

@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; branch only, not released)
+
+Elias asked to rename Ask RIVET to **Wazen** (وزن), to stop it squeezing the page, to
+reorganise the member profile, and to build Hashem's follow-ups (separate conversations,
+a home-screen chatbox, minimal actions). Elias chose renew plus freeze/end-freeze, that a
+renewal adds to what the member owes, and the bottom-right corner for the chatbox.
+Built on `claude/wazen-chatbot-ui-layout-b8fcc1` from `main` `85c3633a`. Decisions:
+docs/09 "Wazen decisions". Status: docs/13 AI-7.
+
+- **Window.** No docking: a launcher in the bottom corner opens a floating window
+  (420 × 680, or 1,040 × 900 with the conversation list beside the chat); full screen
+  below 640 × 540. The page never reflows; toasts keep clear; pages end with room past the
+  launcher. On the dashboard the launcher is an "Ask Wazen anything…" box.
+- **Conversations.** Day-grouped list with search, rename (`ai.chat.rename`) and delete.
+  Each conversation's context was already separate on the server.
+- **Actions.** `propose_renewal`, `propose_freeze`, `propose_unfreeze` read and check as
+  the person and show a card; **Confirm** runs `memberships.renew/.freeze/.unfreeze` as
+  them via `ai.chat.action` → `decideAction` (`convex/aiChatOps.ts`) in one transaction,
+  with the operation's own checks and audit plus `ai.chat.action.confirm`. Cards expire
+  after 30 minutes, refuse if the term changed, and run once. A future renewal's charge is
+  due when the term starts, so "Collect payment" shows only for a term starting today. The
+  next message tells the model what was decided. Prompt version `rivet-chat.v2`.
+- **Member profile.** Contact actions in the header, one figures strip, "Find a class" as a
+  Classes tab, details column that fits 390–1,920 px.
+- **Code map.** `src/lib/ai/chat/actions.ts` (new), `contracts.ts`, `tools.ts`, `engine.ts`,
+  `prompt.ts`, `fixture-model.ts`; `convex/aiChatOps.ts`, `aiChat.ts`, `ai.ts` +
+  `domain.ts` (`membershipBasis` on the port); `src/features/ask-rivet/` (panel rewritten,
+  `launcher.tsx`, new `threads.tsx` and `action-card.tsx`); `src/lib/mock/chat.ts` and
+  `MockGymOSApi.ts`; member page files; `askRivet` strings in English and Arabic.
+- **Verification (local, 28 October 2026):** full Vitest 2,705 passed (new: `actions.test.ts`
+  8, Convex `ai.chat.test.ts` 19 incl. confirm-through-card, dismiss, changed/expired card,
+  permission and rename; component 10); `tsc` for web and Convex; ESLint on every changed
+  file; `verify-lock.py`; `git diff --check`. On a production mock-preview build:
+  `e2e/ask-rivet.spec.ts` 10 journeys (new: window at 1,920/1,440/1,280/1,024/768 without
+  moving the page, renew through a card, dashboard chatbox) and `e2e/ai-assist.spec.ts`
+  (class finder now on its tab) all pass; all 97 screenshot tests pass and
+  `workflow-member-detail-phone.png` was refreshed for the new header. Browser review in
+  English and Arabic at 1,440, 1,280, 1,024, 768 and 390 px.
+- **Not done.** Not merged or deployed. Release order: Convex backend first (`pnpm
+  convex:deploy`; no schema or index change, new operations only), then the frontend.
+  Live-Claude acceptance (AI-7.7) is open, as is AI-6.5.
+
 ## Ask RIVET — conversation panel (merged as `d0e5b76e` and released to production 28 October 2026; live Claude acceptance pending)
 
 Hashem asked for a best-in-class chat inside RIVET with the screen as context by

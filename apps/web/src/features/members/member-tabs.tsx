@@ -30,7 +30,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
-import { ClassFinder } from "@/features/assist/class-finder";
 import { ptBookingAwaitsOutcome, ptNextBooking } from "@/lib/domain/personal-training";
 
 // ---------------------------------------------------------------------------
@@ -43,8 +42,9 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
   );
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2 [&>*]:min-w-0">
-      <section className="panel grid grid-cols-2 self-start [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line">
+    <div className="grid gap-4 [&>*]:min-w-0">
+      {/* One ruled strip: four across where there is room, two by two on a phone. */}
+      <section className="panel grid grid-cols-2 sm:grid-cols-4 [&>*]:border-line max-sm:[&>*:nth-child(2n)]:border-s max-sm:[&>*:nth-child(n+3)]:border-t sm:[&>*+*]:border-s" aria-label={t("memberProfile.overview.figuresLabel")}>
         <StatCell label={t("memberProfile.overview.checkIns30")} value={member.stats.checkInsLast30Days} />
         <StatCell label={t("memberProfile.overview.checkInsAll")} value={member.stats.totalCheckIns} />
         <StatCell label={t("memberProfile.overview.totalPaid")} value={<MoneyText money={member.stats.lifetimeValue} />} />
@@ -72,7 +72,6 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
           )}
         </div>
       </section>
-      <ClassFinder memberId={member.id} />
     </div>
   );
 }
@@ -81,7 +80,7 @@ function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="@container min-w-0 px-4 py-3.5">
       <p className="context-label">{label}</p>
-      {/* The value answers to its own cell: a narrow column (a docked Ask RIVET panel, a small laptop) gets a smaller figure instead of one that overlaps the next cell. */}
+      {/* The value answers to its own cell: a narrow column (a small laptop, a tablet) gets a smaller figure instead of one that overlaps the next cell. */}
       <div className="mt-1 text-[16px] font-medium tabular @[8.5rem]:text-[20px]">{value}</div>
     </div>
   );

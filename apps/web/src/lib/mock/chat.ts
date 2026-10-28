@@ -7,8 +7,10 @@ import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_PDF_MAX_BYTES,
   CHAT_TEXT_MAX,
+  chatActionOpen,
   chatAnswerText,
   chatContextKey,
+  type ChatAction,
   type ChatAttachmentView,
   type ChatContextItem,
   type ChatFileRegisterResult,
@@ -17,9 +19,11 @@ import {
   type ChatStreamView,
   type ChatSummaryView,
   type ChatThreadView,
+  type DecideChatActionInput,
   type SendChatInput,
   type SendChatResult,
 } from "@/lib/ai/chat/contracts";
+import { actionBasisHolds, actionOperation, actionResult, decidedActionLines, withAction } from "@/lib/ai/chat/actions";
 import { runChatTurn, type ModelMessage } from "@/lib/ai/chat/engine";
 import { fixtureChatModel } from "@/lib/ai/chat/fixture-model";
 import { buildHistory, type StoredChatTurn } from "@/lib/ai/chat/history";
@@ -28,7 +32,7 @@ import { loadSource, parseContextItem, type ChatEnv, type ChatReader } from "@/l
 import { CHAT_TOOLS } from "@/lib/ai/chat/tools";
 
 /**
- * Ask RIVET in the local preview. It runs the same answer loop, tools and
+ * Wazen (Ask RIVET in code) in the local preview. It runs the same answer loop, tools and
  * context sources as the server, reading the seeded preview data through the
  * preview's own read methods, with RIVET's preview model streaming its words
  * at a realistic pace. Conversations live in memory like the rest of the
@@ -44,6 +48,10 @@ export interface MockChatHost {
   userId(): string;
   /** Pace streamed words like a live model; off when preview latency is off. */
   paced(): boolean;
+  /** A membership's end date and status today, through the preview's own reads. */
+  membershipBasis(membershipId: string): Promise<{ endDate: string; status: string }>;
+  /** Runs an existing operation as the signed-in person, exactly as its screen would. */
+  execute(operation: ReturnType<typeof actionOperation>["operation"], input: Record<string, unknown>): Promise<unknown>;
 }
 
 type StoredMessage = ChatMessageView & { modelText?: string; turnMessages?: ModelMessage[]; stopRequested?: boolean };
@@ -243,6 +251,42 @@ export class MockChatEngine {
     }
   }
 
+  rename(chatId: string, name: string): ChatSummaryView {
+    const chat = this.own(chatId);
+    const next = name.replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").slice(0, 80).trim();
+    if (!next) throw ApiError.of(ERR.VALIDATION, "Write a name first.");
+    chat.title = next;
+    this.emitChat(chat);
+    return { id: chat.id, title: chat.title, updatedAt: chat.updatedAt, messageCount: chat.messages.length };
+  }
+
+  /** The person's decision on a proposed change; mirrors `decideAction` in convex/aiChatOps.ts. */
+  async decide(input: DecideChatActionInput): Promise<ChatAction> {
+    const { chat, message } = this.find(input.messageId);
+    const part = message.parts.find((item) => item.type === "tool" && item.id === input.partId);
+    const action = part?.type === "tool" ? part.action : undefined;
+    if (message.role !== "assistant" || !action) throw ApiError.of(ERR.NOT_FOUND, "This record could not be found");
+    if (action.status !== "proposed") throw ApiError.of(ERR.CONFLICT, "This was already decided.");
+    const now = Date.now();
+    if (input.decision === "dismiss") {
+      const next: ChatAction = { ...action, status: "dismissed", decidedAt: new Date(now).toISOString() };
+      message.parts = withAction(message.parts, input.partId, next);
+      this.emitChat(chat);
+      return clone(next);
+    }
+    if (message.status !== "complete" || !chatActionOpen(action, message.completedAt, now)) throw ApiError.of(ERR.CONFLICT, "This is out of date. Ask Wazen again.");
+    const blocked = this.host.blocked();
+    if (blocked) this.refuse(blocked);
+    if (!actionBasisHolds(action, await this.host.membershipBasis(action.membershipId))) throw ApiError.of(ERR.CONFLICT, "This membership changed after Wazen checked it. Ask Wazen again.");
+    const { operation, input: operationInput } = actionOperation(action, `wazen:${message.id}:${input.partId}`);
+    const result = await this.host.execute(operation, operationInput);
+    const next: ChatAction = { ...action, status: "done", decidedAt: new Date(now).toISOString(), result: actionResult(action, result) };
+    message.parts = withAction(message.parts, input.partId, next);
+    chat.updatedAt = new Date(now).toISOString();
+    this.emitChat(chat);
+    return clone(next);
+  }
+
   delete(chatId: string): void {
     const chat = this.own(chatId);
     for (const message of chat.messages) message.stopRequested = true;
@@ -284,7 +328,8 @@ export class MockChatEngine {
         if (providedAt !== undefined && now - providedAt < CONTEXT_FRESH_MS) return { item, providedAt };
         return { item, result: await loadSource(this.host.reader, item, env) };
       }));
-      const modelText = composeUserTurn({ ...this.host.frame(), now: new Date(now), ...(question.screen ? { screen: question.screen } : {}), attached, files: question.attachments.map((file) => ({ name: file.name, kind: file.mediaType === "application/pdf" ? "pdf" : "image", included: false })) }, question.text || "(See the attached files.)");
+      const decided = decidedActionLines(chat.messages.slice(0, index - 1).filter((item) => item.role === "assistant"));
+      const modelText = composeUserTurn({ ...this.host.frame(), decided, now: new Date(now), ...(question.screen ? { screen: question.screen } : {}), attached, files: question.attachments.map((file) => ({ name: file.name, kind: file.mediaType === "application/pdf" ? "pdf" : "image", included: false })) }, question.text || "(See the attached files.)");
       const earlier: StoredChatTurn[] = chat.messages.slice(0, index - 1).map((item) => ({ role: item.role, text: item.text, status: item.status, ...(item.modelText ? { modelText: item.modelText } : {}), ...(item.turnMessages ? { turnMessages: item.turnMessages } : {}) }));
       const paced = this.host.paced();
       const outcome = await runChatTurn({

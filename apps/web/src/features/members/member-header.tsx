@@ -55,6 +55,7 @@ export function MemberHeader({
   renewalTarget,
   upcomingMembership,
   branchName,
+  contactActions,
 }: {
   member: MemberDetail;
   /** The term in force (or the depleted/scheduled one), used for freeze, extend, transfer and cancel. */
@@ -64,6 +65,8 @@ export function MemberHeader({
   /** A successor already sold, so staff see the member has renewed before selling another term. */
   upcomingMembership?: MembershipSummary;
   branchName: string;
+  /** Ways to reach the member (WhatsApp, log a contact, note, task), kept with the identity they act on. */
+  contactActions?: React.ReactNode;
 }) {
   const { can } = usePermissions();
   const { session } = useApp();
@@ -304,6 +307,7 @@ export function MemberHeader({
           ) : null}
         </div>
       </div>
+      {contactActions ? <div className="border-t border-line px-5 py-3">{contactActions}</div> : null}
 
       {/* Dialogs */}
       {canSell ? (

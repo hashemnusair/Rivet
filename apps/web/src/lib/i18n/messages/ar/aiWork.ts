@@ -222,7 +222,7 @@ export const aiWork: typeof En = {
     },
     capabilitiesTitle: "ما يمكن لـ RIVET فعله",
     capability: {
-      chat: "اسأل RIVET",
+      chat: "وزن",
       member_context: "تفاصيل العضو قبل الاتصال",
       note_extraction: "تعبئة نموذج التواصل من الملاحظة",
       followup_batch: "تجهيز متابعات تجديد الاشتراك",

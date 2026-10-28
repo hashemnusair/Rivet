@@ -34,6 +34,7 @@ export const memberProfile = {
     memberships: "Memberships",
     payments: "Payments",
     checkins: "Check-ins",
+    classes: "Classes",
     pt: "PT",
   },
 
@@ -132,6 +133,7 @@ export const memberProfile = {
     checkInsAll: "All check-ins",
     totalPaid: "Total paid",
     lastCheckIn: "Last check-in",
+    figuresLabel: "Attendance and payments",
     daysAgo: plural({ one: "{count} day ago", other: "{count} days ago" }),
     latestActivity: "Latest activity",
     emptyActivity: "No activity yet. Sell a membership or add a note.",

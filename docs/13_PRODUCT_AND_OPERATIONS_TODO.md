@@ -558,6 +558,33 @@ Claude on Test Gym.**
   of intents; conversations are not shared between staff; a busy screen may register its
   record a moment after the panel opens, so suggested questions can change once.
 
+### AI-7 — Wazen: popup, conversations, confirmed actions (28 October 2026)
+
+Elias's request on top of AI-6, with Hashem's follow-ups. Decisions in docs/09 "Wazen
+decisions". **Status: built and tested on branch `claude/wazen-chatbot-ui-layout-b8fcc1`;
+not merged, not deployed.** Releasing needs the Convex backend first (new operations
+`ai.chat.action` and `ai.chat.rename`, no schema change), then the frontend.
+
+- [x] **AI-7.1 Rename to Wazen / وزن** in every person-facing string and the system prompt
+  (`rivet-chat.v2`).
+- [x] **AI-7.2 Floating window** *(launcher in the bottom corner, compact and large sizes,
+  full screen on phones, no docking or page reflow; toasts keep clear.)*
+- [x] **AI-7.3 Conversations** *(list by day with search, rename and delete; side list in
+  the large window.)*
+- [x] **AI-7.4 Home-screen chatbox** in the bottom-right corner of the dashboard.
+- [x] **AI-7.5 Confirmed actions** *(renew, freeze, end a freeze; `src/lib/ai/chat/actions.ts`,
+  `decideAction` in `convex/aiChatOps.ts`, `features/ask-rivet/action-card.tsx`. Tests:
+  `actions.test.ts` 8, `convex/ai.chat.test.ts` +4 (renew through a card with audit and
+  idempotent refusal, dismiss, changed and expired cards, permission, rename), component
+  tests +4, Playwright +3 journeys.)*
+- [x] **AI-7.6 Member profile layout** *(contact actions in the header, one figures strip,
+  Classes tab, details column that fits every width.)*
+- [ ] **AI-7.7 Live acceptance** — with live Claude on Test Gym: propose, dismiss and
+  confirm one of each action; check the audit rows and that a trainer is never offered a
+  card. Not done.
+- Known limits: actions are the three above only; a renewal cannot take payment or change
+  plan or price (use the member page); proposals are for one member at a time.
+
 ## Review follow-up — 24 October 2026, source verified and unreleased
 
 - [x] Replace the unusable submitted-claim edit action with an owner correction

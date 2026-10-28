@@ -31,7 +31,6 @@ import { CommandPalette } from "./command-palette";
 import { NotificationCenter } from "./notification-center";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { WorkspaceRecentTracker } from "./workspace-recent-tracker";
-import { AskRivetLauncher } from "@/features/ask-rivet/launcher";
 
 const DEMO_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const satisfies readonly RoleKey[];
 
@@ -154,7 +153,6 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
 
       <div className="flex-1" />
 
-      {session ? <AskRivetLauncher /> : null}
       {session ? <NotificationCenter /> : null}
       {session ? <KeyboardShortcuts /> : null}
 

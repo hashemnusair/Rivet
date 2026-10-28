@@ -1,5 +1,5 @@
 import type { AiErrorCategory } from "../contracts";
-import type { ChatPart } from "./contracts";
+import { CHAT_ACTIONS_PER_ANSWER, type ChatPart } from "./contracts";
 import type { ChatEnv, ChatReader } from "./sources";
 import { runChatTool, type ChatToolSpec } from "./tools";
 
@@ -229,17 +229,23 @@ export async function runChatTurn(input: ChatTurnInput): Promise<ChatTurnOutcome
     // Tool parts were created from the stream in block order; match them to the final blocks.
     const toolParts = [...blockParts.entries()].filter(([, part]) => part.type === "tool").sort(([a], [b]) => a - b).map(([, part]) => part as Extract<ChatPart, { type: "tool" }>);
     const results: ModelBlock[] = [];
+    // A few proposals per answer at most, so a person reviews each card rather than a wall of them.
+    let proposals = parts.filter((part) => part.type === "tool" && part.action).length;
     await Promise.all(toolUses.map(async (use, index) => {
       let part = toolParts[index];
       if (!part) {
         part = { type: "tool", id: nextId(), tool: use.name as Extract<ChatPart, { type: "tool" }>["tool"], input: {}, status: "running", startedAt: hooks.now() };
         parts.push(part);
       }
-      const run = await runChatTool(input.reader, input.env, use.name, use.input);
+      const overLimit = use.name.startsWith("propose_") && ++proposals > CHAT_ACTIONS_PER_ANSWER;
+      const run = overLimit
+        ? { content: JSON.stringify({ error: `At most ${CHAT_ACTIONS_PER_ANSWER} changes can be proposed in one answer. Ask the person to confirm these first.` }), isError: true, input: {}, outcome: { failure: "refused" as const } }
+        : await runChatTool(input.reader, input.env, use.name, use.input);
       part.input = run.input;
       part.status = run.isError ? "error" : "done";
       part.outcome = run.outcome;
-      if (run.link) part.link = run.link;
+      if ("link" in run && run.link) part.link = run.link;
+      if ("action" in run && run.action) part.action = run.action;
       part.endedAt = hooks.now();
       results[index] = { type: "tool_result", tool_use_id: use.id, content: run.content, ...(run.isError ? { is_error: true } : {}) };
       hooks.emit(parts);

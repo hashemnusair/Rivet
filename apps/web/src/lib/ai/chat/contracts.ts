@@ -7,12 +7,16 @@
  * A conversation is private to the person who started it. Every record the
  * assistant reads, whether attached from a screen or looked up with a tool,
  * is loaded through that person's own access by the existing domain reads.
- * Nothing here writes business records.
+ *
+ * The assistant never writes business records itself. It can propose a few
+ * membership changes (renew, freeze, end a freeze); each one is shown as a
+ * card and only the person's own confirmation runs the existing operation,
+ * as them, with its usual permission checks and audit.
  */
 
 import type { AiErrorCategory } from "../contracts";
 
-export const CHAT_PROMPT_VERSION = "rivet-chat.v1";
+export const CHAT_PROMPT_VERSION = "rivet-chat.v2";
 
 /** Longest message a person can send. */
 export const CHAT_TEXT_MAX = 4_000;
@@ -94,7 +98,56 @@ export type ChatToolKey =
   | "class_schedule"
   | "gym_report"
   | "list_plans"
-  | "open_screen";
+  | "open_screen"
+  | "propose_renewal"
+  | "propose_freeze"
+  | "propose_unfreeze";
+
+/** Changes the assistant may propose. Nothing changes until the person confirms the card. */
+export type ChatActionKind = "renew_membership" | "freeze_membership" | "unfreeze_membership";
+export type ChatActionStatus = "proposed" | "done" | "dismissed";
+
+/** A proposal is confirmable for this long after its answer finished. */
+export const CHAT_ACTION_TTL_MS = 30 * 60_000;
+/** Proposals in one answer. */
+export const CHAT_ACTIONS_PER_ANSWER = 3;
+
+/** An amount in minor units, as the domain stores money. */
+export interface ChatMoney {
+  amount: number;
+  currency: string;
+}
+
+/**
+ * What the card shows and what confirming runs. Dates are gym-calendar days.
+ * `basis` is the term as the assistant read it: confirming refuses if it has
+ * changed since.
+ */
+export interface ChatAction {
+  kind: ChatActionKind;
+  memberId: string;
+  memberName: string;
+  membershipId: string;
+  planName: string;
+  basis: { endDate: string; status: string };
+  /** Renewal: the new term, when the plan has a fixed length, and its listed price. */
+  startDate?: string;
+  endDate?: string;
+  price?: ChatMoney;
+  /** Renewal: its charge is due at once (the term starts today), or only when the term starts. */
+  dueNow?: boolean;
+  /** Freeze: the freeze days and the term's end before and after. */
+  freezeStart?: string;
+  freezeEnd?: string;
+  days?: number;
+  newEndDate?: string;
+  /** Freeze and ending a freeze: the reason the person gave, saved with the change. */
+  reason?: string;
+  status: ChatActionStatus;
+  decidedAt?: string;
+  /** What the change saved, from the operation's own result. */
+  result?: { startDate?: string; endDate?: string; amount?: ChatMoney };
+}
 
 /** What a finished lookup found, presented in the reader's language by the panel. */
 export interface ChatToolOutcome {
@@ -104,8 +157,8 @@ export interface ChatToolOutcome {
   total?: number;
   /** A name or title the lookup was about. */
   subject?: string;
-  /** Why a lookup could not run. */
-  failure?: "forbidden" | "not_found" | "invalid" | "unavailable";
+  /** Why a lookup could not run, or why a change cannot be proposed. */
+  failure?: "forbidden" | "not_found" | "invalid" | "unavailable" | "refused";
 }
 
 export interface ChatScreenLink {
@@ -127,6 +180,8 @@ export type ChatPart =
       status: "running" | "done" | "error";
       outcome?: ChatToolOutcome;
       link?: ChatScreenLink;
+      /** A change the person can confirm or dismiss. */
+      action?: ChatAction;
       startedAt: number;
       endedAt?: number;
     }
@@ -192,6 +247,13 @@ export interface SendChatInput {
   locale: "en" | "ar";
 }
 
+/** The person's decision on a proposed change. */
+export interface DecideChatActionInput {
+  messageId: string;
+  partId: string;
+  decision: "confirm" | "dismiss";
+}
+
 export interface SendChatResult {
   chatId: string;
   userMessageId: string;
@@ -205,6 +267,17 @@ export function isChatMessageWorking(status: ChatMessageStatus): boolean {
 /** The answer's text, joined from its text parts. */
 export function chatAnswerText(parts: readonly ChatPart[]): string {
   return parts.filter((part): part is Extract<ChatPart, { type: "text" }> => part.type === "text").map((part) => part.text).join("\n\n").trim();
+}
+
+/** Proposed changes in an answer, in order. */
+export function chatActions(parts: readonly ChatPart[]): Array<{ partId: string; action: ChatAction }> {
+  return parts.flatMap((part) => (part.type === "tool" && part.action ? [{ partId: part.id, action: part.action }] : []));
+}
+
+/** Whether a proposal can still be confirmed: undecided, and its answer finished recently. */
+export function chatActionOpen(action: ChatAction, answerCompletedAt: string | undefined, now: number): boolean {
+  if (action.status !== "proposed" || !answerCompletedAt) return false;
+  return now - Date.parse(answerCompletedAt) < CHAT_ACTION_TTL_MS;
 }
 
 /** A stable key for one context item, used to avoid sending the same record twice. */

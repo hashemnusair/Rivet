@@ -14,6 +14,8 @@ import {
   ListChecks,
   RefreshCw,
   Search,
+  Snowflake,
+  Sun,
   Tag,
   UserMinus,
   UserRound,
@@ -44,6 +46,9 @@ const ICONS: Record<ChatToolKey, LucideIcon> = {
   gym_report: FileBarChart,
   list_plans: Tag,
   open_screen: ArrowUpRight,
+  propose_renewal: RefreshCw,
+  propose_freeze: Snowflake,
+  propose_unfreeze: Sun,
 };
 
 const MEMBERSHIP_FILTERS = new Set(["outstanding", "expiring", "expired", "frozen", "active", "scheduled", "cancelled"]);
@@ -58,7 +63,7 @@ export function useToolLabel(): (part: ToolPart) => string {
     if (part.status === "done") {
       if (part.tool === "get_member" || part.tool === "get_lead") return part.outcome?.subject ? t(`${base}.done` as TKey, { subject: isolate(part.outcome.subject) }) : t(`${base}.running` as TKey);
       if (part.tool === "gym_report") return t(`${base}.done` as TKey, { report: REPORTS.has(String(part.input.report)) ? t(`askRivet.report.${part.input.report}` as TKey) : "" });
-      if (part.tool === "today_overview" || part.tool === "open_screen") return t(`${base}.done` as TKey);
+      if (part.tool === "today_overview" || part.tool === "open_screen" || part.tool.startsWith("propose_")) return t(`${base}.done` as TKey);
       return t(`${base}.done` as TKey, { count: part.outcome?.total ?? part.outcome?.count ?? 0 });
     }
     if (part.tool === "search_members") {

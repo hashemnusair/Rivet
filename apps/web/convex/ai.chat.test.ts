@@ -280,7 +280,7 @@ describe("Ask RIVET with Claude", () => {
     const body = bodies[0]!;
     expect(body).toMatchObject({ model: "claude-sonnet-5-5", stream: true, thinking: { type: "adaptive", display: "summarized" }, output_config: { effort: "low" }, tool_choice: { type: "auto" }, cache_control: { type: "ephemeral" } });
     expect((body.system as Array<{ cache_control?: unknown }>)[0]!.cache_control).toEqual({ type: "ephemeral" });
-    expect((body.tools as unknown[]).length).toBe(14);
+    expect((body.tools as unknown[]).length).toBe(17);
     const prompt = JSON.stringify(body.messages);
     expect(prompt).toContain("<rivet_context>");
     expect(prompt).toContain("Omar Haddad");
@@ -346,5 +346,109 @@ describe("Ask RIVET streaming rows", () => {
     vi.setSystemTime(NOW.getTime() + 31 * 86_400_000);
     expect(await t.mutation(internal.aiChat.expireChats, {})).toBe(1);
     expect(await t.run(async (ctx) => [(await ctx.db.query("aiChats").collect()).length, (await ctx.db.query("aiChatFiles").collect()).length, await ctx.storage.get(png)])).toEqual([0, 0, null]);
+  });
+});
+
+describe("Wazen changes the person confirms", () => {
+  const MEMBER = { kind: "member", id: "chat-member", label: "Omar Haddad" };
+
+  /** A 30-day plan with 14 freeze days, and Omar's term from 10 October to 9 November. */
+  async function seedTerm(t: TestConvex<typeof schema>) {
+    await t.run(async (ctx) => {
+      const organizationId = (await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", ORG)).unique())!._id;
+      const branchId = (await ctx.db.query("branches").collect()).find((branch) => branch.publicId === MAIN)!._id;
+      await ctx.db.insert("domainRecords", { organizationId, entityType: "plan", publicId: "chat-plan", branchId, createdAt: NOW.getTime(), updatedAt: NOW.getTime(), data: { id: "chat-plan", name: "Monthly", code: "M1", kind: "time", durationDays: 30, basePrice: { amount: 40_000, currency: "JOD" }, branchAccess: "all", branchIds: [], freezeAllowanceDays: 14, includedPtSessions: 0, status: "active" } });
+    });
+    const sale = await mutate(t, "memberships.sale", { memberId: "chat-member", planId: "chat-plan", startDate: "2026-10-10", overrideReason: "Term started before the test", idempotencyKey: "chat-sale" }) as { membership: { id: string; endDate: string } };
+    return sale.membership;
+  }
+
+  async function propose(t: TestConvex<typeof schema>, text: string, chatId?: string) {
+    const sent = await send(t, { text, context: [MEMBER], clientId: `c-${text.length}`, ...(chatId ? { chatId } : {}) });
+    expect(await respond(t, sent.assistantMessageId)).toEqual({ status: "complete" });
+    const answer = (await thread(t, sent.chatId)).messages.find((message) => message.id === sent.assistantMessageId)!;
+    const part = answer.parts.find((item): item is Extract<ChatPart, { type: "tool" }> => item.type === "tool" && Boolean(item.action));
+    return { sent, answer, part };
+  }
+
+  const terms = async (t: TestConvex<typeof schema>) => ((await query(t, "memberships.list", { memberId: "chat-member", sort: "startDate" })) as { items: Array<{ startDate: string; endDate: string }> }).items;
+
+  it("proposes a renewal, changes nothing until confirmed, then renews as the person with an audit", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "fixture");
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const term = await seedTerm(t);
+    const { sent, part } = await propose(t, "Renew his membership");
+    expect(part?.action).toMatchObject({ kind: "renew_membership", memberId: "chat-member", membershipId: term.id, planName: "Monthly", startDate: "2026-11-10", endDate: "2026-12-10", price: { amount: 40_000, currency: "JOD" }, status: "proposed", basis: { endDate: term.endDate } });
+    expect(await terms(t)).toHaveLength(1);
+
+    // Another person cannot decide on this conversation's card.
+    await expect(mutate(t, "ai.chat.action", { messageId: sent.assistantMessageId, partId: part!.id, decision: "confirm" }, "clerk-chat-trainer")).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+
+    const done = await mutate(t, "ai.chat.action", { messageId: sent.assistantMessageId, partId: part!.id, decision: "confirm" }) as { status: string; result: unknown };
+    expect(done).toMatchObject({ status: "done", result: { startDate: "2026-11-10", endDate: "2026-12-10", amount: { amount: 40_000, currency: "JOD" } } });
+    expect((await terms(t)).map((item) => item.startDate)).toEqual(["2026-10-10", "2026-11-10"]);
+    const audit = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).map((row) => row.action));
+    expect(audit).toEqual(expect.arrayContaining(["ai.chat.action.confirm"]));
+    // A decided card cannot run twice.
+    await expect(mutate(t, "ai.chat.action", { messageId: sent.assistantMessageId, partId: part!.id, decision: "confirm" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
+    expect(await terms(t)).toHaveLength(2);
+
+    // The next message tells the assistant what was decided.
+    const next = await send(t, { chatId: sent.chatId, text: "Thanks", clientId: "c-next" });
+    await respond(t, next.assistantMessageId);
+    const question = await t.run(async (ctx) => (await ctx.db.query("aiChatMessages").collect()).find((row) => row.publicId === next.userMessageId));
+    expect(question?.modelText).toContain("earlier proposals:");
+    expect(question?.modelText).toContain("renew for Omar Haddad (member chat-member): confirmed and saved");
+  });
+
+  it("dismisses without changing anything, and refuses stale or changed cards", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "fixture");
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const term = await seedTerm(t);
+
+    const renewal = await propose(t, "Renew his membership");
+    expect(await mutate(t, "ai.chat.action", { messageId: renewal.sent.assistantMessageId, partId: renewal.part!.id, decision: "dismiss" })).toMatchObject({ status: "dismissed" });
+    await expect(mutate(t, "ai.chat.action", { messageId: renewal.sent.assistantMessageId, partId: renewal.part!.id, decision: "confirm" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
+    expect(await terms(t)).toHaveLength(1);
+
+    const freeze = await propose(t, "Freeze his membership for 7 days because of travel", renewal.sent.chatId);
+    expect(freeze.part?.action).toMatchObject({ kind: "freeze_membership", freezeStart: "2026-10-27", freezeEnd: "2026-11-02", days: 7, newEndDate: "2026-11-16", reason: "travel" });
+    // The term changed after Wazen read it: the card is refused and nothing is frozen.
+    await mutate(t, "memberships.extend", { membershipId: term.id, days: 3, reason: "Goodwill" });
+    await expect(mutate(t, "ai.chat.action", { messageId: freeze.sent.assistantMessageId, partId: freeze.part!.id, decision: "confirm" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
+    expect((await terms(t))[0]).toMatchObject({ endDate: "2026-11-12" });
+
+    // A fresh card works until it is half an hour old.
+    const again = await propose(t, "Freeze his membership for 7 days because of travel", renewal.sent.chatId);
+    vi.setSystemTime(NOW.getTime() + 31 * 60_000);
+    await expect(mutate(t, "ai.chat.action", { messageId: again.sent.assistantMessageId, partId: again.part!.id, decision: "confirm" })).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT" }) });
+    vi.setSystemTime(NOW);
+    const latest = await propose(t, "Freeze his membership for 7 days because of travel", renewal.sent.chatId);
+    expect(await mutate(t, "ai.chat.action", { messageId: latest.sent.assistantMessageId, partId: latest.part!.id, decision: "confirm" })).toMatchObject({ status: "done", result: { endDate: "2026-11-19" } });
+  });
+
+  it("does not propose a change the person cannot make", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "fixture");
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await seedTerm(t);
+    const sent = await send(t, { text: "Renew his membership", context: [MEMBER] }, "clerk-chat-trainer");
+    await respond(t, sent.assistantMessageId, "clerk-chat-trainer");
+    const answer = (await thread(t, sent.chatId, "clerk-chat-trainer")).messages[1]!;
+    expect(answer.parts.some((part) => part.type === "tool" && part.action)).toBe(false);
+    expect(await terms(t)).toHaveLength(1);
+  });
+
+  it("renames a conversation for its owner only", async () => {
+    vi.stubEnv("RIVET_AI_MODE", "fixture");
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const sent = await send(t, { text: "Find Omar" });
+    await expect(mutate(t, "ai.chat.rename", { chatId: sent.chatId, title: "Mine now" }, "clerk-chat-trainer")).rejects.toMatchObject({ data: expect.objectContaining({ code: "NOT_FOUND" }) });
+    await expect(mutate(t, "ai.chat.rename", { chatId: sent.chatId, title: "   " })).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+    expect(await mutate(t, "ai.chat.rename", { chatId: sent.chatId, title: "  Omar's renewal\n" })).toMatchObject({ title: "Omar's renewal" });
+    expect((await thread(t, sent.chatId)).title).toBe("Omar's renewal");
   });
 });

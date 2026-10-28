@@ -909,6 +909,7 @@ export class MockGymOSApi implements GymOSApi {
       "members.list": (input) => this.listMembers(input as MemberListQuery),
       "members.get": (input) => this.getMember(String(input.memberId)),
       "members.timeline": (input) => this.listMemberTimeline(String(input.memberId), input as TimelineQuery),
+      "memberships.list": (input) => this.listMemberships(input as MembershipListQuery),
       "leads.list": (input) => this.listLeads(input as LeadListQuery),
       "leads.get": (input) => this.getLead(String(input.leadId)),
       "tasks.list": (input) => this.listTasks(input as TaskListQuery),
@@ -943,6 +944,7 @@ export class MockGymOSApi implements GymOSApi {
         currency: this.db.organization.currency,
         ...(this.db.session.activeBranchId ? { activeBranchId: this.db.session.activeBranchId } : {}),
         branchIds: this.db.branches.filter((branch) => this.branchIsVisible(branch.id)).map((branch) => branch.id),
+        permissions: [...permissionsFor(this.db, currentRole(this.db))],
       }),
       frame: () => {
         const branch = this.db.branches.find((item) => item.id === this.db.session.activeBranchId);
@@ -958,6 +960,16 @@ export class MockGymOSApi implements GymOSApi {
       },
       userId: () => this.actor().id,
       paced: () => this.behavior.latencyMs !== 0,
+      membershipBasis: async (membershipId) => {
+        const membership = await this.getMembership(membershipId);
+        return { endDate: membership.endDate, status: membership.status };
+      },
+      execute: (operation, input) => {
+        const membershipId = String(input.membershipId);
+        if (operation === "memberships.renew") return this.renewMembership(membershipId, { idempotencyKey: String(input.idempotencyKey) });
+        if (operation === "memberships.freeze") return this.freezeMembership(membershipId, { startDate: String(input.startDate), endDate: String(input.endDate), reason: String(input.reason) });
+        return this.unfreezeMembership(membershipId, { reason: String(input.reason) });
+      },
     });
   }
 
@@ -4578,6 +4590,8 @@ export class MockGymOSApi implements GymOSApi {
   retryAiChatMessage(messageId: string): Promise<Chat.SendChatResult> { return this.respond(() => this.chat.retry(messageId)); }
   stopAiChatMessage(messageId: string): Promise<void> { return this.respond(() => this.chat.stop(messageId)); }
   deleteAiChat(chatId: string): Promise<void> { return this.respond(() => this.chat.delete(chatId)); }
+  renameAiChat(chatId: string, title: string): Promise<Chat.ChatSummaryView> { return this.respond(() => this.chat.rename(chatId, title)); }
+  decideAiChatAction(input: Chat.DecideChatActionInput): Promise<Chat.ChatAction> { return this.respond(() => this.chat.decide(input)); }
   uploadAiChatFile(file: Blob, input: { name: string; mediaType: Chat.ChatFileType }): Promise<Chat.ChatFileRegisterResult> { return this.respond(() => this.chat.upload(file, input)); }
   getAiSettings(): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.settings()); }
   updateAiSettings(input: AI.UpdateAiSettingsInput): Promise<AI.AiSettingsView> { return this.respond(() => this.ai.updateSettings(input)); }

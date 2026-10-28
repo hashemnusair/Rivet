@@ -27,6 +27,7 @@ export const memberProfile: typeof En = {
     memberships: "الاشتراكات",
     payments: "المدفوعات",
     checkins: "الحضور",
+    classes: "الحصص الجماعية",
     pt: "التدريب الشخصي",
   },
 
@@ -126,6 +127,7 @@ export const memberProfile: typeof En = {
     checkInsAll: "كل تسجيلات الحضور",
     totalPaid: "إجمالي المدفوع",
     lastCheckIn: "آخر تسجيل حضور",
+    figuresLabel: "الحضور والدفعات",
     daysAgo: plural({
       zero: "اليوم",
       one: "قبل يوم واحد",

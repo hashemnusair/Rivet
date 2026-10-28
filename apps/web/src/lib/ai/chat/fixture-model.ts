@@ -1,6 +1,7 @@
 import type { ChatModel, ChatModelRequest, ModelBlock, ModelStreamEvent, ModelTurnResult } from "./engine";
 import { ChatModelError } from "./engine";
 import { attachedOf, messageOf } from "./prompt";
+import { addDays, todayISODate } from "../../utils/dates";
 
 /**
  * RIVET's preview model: a deterministic stand-in for the live assistant used
@@ -102,11 +103,62 @@ function has(question: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(question));
 }
 
-function plan(question: string, attached: Array<{ kind: string; id?: string; label: string }>, lang: Lang): { calls: ToolCall[]; note: string } | undefined {
+/** The gym's calendar day, from the context block's clock line. */
+function gymToday(turn: string): string {
+  const zone = /^now: .*\(([A-Za-z_/+-]+)\)$/m.exec(turn)?.[1];
+  try {
+    return todayISODate(zone ?? "Asia/Amman");
+  } catch {
+    return todayISODate("Asia/Amman");
+  }
+}
+
+/** The reason the person gave, in their own words; never invented. */
+function reasonOf(question: string): string | undefined {
+  const match = /(?:because(?: of)?|reason(?: is)?[:\s]+|due to|since)\s+(.{3,120})/i.exec(question) ?? /(?:بسبب|السبب[:\s]+|لأن|لأنه|لأنها)\s*(.{3,120})/.exec(question);
+  return match ? match[1]!.replace(/[.!?؟]+$/, "").trim() : undefined;
+}
+
+function daysOf(question: string): number | undefined {
+  const weeks = /(\d+)\s*(?:weeks?|أسابيع|أسبوع)/i.exec(question);
+  if (weeks) return Number(weeks[1]) * 7;
+  const days = /(\d+)\s*(?:days?|أيام|يوم)/i.exec(question);
+  if (days) return Number(days[1]);
+  if (/\ba week\b|\bone week\b|أسبوع واحد|لمدة أسبوع/i.test(question)) return 7;
+  return undefined;
+}
+
+type Planned = { calls: ToolCall[]; note: string; reply?: string };
+
+/** A change the person asked for about the member on screen: renew, freeze, or end a freeze. */
+function planChange(q: string, question: string, member: { id?: string; label: string }, lang: Lang, today: string): Planned | undefined {
+  const note = (en: string, ar: string) => (lang === "ar" ? ar : en);
+  if (has(q, [/draft|message|remind|write|text him|text her/, /مسودة|رسالة|تذكير|اكتب/])) return undefined;
+  const id = member.id!;
+  if (has(q, [/\bunfreeze\b|end (?:the |his |her |their )?freeze|resume (?:the |his |her )?membership/, /إعادة تفعيل|فك التجميد|إلغاء التجميد/])) {
+    const reason = reasonOf(question);
+    if (!reason) return { calls: [], note: "", reply: note(`What's the reason for ending ${member.label}'s freeze early? I'll save it with the change.`, `ما سبب إعادة تفعيل اشتراك ${member.label} قبل موعده؟ سيُحفظ السبب مع التغيير.`) };
+    return { calls: [{ name: "propose_unfreeze", input: { member_id: id, reason } }], note: note(`Checking ${member.label}'s freeze before preparing the change.`, `أراجع تجميد اشتراك ${member.label} قبل تجهيز التغيير.`) };
+  }
+  if (has(q, [/\bfreeze\b|\bpause\b/, /تجميد|جمّد|جمد|أوقف/])) {
+    const days = daysOf(question);
+    const reason = reasonOf(question);
+    if (!days || !reason) return { calls: [], note: "", reply: note(`For how many days, and what's the reason? For example: "freeze for 14 days because of travel".`, `كم يومًا، وما السبب؟ مثلًا: «تجميد لمدة 14 يومًا بسبب السفر».`) };
+    return { calls: [{ name: "propose_freeze", input: { member_id: id, start_date: today, end_date: addDays(today, days - 1), reason } }], note: note(`Checking ${member.label}'s membership and freeze days before preparing the freeze.`, `أراجع اشتراك ${member.label} وأيام التجميد المسموحة قبل تجهيز التجميد.`) };
+  }
+  if (has(q, [/^(?:please )?renew\b|\brenew (?:him|her|them|it|this|the membership|(?:his|her|their) membership)/, /^جدّد|^جدد|تجديد اشتراك|جدّد اشتراك|جدد اشتراك/])) {
+    return { calls: [{ name: "propose_renewal", input: { member_id: id } }], note: note(`Checking ${member.label}'s current term and plan before preparing the renewal.`, `أراجع اشتراك ${member.label} الحالي ونوعه قبل تجهيز التجديد.`) };
+  }
+  return undefined;
+}
+
+function plan(question: string, attached: Array<{ kind: string; id?: string; label: string }>, lang: Lang, today: string): Planned | undefined {
   const q = question.toLowerCase();
   const member = attached.find((item) => item.kind === "member" && item.id);
   const lead = attached.find((item) => item.kind === "lead" && item.id);
   const note = (en: string, ar: string) => (lang === "ar" ? ar : en);
+  const change = member ? planChange(q, question, member, lang, today) : undefined;
+  if (change) return change;
   // A question about the record on screen is about that record, unless it asks about people in general.
   const aboutMany = has(q, [/\bmembers\b|\bwho\b|\bwhich\b|\blist\b/, /الأعضاء|من الذين|من في|بمن/]);
   if (member && !aboutMany && has(q, [/brief|summar|call|about|tell me|who is|before|draft|message|renew|owe|pay/, /ملخص|لخّص|لخص|اتصال|أتصل|معلومات|قبل|مسودة|رسالة|تجديد|متبق|مبلغ|دفع/])) {
@@ -165,7 +217,33 @@ function failureText(output: ToolOutput, lang: Lang): string {
   return lang === "ar" ? "لم يتمكن RIVET من قراءة هذه المعلومات الآن. أعد المحاولة بعد قليل." : "RIVET couldn't read that right now. Try again in a moment.";
 }
 
+function proposalAnswer(output: ToolOutput, lang: Lang): string {
+  const data = output.data;
+  const ar = lang === "ar";
+  if (output.isError) {
+    if (/access/.test(text(data.error))) return failureText(output, lang);
+    return ar ? "لا يمكن تجهيز هذا التغيير الآن. راجع سجل العضو للتفاصيل." : `${text(data.error) || "I can't prepare that change."}`;
+  }
+  const member = text(data.member);
+  if (output.name === "propose_renewal") {
+    const term = data.newTerm as Row | undefined;
+    return ar
+      ? `جهّزت **تجديد اشتراك ${member}** بنفس النوع، من ${date(term?.startDate, lang)} إلى ${date(term?.endDate, lang)}. أكّد من البطاقة أدناه؛ لن يتغير شيء قبل التأكيد.`
+      : `Here's the **renewal for ${member}** on the same plan, ${date(term?.startDate, lang)} to ${date(term?.endDate, lang)}, at ${text(data.listedPrice)}. Confirm it below; nothing changes until you do.`;
+  }
+  if (output.name === "propose_freeze") {
+    const freeze = data.freeze as Row | undefined;
+    return ar
+      ? `جهّزت **تجميد اشتراك ${member}** من ${date(freeze?.from, lang)} إلى ${date(freeze?.to, lang)}، وسينتهي الاشتراك في ${date(data.termWouldEnd, lang)}. أكّد من البطاقة أدناه.`
+      : `Here's the **freeze for ${member}** from ${date(freeze?.from, lang)} to ${date(freeze?.to, lang)}. Their membership would then end ${date(data.termWouldEnd, lang)}. Confirm it below.`;
+  }
+  return ar
+    ? `جهّزت **إعادة تفعيل اشتراك ${member}** اليوم، وسينتهي الاشتراك في ${date(data.termWouldEnd, lang)}. أكّد من البطاقة أدناه.`
+    : `Here's the change to **end ${member}'s freeze** today. Their membership would then end ${date(data.termWouldEnd, lang)}. Confirm it below.`;
+}
+
 function answerFor(output: ToolOutput, lang: Lang, question = ""): string {
+  if (output.name.startsWith("propose_")) return proposalAnswer(output, lang);
   if (output.isError) return failureText(output, lang);
   const data = output.data;
   const list = rows(data);
@@ -396,9 +474,11 @@ export function fixtureChatModel(options: FixtureModelOptions = {}): ChatModel {
         await wait(260, signal);
         await streamText("text", answers.join("\n\n") || (lang === "ar" ? "إليك الرابط." : "Here's the link."));
       } else {
-        const planned = request.toolChoice === "auto" ? plan(question, attachedOf(turn), lang) : undefined;
+        const planned = request.toolChoice === "auto" ? plan(question, attachedOf(turn), lang, gymToday(turn)) : undefined;
         await wait(380, signal);
-        if (planned) {
+        if (planned?.reply) {
+          await streamText("text", planned.reply);
+        } else if (planned) {
           await streamText("thinking", planned.note);
           planned.calls.forEach((call, position) => {
             const blockIndex = index++;

@@ -32,9 +32,10 @@ import { CHAT_SYSTEM_PROMPT, composeUserTurn, readableAreas, sentContextKeys, ty
 import { buildHistory, HISTORY_TURNS_READ, turnsWithFiles, type StoredChatTurn } from "../src/lib/ai/chat/history";
 import { runChatTurn, type ChatModel, type ChatUsage, type ModelBlock, type ModelImageType, type ModelMessage } from "../src/lib/ai/chat/engine";
 import { fixtureChatModel } from "../src/lib/ai/chat/fixture-model";
+import { decidedActionLines } from "../src/lib/ai/chat/actions";
 
 /**
- * The Ask RIVET answer. The panel calls `respond` right after sending, as the
+ * The Wazen (Ask RIVET in code) answer. The panel calls `respond` right after sending, as the
  * same signed-in person, so every record the assistant reads goes through the
  * existing domain reads with that person's access. The answer streams into
  * `aiChatStreams`, which the panel watches; the finished answer replaces it
@@ -112,6 +113,7 @@ export const prepareTurn = internalQuery({
         currency: actor.organization.currency,
         ...(actor.branch ? { activeBranchId: publicBranchId(actor.branch) } : {}),
         branchIds: branches.map((branch) => publicBranchId(branch)),
+        permissions: [...actor.permissions],
       },
       frame: {
         timezone: actor.organization.timezone || "Asia/Amman",
@@ -119,6 +121,7 @@ export const prepareTurn = internalQuery({
         currency: actor.organization.currency,
         ...(actor.branch ? { branchName: actor.branch.name } : {}),
         person: { name: actor.user.fullName, role: actor.role, reads: readableAreas(actor.permissions) },
+        decided: decidedActionLines(rows.filter((row) => row.role === "assistant").map((row) => ({ parts: Array.isArray(row.parts) ? (row.parts as ChatPart[]) : [] }))),
       },
     };
   },
