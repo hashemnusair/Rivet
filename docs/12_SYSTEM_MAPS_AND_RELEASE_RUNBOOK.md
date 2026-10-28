@@ -355,7 +355,7 @@ the pilot release record above (one row per field; leave unknowns blank).
    remove. This also withdraws the billing and export fixes listed above. The snapshot
    from step a is the way back for data.
 
-### Ask RIVET release and acceptance (branch `codex/rivet-chat`, not yet run)
+### Ask RIVET release and acceptance (steps 1–3 done 28 October 2026; steps 4–6 pending)
 
 Ask RIVET (docs/09 "Ask RIVET decisions", docs/13 AI-6) needs no new provider or
 environment variable: it uses the deployment's existing `RIVET_AI_*` settings, the

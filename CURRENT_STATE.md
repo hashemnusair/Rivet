@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## Ask RIVET — conversation panel (27–28 October 2026, branch `codex/rivet-chat`, not merged or released)
+## Ask RIVET — conversation panel (merged as `d0e5b76e` and released to production 28 October 2026; live Claude acceptance pending)
 
 Hashem asked for a best-in-class chat inside RIVET with the screen as context by
 default, records and files to attach, and smooth streaming. Built on branch
@@ -49,10 +49,35 @@ environment variable was changed and no gym was made available by this work.
 - **Guard findings fixed:** the public `respond` action now checks for a signed-in caller
   before anything else (the security-surface guard); `GIF` added to the Arabic
   technical-token allowlist beside `PNG`/`JPEG`/`WebP`.
-- **Not done:** merge review, release, live Claude acceptance on Test Gym (docs/12), and a
-  live answer evaluation set (docs/13 AI-6.6).
+- **Released, 28 October 2026 (Hashem's go: "feel free to merge etc.").** PR #33 merged
+  into `main` as `d0e5b76e` (merge commit; it also releases the text-field stress pass,
+  #32, for the first time). The merge created no Vercel deployment; the hold is unchanged.
+  - Backend, from the clean detached release worktree (`gym-os-release`) at `d0e5b76e`,
+    no `.env.local`: `pnpm convex:env:names -- --prod` (names only) confirmed Production
+    by the Production-only `AI_GATEWAY_API_KEY`; the guarded dry run against
+    `rivet:rivet:production` / `descriptive-meerkat-589` deleted no index and would only
+    add the 11 indexes of `aiChats`, `aiChatMessages`, `aiChatStreams` and `aiChatFiles`;
+    `pnpm convex:deploy -- --yes` added the same 11 at 2026-10-28T11:08Z;
+    `health:check --prod` returned `ok`; `function-spec --prod` lists 108 functions,
+    including the nine `aiChat` functions. No fresh dashboard snapshot was taken for this
+    additive-only release (it needs the dashboard); the last one is Hashem's of
+    26 October.
+  - Frontend: an exact `git archive d0e5b76e` export with the project's `.vercel` link,
+    `vercel deploy --prod`: **`dpl_GsDZoLtQ3VZcGijnEhAhm4uBd2p5`**, started
+    2026-10-28T11:09Z, READY on `rivetjo.com`, `www.rivetjo.com`, `app.rivetjo.com`,
+    `dashboard.rivetjo.com`, `platform.rivetjo.com` and `admin.rivetjo.com`. It replaces
+    `dpl_7hKbwR3xCToUsGoxbPv4CQRk9a6d` (26 October, source `6ae7f679`), the rollback
+    target. `git.deploymentEnabled: false` and the Ignored Build Step `exit 0` are
+    unchanged.
+  - Smoke without signing in: `rivetjo.com` 308 → `www` 200; `/login/gym`,
+    `/login/member`, `/login/admin`, `/dashboard`, `/members`, `/platform/assistance` 200;
+    `admin.rivetjo.com` → the platform host; the live dashboard bundle contains the panel.
+    No Convex environment variable was changed and no gym's availability was changed.
+- **Not done:** the live Claude acceptance on Test Gym (docs/12 "Ask RIVET release and
+  acceptance", steps 4–6) needs the gym owner signed in; a live answer evaluation set
+  (docs/13 AI-6.6).
 
-## Text field stress pass — 27 October 2026 (branch `claude/sharp-edison-blgnof`, not yet released)
+## Text field stress pass — 27 October 2026 (merged in #32; released to production with `d0e5b76e` on 28 October 2026)
 
 Every text field in the staff dashboard, platform console, member portal and
 signed-out pages was swept with hostile input (very long tokens and prose,

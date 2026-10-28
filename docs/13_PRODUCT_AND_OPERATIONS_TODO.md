@@ -526,8 +526,9 @@ Recorded as found during implementation; each entry names its subitem and eviden
 
 Hashem's request: a best-in-class chat with the screen as context by default, records,
 images and PDFs to attach, and smooth streaming. Decisions in docs/09 "Ask RIVET
-decisions". **Status: implemented on branch `codex/rivet-chat` and verified locally;
-not merged, not released, not tried with live Claude on production.**
+decisions". **Status: merged as `d0e5b76e` and released to production on 28 October 2026
+(backend 11:08Z, frontend `dpl_GsDZoLtQ3VZcGijnEhAhm4uBd2p5`); not yet tried with live
+Claude on Test Gym.**
 
 - [x] **AI-6.1 Contracts, context sources and lookups** *(`src/lib/ai/chat/`: 15 context
   sources over existing domain reads, 13 read-only tools plus `open_screen`, compact record
@@ -548,8 +549,9 @@ not merged, not released, not tried with live Claude on production.**
   dashboard, leads, lead profile, follow-ups, payments, cash drawer, classes, reports and
   plans register their record, attachments and suggested questions; every other screen
   sends its route and name. Search (⌘K) offers "Ask RIVET: …".)*
-- [ ] **AI-6.5 Production acceptance on Test Gym with live Claude** — after merge, backend
-  then frontend release (docs/12 "Ask RIVET release and acceptance"). Not started.
+- [ ] **AI-6.5 Production acceptance on Test Gym with live Claude** — the release itself is
+  done (CURRENT_STATE); the signed-in walkthrough, stops and spend check in docs/12 "Ask
+  RIVET release and acceptance" steps 4–6 are not.
 - [ ] **AI-6.6 Live answer evaluation** — a held-out set of questions with expected
   records and figures, run against the deployment like `aiEvaluation:runLive`. Not built.
 - Known limits: answers are read-only by design; the preview model recognises a fixed set
