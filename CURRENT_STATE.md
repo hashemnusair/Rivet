@@ -1,6 +1,6 @@
 # GymOS / RIVET current implementation state
 
-## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; branch only, not released)
+## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; on `main` as `0f938e4a`; backend released, frontend pending)
 
 Elias asked to rename Ask RIVET to **Wazen** (وزن), to stop it squeezing the page, to
 reorganise the member profile, and to build Hashem's follow-ups (separate conversations,
@@ -38,9 +38,21 @@ docs/09 "Wazen decisions". Status: docs/13 AI-7.
   (class finder now on its tab) all pass; all 97 screenshot tests pass and
   `workflow-member-detail-phone.png` was refreshed for the new header. Browser review in
   English and Arabic at 1,440, 1,280, 1,024, 768 and 390 px.
-- **Not done.** Not merged or deployed. Release order: Convex backend first (`pnpm
-  convex:deploy`; no schema or index change, new operations only), then the frontend.
-  Live-Claude acceptance (AI-7.7) is open, as is AI-6.5.
+- **Released, backend only (Elias's go: "Yes, release it").** Pushed to `main` as
+  `0f938e4a`; GymOS CI run 40765412758 passed. From this worktree at exactly `0f938e4a`:
+  `convex:env:names -- --prod` (names only) confirmed Production by
+  `AI_GATEWAY_API_KEY`; the guarded dry run against `rivet:rivet:production` /
+  `descriptive-meerkat-589` changed no index; `convex:deploy -- --yes` deployed at
+  2026-10-28T20:53Z; `health:check --prod` returned `ok`. No environment variable or gym
+  availability was changed.
+- **Frontend not released.** This laptop's Vercel CLI only reaches Elias's personal scope,
+  not the team project behind rivetjo.com, so the production frontend needs Hashem: the
+  same archive deploy as the Ask RIVET release above, at `0f938e4a` (docs/12 step c). Until
+  then the live panel is the old Ask RIVET one talking to the new backend: it still
+  works, but it does not show Wazen's confirm cards (an asked-for renewal or freeze is
+  proposed and cannot be confirmed, so nothing changes) and the model calls itself Wazen.
+  Rollback target if needed: redeploy the backend from `85c3633a`.
+- **Not done.** The frontend release above; live-Claude acceptance (AI-7.7) and AI-6.5.
 
 ## Ask RIVET — conversation panel (merged as `d0e5b76e` and released to production 28 October 2026; live Claude acceptance pending)
 

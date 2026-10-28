@@ -561,9 +561,9 @@ Claude on Test Gym.**
 ### AI-7 — Wazen: popup, conversations, confirmed actions (28 October 2026)
 
 Elias's request on top of AI-6, with Hashem's follow-ups. Decisions in docs/09 "Wazen
-decisions". **Status: built and tested on branch `claude/wazen-chatbot-ui-layout-b8fcc1`;
-not merged, not deployed.** Releasing needs the Convex backend first (new operations
-`ai.chat.action` and `ai.chat.rename`, no schema change), then the frontend.
+decisions". **Status: on `main` as `0f938e4a` (CI passed); Convex backend released
+2026-10-28T20:53Z; production frontend not yet released** (needs Hashem's Vercel team
+access, CURRENT_STATE).
 
 - [x] **AI-7.1 Rename to Wazen / وزن** in every person-facing string and the system prompt
   (`rivet-chat.v2`).
