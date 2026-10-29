@@ -795,3 +795,23 @@ Decisions taken in the fix (assumptions, open to the owners):
   bar and shows no button once RIVET is installed. The separate "Install and
   notifications" section is gone; a "Reminders" section appears only where web push is
   configured, without the offline and "own devices" notes.
+
+## Member dock works like X's tab bar — 2026-10-29
+
+Elias asked for the member app's Home / Payments / Explore dock to behave like X's
+(pressing has a visible effect) and to switch instantly, like X and Instagram.
+Decisions taken (assumptions, open to the owners):
+
+- **Instant.** The member pages are rendered per request, so their links prefetched
+  nothing and every tap waited for the server. The dock and the desktop header links now
+  prefetch their pages in full (`prefetch`), refresh that every four minutes and when
+  the app returns to the foreground, and Payments' data is loaded before the first tap.
+  The tapped tab lights up in the same frame, and the dock's sections skip the page
+  rise-and-fade (other member pages keep it).
+- **Feel.** The pressed icon dips and the newly opened one springs back; the open tab's
+  icon and label are bold and dark, the others light. No background box, labels kept
+  for members who read better than they recognise icons. Reduced motion turns the
+  motion off.
+- **Behaviour.** Each section keeps its scroll position when you come back to it from
+  the dock; tapping the section you are on scrolls it to the top. Not done: haptics
+  (iPhone browsers offer none) and pull-to-refresh.

@@ -29,6 +29,7 @@ import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { MemberPwaManager } from "@/components/pwa/member-pwa";
 import { MemberAppProvider, MemberAppReminder, useMemberAppInstall } from "@/components/pwa/member-app";
 import { BetaBadge } from "@/components/shared/beta-badge";
+import { useMemberTabs } from "./member-tabs";
 
 // ---------------------------------------------------------------------------
 // Member shell — the signed-in member area; signed out, the marketplace and a
@@ -97,6 +98,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const customer = useCustomerPersona();
   const [signingOut, setSigningOut] = useState(false);
   const nav = MEMBER_NAV.filter((item) => customerSignedIn || !item.requiresAuth);
+  const tabs = useMemberTabs(pathname, Boolean(customerSignedIn && customer));
 
   const protectedMemberRoute = isProtectedMemberRoute(pathname);
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
@@ -158,6 +160,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const accountActive = !tabs.activeHref && (isActive("/customer/profile") || isActive("/customer/getting-started"));
 
   return (
     <MemberAppProvider>
@@ -175,11 +178,14 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
           <nav className="hidden items-center gap-1 sm:flex" aria-label={t("marketing.memberShell.navigation")}>
             {nav.map((item) => {
-              const active = isActive(item.href);
+              const active = tabs.activeHref === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch
+                  scroll={false}
+                  onClick={(event) => tabs.press(item.href, event)}
                   className={cn(
                     "flex h-8 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
                     active ? "bg-sunken text-ink" : "text-ink-3 hover:bg-sunken/60 hover:text-ink",
@@ -230,20 +236,21 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         >
           <div className="mx-auto grid h-16 max-w-md grid-cols-4 px-3">
             {nav.map((item) => {
-              const active = isActive(item.href);
+              // Lit the moment it is tapped; aria-current follows the page itself.
+              const active = tabs.activeHref === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors",
-                    active ? "text-ink" : "text-ink-3",
-                  )}
-                  aria-current={active ? "page" : undefined}
+                  prefetch
+                  scroll={false}
+                  onClick={(event) => tabs.press(item.href, event)}
+                  data-active={active}
+                  data-pop={tabs.pressed === item.href}
+                  className={cn("member-tab flex flex-col items-center justify-center gap-1 text-[12px]", active ? "font-semibold text-ink" : "font-medium text-ink-3")}
+                  aria-current={isActive(item.href) ? "page" : undefined}
                 >
-                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", active && "bg-sunken")}>
-                    <item.icon className="size-[18px]" aria-hidden />
-                  </span>
+                  <item.icon className="member-tab-icon size-[22px]" strokeWidth={active ? 2.4 : 1.8} aria-hidden />
                   <span>{t(item.shortLabelKey)}</span>
                 </Link>
               );
@@ -253,12 +260,10 @@ export function CustomerShell({ children }: { children: ReactNode }) {
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className={cn("flex flex-col items-center justify-center gap-1 rounded-md text-[12px] font-medium transition-colors", isActive("/customer/profile") || isActive("/customer/getting-started") ? "text-ink" : "text-ink-3")}
+                  className={cn("member-tab flex flex-col items-center justify-center gap-1 text-[12px]", accountActive ? "font-semibold text-ink" : "font-medium text-ink-3")}
                   aria-label={t("marketing.memberShell.accountMenu")}
                 >
-                  <span className={cn("flex h-8 w-11 items-center justify-center rounded-md", (isActive("/customer/profile") || isActive("/customer/getting-started")) && "bg-sunken")}>
-                    <UserRound className="size-[18px]" aria-hidden />
-                  </span>
+                  <UserRound className="member-tab-icon size-[22px]" strokeWidth={accountActive ? 2.4 : 1.8} aria-hidden />
                   <span>{t("marketing.memberShell.account")}</span>
                 </button>
               </DropdownMenuTrigger>

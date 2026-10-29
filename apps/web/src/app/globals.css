@@ -489,6 +489,47 @@ html.landing-motion-ready [data-experience-notice] {
 }
 
 /*
+  The dock answers the thumb at once, like a phone app's tab bar: the icon dips
+  while it is pressed, and a newly opened section's icon springs back past its
+  size. Transform only, so the motion never waits on layout or paint.
+*/
+.member-tab {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.member-tab-icon {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.member-tab:active .member-tab-icon {
+  transform: scale(0.84);
+  transition-duration: 70ms;
+}
+
+.member-tab[data-active="true"][data-pop="true"] .member-tab-icon {
+  animation: member-tab-pop 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes member-tab-pop {
+  0% { transform: scale(0.84); }
+  55% { transform: scale(1.1); }
+  100% { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-tab-icon,
+  .member-tab[data-active="true"][data-pop="true"] .member-tab-icon {
+    transition: none;
+    animation: none;
+  }
+
+  .member-tab:active .member-tab-icon {
+    transform: none;
+  }
+}
+
+/*
   While a text field has focus on a phone, the on-screen keyboard owns the
   bottom of the screen. Hiding the dock keeps it from floating over the field
   or the button beneath it; it returns as soon as the field loses focus. The

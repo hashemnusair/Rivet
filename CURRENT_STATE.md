@@ -1,5 +1,28 @@
 # GymOS / RIVET current implementation state
 
+## Member dock — X-style tabs that switch instantly (29 October 2026)
+
+Decisions: docs/09 "Member dock works like X's tab bar".
+
+- `src/components/public/member-tabs.ts` (new) `useMemberTabs`: lights the tapped tab
+  before its page renders, keeps each section's scroll position (`scroll={false}` on the
+  dock links, restored instantly on arrival), scrolls the open section to the top when
+  tapped again, refreshes full prefetches of the three sections every four minutes and
+  on returning to the foreground, and warms Payments' queries
+  (`src/lib/public/customer-finance-query.ts` builds the page's and the warm-up's key).
+- `public-shell.tsx`: dock and header links use `prefetch` and the hook; dock icons are
+  22 px, bold when open, with no background box. `globals.css` `.member-tab`: press dip
+  and open pop (transform only, off for reduced motion). `src/app/customer/template.tsx`
+  skips the rise-and-fade for the dock's sections.
+- **Measured (29 October 2026)**, built mock bundle, headless touch phone at 390 px with
+  150 ms added network latency: tapped tab lit in 3–5 ms, section on screen in 17–34 ms;
+  a member page outside the dock (not prefetched) took 385 ms. Scroll memory and
+  tap-to-top checked in the same run.
+- **Verification.** `tsc`; ESLint on changed files; new `member-tabs.test.tsx` (5); full
+  Vitest green (two shell tests needed a stub for the new hook); `workflow-pass-4` and
+  `public-experience` 27/27 on the built bundle, 390 px screenshots inside tolerance. Not
+  verified on a real phone or against the Linux 390 px references (CI).
+
 ## Member sign-up and setup fixes (29 October 2026)
 
 Elias's phone report from `app.rivetjo.com`. Decisions: docs/09 "Member sign-up and

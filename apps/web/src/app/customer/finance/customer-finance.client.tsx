@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
+import { customerTransactionQuery } from "@/lib/public/customer-finance-query";
 import type { CustomerFinancialSummary, CustomerTransaction, CustomerTransactionQuery } from "@/lib/domain/qol";
 import { useApiMutation, useApiQuery } from "@/lib/hooks/use-api";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced";
@@ -52,7 +53,7 @@ export function CustomerFinanceClient() {
   // toggle; an active filter keeps its controls open so nothing is hidden.
   const [filtersOpen, setFiltersOpen] = useState(secondaryCount > 0);
 
-  const query = useMemo<CustomerTransactionQuery>(() => ({ gymId, type: type ?? undefined, status: status ?? undefined, from, to, search: debouncedSearch || undefined, page, pageSize: 20, sort: "-occurredAt" }), [debouncedSearch, from, gymId, page, status, to, type]);
+  const query = useMemo<CustomerTransactionQuery>(() => customerTransactionQuery({ gymId, type: type ?? undefined, status: status ?? undefined, from, to, search: debouncedSearch || undefined, page }), [debouncedSearch, from, gymId, page, status, to, type]);
   const summary = useApiQuery(qk.customerFinance("summary"), (api) => api.getCustomerFinancialSummary(), { enabled });
   const transactions = useApiQuery(qk.customerFinance(query), (api) => api.listCustomerTransactions(query), { enabled });
   const personalExport = useApiMutation((api) => api.requestMemberPersonalDataExport(crypto.randomUUID(), locale), {

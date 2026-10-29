@@ -36,6 +36,11 @@ vi.mock("@/lib/auth/public-viewer", () => ({
 vi.mock("@/components/public/signed-in-guard", () => ({ SignedInGuard: () => null }));
 vi.mock("@/components/onboarding/onboarding-banner", () => ({ OnboardingBanner: () => null }));
 vi.mock("@/components/pwa/member-pwa", () => ({ MemberPwaManager: () => null }));
+// The dock's prefetching and scroll memory have their own tests (member-tabs.test.tsx).
+vi.mock("@/components/public/member-tabs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/public/member-tabs")>();
+  return { ...actual, useMemberTabs: (pathname: string) => ({ activeHref: actual.MEMBER_TAB_HREFS.find((href) => pathname === href || pathname.startsWith(`${href}/`)), pressed: undefined, press: vi.fn() }) };
+});
 
 describe("CustomerShell", () => {
   beforeEach(() => {
