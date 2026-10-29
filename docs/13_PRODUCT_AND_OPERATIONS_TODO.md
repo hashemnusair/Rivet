@@ -561,9 +561,8 @@ Claude on Test Gym.**
 ### AI-7 — Wazen: popup, conversations, confirmed actions (28 October 2026)
 
 Elias's request on top of AI-6, with Hashem's follow-ups. Decisions in docs/09 "Wazen
-decisions". **Status: on `main` as `0f938e4a` (CI passed); Convex backend released
-2026-10-28T20:53Z; production frontend not yet released** (needs Hashem's Vercel team
-access, CURRENT_STATE).
+decisions". **Status: released.** Convex backend 2026-10-28T20:53Z from `0f938e4a`;
+frontend 2026-10-28T21:59Z by the Git-triggered Production deployment of `09b02837`.
 
 - [x] **AI-7.1 Rename to Wazen / وزن** in every person-facing string and the system prompt
   (`rivet-chat.v2`).
@@ -579,6 +578,10 @@ access, CURRENT_STATE).
   tests +4, Playwright +3 journeys.)*
 - [x] **AI-7.6 Member profile layout** *(contact actions in the header, one figures strip,
   Classes tab, details column that fits every width.)*
+- [x] **AI-7.8 The window grows out of its launcher** *(29 October 2026: typing in the home
+  box opens the window and carries on there; the window opens up along the launcher's
+  edges and settles back into it; the arrow becomes the send button; rounded rectangles,
+  not pills. `features/ask-rivet/window-motion.ts`; docs/09 "How the window opens".)*
 - [ ] **AI-7.7 Live acceptance** — with live Claude on Test Gym: propose, dismiss and
   confirm one of each action; check the audit rows and that a trainer is never offered a
   card. Not done.

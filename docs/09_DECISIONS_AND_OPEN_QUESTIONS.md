@@ -354,6 +354,29 @@ docking points of the Ask RIVET decisions above; the rest stand.
   beside PT (shown only where the class finder is available); the details column sits
   beside the tabs from 1,280 px and two across under them on laptops and tablets.
 
+#### How the window opens — 29 October 2026
+
+Elias did not like the window simply appearing, asked that typing open it, that the
+expansion stay on the same lines, that the arrow become the send button, and that pills
+go in favour of the design sheet's rounded rectangles. This supersedes "sending opens the
+window" and "the round button" above.
+
+- **Typing opens it.** The home screen's box is as wide as the window (420 px). The first
+  key typed (or pasted; after composition for IME input) opens the window and moves the
+  words and the caret into its message box, so typing simply carries on there. Nothing is
+  sent until the person sends it. The box's arrow, or ⌘J, opens it empty.
+- **It grows out of its launcher.** The window opens upward out of the launcher showing
+  (the home box, or the corner button elsewhere), keeping that launcher's side and bottom
+  edges, and settles back into it on close; it also moves between its two sizes. The home
+  box's arrow travels to the window's send button and back. Only the frame changes size;
+  the contents hold their final size in the bottom corner so nothing re-wraps while it
+  moves. Open 380 ms, close 260 ms, resize 320 ms on `cubic-bezier(0.2, 0, 0, 1)`: longer
+  and gentler than DESIGN.md's overlay timing on purpose, because the window travels much
+  further than a menu. Phones keep the rising full-screen sheet; reduced motion gets none
+  of it.
+- **Shapes.** Launchers are rounded rectangles (8 px box and corner button, 6 px arrow),
+  and the window has the 8 px panel corner. No pills.
+
 ### AI decision sheet — proposed, awaiting Hashem/Elias
 
 Each line is a recommendation from the implementation agent, **not an approval**. The

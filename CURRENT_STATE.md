@@ -1,5 +1,41 @@
 # GymOS / RIVET current implementation state
 
+## Wazen — the window grows out of its launcher; typing opens it (29 October 2026)
+
+Elias disliked how the window appeared and asked: typing should open it, the expansion
+should stay on the same lines and open up, the arrow should become the send button, and
+no pills (the design sheet's rounded rectangles instead). Decisions: docs/09 "How the
+window opens"; DESIGN.md Motion and Shapes now name the exception.
+
+- **Typing opens it.** The home box is the window's width (420 px). The first key (or a
+  paste; after composition for IME input) opens the window and hands the words and caret
+  to its message box in the same frame, so fast typing loses nothing; nothing is sent
+  until the person sends. The arrow or ⌘J opens it empty.
+- **Motion.** `src/features/ask-rivet/window-motion.ts` (new) grows the window out of the
+  showing launcher (`data-ask-origin`) along its side and bottom edges and back into it on
+  close, and between its two sizes; the home box's arrow (`data-ask-origin-arrow`) flies
+  to the send button (`data-ask-send`) and back. Only the frame resizes (Web Animations,
+  380/260/320 ms, `cubic-bezier(0.2, 0, 0, 1)`); the contents hold their final size in the
+  bottom corner. Interruptions start from where the frame is; every run tidies up after
+  itself, including when cancelled. Phones keep the CSS sheet; reduced motion gets none.
+- **Shapes.** Launchers are 8 px rounded rectangles (6 px arrow); the window corner is
+  8 px, not 12.
+- **Also changed.** `composer.tsx` takes a handed-over draft in a layout effect and
+  exposes `hasDraft()`; focus returns to the visible launcher by its client rects (the
+  `offsetParent` check missed the fixed corner button).
+- **Verification (29 October 2026).** `tsc`; ESLint on `src/features/ask-rivet` and the
+  spec; Wazen component tests 10/10; full Vitest 2,705 passed. On a mock-preview build,
+  `e2e/ask-rivet.spec.ts` and `e2e/ai-assist.spec.ts` 22/22, with the chatbox journey
+  now typing into the box, checking the words and focus moved, the window's edges equal
+  the box's, no leftover arrow, and no scripted motion under reduced motion. Paused-frame
+  captures (headless Chromium) at 1,920, 1,440, 1,280, 1,024, 768, 640 × 560 and 390 px, in
+  English and Arabic: box and window share both side edges and the bottom edge at every
+  floating size (mirrored to the left in Arabic), 20-character bursts typed at 5–15 ms per
+  key arrive whole, opening then closing mid-motion leaves nothing behind.
+- **Release.** The 28 October Wazen frontend reached production with Hashem's `09b02837`
+  push (Vercel Production deployment, GitHub status success, 28 October 21:59 UTC). This
+  change is frontend only; pushing it to `main` deploys it the same way. No Convex change.
+
 ## Vercel automatic deployments restored — 29 October 2026
 
 Hashem explicitly requested restoring Vercel autodeploy. This supersedes the
@@ -18,7 +54,7 @@ setting readback, and the Git-triggered deployment after publication. The result
 deployment receipt is recorded in the chat; application tests are not applicable
 to these configuration and handoff changes. Read this entry and docs/12 first.
 
-## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; on `main` as `0f938e4a`; backend released, frontend pending)
+## Wazen — popup chat, conversations, confirmed actions, member profile layout (28 October 2026; on `main` as `0f938e4a`; backend and frontend released)
 
 Elias asked to rename Ask RIVET to **Wazen** (وزن), to stop it squeezing the page, to
 reorganise the member profile, and to build Hashem's follow-ups (separate conversations,
@@ -63,14 +99,11 @@ docs/09 "Wazen decisions". Status: docs/13 AI-7.
   `descriptive-meerkat-589` changed no index; `convex:deploy -- --yes` deployed at
   2026-10-28T20:53Z; `health:check --prod` returned `ok`. No environment variable or gym
   availability was changed.
-- **Frontend not released.** This laptop's Vercel CLI only reaches Elias's personal scope,
-  not the team project behind rivetjo.com, so the production frontend needs Hashem: the
-  same archive deploy as the Ask RIVET release above, at `0f938e4a` (docs/12 step c). Until
-  then the live panel is the old Ask RIVET one talking to the new backend: it still
-  works, but it does not show Wazen's confirm cards (an asked-for renewal or freeze is
-  proposed and cannot be confirmed, so nothing changes) and the model calls itself Wazen.
-  Rollback target if needed: redeploy the backend from `85c3633a`.
-- **Not done.** The frontend release above; live-Claude acceptance (AI-7.7) and AI-6.5.
+- **Frontend released 28 October 21:59 UTC** by the Git-triggered Production deployment of
+  Hashem's `09b02837` (automatic deployments restored, entry above), which contains
+  `0f938e4a`. Before that, the live Ask RIVET panel talked to the new backend without
+  Wazen's confirm cards. Rollback target for the backend if ever needed: `85c3633a`.
+- **Not done.** Live-Claude acceptance (AI-7.7) and AI-6.5.
 
 ## Ask RIVET — conversation panel (merged as `d0e5b76e` and released to production 28 October 2026; live Claude acceptance pending)
 
