@@ -885,3 +885,33 @@ Lesson: on this stack an edge-cached page must be the same for everyone who requ
 that URL. A cached landing would need the language in the URL (for example `/` English
 and `/ar` Arabic, built ahead of time) and would rely on the in-page sign-in check rather
 than the server redirect. That is the larger restructure; not started.
+
+## Landing at / and /ar, built ahead — 2026-10-29
+
+Elias approved the restructure the reverted attempt pointed to: the landing only, at `/`
+and `/ar`, served from Vercel's edge, checked on Production at once and reverted if
+anything is wrong. Decisions taken (assumptions, open to the owners):
+
+- **The language is in the address.** English at `/`, Arabic at `/ar`. Each is built
+  ahead, so every visitor to one address gets the same page and the edge can serve it.
+  Search engines get the pair as language alternates, with `/` as the default.
+- **The server still decides who sees which.** Next's middleware runs on every request
+  before the edge cache. It sends a signed-in visitor on to their area as before, and a
+  visitor whose own saved language is Arabic from `/` to `/ar` (a quick 307, not
+  cached). An earlier account's Arabic setting does not count for someone signed out,
+  matching the product layout's rule.
+- **Opening `/ar` makes Arabic the device's language**, because the page saves the
+  language it shows, as every RIVET page does. A shared `/ar` link therefore continues
+  in Arabic into sign-in and the application.
+- **Going between the landing and any other page is a full page load** (two root
+  layouts). The night sheet treats it like going to another RIVET host: the drawing
+  finishes on the page being left, and the next page opens on the same drawing.
+- **Addresses no route matches** get a site-wide not-found page in the visitor's
+  language.
+- **Known limits.** A signed-in visitor who opens the landing on purpose
+  (`?view=landing`, the platform console's link) is served English and switches to
+  their saved language once their account loads. A language chosen on the landing
+  while signed out still carries into the next sign-in, unless the landing is reloaded
+  before signing in.
+- **Scope.** Only the landing. Privacy, terms, the application and sign-in are still
+  rendered per visit.

@@ -1,5 +1,65 @@
 # GymOS / RIVET current implementation state
 
+## Landing built ahead at `/` and `/ar` — on its branch, not released (29 October 2026)
+
+Branch `claude/gym-dashboards-mobile-b0df00`; not on `main`, nothing deployed.
+Decisions: docs/09 "Landing at / and /ar, built ahead".
+
+- **Two root layouts.** The landing moved to `src/app/(site)/[lang]` (`page.tsx`,
+  `layout.tsx`, `error.tsx`, `landing-language-address.tsx`), whose language comes from
+  the address: `generateStaticParams` builds `/en` and `/ar`, `dynamicParams = false`.
+  Every other page moved into `src/app/(main)`, whose `layout.tsx` still reads the
+  language from the request. Addresses did not change. Both layouts render
+  `src/app/root-document.tsx` (fonts, pre-paint scripts, providers; formerly
+  `src/app/layout.tsx`). **Path note:** a `src/app/<x>` path in older entries below is
+  now `src/app/(main)/<x>`; `src/app/page.tsx` is now `src/app/(site)/[lang]/page.tsx`.
+  `convex/arabicReviewCatalog.json` keeps the paths its strings were reviewed under.
+- **Addresses.** `src/lib/routing/landing.ts` and `src/proxy.ts` (`routeLanding`): `/`
+  is rewritten to the built `/en` page, a visitor whose own saved language is Arabic is
+  sent to `/ar` (307), and `/en` redirects to `/` (308). The middleware runs before the
+  edge cache, so the signed-in redirect still happens on the server; `/ar` is a
+  signed-out-only path (`signed-in-routing.ts`), belongs to `www` (`host-routing.ts`),
+  and is covered by the landing's pre-paint sign-in check. A pre-paint fallback sends
+  an Arabic reader who reached the English page to `/ar`. The landing's language switch
+  moves the address between `/` and `/ar` with `history.replaceState`.
+- **Not found.** Two root layouts need `src/app/global-not-found.tsx`
+  (`experimental.globalNotFound` in `next.config.mjs`). It reads the visitor's language
+  from the request like the product layout; a fixed English 404 would also have
+  overwritten a signed-out Arabic reader's saved language when it mounted.
+- **Page transitions across the boundary.** Going between the landing and any other
+  page is now a full page load. `src/components/motion/page-sheet.tsx` treats it like
+  going to another host (`leavesDocument`): the drawing plays on the page being left,
+  the next page is asked for once it is drawn, and that page opens on the pre-paint
+  cover (`sheet-entry.ts`). `/ar` is always covered, like `/`; privacy, terms and the
+  application are covered only when a sheet left for them
+  (`SHEET_ARRIVAL_KEY` in session storage, read once). Switching the landing's
+  language no longer plays an arrival.
+- **Signed-in landing view.** `SignedInGuard` accepts `?view=landing` on `/ar` as well as
+  `/`.
+- **Verification (cloud session, 29 October 2026).** `tsc` and ESLint clean; full
+  Vitest on the final code: 2,765 passed, 3 skipped, and one 5 s timeout in
+  `convex/ai.chat.test.ts` under full-suite load (untouched here; passes 3 of 3 alone).
+  The mock preview build and a real-auth build (Clerk and Convex mode, placeholder
+  values) both list `● /en`, `● /ar` (built ahead) and `ƒ /_not-found`; the built
+  pages carry the right `lang`, the
+  signed-in check, the Arabic fallback and `hreflang` alternates. Full credential-free
+  Playwright against the mock build (Chromium 1243 at `/opt/pw-browsers`, two workers):
+  264 passed, 14 credential-gated skips, 6 failed; the same 6 fail identically on
+  `main` (`6758a21`) in that container, with identical pixel counts (five 390px
+  screenshot baselines and `tab-scroll-stability`), so they belong to the container's
+  newer Chromium, not this change. `page-motion` 1440px timing failed once under three
+  workers and passed alone. Changed browser specs:
+  `page-motion.spec.ts` (landing → privacy → Back now checks the next document's
+  cover) and `public-experience.spec.ts` (the suspended gym is checked on discovery
+  reached in-app; the mock keeps the suspension only inside one document, and the
+  landing is now a separate document).
+- **Local stand-in font.** This cloud session cannot reach `cdn.fontshare.com`, so its
+  local builds used a stand-in file for the gitignored Satoshi font; CI and Vercel
+  download the real one.
+- **Still to do: release and the Production check** (docs/12 "Landing at / and /ar").
+  The cloud session's network policy blocks `rivetjo.com`, so it could not run the
+  check and did not release.
+
 ## Edge-cached landing — tried on Production and reverted (29 October 2026)
 
 `next.config.mjs` briefly sent `Vercel-CDN-Cache-Control` on `www`'s `/` for requests

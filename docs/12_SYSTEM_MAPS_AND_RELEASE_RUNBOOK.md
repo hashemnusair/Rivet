@@ -1019,7 +1019,7 @@ All four hosts serve the same `rivet-web` Next.js deployment. Route ownership is
 | Host | Entry and owned routes |
 | --- | --- |
 | `rivetjo.com` | Permanent redirect to `www`, or directly to the owner of an old app URL |
-| `www.rivetjo.com` | Landing, gym application `/signup`, terms and privacy. The landing is never shown to a signed-in account: it hands off to `/login`, which opens `dashboard`, `app` or `platform` by role. Terms and privacy stay readable when signed in. |
+| `www.rivetjo.com` | Landing (`/` English, `/ar` Arabic, built ahead and served from the edge), gym application `/signup`, terms and privacy. The landing is never shown to a signed-in account: it hands off to `/login`, which opens `dashboard`, `app` or `platform` by role. Terms and privacy stay readable when signed in. |
 | `dashboard.rivetjo.com` | Root opens `/dashboard`; all gym workspace routes, `/login/gym` and invitation acceptance. Includes employed trainers. |
 | `app.rivetjo.com` | Root opens `/customer/discover`; `/customer/*`, member login/signup and public offers. `/signup` redirects to `/login/member/create`. Includes member PT booking. |
 | `platform.rivetjo.com` | Root opens `/platform`; `/platform/*` and `/login/admin`. Convex platform-admin authorization remains required. |
@@ -1038,6 +1038,32 @@ Release checks:
 - In a real signed-in browser, test owner/manager/receptionist, member and platform-admin role handoffs, branch selection, sign-out and opening an old URL. Provider session checks require an existing authorized account; mock-role tests do not establish Clerk production session continuity.
 
 No Convex deployment or DNS change is required for this frontend release. Do not deploy unrelated backend work to release these routing changes. Deployment evidence and test outcomes are recorded in `CURRENT_STATE.md`.
+
+## Landing at / and /ar — release check
+
+The landing has its own root layout, `src/app/(site)/[lang]`, built ahead for `/en`
+and `/ar`; every other page is under `src/app/(main)`. `src/proxy.ts` answers `/` with
+the `/en` build, sends a visitor whose own saved language is Arabic to `/ar` (307) and
+redirects `/en` to `/` (308). Decisions: docs/09 "Landing at / and /ar, built ahead".
+No Convex or DNS change.
+
+Before release, the build output must list `● /en` and `● /ar`. Right after the
+Production deployment is Ready, from a network that can reach `rivetjo.com`, without
+credentials:
+
+- `https://www.rivetjo.com/` twice: 200, `lang="en"`, second response `x-vercel-cache: HIT`,
+  canonical `https://www.rivetjo.com` (from `NEXT_PUBLIC_SITE_URL`).
+- `https://www.rivetjo.com/ar`: 200, `lang="ar"`, `HIT` on repeat.
+- `/` with `Cookie: rivet_ui_locale_v1=` plus the URL-encoded
+  `{"version":1,"locale":"ar","owner":null}`: 307 to `/ar`. The same with `"owner":"user_x"`
+  stays English. The old `rivet_locale=ar` cookie also gets 307 to `/ar`.
+- `/en`: 308 to `/`. An unknown path: 404.
+- A signed-in browser opening `rivetjo.com` and `rivetjo.com/ar` lands in its own area.
+
+If an Arabic-cookie request ever gets the English page, or anything else is wrong,
+revert the release commit on `main` and push at once (the earlier header-only attempt,
+`433135a1`, was reverted for exactly that). Then time the landing in a fresh browser
+against the measurements in `CURRENT_STATE.md`.
 
 ## Before Hashem and Elias's walkthrough
 
