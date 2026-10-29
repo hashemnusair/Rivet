@@ -2,7 +2,7 @@ import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import ReportsPage from "@/app/(app)/reports/page";
+import ReportsPage from "@/app/(main)/(app)/reports/page";
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 import type { Locale } from "@/lib/i18n/locale";
 import type { Page, TransactionSummary } from "@/lib/domain/types";

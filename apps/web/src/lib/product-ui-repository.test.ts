@@ -12,7 +12,8 @@ function productFiles(directory = srcRoot): string[] {
       return productFiles(path);
     }
     if (!entry.name.endsWith(".tsx")) return [];
-    if (path === `${srcRoot}/app/page.tsx`) return [];
+    // The marketing landing, like components/marketing, has its own look.
+    if (path === `${srcRoot}/app/(site)/[lang]/page.tsx`) return [];
     return [path];
   });
 }

@@ -11,7 +11,7 @@ import { classClockText, classTimeRange, classHourText, classMinuteAtPosition, v
 import { BRANCH_ABD } from "@/lib/mock/seed";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import ClassesPage from "@/app/(app)/classes/page";
+import ClassesPage from "@/app/(main)/(app)/classes/page";
 import { CancelOccurrenceDialog } from "./cancel-occurrence-dialog";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), usePathname: () => "/classes", useSearchParams: () => new URLSearchParams() }));

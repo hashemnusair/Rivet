@@ -14,7 +14,7 @@ describe("pre-paint signed-in guard", () => {
   it("asks the Frontend API client resource on the landing only and never on an app host", () => {
     const script = prePaintSignedInGuardScript({ frontendApi: "https://clerk.rivetjo.com/", appHosts: ["dashboard.rivetjo.com", "app.rivetjo.com", "platform.rivetjo.com"], accountCookie: "rivet_ui_locale_v1" });
     expect(script).toContain('fetch("https://clerk.rivetjo.com/v1/client",{credentials:"include"})');
-    expect(script).toContain('location.pathname!=="/"||["dashboard.rivetjo.com","app.rivetjo.com","platform.rivetjo.com"].indexOf(location.hostname)!==-1');
+    expect(script).toContain('["/","/ar"].indexOf(location.pathname)===-1||["dashboard.rivetjo.com","app.rivetjo.com","platform.rivetjo.com"].indexOf(location.hostname)!==-1');
     expect(script).toContain('location.replace("/login"+location.search)');
     // A landing asked for on purpose is shown before anything is hidden.
     expect(script.indexOf('get("view")==="landing")return;')).toBeGreaterThan(-1);

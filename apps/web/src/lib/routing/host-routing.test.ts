@@ -90,7 +90,7 @@ describe("route ownership", () => {
   }
 
   it("covers every gym route tree", () => {
-    const root = resolve(process.cwd(), "src/app/(app)");
+    const root = resolve(process.cwd(), "src/app/(main)/(app)");
     for (const entry of readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
       expect(hostnameForPath(`/${entry.name}`), entry.name).toBe(RIVET_HOSTS.gym);
     }

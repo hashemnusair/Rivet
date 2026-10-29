@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageSheet, SheetLink, startSheet } from "./page-sheet";
 import { IDLE_SHEET, SHEET_ENTRY_ID, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
-import { drawingSvg } from "@/app/login/sign-in-drawings";
+import { drawingSvg } from "@/app/(main)/login/sign-in-drawings";
 import { SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
 import { SheetEntryArt } from "./sheet-entry-art";
 

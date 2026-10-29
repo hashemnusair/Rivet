@@ -29,6 +29,11 @@ const nextConfig = {
         ? "production"
         : process.env.NEXT_PUBLIC_RIVET_DEPLOYMENT_CLASS,
   },
+  experimental: {
+    // Two root layouts (the product and the built-ahead landing) need one
+    // not-found document of their own: src/app/global-not-found.tsx.
+    globalNotFound: true,
+  },
   async headers() {
     // A sign-in door may be prepared from another RIVET host (the chooser on
     // www prerenders the gym or member door while the pointer rests on it).

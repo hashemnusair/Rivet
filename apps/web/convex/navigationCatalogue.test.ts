@@ -22,7 +22,7 @@ describe("navigation catalogue integrity", () => {
     const sectionIds = new Set([...settingsSource.matchAll(/\{ id: "([a-z_-]+)", label:/g)].map((match) => match[1]));
     for (const entry of NAVIGATION_ENTRIES) {
       const [path, query] = entry.href.split("?");
-      expect(existsSync(join(__dirname, "..", "src", "app", "(app)", path!.slice(1), "page.tsx")), `${entry.id} points at ${path}`).toBe(true);
+      expect(existsSync(join(__dirname, "..", "src", "app", "(main)", "(app)", path!.slice(1), "page.tsx")), `${entry.id} points at ${path}`).toBe(true);
       expect(entry.description.length, entry.id).toBeGreaterThan(20);
       expect(entry.keywords.length, entry.id).toBeGreaterThan(0);
       for (const permission of entry.anyPermission ?? []) expect(PERMISSIONS, `${entry.id} uses ${permission}`).toContain(permission);

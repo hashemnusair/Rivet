@@ -12,8 +12,8 @@ import { planDurationText } from "@/lib/i18n/member-enrollment";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { BRANCH_ABD } from "@/lib/mock/seed";
 import { PlanFormDialog } from "./plan-form-dialog";
-import NewMemberPage from "@/app/(app)/members/new/page";
-import PlansPage from "@/app/(app)/plans/page";
+import NewMemberPage from "@/app/(main)/(app)/members/new/page";
+import PlansPage from "@/app/(main)/(app)/plans/page";
 
 const nav = vi.hoisted(() => ({ search: "", replace: vi.fn(), push: vi.fn() }));
 vi.mock("next/navigation", () => ({

@@ -10,7 +10,7 @@ import type { Locale } from "@/lib/i18n/locale";
 import { createTranslator } from "@/lib/i18n/core";
 import { BRANCH_ABD } from "@/lib/mock/seed";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import PersonalTrainingPage from "@/app/(app)/pt/page";
+import PersonalTrainingPage from "@/app/(main)/(app)/pt/page";
 import { BookingOutcomeConfirmation } from "./booking-outcome-confirmation";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), usePathname: () => "/pt", useSearchParams: () => new URLSearchParams() }));

@@ -1,5 +1,5 @@
 import { RIVET_HOSTS } from "@/lib/routing/host-routing";
-import { drawingSvg } from "@/app/login/sign-in-drawings";
+import { drawingSvg } from "@/app/(main)/login/sign-in-drawings";
 import { ART_VIEWBOX, OPENING_DRAWING, SHEET_ENTRY_ID } from "./sheet-store";
 
 /** An SVG as a CSS `url()`: only what a data URI cannot carry is escaped. */

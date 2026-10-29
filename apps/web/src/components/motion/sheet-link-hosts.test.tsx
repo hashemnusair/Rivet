@@ -7,7 +7,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/login",
   useRouter: () => ({ push: vi.fn(), prefetch: vi.fn() }),
 }));
-vi.mock("@/app/login/sign-in-art", () => ({ DrawingLoop: () => null }));
+vi.mock("@/app/(main)/login/sign-in-art", () => ({ DrawingLoop: () => null }));
 
 describe("sheet links across RIVET hosts", () => {
   it("connects ahead, once, to another host a link crosses to", () => {

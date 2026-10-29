@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { decideHostRouting, type HostRoutingDecision } from "@/lib/routing/host-routing";
 import { signedInRedirectTarget } from "@/lib/routing/signed-in-routing";
+import { ENGLISH_LANDING_BUILD_PATH, LANDING_PATHS, landingLocale } from "@/lib/routing/landing";
 
 /**
  * Browser tests run the seeded preview personas and never sign in to Clerk.
@@ -37,8 +38,34 @@ function applyHostDecision(request: NextRequest, decision: HostRoutingDecision) 
   return NextResponse.next();
 }
 
+/**
+ * The landing is built ahead per language (src/app/(site)/[lang]). "/" is
+ * answered with the English page, or sends a reader whose saved language is
+ * Arabic to "/ar"; the English build path itself points back to "/". Runs
+ * after the host and signed-in redirects, so only signed-out visitors (or a
+ * landing asked for on purpose) get here.
+ */
+function routeLanding(request: NextRequest): NextResponse | undefined {
+  const { pathname } = request.nextUrl;
+  if (pathname === ENGLISH_LANDING_BUILD_PATH) {
+    const destination = request.nextUrl.clone();
+    destination.pathname = LANDING_PATHS.en;
+    return NextResponse.redirect(destination, 308);
+  }
+  if (pathname !== LANDING_PATHS.en) return undefined;
+  const destination = request.nextUrl.clone();
+  if (landingLocale(request.cookies) === "ar") {
+    destination.pathname = LANDING_PATHS.ar;
+    return NextResponse.redirect(destination, 307);
+  }
+  destination.pathname = ENGLISH_LANDING_BUILD_PATH;
+  return NextResponse.rewrite(destination);
+}
+
 function routeByHost(request: NextRequest) {
-  return applyHostDecision(request, decideHostRouting(hostOf(request), request.nextUrl.pathname));
+  const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
+  if (decision.kind !== "next") return applyHostDecision(request, decision);
+  return routeLanding(request) ?? NextResponse.next();
 }
 
 /** Signed-in doors and the landing hand off to the shared resolver, which
@@ -64,7 +91,7 @@ const clerkProxy = clerkMiddleware(async (auth, request) => {
     }
   }
 
-  return NextResponse.next();
+  return routeLanding(request) ?? NextResponse.next();
 });
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {

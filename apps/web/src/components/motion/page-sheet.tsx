@@ -25,7 +25,7 @@ import styles from "./page-sheet.module.css";
  * pages keep their short entrance.
  */
 
-const loadDrawing = () => import("@/app/login/sign-in-art");
+const loadDrawing = () => import("@/app/(main)/login/sign-in-art");
 const SheetDrawing = lazy(() => loadDrawing().then((module) => ({ default: module.DrawingLoop })));
 
 let drawingPrefetched = false;

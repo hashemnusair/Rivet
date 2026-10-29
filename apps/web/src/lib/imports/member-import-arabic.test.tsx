@@ -10,8 +10,8 @@ import type { DuplicateCase } from "@/lib/domain/qol";
 import { money } from "@/lib/utils/money";
 import { BRANCH_ABD } from "@/lib/mock/seed";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import MemberImportPage from "@/app/(app)/members/import/page";
-import DuplicateMembersPage from "@/app/(app)/members/duplicates/page";
+import MemberImportPage from "@/app/(main)/(app)/members/import/page";
+import DuplicateMembersPage from "@/app/(main)/(app)/members/duplicates/page";
 import { inferMemberImportMapping, mappedMemberCsv, rejectedMemberRowsCsv } from "./member-import";
 import { describeMemberImportError, memberImportErrors } from "./member-import-errors";
 

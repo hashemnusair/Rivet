@@ -8,6 +8,7 @@
 export const RESOLVER_PATH = "/login";
 export const SIGNED_OUT_ONLY_PATHS: ReadonlySet<string> = new Set([
   "/",
+  "/ar",
   "/signup",
   "/login/gym",
   "/login/member",
@@ -27,6 +28,6 @@ export function landingViewRequested(search: string): boolean {
 }
 
 export function signedInRedirectTarget(input: { pathname: string; search?: string }): string | null {
-  if (input.pathname === "/" && landingViewRequested(input.search ?? "")) return null;
+  if ((input.pathname === "/" || input.pathname === "/ar") && landingViewRequested(input.search ?? "")) return null;
   return SIGNED_OUT_ONLY_PATHS.has(input.pathname) ? RESOLVER_PATH : null;
 }

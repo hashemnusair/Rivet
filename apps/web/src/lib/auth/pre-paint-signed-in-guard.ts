@@ -39,7 +39,7 @@ export function prePaintSignedInGuardScript(input: { frontendApi: string; appHos
   const accountCookie = new RegExp(`(?:^|; )${input.accountCookie.replace(/[^A-Za-z0-9_]/g, "")}=([^;]*)`).toString();
   return (
     "(function(){var d=document.documentElement;try{" +
-    `if(location.pathname!=="/"||${appHosts}.indexOf(location.hostname)!==-1)return;` +
+    `if(["/","/ar"].indexOf(location.pathname)===-1||${appHosts}.indexOf(location.hostname)!==-1)return;` +
     'if(new URLSearchParams(location.search).get("view")==="landing")return;' +
     'var done=false;function show(){if(!done){done=true;d.style.visibility="";}}' +
     'function go(){done=true;location.replace("/login"+location.search);}' +

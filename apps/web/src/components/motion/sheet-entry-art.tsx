@@ -1,4 +1,4 @@
-import { drawingSvg } from "@/app/login/sign-in-drawings";
+import { drawingSvg } from "@/app/(main)/login/sign-in-drawings";
 import { svgUrl } from "./sheet-entry";
 import type { SheetDock } from "./sheet-store";
 

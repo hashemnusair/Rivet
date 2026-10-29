@@ -12,7 +12,7 @@ import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { CloseShiftDialog, OpenShiftDialog, makeOpenShiftSchema } from "@/features/finance/shift-dialogs";
 import { CheckoutWorkspace } from "./checkout-workspace";
 import { filterSellableProducts, validateSaleDraft } from "./checkout-model";
-import ReceiptPageClient from "@/app/(app)/payments/receipts/[receiptId]/receipt.client";
+import ReceiptPageClient from "@/app/(main)/(app)/payments/receipts/[receiptId]/receipt.client";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),

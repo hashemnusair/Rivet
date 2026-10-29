@@ -58,9 +58,9 @@ describe("member PWA manifest", () => {
   it("is linked from member pages only, never from the root layout", () => {
     const read = (file: string) => readFileSync(resolve(process.cwd(), file), "utf8");
     expect(existsSync(resolve(process.cwd(), "src/app/manifest.ts"))).toBe(false);
-    expect(read("src/app/layout.tsx")).not.toMatch(/manifest/);
-    expect(read("src/app/customer/layout.tsx")).toContain("manifest: MEMBER_MANIFEST_PATH");
-    expect(read("src/app/login/member/layout.tsx")).toContain("manifest: MEMBER_MANIFEST_PATH");
+    for (const file of ["src/app/root-document.tsx", "src/app/(main)/layout.tsx", "src/app/(site)/[lang]/layout.tsx"]) expect(read(file)).not.toMatch(/manifest/);
+    expect(read("src/app/(main)/customer/layout.tsx")).toContain("manifest: MEMBER_MANIFEST_PATH");
+    expect(read("src/app/(main)/login/member/layout.tsx")).toContain("manifest: MEMBER_MANIFEST_PATH");
   });
 });
 

@@ -39,7 +39,8 @@ export function hostnameForPath(pathname: string): string | null {
   if (under(pathname, "/customer") || under(pathname, "/login/member")) return RIVET_HOSTS.member;
   if (under(pathname, "/platform") || under(pathname, "/login/admin")) return RIVET_HOSTS.platform;
   if (under(pathname, "/login/gym") || under(pathname, "/login/accept-invitation") || GYM_ROOTS.some((root) => under(pathname, `/${root}`))) return RIVET_HOSTS.gym;
-  if (["/signup", "/terms", "/privacy", "/arabic-room"].includes(pathname)) return RIVET_HOSTS.public;
+  // "/ar" and "/en" are the landing's built pages (src/lib/routing/landing.ts).
+  if (["/signup", "/terms", "/privacy", "/arabic-room", "/ar", "/en"].includes(pathname)) return RIVET_HOSTS.public;
   if (under(pathname, "/offers")) return RIVET_HOSTS.member;
   return null;
 }

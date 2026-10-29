@@ -2,7 +2,7 @@ import { useState } from "react";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import PlatformAssistancePage from "@/app/platform/assistance/page";
+import PlatformAssistancePage from "@/app/(main)/platform/assistance/page";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
 import { PlatformReviewBrief } from "./platform-review-brief";
 

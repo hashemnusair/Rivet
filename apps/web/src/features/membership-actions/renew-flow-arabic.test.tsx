@@ -5,7 +5,7 @@ import type { MemberSummary, MembershipSummary } from "@/lib/domain/types";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { money } from "@/lib/utils/money";
 import { renderWithApp, resetApiForTests } from "@/test/harness";
-import ReceiptPageClient from "@/app/(app)/payments/receipts/[receiptId]/receipt.client";
+import ReceiptPageClient from "@/app/(main)/(app)/payments/receipts/[receiptId]/receipt.client";
 import { FreezeDialog, CancelMembershipDialog, ChangeMembershipPlanDialog } from "./adjustment-dialogs";
 import { CollectPaymentDialog } from "./payment-dialog";
 import { MembershipSaleDialog } from "./sale-dialog";
