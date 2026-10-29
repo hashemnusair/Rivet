@@ -498,6 +498,26 @@ html.landing-motion-ready [data-experience-notice] {
   display: none;
 }
 
+/*
+  Opened from the home screen, the member app should feel like an app, not a
+  web page: no grey flash on every tap, and no link preview or text selection
+  when a thumb rests on the header or the dock.
+*/
+@media (display-mode: standalone) {
+  .member-app-shell {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .member-app-shell > header a,
+  .member-app-shell > header button,
+  .member-bottom-nav a,
+  .member-bottom-nav button {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";

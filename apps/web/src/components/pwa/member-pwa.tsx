@@ -1,61 +1,50 @@
 "use client";
 import { useT } from "@/lib/i18n/provider";
 
-import { Bell, Check, Download, ShieldCheck, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Bell, Check, ShieldCheck, SquarePlus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-
-type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
-let installPrompt: InstallPromptEvent | undefined;
+import { useMemberApp } from "@/lib/pwa/use-member-app";
+import { useMemberAppInstall } from "./member-app";
 
 export function MemberPwaManager() {
+  const app = useMemberApp();
+  const invalidate = useInvalidate();
+  const onboarding = useApiQuery(qk.onboarding("member"), (api) => api.getOnboardingExperience("member"));
+  const markComplete = useApiMutation((api, step: string) => api.updateOnboardingProgress({ audience: "member", completedStepKey: step }), { onSuccess: async () => { await invalidate(); } });
+  const reported = useRef(false);
+
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(registration => registration.active?.postMessage({ type: "rivet:ui-locale", locale: document.documentElement.lang === "ar" ? "ar" : "en" })).catch(() => undefined);
-    const capture = (event: Event) => { event.preventDefault(); installPrompt = event as InstallPromptEvent; window.dispatchEvent(new Event("rivet:install-ready")); };
-    const installed = () => { installPrompt = undefined; window.dispatchEvent(new Event("rivet:installed")); };
-    window.addEventListener("beforeinstallprompt", capture);
-    window.addEventListener("appinstalled", installed);
-    return () => { window.removeEventListener("beforeinstallprompt", capture); window.removeEventListener("appinstalled", installed); };
   }, []);
+
+  // Opening RIVET from the home screen (or installing it here) finishes the
+  // guide's install step for this account, once.
+  const installStepOpen = onboarding.data?.tasks.some((task) => task.key === "member_install" && !task.complete) ?? false;
+  useEffect(() => {
+    if (reported.current || !installStepOpen || !(app.standalone || app.added)) return;
+    reported.current = true;
+    markComplete.mutate("member_install");
+    // The mutation object is stable for this mounted shell.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installStepOpen, app.standalone, app.added]);
   return null;
 }
 
 export function MemberInstallAndNotifications() {
   const t = useT();
   const invalidate = useInvalidate();
-  const [canInstall, setCanInstall] = useState(Boolean(installPrompt));
-  const [installed, setInstalled] = useState(false);
+  const { app, start } = useMemberAppInstall();
+  const installed = app.standalone || app.added;
   const [permission, setPermission] = useState<NotificationPermission>(() => typeof Notification === "undefined" ? "default" : Notification.permission);
   const subscriptions = useApiQuery(qk.pushSubscriptions, (api) => api.listPushSubscriptions());
   const save = useApiMutation((api, input: { endpoint: string; p256dh: string; auth: string; label?: string }) => api.savePushSubscription(input), { onSuccess: async () => { await invalidate(); toast.success(t("setup.remindersOn")); } });
   const revoke = useApiMutation((api, id: string) => api.revokePushSubscription(id), { onSuccess: async () => { await invalidate(); toast.success(t("setup.remindersOff")); } });
-  const markComplete = useApiMutation((api, step: string) => api.updateOnboardingProgress({ audience: "member", completedStepKey: step }));
   const vapidKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY;
 
-  useEffect(() => {
-    const ready = () => setCanInstall(Boolean(installPrompt));
-    const complete = () => { setInstalled(true); setCanInstall(false); markComplete.mutate("member_install"); };
-    setInstalled(window.matchMedia("(display-mode: standalone)").matches);
-    window.addEventListener("rivet:install-ready", ready);
-    window.addEventListener("rivet:installed", complete);
-    return () => { window.removeEventListener("rivet:install-ready", ready); window.removeEventListener("rivet:installed", complete); };
-    // The mutation object is stable for this mounted guide.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const install = async () => {
-    if (!installPrompt) return;
-    try {
-      await installPrompt.prompt();
-      const choice = await installPrompt.userChoice;
-      if (choice.outcome === "accepted") { setInstalled(true); setCanInstall(false); markComplete.mutate("member_install"); }
-    } catch {
-      toast.error(t("setup.installFailed"));
-    }
-  };
   const enablePush = async () => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !vapidKey) return;
     try {
@@ -88,11 +77,11 @@ export function MemberInstallAndNotifications() {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-md border border-line p-4">
           <h3 className="text-[13.5px] font-semibold">{t("setup.homeScreenApp")}</h3>
-          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? t("setup.alreadyInstalled") : canInstall ? t("setup.canInstall") : t("setup.installHint")}</p>
+          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? t("setup.alreadyInstalled") : t("setup.app.guideDescription")}</p>
           {installed ? (
             <p className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-success-deep" role="status"><Check className="size-4" aria-hidden /> {" "}{t("setup.installed")}</p>
-          ) : canInstall ? (
-            <Button className="mt-3" size="sm" variant="secondary" onClick={() => void install()}><Download /> {" "}{t("setup.install")}</Button>
+          ) : app.ready ? (
+            <Button className="mt-3" size="sm" variant="secondary" onClick={start}><SquarePlus /> {" "}{t("setup.app.addToHomeScreen")}</Button>
           ) : null}
         </div>
         <div className="rounded-md border border-line p-4">

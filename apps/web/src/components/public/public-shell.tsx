@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/provider";
 
 
 import { useClerk } from "@clerk/nextjs";
-import { ChevronDown, GraduationCap, Home, KeyRound, LogOut, MessageSquare, ReceiptText, Search, UserRound } from "lucide-react";
+import { ChevronDown, GraduationCap, Home, KeyRound, LogOut, MessageSquare, ReceiptText, Search, SquarePlus, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -27,6 +27,7 @@ import { useCustomerPersona, useExperience } from "@/lib/providers/experience-pr
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { MemberPwaManager } from "@/components/pwa/member-pwa";
+import { MemberAppProvider, MemberAppReminder, useMemberAppInstall } from "@/components/pwa/member-app";
 import { BetaBadge } from "@/components/shared/beta-badge";
 
 // ---------------------------------------------------------------------------
@@ -49,10 +50,11 @@ function isProtectedMemberRoute(pathname: string) {
  * One account menu for the desktop header and the phone dock. Everything the
  * navigation already offers stays out of it, so the menu is only what a member
  * cannot reach elsewhere: profile, password, the guide, communication choices,
- * sign out.
+ * putting RIVET on the home screen, sign out.
  */
 function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
   const t = useT();
+  const { app, start } = useMemberAppInstall();
   const itemClass = touch ? "min-h-11 py-2.5 text-[13.5px]" : undefined;
   return (
     <>
@@ -73,6 +75,10 @@ function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: str
       <DropdownMenuItem asChild className={itemClass}>
         <Link href="/customer/profile#communication"><MessageSquare />{" "}{t("publicCompletion.memberShell.offersAndNews")}</Link>
       </DropdownMenuItem>
+      {app.ready && !app.standalone ? (
+        <DropdownMenuItem className={itemClass} onSelect={start}>
+          <SquarePlus />{" "}{t("setup.app.menuItem")}</DropdownMenuItem>
+      ) : null}
       <DropdownMenuSeparator />
       <DropdownMenuItem className={itemClass} onClick={onSignOut}>
         <LogOut />{" "}{t("common.action.signOut")}</DropdownMenuItem>
@@ -143,15 +149,18 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // gym application.
   if (!customerSignedIn) {
     return (
-      <PublicDocumentPage path={pathname} audience="member">
-        {children}
-      </PublicDocumentPage>
+      <MemberAppProvider>
+        <PublicDocumentPage path={pathname} audience="member">
+          {children}
+        </PublicDocumentPage>
+      </MemberAppProvider>
     );
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
+    <MemberAppProvider>
     <div className="member-app-shell flex min-h-dvh flex-col bg-paper sm:pb-0">
       <MemberPwaManager />
       <header className="sticky top-0 z-50 border-b border-line bg-paper/90 backdrop-blur-sm">
@@ -209,6 +218,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
+      {customer ? <MemberAppReminder /> : null}
       {customer ? <OnboardingBanner audience="member" /> : null}
 
       <div className="flex-1">{children}</div>
@@ -260,5 +270,6 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         </nav>
       ) : null}
     </div>
+    </MemberAppProvider>
   );
 }

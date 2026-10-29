@@ -1,5 +1,49 @@
 # GymOS / RIVET current implementation state
 
+## Member app on the home screen — install button, tutorial, repeating reminder (29 October 2026)
+
+Elias asked for members to get RIVET as a phone app from a home-screen shortcut, fully
+working from that shortcut, with a tutorial and an add-to-home-screen button that keeps
+coming back. Decisions and assumptions: docs/09 "Member app on the home screen".
+
+- **Manifest is member-only.** `src/app/manifest.ts` became the route
+  `src/app/manifest.webmanifest/route.ts` (same URL) built by
+  `src/lib/pwa/member-manifest.ts`; only `src/app/customer/layout.tsx` and the new
+  `src/app/login/member/layout.tsx` link it, so the dashboard no longer offers staff
+  "RIVET Member". It now has 192 and 512 px icons plus a mask-safe pair
+  (`public/icons/`), shortcut icons at 192 px, categories, and lists itself as a related
+  app on the serving host. `src/app/apple-icon.png` (180 px) gives iPhones a real icon
+  on every host. Icons were derived from `src/app/icon.png` with sharp (glyph at 78 % on
+  the same `#15140f` tile for the maskable pair).
+- **Install state.** `src/lib/pwa/member-app-install.ts` (pure: platform from the user
+  agent incl. iPadOS and in-app browsers; the 3/7/14/30-day snooze) and
+  `src/lib/pwa/use-member-app.ts` (catches `beforeinstallprompt` when the module loads,
+  `appinstalled`, standalone display, `getInstalledRelatedApps`, `localStorage` key
+  `rivet:member-app`).
+- **Screens.** `src/components/pwa/member-app.tsx`: `MemberAppProvider` (one guide
+  dialog; `start()` uses the browser prompt or opens the guide), `MemberAppReminder`
+  (bar under the member header). `member-app-guide.tsx`: iPhone/Android steps with the
+  real button icons, in-app-browser notice with Copy link, QR code on computers. The
+  account menu gains "Add to home screen" (hidden in the installed app); the
+  getting-started install card now opens the same flow. `MemberPwaManager` completes
+  the `member_install` setup step when RIVET runs from the home screen or installs.
+- **App mode.** `globals.css`: in `display-mode: standalone` the member shell drops the
+  tap flash and long-press link previews/text selection on the header and dock.
+- **Copy.** English `setup.app.*`; Arabic written against docs/arabic (lock verified);
+  `messages.test.ts` allowlists iPhone, Android, Safari, Chrome, Samsung Internet,
+  Facebook and TikTok as Latin brand names.
+- **Verification (29 October 2026).** `tsc`; ESLint on the changed files; new tests
+  (platform/schedule 7, manifest 7, reminder and guide flows 7); full Vitest 2,722
+  passed. Playwright (mock dev server, local Mac): `workflow-pass-4` member specs and
+  `public-experience` standalone-navigation spec 10/10. Browser pane at 375 px (Android
+  identity) and desktop, English and Arabic: bar shows, guide tabs, "Not now" stores
+  the 3-day wait, menu item opens the guide and closes cleanly, QR on desktop, dashboard
+  and gym sign-in carry no manifest link.
+- **Not verified.** No real iPhone or Android install was performed here (the steps
+  follow iOS 18/26 Safari and current Chrome/Samsung wording); the Arabic labels named
+  in docs/09 still need a check on an Arabic-language phone. Frontend only; pushing to
+  `main` deploys it. No Convex change.
+
 ## Wazen — the window grows out of its launcher; typing opens it (29 October 2026)
 
 Elias disliked how the window appeared and asked: typing should open it, the expansion

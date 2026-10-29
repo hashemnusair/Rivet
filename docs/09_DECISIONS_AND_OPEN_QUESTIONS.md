@@ -695,3 +695,39 @@ supplier account (equipment, repairs, facility supplies, private purchases)
 so they can be settled without a manual journal; whether supplier credit
 notes should exist; whether partial receipts should create partial payables
 before an order is fully received.
+
+## Member app on the home screen — 2026-10-29
+
+Elias asked for the member portal to work like a phone app from a home-screen
+shortcut, with a tutorial and an add-to-home-screen button that keeps coming back.
+Decisions taken in that change (assumptions, open to the owners):
+
+- **Members only.** Only member pages (`/customer/*`, `/login/member/*`) link the web
+  app manifest. The gym dashboard and platform console offer no install, so staff are
+  never offered "RIVET Member". The manifest keeps its `/manifest.webmanifest` address
+  so phones that already installed it keep receiving updates.
+- **One button, two paths.** Where the browser offers its own install prompt (Chrome,
+  Edge, Samsung Internet on Android and computers), the button opens it in one tap.
+  Everywhere else (every iPhone browser, in-app browsers, a declined prompt) it opens
+  the step-by-step guide.
+- **The guide.** Three steps per phone family (iPhone: Share, Add to Home Screen, Add;
+  Android: menu, Add to home screen / Install app, Install), the detected phone first
+  and the other one tab away. In-app browsers (Instagram, Facebook, TikTok, app web
+  views) are told to open the page in a real browser, with a Copy link button.
+  Computers get a QR code that opens RIVET on the phone. Arabic button names follow
+  what an Arabic-language phone shows (unconfirmed on a device:
+  «فتح كتطبيق ويب», Samsung's «إضافة صفحة إلى», the apps' «فتح في المتصفح»).
+- **The reminder.** A slim bar under the member header, on phones and tablets only,
+  never in the installed app and never on the getting-started page (which has its own
+  card). "Not now" hides it for 3, then 7, then 14, then every 30 days. It stops when
+  the app installs on that device, when Chrome on Android reports the app installed
+  (`getInstalledRelatedApps`), or when the member taps "I already added it". All of this
+  is per browser (`localStorage`), because installation is per device; an iPhone's
+  Safari cannot see that its home-screen app exists, hence the "already added" answer.
+  The account menu always has "Add to home screen" outside the installed app.
+- **Onboarding.** Opening RIVET from the home screen, or installing it, completes the
+  member's optional "Install RIVET" setup step for that account.
+- **Not done on purpose.** No iOS splash images (the paper background already matches
+  the first screen), no manifest screenshots (they would show demo data), no
+  pull-to-refresh on iPhone, and no caching of member data for offline use (unchanged
+  privacy policy in `public/sw.js`).
