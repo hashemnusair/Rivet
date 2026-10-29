@@ -38,20 +38,6 @@ const nextConfig = {
       { source: "/(.*)", headers: buildSecurityHeaders({ production: process.env.NODE_ENV === "production" }) },
       { source: "/login", headers: preparable },
       { source: "/login/:path*", headers: preparable },
-      // A first visit to the landing carries no cookies at all, and every such
-      // visit gets the same page: English, signed out. Vercel's edge keeps that
-      // copy so it does not wait on the Dublin server. A response to anyone with
-      // a cookie (a language choice, a session) is never stored; that Vercel
-      // does not hand them the stored copy either was checked on Production
-      // (docs/09, "Edge-cached landing"). Middleware still runs before the
-      // cache, so signed-in visitors are still sent on. Each deployment starts
-      // with an empty cache, and browsers are still told `no-store`.
-      {
-        source: "/",
-        has: [{ type: "host", value: "www.rivetjo.com" }],
-        missing: [{ type: "header", key: "cookie" }],
-        headers: [{ key: "Vercel-CDN-Cache-Control", value: "max-age=600, stale-while-revalidate=86400" }],
-      },
     ];
   },
   // Pin the trace root to the pnpm workspace. Without this, Next walks up and
