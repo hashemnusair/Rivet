@@ -11,13 +11,19 @@ import { UI_PREFERENCE_COOKIE, parseUiPreference, resolveUiPreference, type UiLo
 export const getRequestUiPreference = cache(async (): Promise<UiLocalePreference> => {
   if (!ARABIC_ENABLED) return { version: 1, locale: DEFAULT_LOCALE, owner: null };
   const store = await cookies();
+  const cookie = parseUiPreference(store.get(UI_PREFERENCE_COOKIE)?.value);
   let owner: string | null = null;
   let savedLocale: Locale | undefined;
   if (!DEMO_AUTH_BYPASS && process.env.NEXT_PUBLIC_DATA_MODE !== "mock" && process.env.NEXT_PUBLIC_CONVEX_URL && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
     try {
       const session = await auth();
       owner = session.userId;
-      if (owner) {
+      // The shared cookie is written from this account's saved language every
+      // time a RIVET page binds it, so when it already names this account the
+      // page can paint from it. Asking Clerk for a token and Convex for the
+      // account cost two network trips on every signed-in page load; a
+      // language changed on another device still arrives once the page binds.
+      if (owner && cookie?.owner !== owner) {
         const token = await session.getToken({ template: "convex" });
         if (token) savedLocale = (await fetchQuery(api.users.current, {}, { token }))?.uiLocale;
       }
@@ -26,7 +32,7 @@ export const getRequestUiPreference = cache(async (): Promise<UiLocalePreference
       // provider responses must never be logged or written to preference storage.
     }
   }
-  return resolveUiPreference({ owner, savedLocale, cookie: parseUiPreference(store.get(UI_PREFERENCE_COOKIE)?.value), legacyLocale: store.get(LOCALE_COOKIE)?.value });
+  return resolveUiPreference({ owner, savedLocale, cookie, legacyLocale: store.get(LOCALE_COOKIE)?.value });
 });
 
 export async function getRequestLocale(): Promise<Locale> { return (await getRequestUiPreference()).locale; }

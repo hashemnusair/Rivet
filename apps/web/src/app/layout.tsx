@@ -14,6 +14,7 @@ import { LocaleProvider } from "@/lib/i18n/provider";
 import { ArabicCatalogue } from "@/lib/i18n/arabic-catalogue-loader";
 import { dirFor } from "@/lib/i18n/config";
 import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
+import { UI_PREFERENCE_COOKIE } from "@/lib/i18n/preference";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import { PageSheet } from "@/components/motion/page-sheet";
 import { SHEET_ENTRY_PRE_PAINT } from "@/components/motion/sheet-entry";
@@ -106,7 +107,7 @@ export const viewport: Viewport = {
 const PRE_PAINT_FRONTEND_API = clerkFrontendApiOrigin(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 /** Only a real Clerk build carries the guard; the mock preview has no sessions to ask about. */
 const PRE_PAINT_SIGNED_IN_GUARD = !DEMO_AUTH_BYPASS && PRE_PAINT_FRONTEND_API
-  ? prePaintSignedInGuardScript({ frontendApi: PRE_PAINT_FRONTEND_API, appHosts: [RIVET_HOSTS.gym, RIVET_HOSTS.member, RIVET_HOSTS.platform] })
+  ? prePaintSignedInGuardScript({ frontendApi: PRE_PAINT_FRONTEND_API, appHosts: [RIVET_HOSTS.gym, RIVET_HOSTS.member, RIVET_HOSTS.platform], accountCookie: UI_PREFERENCE_COOKIE })
   : null;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

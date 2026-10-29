@@ -836,3 +836,29 @@ Elias asked for the dashboard to load like X or Instagram. Decisions taken
   the landing waits for the sign-in check before it shows; making it a cached static
   page is a separate, larger change. Links inside pages (table rows, cards) still fetch
   on the way, not ahead.
+
+## Faster public website — 2026-10-29
+
+Elias asked for the website to load like X or Instagram. Measured from Jordan on the
+live site: every page is rendered per visit on a Dublin server behind Vercel's Mumbai
+edge (first byte 500–880 ms by curl, sometimes 1–2 s), and the landing stayed hidden
+until Clerk's Frontend API answered, so it became visible after about 1.1–2.2 s.
+Decisions taken (assumptions, open to the owners):
+
+- **The landing only waits for Clerk in a browser that has had a signed-in account.**
+  Every RIVET host writes the account id into the shared language cookie
+  (`rivet_ui_locale_v1`, domain `rivetjo.com`) while someone is signed in and clears it
+  on sign-out. Without that id (or Clerk's own signed-in marker) the landing paints at
+  once and the same Clerk check runs behind it, still sending a signed-in visitor to
+  their area. The rare signed-in browser without either marker (cookies cleared, or
+  never opened RIVET since Arabic shipped) may see the landing for a moment before it
+  moves on.
+- **Signed-in page loads skip the language lookup when they can.** The server asked
+  Clerk for a token and Convex for the account's saved language on every signed-in
+  page load. When the shared cookie already names that account it now uses the cookie;
+  a language changed on another device arrives when the page binds the account.
+- **Not done, needs a decision.** Caching the landing at the edge (about 300–600 ms
+  more, and no cold starts) needs either a restructure so pages do not read cookies, or
+  edge-cache headers that can only be proven on Production. Moving the server region
+  closer to Jordan, or serving `rivetjo.com` without the redirect to `www`, are
+  infrastructure choices for Hashem.

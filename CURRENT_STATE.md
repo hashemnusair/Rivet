@@ -1,5 +1,27 @@
 # GymOS / RIVET current implementation state
 
+## Public website — landing paints without waiting for Clerk (29 October 2026)
+
+Decisions: docs/09 "Faster public website".
+
+- `src/lib/auth/pre-paint-signed-in-guard.ts`: the inline landing script hides the page
+  and waits for Clerk's `/v1/client` only when `__client_uat` is non-zero (redirect at
+  once, as before) or the shared `rivet_ui_locale_v1` cookie carries an account id.
+  Otherwise the page paints immediately and the same request still redirects a
+  signed-in visitor. `src/app/layout.tsx` passes the cookie name.
+- `src/lib/i18n/server.ts`: `getRequestUiPreference` skips `getToken({ template:
+  "convex" })` and `users.current` when the shared cookie's owner is the signed-in
+  user.
+- **Measured before (29 October 2026, live, from Jordan):** curl first byte 500–880 ms
+  for `/`, `/offline` and `/privacy` alike (`bom1::dub1`, `cache-control: private,
+  no-store`); in a fresh headless browser the landing became visible after 1.08–2.15 s,
+  with 722 KB of compressed JavaScript in 33 scripts.
+- **Verification.** `tsc`; ESLint; guard tests now execute the script (first-time
+  visitor paints and is still redirected when Clerk reports a session; a browser with
+  an account id waits; Clerk's marker redirects without asking); new
+  `src/lib/i18n/server.test.ts` (3); full Vitest 2,752 passed. The live after-numbers
+  are in the next entry once measured.
+
 ## Gym workspace — instant page switches (29 October 2026)
 
 Decisions: docs/09 "Instant page switches in the gym workspace".
