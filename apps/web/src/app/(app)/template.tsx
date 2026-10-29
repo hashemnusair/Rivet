@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
 /**
- * Re-mounts on every route change within this shell, so each page enters with
- * the same brief rise-and-fade instead of popping in. Reduced-motion users get
- * an instant swap via the global animation override.
+ * Re-mounts on every route change within the workspace. Pages switch
+ * instantly, the way X or Instagram change screens: a rise-and-fade here made
+ * every opened page wait a quarter of a second before it could be read.
  */
 export default function Template({ children }: { children: ReactNode }) {
-  return <div className="page-transition">{children}</div>;
+  return <div>{children}</div>;
 }

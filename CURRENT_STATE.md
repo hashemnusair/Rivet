@@ -1,5 +1,28 @@
 # GymOS / RIVET current implementation state
 
+## Gym workspace — instant page switches (29 October 2026)
+
+Decisions: docs/09 "Instant page switches in the gym workspace".
+
+- `src/components/shell/instant-navigation.ts` (new): `prefetchFully` (router.prefetch
+  with `kind: "full"`; the default only fetches a partial prefetch for these
+  per-request pages), `useWarmNavigation` (idle-time full prefetch of the sidebar's
+  visible pages and of the page just left; refresh by use after 4.5 minutes; skipped
+  with Save-Data) and `usePendingNavigation` (the clicked item lights up at once).
+  Used by `sidebar.tsx` (owns the warm-up; phones warm only phone pages) and
+  `mobile-nav.tsx`. `src/app/(app)/template.tsx` no longer fades pages in. The member
+  dock's refresh (`member-tabs.ts`) now uses `prefetchFully` too.
+- **Measured (29 October 2026)**, built mock bundles, headless desktop with 150 ms added
+  latency and 2x CPU slowdown, clicking each sidebar entry from the dashboard:
+  before, 360–640 ms until anything changed and 600–900 ms until the page was settled;
+  after, the item lit in 2–15 ms, the page was on screen in 27–66 ms and settled in
+  150–225 ms (the rest is the demo data's own delay). Prefetch requests before the first
+  click: 30 before, 35 after.
+- **Verification.** `tsc`; ESLint; new `instant-navigation.test.tsx` (4); full Vitest
+  2,746 passed; Playwright on the built bundle 73/73 (`happy-path`, `page-motion`,
+  `phone-pages`, `role-routing`, `today-queue`, `workflow-pass-1-visual`,
+  `workflow-pass-4`, `workflow-pass-6`). Not measured against live Convex data.
+
 ## Member dock — X-style tabs that switch instantly (29 October 2026)
 
 Decisions: docs/09 "Member dock works like X's tab bar".

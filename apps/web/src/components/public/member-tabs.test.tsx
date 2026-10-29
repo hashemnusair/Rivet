@@ -64,6 +64,6 @@ describe("member dock tabs", () => {
     expect(client.getQueryData(qk.customerFinance("summary"))).toEqual({ outstanding: [] });
     expect(client.getQueryData(qk.customerFinance({ page: 1, pageSize: 20, sort: "-occurredAt" }))).toEqual({ items: [], total: 0 });
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
-    expect(router.prefetch.mock.calls.map(([href]) => href)).toEqual([...MEMBER_TAB_HREFS]);
+    expect(router.prefetch.mock.calls).toEqual(MEMBER_TAB_HREFS.map((href) => [href, { kind: "full" }]));
   });
 });

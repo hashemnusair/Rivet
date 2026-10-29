@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
 import { usePhoneAllows } from "./phone-page-boundary";
+import { usePendingNavigation } from "./instant-navigation";
 import { ContextLabel } from "@/components/ui/typography";
 import { BetaBadge, BetaNote } from "@/components/shared/beta-badge";
 
@@ -27,6 +28,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   const t = useT();
   const { session, setBranch } = useApp();
   const phoneAllows = usePhoneAllows();
+  const { pendingHref, onNavigate } = usePendingNavigation(pathname);
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
 
@@ -86,12 +88,14 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                   <ContextLabel tone="night" className="px-2.5 pb-1.5">{t(section.labelKey)}</ContextLabel>
                   <ul className="space-y-0.5">
                     {visible.map((item) => {
-                      const active = navIsActive(item.href, pathname);
+                      const active = pendingHref ? pendingHref === item.href : navIsActive(item.href, pathname);
                       return (
                         <li key={item.href}>
                           <IntentPrefetchLink
                             href={item.href}
-                            aria-current={active ? "page" : undefined}
+                            onClick={(event) => onNavigate(item.href, event)}
+                            data-active={active}
+                            aria-current={navIsActive(item.href, pathname) ? "page" : undefined}
                             className={cn(
                               "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-[13.5px] transition-colors duration-100",
                               active

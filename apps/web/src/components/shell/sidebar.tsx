@@ -4,6 +4,8 @@ import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { IntentPrefetchLink } from "./intent-prefetch-link";
+import { usePendingNavigation, useWarmNavigation } from "./instant-navigation";
+import { usePhoneAllows } from "./phone-page-boundary";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils/cn";
 import { useApp } from "@/lib/providers/app-providers";
@@ -37,6 +39,12 @@ export function Sidebar() {
   const pathname = usePathname();
   const { t, dir } = useLocale();
   const { sidebarCollapsed, toggleSidebar, session } = useApp();
+  const phoneAllows = usePhoneAllows();
+  const navAccess = session ? { permissions: session.permissions, workspace: session.workspace } : undefined;
+  // The sidebar is mounted on every screen size, so it owns the warm-up for
+  // the drawer too; a phone only warms the pages it can open.
+  useWarmNavigation(NAV_SECTIONS.flatMap((section) => section.items).filter((item) => navItemIsVisible(item, navAccess) && phoneAllows(item.href)).map((item) => item.href), pathname);
+  const { pendingHref, onNavigate } = usePendingNavigation(pathname);
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
 
@@ -95,11 +103,13 @@ export function Sidebar() {
                 </div>
                 <ul className="space-y-0.5">
                   {visible.map((item) => {
-                    const active = navIsActive(item.href, pathname);
+                    const active = pendingHref ? pendingHref === item.href : navIsActive(item.href, pathname);
                     const link = (
                       <IntentPrefetchLink
                         href={item.href}
-                        aria-current={active ? "page" : undefined}
+                        onClick={(event) => onNavigate(item.href, event)}
+                        data-active={active}
+                        aria-current={navIsActive(item.href, pathname) ? "page" : undefined}
                         className={cn(
                           "group flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] transition-colors duration-100",
                           active

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { getApi } from "@/lib/api/client";
+import { prefetchFully } from "@/components/shell/instant-navigation";
 import { qk } from "@/lib/api/keys";
 import { customerTransactionQuery } from "@/lib/public/customer-finance-query";
 
@@ -39,7 +40,7 @@ export function useMemberTabs(pathname: string, signedIn: boolean) {
     if (!signedIn) return;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
-      for (const href of MEMBER_TAB_HREFS) router.prefetch(href);
+      for (const href of MEMBER_TAB_HREFS) prefetchFully(router, href);
     };
     const timer = window.setInterval(refresh, PREFETCH_REFRESH_MS);
     document.addEventListener("visibilitychange", refresh);

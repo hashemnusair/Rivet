@@ -815,3 +815,24 @@ Decisions taken (assumptions, open to the owners):
 - **Behaviour.** Each section keeps its scroll position when you come back to it from
   the dock; tapping the section you are on scrolls it to the top. Not done: haptics
   (iPhone browsers offer none) and pull-to-refresh.
+
+## Instant page switches in the gym workspace — 2026-10-29
+
+Elias asked for the dashboard to load like X or Instagram. Decisions taken
+(assumptions, open to the owners):
+
+- **Navigation pages are fetched ahead, after startup.** Once the workspace has loaded
+  and the browser is idle, every page in the sidebar is fetched whole, one per idle
+  moment (`useWarmNavigation`), and the page just left is fetched again so going back
+  is instant. Startup is untouched (fetching at mount slowed it in the 15 October pass).
+  The fetches are reused for five minutes and refreshed by use or by returning to the
+  tab, never by a timer; a browser in data-saver mode fetches nothing ahead. Phones only
+  fetch their phone pages.
+- **The clicked item lights up in the same frame** in the sidebar and the phone drawer;
+  `aria-current` still follows the page itself.
+- **No page fade.** The workspace's quarter-second rise-and-fade on every page switch is
+  gone; the platform console keeps its own.
+- **Not done here.** The public website (`rivetjo.com`) is rendered on every visit and
+  the landing waits for the sign-in check before it shows; making it a cached static
+  page is a separate, larger change. Links inside pages (table rows, cards) still fetch
+  on the way, not ahead.
