@@ -5139,11 +5139,18 @@ export async function onboardingExperience(ctx: ReadContext, input: Data, reques
     const profile = await customerProfileForUser(ctx, publicUserId(user));
     const membershipRows = await customerMembershipRowsForIdentity(ctx, user, optionalString(profile?.id));
     const memberships = membershipRows.map((row) => data(row.data));
-    const tasks = [
-      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone), completionMode: "state" },
-      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: memberships.length > 0, completionMode: "state" },
+    // Membership, entry-code and payment steps only make sense once a gym has
+    // a membership for this person; until then the next step is finding one.
+    const membershipTasks = memberships.length > 0 ? [
+      { key: "member_memberships", title: "Open My Gyms", description: "Review your membership, balance, branch, and validity dates.", href: "/customer/my-gyms", category: "required", complete: true, completionMode: "state" },
       { key: "member_entry", title: "Learn the entry QR", description: "See how to create a short-lived front-desk entry pass.", href: "/customer/my-gyms", category: "recommended", complete: completed.has("member_entry"), completionMode: "manual" },
       { key: "member_finance", title: "Find payments and receipts", description: "Know where balances, refunds, and printable receipts live.", href: "/customer/finance", category: "recommended", complete: completed.has("member_finance"), completionMode: "manual" },
+    ] : [
+      { key: "member_find_gym", title: "Find a gym", description: "Browse gyms and book a free trial.", href: "/customer/discover", category: "recommended", complete: completed.has("member_find_gym"), completionMode: "manual" },
+    ];
+    const tasks = [
+      { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details so your gyms can support you.", href: "/customer/profile", category: "required", complete: Boolean(profile?.name && profile?.phone && profile?.emergencyContactPhone), completionMode: "state" },
+      ...membershipTasks,
       { key: "member_install", title: "Install RIVET", description: "Add the member app to your home screen for quicker access.", href: "/customer/getting-started#install", category: "optional", complete: completed.has("member_install"), completionMode: "manual" },
     ];
     return { progress, tasks, role: "member" };

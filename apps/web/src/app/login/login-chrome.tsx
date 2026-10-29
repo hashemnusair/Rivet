@@ -32,11 +32,14 @@ const LEGAL_LABEL_KEYS = {
 export function LoginLayout({
   portal,
   mode = "sign-in",
+  signedIn = false,
   footer,
   children,
 }: {
   portal?: Portal;
   mode?: "sign-in" | "sign-up";
+  /** A signed-in visitor is finishing their account here; sign-in and sign-up links would only lead back. */
+  signedIn?: boolean;
   footer?: ReactNode;
   children: ReactNode;
 }) {
@@ -60,9 +63,11 @@ export function LoginLayout({
             <div className={styles.barLinks}>
               <LanguageLink />
               {/* Members can create accounts here; gym access is issued by RIVET
-                  after an application is reviewed. */}
-              {portal && mode === "sign-up" ? (
-                <DoorLink href={portal.href} className={styles.barLink}>{t("auth.chrome.alreadyHaveAccount")}</DoorLink>
+                  after an application is reviewed. The sign-up form repeats
+                  "Already have an account?" under its button, so the bar keeps
+                  one short line that never runs into the heading on a phone. */}
+              {signedIn ? null : portal && mode === "sign-up" ? (
+                <DoorLink href={portal.href} className={styles.barLink}>{t("common.action.signIn")}</DoorLink>
               ) : portal?.signUpUrl ? (
                 <DoorLink href={portal.signUpUrl} className={styles.barLink}>{t("auth.chrome.createMemberAccount")}</DoorLink>
               ) : null}

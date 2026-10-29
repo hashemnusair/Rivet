@@ -15,21 +15,14 @@ export const setup = {
   installFailed: "Could not install RIVET. Use Add to Home Screen in your browser menu instead.",
   permissionNotGranted: "Reminders are still off. You can turn them on later in your browser settings.",
   pushFailed: "Reminders could not be turned on. Check your browser's notification settings and try again.",
-  pushUnavailable: "Reminders are not available yet.",
   pushDenied: "Your browser blocks notifications from RIVET. Allow them in your browser settings to get reminders.",
-  ownedDevicesOnly: "Only turn on reminders on your own devices.",
-  installTitle: "Install and notifications",
-  installDescription: "Add RIVET to your home screen to open it in one tap. You can turn reminders on or off for each device.",
-  homeScreenApp: "Home-screen app",
-  alreadyInstalled: "RIVET is installed on this device.",
+  reminders: "Reminders",
   canInstall: "You can install RIVET on this device.",
   installHint: "Use Add to Home Screen in your browser menu.",
-  installed: "Installed",
   install: "Install RIVET",
   enableDevice: "Turn on for this device",
   reminderDevices: "Devices with reminders",
   disable: "Turn off",
-  noOfflineData: "The installed app does not keep your membership details, receipts or entry codes for offline use.",
   getGymReady: "Get your gym ready",
   learnRivet: "Learn how to use RIVET",
   ownerGuideDescription: "Finish the required steps first. Optional steps can wait. You can stop and come back any time.",
@@ -154,6 +147,10 @@ export const setup = {
   "member_finance": {
     "title": "Find payments and receipts",
     "description": "Know where balances, refunds, and printable receipts live."
+  },
+  "member_find_gym": {
+    "title": "Find a gym",
+    "description": "Browse gyms and book a free trial."
   },
   "member_install": {
     "title": "Install RIVET",

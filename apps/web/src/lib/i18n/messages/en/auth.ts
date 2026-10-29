@@ -12,7 +12,6 @@ export const auth = {
     homeLabel: "RIVET home",
     footerBrand: "RIVET · Gym revenue & operations",
     footerPlace: "Amman · JOD",
-    alreadyHaveAccount: "Already have an account? Sign in",
     createMemberAccount: "Create a member account",
     whatsapp: "WhatsApp {phone}",
     privacy: "Privacy policy",

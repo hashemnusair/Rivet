@@ -80,7 +80,7 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       await expect(page.getByRole("heading", { level: 1, name: heading }), route).toBeVisible();
       if (slug === "membership") await expect(page.getByRole("heading", { name: "6-Month All Access" })).toBeVisible();
       if (slug === "finance") await expect(page.getByRole("region", { name: "Financial summary" })).toBeVisible();
-      if (slug === "getting-started") await expect(page.getByRole("heading", { name: "Install and notifications" })).toBeVisible();
+      if (slug === "getting-started") await expect(page.locator('[data-onboarding-task="member_install"]')).toBeVisible();
       if (slug === "discover" || slug === "gym") {
         // Public routes paint before the member session and the live directory
         // are restored; capture the settled, signed-in state only.

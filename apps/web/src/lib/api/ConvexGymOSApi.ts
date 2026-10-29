@@ -533,6 +533,7 @@ export class ConvexGymOSApi implements GymOSApi {
   ignoreDuplicateCase(caseId: T.UUID, reason: string): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.ignore", { caseId, reason }); }
   mergeDuplicateMembers(input: import("@/lib/domain/qol").MergeMemberInput): Promise<import("@/lib/domain/qol").DuplicateCase> { return this.mutate("duplicates.merge", input); }
   getOnboardingExperience(audience: import("@/lib/domain/qol").OnboardingAudience): Promise<import("@/lib/domain/qol").OnboardingExperience> { return this.query("onboarding.get", { audience }); }
+  subscribeOnboardingExperience(audience: import("@/lib/domain/qol").OnboardingAudience, onValue: (experience: import("@/lib/domain/qol").OnboardingExperience) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("onboarding.get", { audience }, onValue, onError); }
   updateOnboardingProgress(input: { audience: import("@/lib/domain/qol").OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<import("@/lib/domain/qol").OnboardingExperience> { return this.mutate("onboarding.update", input); }
   listPushSubscriptions(): Promise<import("@/lib/domain/qol").PushSubscriptionSummary[]> { return this.query("push.list"); }
   savePushSubscription(input: import("@/lib/domain/qol").PushSubscriptionInput): Promise<import("@/lib/domain/qol").PushSubscriptionSummary> { return this.mutate("push.subscribe", input); }

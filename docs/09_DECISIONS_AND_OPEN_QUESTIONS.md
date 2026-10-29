@@ -767,3 +767,31 @@ behaviour; the implementation details are assumptions, open to the owners.
   role allows on a computer or tablet, and the server still checks every call. Wazen
   (when available) is unchanged on phones and may link to a page that then shows the
   message.
+
+## Member sign-up and setup fixes — 2026-10-29
+
+Elias reported, from a phone on `app.rivetjo.com`: the sign-up page's top-right link ran
+into the heading; a new member was asked for phone and gender again after signing up;
+the setup guide did not update by itself and asked a member with no membership to open
+it; Install RIVET said "Review" and did nothing; the install section had filler text.
+Decisions taken in the fix (assumptions, open to the owners):
+
+- **Bar links.** On sign-up the top-right link is just "Sign in" (the form already says
+  "Already have an account? Sign in" under its button). A visitor who is already signed
+  in, such as one finishing their profile, sees no sign-in or sign-up link there.
+- **Sign-up details are kept until saved.** Before Clerk activates the session, the
+  sign-up page keeps name, email, mobile, gender and where it was heading in
+  `sessionStorage` for this tab (never the password; an hour at most). If the page
+  saves the profile itself it waits up to about 15 s for the new account to exist in
+  RIVET. If the signed-in redirect takes the member to the account resolver first, the
+  resolver saves the kept details instead of showing the form; the form appears only if
+  that fails, already filled in.
+- **Setup steps follow the member's situation.** With a membership: profile, My Gyms,
+  entry QR, payments and receipts, install. Without one: profile, "Find a gym"
+  (recommended, marked done by the member) and install, so a newcomer is never left
+  with a required step they cannot finish. The member checklist is live (a Convex
+  watch); gym checklists still load once, because their reads cover whole collections.
+- **Install.** The install step opens the same add-to-home-screen flow as the reminder
+  bar and shows no button once RIVET is installed. The separate "Install and
+  notifications" section is gone; a "Reminders" section appears only where web push is
+  configured, without the offline and "own devices" notes.

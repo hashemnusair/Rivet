@@ -1,5 +1,31 @@
 # GymOS / RIVET current implementation state
 
+## Member sign-up and setup fixes (29 October 2026)
+
+Elias's phone report from `app.rivetjo.com`. Decisions: docs/09 "Member sign-up and
+setup fixes".
+
+- **Sign-up bar.** `src/app/login/login-chrome.tsx`: the sign-up page's top-right link
+  is "Sign in" (one line on phones; `auth.chrome.alreadyHaveAccount` removed), and
+  `LoginLayout` takes `signedIn` so a signed-in visitor sees no sign-in/sign-up link
+  (`portal-sign-in.client.tsx`, the sign-up page's signed-in branch).
+- **No second prompt for phone and gender.** New `src/lib/auth/member-signup-draft.ts`
+  keeps the sign-up details in `sessionStorage` (no password, one hour). The sign-up
+  page saves them before `signUp.finalize` and retries `registerCustomer` while the new
+  account is still "not signed in" (`registerWhenAccountReady`). The resolver's
+  `MemberEntry` (`identity-panels.client.tsx`) saves a kept draft when the profile is
+  missing and goes on to the member area; `MemberProfileCompletion` opens prefilled only
+  if that fails.
+- **Setup guide.** `convex/domain.ts` `onboardingExperience`: membership steps only when
+  the member has one, otherwise `member_find_gym` (copy in `setup.tasks`, English and
+  Arabic); the mock mirrors it. `subscribeOnboardingExperience` (Convex watch of
+  `onboarding.get`, mock one-shot) makes the member checklist live in
+  `onboarding-checklist.tsx`; owner and staff checklists still load once.
+- **Install.** `OnboardingChecklist` takes `taskAction`; the member page passes
+  `MemberInstallStepAction` (opens the add-to-home-screen flow, nothing once
+  installed). `MemberInstallAndNotifications` became `MemberReminders`, shown only with
+  a web-push key; the filler copy and unused install keys are gone.
+
 ## Gym workspace on phones — only the daily pages (29 October 2026)
 
 Elias decided that phones keep only the most important gym work: the dashboard's key

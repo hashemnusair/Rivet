@@ -5,7 +5,6 @@ export const auth: typeof En = {
     homeLabel: "الصفحة الرئيسية لـ RIVET",
     footerBrand: "RIVET · إيرادات النوادي وعملياتها",
     footerPlace: "عمّان · JOD",
-    alreadyHaveAccount: "لديكم حساب؟ تسجيل الدخول",
     createMemberAccount: "إنشاء حساب عضو",
     whatsapp: "واتساب {phone}",
     privacy: "سياسة الخصوصية",

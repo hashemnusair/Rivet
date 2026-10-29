@@ -1,7 +1,7 @@
 "use client";
 import { useT } from "@/lib/i18n/provider";
 
-import { Bell, Check, ShieldCheck, SquarePlus, Trash2 } from "lucide-react";
+import { Bell, SquarePlus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,19 +34,22 @@ export function MemberPwaManager() {
   return null;
 }
 
-export function MemberInstallAndNotifications() {
+/**
+ * Reminders for this device. Installing lives in the guide's install step;
+ * where web push is not configured there is nothing to offer, so nothing shows.
+ */
+export function MemberReminders() {
   const t = useT();
   const invalidate = useInvalidate();
-  const { app, start } = useMemberAppInstall();
-  const installed = app.standalone || app.added;
+  const vapidKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY;
   const [permission, setPermission] = useState<NotificationPermission>(() => typeof Notification === "undefined" ? "default" : Notification.permission);
-  const subscriptions = useApiQuery(qk.pushSubscriptions, (api) => api.listPushSubscriptions());
+  const subscriptions = useApiQuery(qk.pushSubscriptions, (api) => api.listPushSubscriptions(), { enabled: Boolean(vapidKey) });
   const save = useApiMutation((api, input: { endpoint: string; p256dh: string; auth: string; label?: string }) => api.savePushSubscription(input), { onSuccess: async () => { await invalidate(); toast.success(t("setup.remindersOn")); } });
   const revoke = useApiMutation((api, id: string) => api.revokePushSubscription(id), { onSuccess: async () => { await invalidate(); toast.success(t("setup.remindersOff")); } });
-  const vapidKey = process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY;
+  if (!vapidKey) return null;
 
   const enablePush = async () => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !vapidKey) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
     try {
       const nextPermission = await Notification.requestPermission();
       setPermission(nextPermission);
@@ -62,49 +65,38 @@ export function MemberInstallAndNotifications() {
   };
 
   const deviceCount = subscriptions.data?.length ?? 0;
-  const notificationsCopy = !vapidKey
-    ? t("setup.pushUnavailable")
-    : permission === "denied"
-      ? t("setup.pushDenied")
-      : deviceCount > 0
-        ? t("setup.devicesOn", { count: deviceCount })
-        : t("setup.ownedDevicesOnly");
+  const copy = permission === "denied" ? t("setup.pushDenied") : deviceCount > 0 ? t("setup.devicesOn", { count: deviceCount }) : undefined;
 
   return (
-    <section id="install" className="panel mt-4 scroll-mt-24 p-4 sm:p-5" aria-labelledby="install-title">
-      <h2 id="install-title" className="text-[15px] font-semibold">{t("setup.installTitle")}</h2>
-      <p className="mt-1 text-[13px] text-ink-2">{t("setup.installDescription")}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-md border border-line p-4">
-          <h3 className="text-[13.5px] font-semibold">{t("setup.homeScreenApp")}</h3>
-          <p className="mt-1 text-[12.5px] text-ink-2">{installed ? t("setup.alreadyInstalled") : t("setup.app.guideDescription")}</p>
-          {installed ? (
-            <p className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-success-deep" role="status"><Check className="size-4" aria-hidden /> {" "}{t("setup.installed")}</p>
-          ) : app.ready ? (
-            <Button className="mt-3" size="sm" variant="secondary" onClick={start}><SquarePlus /> {" "}{t("setup.app.addToHomeScreen")}</Button>
-          ) : null}
-        </div>
-        <div className="rounded-md border border-line p-4">
-          <h3 className="text-[13.5px] font-semibold">{t("memberProfile.followUp.rowReminders")}</h3>
-          <p className="mt-1 text-[12.5px] text-ink-2">{notificationsCopy}</p>
-          {vapidKey && permission !== "denied" ? (
-            <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> {" "}{t("setup.enableDevice")}</Button>
-          ) : null}
-          {deviceCount > 0 ? (
-            <ul className="mt-3 divide-y divide-line border-t border-line" aria-label={t("setup.reminderDevices")}>
-              {(subscriptions.data ?? []).map((item) => (
-                <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12.5px]">
-                  <span className="min-w-0 truncate text-ink">{item.label?.endsWith(" browser") ? t("setup.deviceBrowser", { platform: item.label.slice(0, -8) }) : item.label || t("setup.device")}</span>
-                  <Button size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate(item.id)}><Trash2 /> {" "}{t("setup.disable")}</Button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </div>
-      <p className="mt-3 flex gap-2 text-[12px] leading-relaxed text-ink-3"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />{t("setup.noOfflineData")}</p>
+    <section className="panel mt-4 p-4 sm:p-5" aria-labelledby="reminders-title">
+      <h2 id="reminders-title" className="text-[15px] font-semibold">{t("setup.reminders")}</h2>
+      {copy ? <p className="mt-1 text-[12.5px] text-ink-2">{copy}</p> : null}
+      {permission !== "denied" ? (
+        <Button className="mt-3" size="sm" variant="secondary" loading={save.isPending} onClick={() => void enablePush()}><Bell /> {" "}{t("setup.enableDevice")}</Button>
+      ) : null}
+      {deviceCount > 0 ? (
+        <ul className="mt-3 divide-y divide-line border-t border-line" aria-label={t("setup.reminderDevices")}>
+          {(subscriptions.data ?? []).map((item) => (
+            <li key={item.id} className="flex items-center justify-between gap-3 py-2 text-[12.5px]">
+              <span className="min-w-0 truncate text-ink">{item.label?.endsWith(" browser") ? t("setup.deviceBrowser", { platform: item.label.slice(0, -8) }) : item.label || t("setup.device")}</span>
+              <Button size="sm" variant="ghost" loading={revoke.isPending} onClick={() => revoke.mutate(item.id)}><Trash2 /> {" "}{t("setup.disable")}</Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
+}
+
+/**
+ * The guide's install step is done in place: it opens the add-to-home-screen
+ * flow and finishes by itself once RIVET opens from the home screen.
+ */
+export function MemberInstallStepAction({ complete }: { complete: boolean }) {
+  const t = useT();
+  const { app, start } = useMemberAppInstall();
+  if (complete || app.standalone || app.added || !app.ready) return null;
+  return <div className="mt-3"><Button size="sm" variant="secondary" onClick={start}><SquarePlus /> {" "}{t("setup.app.addToHomeScreen")}</Button></div>;
 }
 
 function decodeVapidKey(value: string): Uint8Array<ArrayBuffer> { const padding = "=".repeat((4 - value.length % 4) % 4); const raw = atob((value + padding).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, (character) => character.charCodeAt(0)); }

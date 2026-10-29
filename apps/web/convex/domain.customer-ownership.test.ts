@@ -521,6 +521,26 @@ describe("exported Convex customer ownership boundaries", () => {
     await expectCode(customer.query(api.domain.query, operation("onboarding.get", { audience: "owner" })), "FORBIDDEN");
   });
 
+  it("gives a member without a membership a gym to find instead of membership steps", async () => {
+    const t = convexTest(schema, modules);
+    await seedFixtures(t);
+    const withMembership = await t.withIdentity({ subject: "clerk-customer-a" }).query(api.domain.query, operation("onboarding.get", { audience: "member" })) as { tasks: Array<{ key: string; complete: boolean }> };
+    expect(withMembership.tasks.map((task) => task.key)).toEqual(["member_profile", "member_memberships", "member_entry", "member_finance", "member_install"]);
+    expect(withMembership.tasks).toContainEqual(expect.objectContaining({ key: "member_memberships", complete: true }));
+
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("users", { publicId: "user-new", authSubject: "clerk-new-member", email: "new@example.com", fullName: "New Member", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    });
+    const newcomer = t.withIdentity({ subject: "clerk-new-member" });
+    const initial = await newcomer.query(api.domain.query, operation("onboarding.get", { audience: "member" })) as { tasks: Array<{ key: string; category: string }> };
+    expect(initial.tasks.map((task) => task.key)).toEqual(["member_profile", "member_find_gym", "member_install"]);
+    expect(initial.tasks.filter((task) => task.category === "required").map((task) => task.key)).toEqual(["member_profile"]);
+    const updated = await newcomer.mutation(api.domain.mutate, operation("onboarding.update", { audience: "member", completedStepKey: "member_find_gym" })) as { tasks: Array<{ key: string; complete: boolean }> };
+    expect(updated.tasks).toContainEqual(expect.objectContaining({ key: "member_find_gym", complete: true }));
+    await expectCode(newcomer.mutation(api.domain.mutate, operation("onboarding.update", { audience: "member", completedStepKey: "member_entry" })), "VALIDATION_ERROR");
+  });
+
   it("stores explicit per-device push consent without exposing subscription secrets", async () => {
     const t = convexTest(schema, modules);
     await seedFixtures(t);

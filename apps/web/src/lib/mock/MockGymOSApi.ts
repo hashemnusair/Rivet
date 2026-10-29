@@ -2119,9 +2119,11 @@ export class MockGymOSApi implements GymOSApi {
         { key: "owner_public_profile", title: "Publish the gym profile", description: "Review member discovery.", href: "/settings?section=profile", category: "recommended", complete: this.gymPublicProfile.status === "published", completionMode },
       ] : audience === "member" ? [
         { key: "member_profile", title: "Complete your profile", description: "Add your contact and emergency details.", href: "/customer/profile", category: "required", complete: true, completionMode },
-        { key: "member_memberships", title: "Open My Gyms", description: "Review your membership and balance.", href: "/customer/my-gyms", category: "required", complete: INITIAL_CUSTOMER_MEMBERSHIPS.length > 0, completionMode },
-        manualTask("member_entry", "Learn the entry QR", "Create a short-lived entry pass.", "/customer/my-gyms"),
-        manualTask("member_finance", "Find payments and receipts", "Know where your financial history lives.", "/customer/finance"),
+        ...(INITIAL_CUSTOMER_MEMBERSHIPS.length > 0 ? [
+          { key: "member_memberships", title: "Open My Gyms", description: "Review your membership and balance.", href: "/customer/my-gyms", category: "required" as const, complete: true, completionMode },
+          manualTask("member_entry", "Learn the entry QR", "Create a short-lived entry pass.", "/customer/my-gyms"),
+          manualTask("member_finance", "Find payments and receipts", "Know where your financial history lives.", "/customer/finance"),
+        ] : [manualTask("member_find_gym", "Find a gym", "Browse gyms and book a free trial.", "/customer/discover")]),
         manualTask("member_install", "Install RIVET", "Add the app to your home screen.", "/customer/getting-started#install", "optional"),
       ] : [
         manualTask("staff_role", "Understand your role", "Review what your role can see and change.", "/getting-started#role", "required"),
@@ -2135,6 +2137,10 @@ export class MockGymOSApi implements GymOSApi {
       ].filter((task): task is import("@/lib/domain/qol").OnboardingTaskState => Boolean(task));
       return { progress, tasks, role: audience === "member" ? "member" : currentRole(this.db), organizationName: audience === "member" ? undefined : this.db.organization.name };
     });
+  }
+
+  subscribeOnboardingExperience(audience: import("@/lib/domain/qol").OnboardingAudience, onValue: (experience: import("@/lib/domain/qol").OnboardingExperience) => void, onError?: (error: unknown) => void): Promise<() => void> {
+    return this.subscribeOnce(() => this.getOnboardingExperience(audience), onValue, onError);
   }
 
   updateOnboardingProgress(input: { audience: import("@/lib/domain/qol").OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<import("@/lib/domain/qol").OnboardingExperience> {

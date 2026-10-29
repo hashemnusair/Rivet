@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { getApi } from "@/lib/api/client";
+import { ERR, isApiError } from "@/lib/api/errors";
+import { clearMemberSignupDraft, saveMemberSignupDraft } from "@/lib/auth/member-signup-draft";
 import { PORTALS } from "@/app/login/portals";
 import { LoginLayout, PortalHeading } from "@/app/login/login-chrome";
 import { IdentityPanel } from "@/app/login/identity-panels.client";
@@ -176,6 +178,23 @@ function normalizePhoneForClerk(value: string): string {
   return trimmed.startsWith("+") ? `+${digits}` : digits;
 }
 
+/**
+ * A brand-new session reaches Convex a moment before RIVET has created the
+ * account's user row, and the profile mutation answers "not signed in" until
+ * then. Wait for it briefly instead of failing the sign-up.
+ */
+async function registerWhenAccountReady(input: { fullName: string; email: string; phone: string; gender: "female" | "male" }, attempts = 6): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await getApi().registerCustomer(input);
+      return;
+    } catch (error) {
+      if (attempt >= attempts || !isApiError(error) || error.code !== ERR.UNAUTHENTICATED) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+    }
+  }
+}
+
 type VerificationKind = "email" | "phone";
 type VerificationStart =
   | { status: "complete" }
@@ -245,12 +264,13 @@ export function CustomerSignupClient() {
     try {
       // The profile mutation derives the Clerk user and ownership server-side.
       // No caller-supplied member/customer ID is sent here.
-      await getApi().registerCustomer({
+      await registerWhenAccountReady({
         fullName: profileValues.fullName.trim(),
         email: profileValues.email.trim().toLowerCase(),
         phone: profileValues.phone.trim(),
         gender: profileValues.gender,
       });
+      clearMemberSignupDraft();
       navigateToReturn(returnTo);
     } catch {
       setStep("profile-pending");
@@ -271,6 +291,16 @@ export function CustomerSignupClient() {
     const profileValues = parsedProfile.data;
     setSubmitting(true);
     setFormError(undefined);
+    // Activating the session can move this tab to the account resolver before
+    // the profile below is saved. Keep the details so it saves them instead of
+    // asking the new member for their phone and gender a second time.
+    saveMemberSignupDraft({
+      fullName: profileValues.fullName.trim(),
+      email: profileValues.email,
+      phone: profileValues.phone.trim(),
+      gender: profileValues.gender,
+      returnTo: context.returnTo,
+    });
     // Clerk calls this callback before activating the session. Capture its
     // decorated URL so Safari can refresh the Clerk cookie when needed, then
     // navigate only after the authenticated Convex profile exists.
@@ -459,7 +489,7 @@ export function CustomerSignupClient() {
   // message.
   if (authLoaded && isSignedIn && step === "details" && !submitting) {
     return (
-      <LoginLayout portal={PORTALS.member} mode="sign-up">
+      <LoginLayout portal={PORTALS.member} mode="sign-up" signedIn>
         <IdentityPanel audience="member" />
       </LoginLayout>
     );

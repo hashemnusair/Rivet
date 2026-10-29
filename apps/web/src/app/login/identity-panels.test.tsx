@@ -2,6 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IdentityPanel } from "./identity-panels.client";
 import { MemberProfileMissingError } from "@/lib/auth/member-profile";
+import { saveMemberSignupDraft } from "@/lib/auth/member-signup-draft";
 
 const state = vi.hoisted(() => ({
   identity: {
@@ -22,6 +23,11 @@ const state = vi.hoisted(() => ({
   signOutApp: vi.fn(),
   signOutCustomer: vi.fn(),
   signOutPlatformAdmin: vi.fn(),
+  registerCustomer: vi.fn(),
+}));
+
+vi.mock("@/lib/api/client", () => ({
+  getApi: () => ({ registerCustomer: state.registerCustomer }),
 }));
 
 vi.mock("@clerk/nextjs", () => ({
@@ -64,6 +70,31 @@ describe("IdentityPanel", () => {
     expect(screen.queryByText("Your member account could not be opened")).not.toBeInTheDocument();
   });
 
+  it("saves the details typed at sign-up instead of asking for them again", async () => {
+    state.identity = { ...state.identity, platformAdmin: false, email: "new@example.com", fullName: "New Member" };
+    saveMemberSignupDraft({ fullName: "New Member", email: "new@example.com", phone: "0790000000", gender: "male", returnTo: "/customer/gyms/forge" });
+    state.signInAsIdentity.mockRejectedValueOnce(new MemberProfileMissingError()).mockResolvedValueOnce({ id: "profile-1" });
+    state.registerCustomer.mockResolvedValueOnce({ id: "profile-1" });
+    render(<IdentityPanel audience="member" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+    expect(state.registerCustomer).toHaveBeenCalledWith({ fullName: "New Member", email: "new@example.com", phone: "0790000000", gender: "male" });
+    expect(state.replace).toHaveBeenCalledWith("/customer/gyms/forge");
+    expect(screen.queryByRole("heading", { name: "Finish your member profile" })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem("rivet:member-signup-draft")).toBeNull();
+  });
+
+  it("opens the profile form already filled in when saving the sign-up details fails", async () => {
+    state.identity = { ...state.identity, platformAdmin: false, email: "new@example.com", fullName: "New Member" };
+    saveMemberSignupDraft({ fullName: "New Member", email: "new@example.com", phone: "0790000000", gender: "female" });
+    state.signInAsIdentity.mockRejectedValueOnce(new MemberProfileMissingError());
+    state.registerCustomer.mockRejectedValueOnce(new Error("Network unavailable"));
+    render(<IdentityPanel audience="member" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+    expect(screen.getByRole("heading", { name: "Finish your member profile" })).toBeVisible();
+    expect(screen.getByLabelText(/Mobile number/)).toHaveValue("0790000000");
+    expect(screen.getByLabelText(/Gender/)).toHaveValue("female");
+  });
+
   it("does not treat an unavailable member query as a missing profile", async () => {
     state.identity = { ...state.identity, platformAdmin: false };
     state.signInAsIdentity.mockRejectedValueOnce(new Error("Network unavailable"));
@@ -84,6 +115,8 @@ describe("IdentityPanel", () => {
     state.signOutApp.mockReset();
     state.signOutCustomer.mockReset();
     state.signOutPlatformAdmin.mockReset();
+    state.registerCustomer.mockReset();
+    window.sessionStorage.clear();
     state.identity = {
       status: "ready",
       userId: "user-1",

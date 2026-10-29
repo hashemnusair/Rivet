@@ -19,6 +19,8 @@ import type { Audience } from "./portals";
 import { api } from "../../../convex/_generated/api";
 import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import { MemberProfileCompletion } from "./member-profile-completion";
+import { getApi } from "@/lib/api/client";
+import { clearMemberSignupDraft, readMemberSignupDraft, type MemberSignupDraft } from "@/lib/auth/member-signup-draft";
 
 const ENTRY_TRANSITION_MS = 900;
 const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
@@ -352,15 +354,35 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   const started = useRef(false);
   const [failed, setFailed] = useState(false);
   const [needsProfile, setNeedsProfile] = useState(false);
+  const [draft, setDraft] = useState<MemberSignupDraft>();
 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void Promise.all([
-      signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" }),
-      holdTransition(),
-    ])
-      .then(() => router.replace(postSignInPath("/customer/my-gyms", window.location.search)))
+    const enter = async () => {
+      try {
+        await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
+        return "/customer/my-gyms";
+      } catch (error) {
+        if (!(error instanceof MemberProfileMissingError)) throw error;
+        // A member who has just signed up typed these details already; save
+        // them rather than asking again. The form opens, filled in, only if
+        // that fails.
+        const saved = readMemberSignupDraft(identity.email);
+        if (!saved) throw error;
+        try {
+          await getApi().registerCustomer({ fullName: saved.fullName, email: saved.email, phone: saved.phone, gender: saved.gender });
+          clearMemberSignupDraft();
+          await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
+          return saved.returnTo ?? "/customer/my-gyms";
+        } catch {
+          setDraft(saved);
+          throw error;
+        }
+      }
+    };
+    void Promise.all([enter(), holdTransition()])
+      .then(([fallback]) => router.replace(postSignInPath(fallback, window.location.search)))
       .catch((error: unknown) => {
         if (error instanceof MemberProfileMissingError) setNeedsProfile(true);
         else setFailed(true);
@@ -368,9 +390,10 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
   }, [identity.email, identity.fullName, router, signInAsIdentity]);
 
   if (needsProfile) {
-    return <MemberProfileCompletion identity={identity} onComplete={async () => {
+    return <MemberProfileCompletion identity={identity} initial={draft} onComplete={async () => {
+      clearMemberSignupDraft();
       await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
-      router.replace(postSignInPath("/customer/my-gyms", window.location.search));
+      router.replace(postSignInPath(draft?.returnTo ?? "/customer/my-gyms", window.location.search));
     }} />;
   }
 

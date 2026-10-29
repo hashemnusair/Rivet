@@ -1158,6 +1158,8 @@ export interface GymOSApi {
   ignoreDuplicateCase(caseId: UUID, reason: string): Promise<DuplicateCase>;
   mergeDuplicateMembers(input: MergeMemberInput): Promise<DuplicateCase>;
   getOnboardingExperience(audience: OnboardingAudience): Promise<OnboardingExperience>;
+  /** Live setup progress: steps that complete from real work tick off as it happens. */
+  subscribeOnboardingExperience(audience: OnboardingAudience, onValue: (experience: OnboardingExperience) => void, onError?: (error: unknown) => void): Promise<() => void>;
   updateOnboardingProgress(input: { audience: OnboardingAudience; completedStepKey?: string; dismissed?: boolean; restart?: boolean }): Promise<OnboardingExperience>;
   listPushSubscriptions(): Promise<PushSubscriptionSummary[]>;
   savePushSubscription(input: PushSubscriptionInput): Promise<PushSubscriptionSummary>;

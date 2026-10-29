@@ -6,19 +6,42 @@ import { useT } from "@/lib/i18n/provider";
 import { Check, Circle, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import type { OnboardingAudience, OnboardingTaskState } from "@/lib/domain/qol";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { cn } from "@/lib/utils/cn";
 
-export function OnboardingChecklist({ audience, compact = false }: { audience: OnboardingAudience; compact?: boolean }) {
+/**
+ * A member's steps are few and cheap to watch, so their checklist ticks off
+ * live as the profile, memberships or install change. Gym checklists read
+ * whole collections, so they load once and refresh after each change here.
+ */
+function useOnboardingExperience(audience: OnboardingAudience) {
+  const live = audience === "member";
+  const watched = useRealtimeApiQuery({
+    queryKey: qk.onboarding(audience),
+    query: (api) => api.getOnboardingExperience(audience),
+    subscribe: (api, onValue, onError) => api.subscribeOnboardingExperience(audience, onValue, onError),
+    enabled: live,
+  });
+  const loaded = useApiQuery(qk.onboarding(audience), (api) => api.getOnboardingExperience(audience), { enabled: !live });
+  return live ? watched : loaded;
+}
+
+/**
+ * `taskAction` replaces a step's own buttons when the step is done in place
+ * rather than on another page (the member's install step); return undefined
+ * to keep the default Open / Mark as done.
+ */
+export function OnboardingChecklist({ audience, compact = false, taskAction }: { audience: OnboardingAudience; compact?: boolean; taskAction?: (task: OnboardingTaskState) => ReactNode | undefined }) {
   const t = useT();
   const invalidate = useInvalidate();
-  const experience = useApiQuery(qk.onboarding(audience), (api) => api.getOnboardingExperience(audience));
+  const experience = useOnboardingExperience(audience);
   const restoredHashRef = useRef<string | null>(null);
   const update = useApiMutation((api, input: { completedStepKey?: string; dismissed?: boolean; restart?: boolean }) => api.updateOnboardingProgress({ audience, ...input }), { onSuccess: async (_result, input) => {
     if (input.completedStepKey) toast.success(t("setup.stepDone"));
@@ -76,11 +99,12 @@ export function OnboardingChecklist({ audience, compact = false }: { audience: O
   if (compact && (requiredComplete === required.length || experience.data.progress.dismissedAt || experience.data.progress.completedAt)) return null;
   if (compact) return <section className="border-b border-line bg-signal-bg/20 px-4 py-2.5 sm:px-6 lg:px-8"><div className="mx-auto flex max-w-[1440px] items-center gap-3"><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-3"><p className="truncate text-[12.5px] font-semibold">{audience === "owner" ? `Finish setting up ${experience.data.organizationName ?? t("setup.yourGym")}` : audience === "member" ? t("setup.memberSetup") : t("setup.finishStarted")}</p><span className="shrink-0 text-[12px] text-ink-3">{t("setup.stepsDone", { done: requiredComplete, total: required.length })}</span></div><div className="mt-1 h-1 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-signal transition-[width]" style={{ width: `${percent}%` }} /></div></div><Button asChild size="sm" variant="secondary"><Link href={audience === "member" ? "/customer/getting-started" : "/getting-started"}>{t("setup.continueSetup")}</Link></Button><button type="button" className="text-[12px] text-ink-3 underline underline-offset-4" onClick={() => update.mutate({ dismissed: true })}>{t("setup.hide")}</button></div></section>;
 
-  return <section className="space-y-4"><div className="panel p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="context-label">{t("setup.progress")}</p><p className="mt-1 font-display text-[24px] font-semibold">{t("setup.percentReady", { percent })}</p><p className="mt-1 text-[12px] text-ink-3">{t("setup.requiredDone", { done: requiredComplete, total: required.length })}</p></div><div className="w-full max-w-xs"><div className="h-2 overflow-hidden rounded-full bg-sunken-2"><div className="h-full rounded-full bg-signal transition-[width]" style={{ width: `${percent}%` }} /></div><Button size="sm" variant="ghost" className="mt-2" loading={update.isPending} onClick={() => update.mutate({ restart: true })}><RotateCcw /> {" "}{t("setup.startOver")}</Button></div></div></div><ol className="grid gap-3 lg:grid-cols-2">{experience.data.tasks.map((task, index) => <OnboardingTask key={task.key} task={task} role={experience.data?.role} index={index} onComplete={() => update.mutate({ completedStepKey: task.key })} loading={update.isPending} />)}</ol></section>;
+  return <section className="space-y-4"><div className="panel p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="context-label">{t("setup.progress")}</p><p className="mt-1 font-display text-[24px] font-semibold">{t("setup.percentReady", { percent })}</p><p className="mt-1 text-[12px] text-ink-3">{t("setup.requiredDone", { done: requiredComplete, total: required.length })}</p></div><div className="w-full max-w-xs"><div className="h-2 overflow-hidden rounded-full bg-sunken-2"><div className="h-full rounded-full bg-signal transition-[width]" style={{ width: `${percent}%` }} /></div><Button size="sm" variant="ghost" className="mt-2" loading={update.isPending} onClick={() => update.mutate({ restart: true })}><RotateCcw /> {" "}{t("setup.startOver")}</Button></div></div></div><ol className="grid gap-3 lg:grid-cols-2">{experience.data.tasks.map((task, index) => <OnboardingTask key={task.key} task={task} role={experience.data?.role} index={index} action={taskAction?.(task)} onComplete={() => update.mutate({ completedStepKey: task.key })} loading={update.isPending} />)}</ol></section>;
 }
 
-function OnboardingTask({ task, role, index, onComplete, loading }: { role?: string; task: OnboardingTaskState; index: number; onComplete: () => void; loading: boolean }) {
+function OnboardingTask({ task, role, index, action, onComplete, loading }: { role?: string; task: OnboardingTaskState; index: number; action?: ReactNode; onComplete: () => void; loading: boolean }) {
   const t = useT();
   const key = Object.hasOwn(en.setup.tasks, task.key) ? task.key as keyof typeof en.setup.tasks : undefined;
-  return <li data-onboarding-task={task.key} className={cn("panel relative flex gap-3 p-4", task.complete && "bg-sunken/30")}><span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[11px]", task.complete ? "border-signal bg-signal text-white" : "border-line-3 text-ink-3")}>{task.complete ? <Check className="size-4" /> : index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-[13.5px] font-semibold">{key ? t(`setup.tasks.${key}.title`) : task.title}</h2><span className="rounded-full bg-sunken px-2 py-0.5 text-[12px] font-medium text-ink-3">{task.category === "required" ? t("common.state.required") : task.category === "recommended" ? t("setup.recommended") : t("common.state.optional")}</span></div><p className="mt-1 text-[12px] leading-relaxed text-ink-2">{key ? t(`setup.tasks.${key}.description`, { role: roleLabel(t, role) }) : task.description}</p>{task.unavailableReason ? <p className="mt-2 text-[12px] text-warning-deep">{task.unavailableReason === "Email provider delivery is not configured yet." ? t("setup.providerUnavailable") : task.unavailableReason}</p> : null}<div className="mt-3 flex items-center gap-2"><Button asChild size="sm" variant="secondary"><Link href={task.href}>{task.complete ? t("dashboard.today.action.review") : t("dashboard.today.action.open")}</Link></Button>{!task.complete && task.completionMode === "manual" && !task.unavailableReason ? <Button size="sm" variant="ghost" loading={loading} onClick={onComplete}><Circle /> {" "}{t("setup.markDone")}</Button> : null}</div></div></li>;
+  return <li data-onboarding-task={task.key} className={cn("panel relative flex gap-3 p-4", task.complete && "bg-sunken/30")}><span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full border font-mono text-[11px]", task.complete ? "border-signal bg-signal text-white" : "border-line-3 text-ink-3")}>{task.complete ? <Check className="size-4" /> : index + 1}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-[13.5px] font-semibold">{key ? t(`setup.tasks.${key}.title`) : task.title}</h2><span className="rounded-full bg-sunken px-2 py-0.5 text-[12px] font-medium text-ink-3">{task.category === "required" ? t("common.state.required") : task.category === "recommended" ? t("setup.recommended") : t("common.state.optional")}</span></div><p className="mt-1 text-[12px] leading-relaxed text-ink-2">{key ? t(`setup.tasks.${key}.description`, { role: roleLabel(t, role) }) : task.description}</p>{task.unavailableReason ? <p className="mt-2 text-[12px] text-warning-deep">{task.unavailableReason === "Email provider delivery is not configured yet." ? t("setup.providerUnavailable") : task.unavailableReason}</p> : null}{action !== undefined ? action : <div className="mt-3 flex items-center gap-2"><Button asChild size="sm" variant="secondary"><Link href={task.href}>{task.complete ? t("dashboard.today.action.review") : t("dashboard.today.action.open")}</Link></Button>{!task.complete && task.completionMode === "manual" && !task.unavailableReason ? <Button size="sm" variant="ghost" loading={loading} onClick={onComplete}><Circle /> {" "}{t("setup.markDone")}</Button> : null}</div>}</div></li>;
 }
+

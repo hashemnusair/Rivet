@@ -11,6 +11,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { getApi } from "@/lib/api/client";
 import type { RivetIdentity } from "@/lib/auth/rivet-identity";
+import type { MemberSignupDraft } from "@/lib/auth/member-signup-draft";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
 
 const createProfileSchema = (t: TFunction) => z.object({
@@ -21,12 +22,13 @@ const createProfileSchema = (t: TFunction) => z.object({
 });
 
 /** Reached only after an authenticated member query confirms a missing profile. */
-export function MemberProfileCompletion({ identity, onComplete }: { identity: RivetIdentity; onComplete: () => Promise<void> }) {
+export function MemberProfileCompletion({ identity, initial, onComplete }: { identity: RivetIdentity; initial?: MemberSignupDraft; onComplete: () => Promise<void> }) {
   const { t, isolate } = useLocale();
   const profileSchema = createProfileSchema(englishT);
-  const [fullName, setFullName] = useState(identity.fullName ?? "");
-  const [phone, setPhone] = useState("");
-  const [gender, setGender] = useState("");
+  // Details from a sign-up in this tab fill the form, so nothing is typed twice.
+  const [fullName, setFullName] = useState(initial?.fullName ?? identity.fullName ?? "");
+  const [phone, setPhone] = useState(initial?.phone ?? "");
+  const [gender, setGender] = useState<string>(initial?.gender ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<MessageDescriptor>();
   const submit = async (event: FormEvent<HTMLFormElement>) => {

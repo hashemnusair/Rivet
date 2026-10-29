@@ -86,11 +86,13 @@ function SignedInIdentity() {
  */
 export function PortalSignIn({ audience, mode = "sign-in" }: { audience: Audience; mode?: AuthMode }) {
   const { t } = useLocale();
+  const { isSignedIn } = useAuth();
   const portal = PORTALS[audience];
   return (
     <LoginLayout
       portal={portal}
       mode={mode}
+      signedIn={Boolean(isSignedIn)}
       footer={
         <p className="text-center text-[12px] text-ink-3">
           {portal.id === "admin" ? t("auth.chrome.staffOnly") : t("auth.chrome.secureSignIn")}
