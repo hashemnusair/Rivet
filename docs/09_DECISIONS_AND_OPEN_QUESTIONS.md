@@ -857,7 +857,11 @@ Decisions taken (assumptions, open to the owners):
   Clerk for a token and Convex for the account's saved language on every signed-in
   page load. When the shared cookie already names that account it now uses the cookie;
   a language changed on another device arrives when the page binds the account.
-- **Not done, needs a decision.** Caching the landing at the edge (about 300–600 ms
+- **Measured result:** the landing did not become visible sooner (0.97–1.15 s typical),
+  because it cannot paint before its whole HTML arrives and that takes longer than the
+  Clerk check. About 0.3 s of every request, for any page, is the Mumbai edge to Dublin
+  trip plus server overhead; the landing's own render is 0.1–0.2 s.
+- **Not done, needs a decision.** Caching the landing at the edge (about 0.3–0.6 s
   more, and no cold starts) needs either a restructure so pages do not read cookies, or
   edge-cache headers that can only be proven on Production. Moving the server region
   closer to Jordan, or serving `rivetjo.com` without the redirect to `www`, are

@@ -19,8 +19,16 @@ Decisions: docs/09 "Faster public website".
 - **Verification.** `tsc`; ESLint; guard tests now execute the script (first-time
   visitor paints and is still redirected when Clerk reports a session; a browser with
   an account id waits; Clerk's marker redirects without asking); new
-  `src/lib/i18n/server.test.ts` (3); full Vitest 2,752 passed. The live after-numbers
-  are in the next entry once measured.
+  `src/lib/i18n/server.test.ts` (3); full Vitest 2,752 passed.
+- **Measured after (29 October 2026, live, deployment `7419633846`):** no visible gain
+  for first-time visitors. Typical runs became visible at 0.97–1.15 s (two runs on a cold
+  server took 3.7–4.0 s). The page cannot paint before its HTML has fully arrived
+  (0.85–1.1 s), and the Clerk check already finished inside that time. curl shows why:
+  `/offline` (1.7 KB) and `/` (100 KB) both take 0.46–0.58 s to the first byte, so about
+  0.3 s of every request is the Mumbai edge to Dublin trip and server overhead, and the
+  landing's own render adds only 0.1–0.2 s. The guard change is kept because it will
+  matter once the HTML comes from the edge; the server-side lookup saving applies to
+  signed-in page loads, which were not measured live (no credentials here).
 
 ## Gym workspace — instant page switches (29 October 2026)
 
