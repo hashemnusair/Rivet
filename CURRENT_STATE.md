@@ -1,5 +1,17 @@
 # GymOS / RIVET current implementation state
 
+## Edge-cached landing — tried on Production and reverted (29 October 2026)
+
+`next.config.mjs` briefly sent `Vercel-CDN-Cache-Control` on `www`'s `/` for requests
+without cookies (`433135a1`, live 17:46:01 UTC). The Production check
+(`scratchpad` probe: first visits, an Arabic language cookie, another cookie, a Clerk
+marker) showed first visits served from the edge in 0.28–0.58 s, but the Arabic-cookie
+request also received the cached English page (`x-vercel-cache: HIT`, `lang="en"`).
+Reverted in `ec8bf456` (live 17:48:02 UTC); re-check shows every request `MISS` and the
+Arabic cookie gets Arabic. Next replaces a `Vary` header set in `next.config`, and the
+edge cache keys on the URL only. Details and the lesson: docs/09 "Edge-cached landing".
+No code from the attempt remains.
+
 ## Public website — landing paints without waiting for Clerk (29 October 2026)
 
 Decisions: docs/09 "Faster public website".

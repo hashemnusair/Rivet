@@ -866,3 +866,22 @@ Decisions taken (assumptions, open to the owners):
   edge-cache headers that can only be proven on Production. Moving the server region
   closer to Jordan, or serving `rivetjo.com` without the redirect to `www`, are
   infrastructure choices for Hashem.
+
+## Edge-cached landing — tried and reverted, 2026-10-29
+
+Elias approved caching the landing at Vercel's edge, provided it was checked on
+Production at once and reverted if anything was wrong. Commit `433135a1` sent
+`Vercel-CDN-Cache-Control: max-age=600, stale-while-revalidate=86400` on `www`'s `/` only
+for requests with no `Cookie` header. On Production (deployment ready 17:46:01 UTC) the
+edge did serve first visits (0.28–0.58 s to the first byte instead of 0.5–2.2 s), but it
+also served that English copy to a request carrying an Arabic language cookie: the
+cache key is the URL alone, so gating which responses are stored does not gate who is
+served them. `Vary: Cookie` cannot be added from `next.config` (Next replaces the
+`Vary` header). Reverted in `ec8bf456` (ready 17:48:02 UTC); the cached copies belonged
+to the reverted deployment and went with it. Re-check after the revert: every request
+`MISS`, the Arabic cookie gets `lang="ar"`.
+
+Lesson: on this stack an edge-cached page must be the same for everyone who requests
+that URL. A cached landing would need the language in the URL (for example `/` English
+and `/ar` Arabic, built ahead of time) and would rely on the in-page sign-in check rather
+than the server redirect. That is the larger restructure; not started.
