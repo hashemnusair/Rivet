@@ -83,10 +83,11 @@ test.describe("RIVET member experience", () => {
     await expect(page.getByText("0 gyms")).toBeVisible();
     await expect(page.getByRole("region", { name: "Free trials" })).toHaveCount(0);
 
-    // Use the consolidated account control to leave the member session. The
-    // frontend mock and its newly created lead remain alive while switching
-    // to staff mode.
-    await page.getByRole("button", { name: "Open account menu" }).click();
+    // Leave the member session from the profile's menu. The frontend mock and
+    // its newly created lead remain alive while switching to staff mode.
+    await page.getByRole("link", { name: /^Account/ }).filter({ visible: true }).first().click();
+    await expect(page).toHaveURL(/\/customer\/profile$/);
+    await page.getByRole("button", { name: "More options" }).click();
     await page.getByRole("menuitem", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
     // /login only chooses a portal; the gym team signs in one level down.

@@ -19,12 +19,13 @@ function otherLocale(locale: Locale): Locale {
  * (`NEXT_PUBLIC_RIVET_ARABIC=1` or the mock/demo preview).
  * Idea and naming ported from origin/arabic-localisation.
  */
-export function LanguageMenuItem() {
+export function LanguageMenuItem({ className }: { className?: string }) {
   const { locale, setLocale, switchEnabled, t } = useLocale();
   if (!switchEnabled) return null;
   const next = otherLocale(locale);
   return (
     <DropdownMenuItem
+      className={className}
       onSelect={() => setLocale(next)}
       aria-label={t("common.language.switchTo", { language: LOCALE_LABELS[next].english })}
       data-testid="language-switch"
@@ -35,7 +36,7 @@ export function LanguageMenuItem() {
   );
 }
 
-/** Stand-alone button for screens with no dropdown (the member app profile). */
+/** Stand-alone button for screens with no dropdown. */
 export function LanguageButton({ className }: { className?: string }) {
   const { locale, setLocale, switchEnabled, t } = useLocale();
   if (!switchEnabled) return null;

@@ -14,7 +14,7 @@ import { customerTransactionQuery } from "@/lib/public/customer-finance-query";
  * keeps its scroll position, and tapping the open section scrolls it to the
  * top.
  */
-export const MEMBER_TAB_HREFS: readonly string[] = ["/customer/my-gyms", "/customer/finance", "/customer/discover"];
+export const MEMBER_TAB_HREFS: readonly string[] = ["/customer/my-gyms", "/customer/finance", "/customer/discover", "/customer/profile"];
 
 /**
  * A fully prefetched route stays usable for Next's static stale time (five

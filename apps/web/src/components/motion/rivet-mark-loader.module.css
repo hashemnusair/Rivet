@@ -59,6 +59,19 @@
   animation: mark-rep 1.7s linear 1.25s infinite;
 }
 
+/* Already built: the lift begins after a short rest on the stack. */
+.assembled .post,
+.assembled .bar,
+.assembled .hook,
+.assembled .plate,
+.assembled .pin {
+  animation: none;
+}
+
+.assembled .lift {
+  animation-delay: 400ms;
+}
+
 @keyframes mark-rise {
   from { transform: scaleY(0); }
 }

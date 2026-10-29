@@ -885,3 +885,52 @@ Lesson: on this stack an edge-cached page must be the same for everyone who requ
 that URL. A cached landing would need the language in the URL (for example `/` English
 and `/ar` Arabic, built ahead of time) and would rely on the in-page sign-in check rather
 than the server redirect. That is the larger restructure; not started.
+
+## Member account page and opening the app — 2026-10-29
+
+Elias did not like the member app's account menu (a pop-up list from the dock's Account
+button) and asked for a normal profile page that shows the member's details with an
+"Edit info" button, the remaining settings behind a ⋯ menu at the top right, and an app
+that opens smoothly with the RIVET logo in the middle instead of freezing and then
+jumping in. Decisions taken (assumptions, open to the owners):
+
+- **Account is a tab.** The dock's fourth item opens `/customer/profile` like the other
+  three (instant, lit while on any account page or the guide). On computers the
+  header's avatar and name link to the same page; the header dropdown is gone.
+- **The profile is read-only.** A card with the member's initials, name, email and
+  "Edit info"; then Personal information (phone, birth date, gender, message
+  language), Address and Emergency contact, every empty value reading "Not added"
+  and the emergency prompt shown until a number is on file; then who can see these
+  details. Editing is its own page (`/customer/profile/edit`, the previous form) that
+  returns to the profile with "Saved. Your gyms can see the changes." The email stays
+  read-only.
+- **The ⋯ menu** holds Change password (`/customer/profile/password`), Offers and news
+  (`/customer/profile/offers`), the screen language (when Arabic is on), Getting
+  started, Add to home screen (outside the installed app) and Sign out. The password
+  stays on a page, not a dialog, because Clerk may ask the member to confirm who they
+  are in its own modal. Old `#password` and `#communication` links are sent on to the
+  new pages.
+- **Opening the app.** Cold-loading a member's own page (which is what the home-screen
+  app does) painted the public website's bar and footer with a loading line while
+  Clerk, the Convex sign-in, the account check and the member's record arrived one
+  after another, then swapped in the member app. Now that wait is plain paper with the
+  RIVET mark in the middle, lifting, and "Loading your account" under it; when the
+  member is known the paper fades off the app in one piece (the gym workspace's
+  curtain, `WorkspaceCurtain` with `launch`). Nothing under it mounts early. A visitor
+  who turns out to be signed out is sent to sign in from the mark. Staff, administrators,
+  a failed check and a member without a profile end the wait as before. The
+  marketplace and gym pages are public and never wait.
+- **iPhone launch images (reverses "No iOS splash images" above).** iOS shows
+  `apple-touch-startup-image` between the tap and the page's first paint, otherwise a
+  blank screen. Twelve portrait images (`public/launch/`, about 5 KB each, drawn by
+  `scripts/generate-launch-images.mjs` from the same geometry as the loader) show the
+  finished mark exactly where the curtain draws it, so the hand-over does not move it;
+  the curtain then starts the lift without rebuilding the mark. Positions assume the
+  page sits below the status bar (`statusBarStyle: "default"`) and use the usual top
+  safe area per model; the iPhone Air value (68) is an estimate. **iOS reads these
+  when RIVET is added to the Home Screen, so a member who added it before this change
+  must remove and add it again to see the logo at launch.** Android already builds its
+  own launch screen from the manifest's icon and paper background.
+- **Not changed.** The chain behind the wait (Clerk → Convex sign-in → `ensureCurrent`
+  → identity → member record) is what takes the time; shortening it is a separate,
+  measurable change.

@@ -30,16 +30,21 @@ test.describe("staged member portal", () => {
       await expect(qrDialog).toBeHidden();
 
       await member.getByRole("link", { name: "Home", exact: true }).first().click();
-      await member.getByRole("button", { name: "Open account menu" }).first().click();
-      await member.getByRole("menuitem", { name: "Profile" }).click();
-      await expect(member).toHaveURL(/\/customer\/profile$/);
+      await member.goto("/customer/profile/offers");
       const marketing = member.getByRole("switch", { name: "Send me offers and news" });
       const marketingBefore = await marketing.isChecked();
+      await member.getByRole("link", { name: "Back to profile" }).click();
+      await expect(member).toHaveURL(/\/customer\/profile$/);
+      await member.getByRole("link", { name: "Edit info" }).click();
+      await expect(member).toHaveURL(/\/customer\/profile\/edit$/);
       await member.locator("#emergency-name").fill(emergencyName);
       await member.locator("#emergency-relationship").fill("Sibling");
       await member.locator("#emergency-phone").fill("+962790000000");
       await member.getByRole("button", { name: "Save profile", exact: true }).click();
-      await expect(member.getByRole("status")).toContainText("Saved. Your gyms can see the changes.");
+      await expect(member).toHaveURL(/\/customer\/profile$/);
+      await expect(member.getByText("Saved. Your gyms can see the changes.")).toBeVisible();
+      await expect(member.getByRole("region", { name: "Emergency contact" })).toContainText(emergencyName);
+      await member.goto("/customer/profile/offers");
       await expect(marketing).toBeChecked({ checked: marketingBefore });
       cleanupEntry = cleanup.plan({ targetType: "member_profile", action: "preserve", reason: "Member-owned profile remains on the disposable staging account for auditability" });
       cleanup.complete(cleanupEntry);

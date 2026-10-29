@@ -1,5 +1,56 @@
 # GymOS / RIVET current implementation state
 
+## Member app — profile page with ⋯ menu; opens on the RIVET mark (29 October 2026)
+
+Decisions: docs/09 "Member account page and opening the app".
+
+- **Account.** The dock's Account item is now a tab to `/customer/profile` (in
+  `MEMBER_TAB_HREFS`; lit on every account page and on the guide); on computers the
+  header's avatar and name link there. The account dropdown is gone from the shell.
+  `src/app/customer/profile/page.tsx` is read-only: initials, name, email, "Edit info";
+  Personal information, Address, Emergency contact ("Not added" for empty values);
+  who can see the details. ⋯ (`src/components/public/member-account.tsx`
+  `MemberAccountMenu`): Change password, Offers and news, screen language, Getting
+  started, Add to home screen, Sign out (the shell provides sign-out through
+  `MemberSignOutProvider`). New pages `profile/edit` (the old form; saves, toasts and
+  returns), `profile/password`, `profile/offers`; old `#password` / `#communication`
+  links are forwarded. `CustomerCommunicationPreferences` dropped its own heading (its
+  page has it). Keys: `customerPortal.editInfo`, `editInfoDescription`, `moreOptions`,
+  `notAdded`, `backToProfile` (English and Arabic); removed the unused
+  `marketing.memberShell.accountMenu` and `publicCompletion.memberShell.justAMoment`.
+- **Opening.** `src/components/public/member-launch.ts` `memberAppOpening` decides when a
+  member's own page is still waiting for the member; `public-shell.tsx` then renders
+  only `WorkspaceCurtain` with `launch` (mark centred, already built, lifting; "Loading
+  your account" after 0.7 s) and fades it off the app when ready, instead of painting the
+  public site's bar and footer with a loading line. The shell itself sends a signed-out
+  visitor to `/login` (the page is not mounted under the curtain). The preview's
+  sessionStorage wait uses the same curtain instead of `AuthTransition`.
+- **iPhone launch images.** `public/launch/` (12 portrait PNGs, ~5 KB each) from
+  `scripts/generate-launch-images.mjs`, using `src/lib/pwa/launch-images.ts` (screens,
+  media queries, mark position) and `src/components/motion/rivet-mark-geometry.ts`
+  (geometry now shared with `RivetMarkLoader`, which gained `assembled`). Linked from
+  member pages and the member sign-in through `MEMBER_APP_METADATA`
+  (`member-manifest.ts`). Members who installed RIVET before must re-add it to the Home
+  Screen to get the launch image.
+- **Verification (29 October 2026, cloud session, Linux).** `tsc`; ESLint (whole app)
+  and the secret-output audit; new tests `member-launch.test.ts` (5),
+  `customer/profile/page.test.tsx` (5), `profile/edit/page.test.tsx` (4), launch-image
+  checks in `member-manifest.test.ts` (2), reworked `customer-shell.test.tsx` (7); full
+  Vitest 2,771 passed, 3 skipped. Playwright on the mock dev server: `workflow-pass-4`,
+  `public-experience`, `page-motion`, `role-routing`, `design-system-visual`, `exports`,
+  `arabic-browser-verification`, `host-routing`: 52 passed, 2 skipped, 2 failed on
+  cold-compile timeouts (an Arabic staff sign-in and the role-routing matrix's first
+  member sign-in), both passing when rerun alone. The profile references
+  (`pass-4-profile-390-linux.png`, `-1440.png`) were regenerated for the new page;
+  `pass-4-profile-390.png` (macOS) is a copy of the Linux render and may need a refresh
+  on a Mac. Screens checked by eye at 390 px (English, Arabic, ⋯ menu, edit, offers,
+  the curtain as the server paints it) and 1280 px. The marketing font host is blocked
+  in this environment, so a stand-in file was used locally (gitignored, not committed).
+- **Not verified.** No real iPhone install or cold launch was tried here, so the launch
+  image's hand-over position (which assumes the page starts below the status bar) is
+  unconfirmed on a device. Not measured against live Convex/Clerk. Frontend only; no
+  Convex change.
+
 ## Edge-cached landing — tried on Production and reverted (29 October 2026)
 
 `next.config.mjs` briefly sent `Vercel-CDN-Cache-Control` on `www`'s `/` for requests

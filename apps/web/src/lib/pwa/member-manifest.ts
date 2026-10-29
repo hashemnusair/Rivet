@@ -1,8 +1,20 @@
-import type { MetadataRoute } from "next";
+import type { Metadata, MetadataRoute } from "next";
 import { createTranslator } from "@/lib/i18n/core";
 import { dirFor, type Locale } from "@/lib/i18n/locale";
+import { LAUNCH_STARTUP_IMAGES } from "./launch-images";
 
 export const MEMBER_MANIFEST_PATH = "/manifest.webmanifest";
+
+/**
+ * What the pages that offer the member app add to the root metadata: its
+ * manifest and the iPhone launch images. `appleWebApp` replaces the root's
+ * as a whole, so it repeats it; the launch images are drawn for the
+ * "default" status bar, which the page sits below.
+ */
+export const MEMBER_APP_METADATA: Metadata = {
+  manifest: MEMBER_MANIFEST_PATH,
+  appleWebApp: { capable: true, title: "RIVET", statusBarStyle: "default", startupImage: LAUNCH_STARTUP_IMAGES },
+};
 
 const SHORTCUT_ICON = [{ src: "/icons/member-192.png", sizes: "192x192", type: "image/png" }];
 

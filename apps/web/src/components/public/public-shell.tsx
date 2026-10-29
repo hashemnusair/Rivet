@@ -2,23 +2,16 @@
 import { useT } from "@/lib/i18n/provider";
 
 
-import { useClerk } from "@clerk/nextjs";
-import { ChevronDown, GraduationCap, Home, KeyRound, LogOut, MessageSquare, ReceiptText, Search, SquarePlus, UserRound } from "lucide-react";
+import { useAuth, useClerk } from "@clerk/nextjs";
+import { Home, ReceiptText, Search, UserRound } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { AuthTransition } from "@/components/auth/auth-transition";
+import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 import { PublicDocumentPage } from "@/components/public/public-document-page";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
@@ -27,8 +20,10 @@ import { useCustomerPersona, useExperience } from "@/lib/providers/experience-pr
 import { cn } from "@/lib/utils/cn";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { MemberPwaManager } from "@/components/pwa/member-pwa";
-import { MemberAppProvider, MemberAppReminder, useMemberAppInstall } from "@/components/pwa/member-app";
+import { MemberAppProvider, MemberAppReminder } from "@/components/pwa/member-app";
 import { BetaBadge } from "@/components/shared/beta-badge";
+import { MEMBER_ACCOUNT_HREF, MemberSignOutProvider } from "./member-account";
+import { memberAppOpening } from "./member-launch";
 import { useMemberTabs } from "./member-tabs";
 
 // ---------------------------------------------------------------------------
@@ -41,50 +36,13 @@ const MEMBER_NAV = [
   { href: "/customer/discover", labelKey: "publicCompletion.memberShell.exploreGyms", shortLabelKey: "publicCompletion.memberShell.explore", icon: Search, requiresAuth: false },
 ] as const;
 
-const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", "/customer/profile", "/customer/getting-started"];
+/** The dock's last tab: the member's profile, with the rest of the account behind its ⋯. */
+const ACCOUNT_TAB = { href: MEMBER_ACCOUNT_HREF, labelKey: "marketing.memberShell.account", shortLabelKey: "marketing.memberShell.account", icon: UserRound, requiresAuth: true } as const;
+
+const PROTECTED_MEMBER_PREFIXES = ["/customer/my-gyms", "/customer/finance", "/customer/receipts", MEMBER_ACCOUNT_HREF, "/customer/getting-started"];
 
 function isProtectedMemberRoute(pathname: string) {
   return PROTECTED_MEMBER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-}
-
-/**
- * One account menu for the desktop header and the phone dock. Everything the
- * navigation already offers stays out of it, so the menu is only what a member
- * cannot reach elsewhere: profile, password, the guide, communication choices,
- * putting RIVET on the home screen, sign out.
- */
-function AccountMenuItems({ name, email, onSignOut, touch = false }: { name: string; email: string; onSignOut: () => void; touch?: boolean }) {
-  const t = useT();
-  const { app, start } = useMemberAppInstall();
-  const itemClass = touch ? "min-h-11 py-2.5 text-[13.5px]" : undefined;
-  return (
-    <>
-      <DropdownMenuLabel>
-        <span className="block text-[13px] font-semibold text-ink">{name}</span>
-        <span className="mt-0.5 block truncate text-[12px] font-normal text-ink-3">{email}</span>
-      </DropdownMenuLabel>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile"><UserRound />{" "}{t("marketing.memberShell.profile")}</Link>
-      </DropdownMenuItem>
-      <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile#password"><KeyRound />{" "}{t("auth.changePassword.menu")}</Link>
-      </DropdownMenuItem>
-      <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/getting-started"><GraduationCap />{" "}{t("shell.account.gettingStarted")}</Link>
-      </DropdownMenuItem>
-      <DropdownMenuItem asChild className={itemClass}>
-        <Link href="/customer/profile#communication"><MessageSquare />{" "}{t("publicCompletion.memberShell.offersAndNews")}</Link>
-      </DropdownMenuItem>
-      {app.ready && !app.standalone ? (
-        <DropdownMenuItem className={itemClass} onSelect={start}>
-          <SquarePlus />{" "}{t("setup.app.menuItem")}</DropdownMenuItem>
-      ) : null}
-      <DropdownMenuSeparator />
-      <DropdownMenuItem className={itemClass} onClick={onSignOut}>
-        <LogOut />{" "}{t("common.action.signOut")}</DropdownMenuItem>
-    </>
-  );
 }
 
 export function CustomerShell({ children }: { children: ReactNode }) {
@@ -92,8 +50,9 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { session } = useApp();
-  const { customerSignedIn, platformAdminSignedIn, previewSessionReady, signOutCustomer } = useExperience();
+  const { customerSignedIn, experienceStatus, platformAdminSignedIn, previewSessionReady, signOutCustomer } = useExperience();
   const identity = useRivetIdentity();
+  const { isLoaded: clerkLoaded, isSignedIn: clerkSignedIn } = useAuth();
   const { signOut: signOutClerk } = useClerk();
   const customer = useCustomerPersona();
   const [signingOut, setSigningOut] = useState(false);
@@ -101,6 +60,8 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const tabs = useMemberTabs(pathname, Boolean(customerSignedIn && customer));
 
   const protectedMemberRoute = isProtectedMemberRoute(pathname);
+  const signedOut = !DEMO_AUTH_BYPASS && clerkLoaded && !clerkSignedIn;
+  const opening = memberAppOpening({ protectedRoute: protectedMemberRoute, previewSessionReady, customerSignedIn, signedOut, identity, experienceStatus });
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
@@ -121,6 +82,12 @@ export function CustomerShell({ children }: { children: ReactNode }) {
     router.replace(elevatedDestination);
   }, [elevatedDestination, router]);
 
+  // The member's own pages are not mounted while the app opens, so their own
+  // sign-in redirect cannot run; the shell sends a signed-out visitor on.
+  useEffect(() => {
+    if (protectedMemberRoute && signedOut && !customerSignedIn) router.replace("/login");
+  }, [customerSignedIn, protectedMemberRoute, router, signedOut]);
+
   // The member shell maintains a small preview persona in sessionStorage, but
   // a deployed account is authenticated by Clerk. Clearing only the preview
   // state left the Clerk session alive, which immediately made a member appear
@@ -137,13 +104,18 @@ export function CustomerShell({ children }: { children: ReactNode }) {
     }
   };
 
-  // A cold preview restores its member from sessionStorage after hydration.
-  // Mounting the public layout first would replace the page when that finishes,
-  // discarding an early tab selection or input focus along with its subtree.
-  if (!previewSessionReady) return <AuthTransition title={t("publicCompletion.memberShell.loading")} detail={t("publicCompletion.memberShell.justAMoment")} />;
-
   if (signingOut) return <AuthTransition title={t("marketing.memberShell.signingOut")} detail={t("publicCompletion.memberShell.returningToSignIn")} />;
   if (elevatedDestination) return <AuthTransition title={t("publicCompletion.memberShell.openingAccount")} detail={t("publicCompletion.memberShell.openingDetail")} />;
+
+  // Opening the app (from the home screen, or a cold load of a member page):
+  // the mark on plain paper until the member is known, then the paper fades
+  // off the page. The curtain stays the second child throughout, so React
+  // keeps it and it lifts off whatever replaced the wait. Nothing under it is
+  // mounted while it waits: a cold preview restores its member after
+  // hydration, and mounting the public layout first would replace the page
+  // then, discarding an early tap or input focus along with its subtree.
+  const curtain = <WorkspaceCurtain ready={!opening} label={t("publicCompletion.memberShell.loading")} launch />;
+  if (opening) return <>{null}{curtain}</>;
 
   // A visitor who is not signed in as a member is on the public site: the
   // marketplace and a gym's page wear the site's own bar and footer, with the
@@ -151,18 +123,25 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // gym application.
   if (!customerSignedIn) {
     return (
-      <MemberAppProvider>
-        <PublicDocumentPage path={pathname} audience="member">
-          {children}
-        </PublicDocumentPage>
-      </MemberAppProvider>
+      <>
+        <MemberAppProvider>
+          <PublicDocumentPage path={pathname} audience="member">
+            {children}
+          </PublicDocumentPage>
+        </MemberAppProvider>
+        {curtain}
+      </>
     );
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
-  const accountActive = !tabs.activeHref && (isActive("/customer/profile") || isActive("/customer/getting-started"));
+  // The guide is reached from the account's menu, so it stays under Account.
+  const dockActive = tabs.activeHref ?? (isActive("/customer/getting-started") ? MEMBER_ACCOUNT_HREF : undefined);
+  const dock = customer ? [...nav, ACCOUNT_TAB] : nav;
 
   return (
+    <>
+    <MemberSignOutProvider value={() => void handleSignOut()}>
     <MemberAppProvider>
     <div className="member-app-shell flex min-h-dvh flex-col bg-paper sm:pb-0">
       <MemberPwaManager />
@@ -201,24 +180,19 @@ export function CustomerShell({ children }: { children: ReactNode }) {
 
           <div className="ms-auto flex items-center gap-2">
             {customer ? (
-              <div className="hidden sm:block">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken"
-                      aria-label={t("marketing.memberShell.accountMenu")}
-                    >
-                      <Monogram name={customer.name} size="sm" />
-                      <span className="hidden text-[13px] font-medium text-ink md:block">{customer.name}</span>
-                      <ChevronDown className="hidden size-3.5 text-ink-3 md:block" aria-hidden />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} />
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <Link
+                href={MEMBER_ACCOUNT_HREF}
+                prefetch
+                className={cn(
+                  "hidden items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-sunken sm:flex",
+                  dockActive === MEMBER_ACCOUNT_HREF && "bg-sunken",
+                )}
+                aria-current={isActive(MEMBER_ACCOUNT_HREF) ? "page" : undefined}
+              >
+                <span className="sr-only">{t("marketing.memberShell.account")}</span>
+                <Monogram name={customer.name} size="sm" />
+                <span className="hidden text-[13px] font-medium text-ink md:block">{customer.name}</span>
+              </Link>
             ) : null}
           </div>
         </div>
@@ -235,9 +209,9 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           aria-label={t("marketing.memberShell.navigation")}
         >
           <div className="mx-auto grid h-16 max-w-md grid-cols-4 px-3">
-            {nav.map((item) => {
+            {dock.map((item) => {
               // Lit the moment it is tapped; aria-current follows the page itself.
-              const active = tabs.activeHref === item.href;
+              const active = dockActive === item.href;
               return (
                 <Link
                   key={item.href}
@@ -255,26 +229,13 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn("member-tab flex flex-col items-center justify-center gap-1 text-[12px]", accountActive ? "font-semibold text-ink" : "font-medium text-ink-3")}
-                  aria-label={t("marketing.memberShell.accountMenu")}
-                >
-                  <UserRound className="member-tab-icon size-[22px]" strokeWidth={accountActive ? 2.4 : 1.8} aria-hidden />
-                  <span>{t("marketing.memberShell.account")}</span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" sideOffset={10} className="w-64">
-                <AccountMenuItems name={customer.name} email={customer.email} onSignOut={() => void handleSignOut()} touch />
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </nav>
       ) : null}
     </div>
     </MemberAppProvider>
+    </MemberSignOutProvider>
+    {curtain}
+    </>
   );
 }

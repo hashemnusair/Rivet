@@ -312,7 +312,6 @@ export const marketing = {
     exploreGyms: "Explore gyms",
     explore: "Explore",
     account: "Account",
-    accountMenu: "Open account menu",
     profile: "Profile",
     communicationSettings: "Communication settings",
     signingOut: "Signing you out",

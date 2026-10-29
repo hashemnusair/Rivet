@@ -84,7 +84,7 @@ for (const width of [360, 390, 768, 820, 1280, 1440]) {
       if (slug === "discover" || slug === "gym") {
         // Public routes paint before the member session and the live directory
         // are restored; capture the settled, signed-in state only.
-        await expect(page.getByRole("button", { name: "Open account menu" })).toBeVisible();
+        await expect(page.getByRole("link", { name: /^Account/ }).filter({ visible: true })).toHaveCount(1);
         await expect(page.getByRole("link", { name: "Pulse Lab" })).toHaveCount(0);
       }
       if (slug === "gym") {
@@ -168,20 +168,38 @@ test("the phone dock clears the home indicator, yields to the keyboard and keeps
   await context.close();
 });
 
-test("the account menu reaches communication settings and signs out from the dock", async ({ browser }) => {
+test("Account opens the profile, whose ⋯ reaches the rest of the account and signs out", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const page = await context.newPage();
   await enterMember(page);
   await page.goto("/customer/my-gyms");
+  const dock = page.locator(".member-bottom-nav");
+  await dock.getByRole("link", { name: "Account" }).tap();
+  await expect(page).toHaveURL(/\/customer\/profile$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Personal information" })).toBeVisible();
+  await expect(dock.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page");
+
+  await page.getByRole("link", { name: "Edit info" }).tap();
+  await expect(page).toHaveURL(/\/customer\/profile\/edit$/);
+  // The seeded member has not chosen a gender yet; the form requires one.
+  await page.getByLabel("Gender").selectOption("female");
+  await page.getByLabel("City").fill("Amman");
+  await page.getByRole("button", { name: "Save profile" }).tap();
+  await expect(page).toHaveURL(/\/customer\/profile$/);
+  await expect(page.getByRole("region", { name: "Address" })).toContainText("CityAmman");
+
   // Touch all the way through: a mouse click after a touch tap is a test
   // artifact no phone produces, and Radix treats mixed pointer types as a
   // dismissed selection.
-  await page.getByRole("button", { name: "Open account menu" }).tap();
+  await page.getByRole("button", { name: "More options" }).tap();
   await page.getByRole("menuitem", { name: "Offers and news" }).tap();
-  await expect(page).toHaveURL(/\/customer\/profile#communication$/);
-  await expect(page.getByRole("heading", { name: "Offers and news" })).toBeVisible();
+  await expect(page).toHaveURL(/\/customer\/profile\/offers$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Offers and news" })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Send me offers and news" })).toBeVisible();
-  await page.getByRole("button", { name: "Open account menu" }).tap();
+  await page.getByRole("link", { name: "Back to profile" }).tap();
+  await expect(page).toHaveURL(/\/customer\/profile$/);
+  await page.getByRole("button", { name: "More options" }).tap();
   await page.getByRole("menuitem", { name: "Sign out" }).tap();
   await expect(page).toHaveURL(/\/login$/);
   await context.close();

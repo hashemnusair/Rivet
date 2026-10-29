@@ -336,7 +336,6 @@ export const marketing: typeof EnMarketing = {
     exploreGyms: "استكشف الأندية",
     explore: "استكشاف",
     account: "الحساب",
-    accountMenu: "فتح قائمة الحساب",
     profile: "الملف الشخصي",
     communicationSettings: "إعدادات التواصل",
     signingOut: "جارٍ تسجيل خروجك",

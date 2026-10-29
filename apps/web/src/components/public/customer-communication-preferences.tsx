@@ -39,12 +39,10 @@ export function CustomerCommunicationPreferences() {
   };
 
   return (
-    <section id="communication" aria-labelledby="communication-heading" className="panel scroll-mt-24 p-4 sm:p-5">
+    // Its page is titled "Offers and news", so the panel names itself only for assistive technology.
+    <section aria-label={t("customerPortal.marketingTitle")} className="panel p-4 sm:p-5">
       <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <h2 id="communication-heading" className="text-[13px] font-semibold">{t("customerPortal.marketingTitle")}</h2>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.marketingDescription")}</p>
-        </div>
+        <p className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-ink-2">{t("customerPortal.marketingDescription")}</p>
         <Switch checked={preference.optedIn} onCheckedChange={(checked) => void toggle(checked)} disabled={saving} aria-label={t("customerPortal.marketingToggle")} />
       </div>
       <p className="mt-3 text-[12.5px] text-ink-3">

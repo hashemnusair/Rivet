@@ -18,8 +18,12 @@ type Phase = "covering" | "ready" | "lifting" | "gone";
  * this curtain was actually seen, so a shell that is ready on its first render
  * never shows it. While it covers a wait it is the page's status, named by
  * `label`; once the wait is over it is decoration and lets every click through.
+ *
+ * `launch` is the member app opening from the home screen: the finished mark
+ * sits exactly in the middle, where the phone's launch image drew it, so the
+ * hand-over from the phone to the page does not move or redraw it.
  */
-export function WorkspaceCurtain({ ready, label }: { ready: boolean; label: string }) {
+export function WorkspaceCurtain({ ready, label, launch = false }: { ready: boolean; label: string; launch?: boolean }) {
   const [phase, setPhase] = useState<Phase>(ready ? "gone" : "covering");
 
   // Before paint, so the curtain never claims to be loading over a shell that is ready.
@@ -52,7 +56,7 @@ export function WorkspaceCurtain({ ready, label }: { ready: boolean; label: stri
   const waiting = phase === "covering";
   return (
     <div
-      className={cn(styles.curtain, !waiting && styles.done, phase === "lifting" && styles.lifting)}
+      className={cn(styles.curtain, launch && styles.launch, !waiting && styles.done, phase === "lifting" && styles.lifting)}
       role={waiting ? "status" : undefined}
       aria-label={waiting ? label : undefined}
       aria-hidden={waiting ? undefined : true}
@@ -60,7 +64,7 @@ export function WorkspaceCurtain({ ready, label }: { ready: boolean; label: stri
     >
       <div className={styles.cover} />
       <div className={styles.center}>
-        <RivetMarkLoader className="h-14 w-auto text-ink" />
+        <RivetMarkLoader assembled={launch} className="h-14 w-auto text-ink" />
         <p className={styles.label}>{label}</p>
       </div>
     </div>

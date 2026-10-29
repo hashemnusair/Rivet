@@ -50,6 +50,15 @@
   animation: curtain-label 300ms ease 700ms both;
 }
 
+/* Opening the member app: the mark alone holds the middle (half of its 3.5rem
+   height above, half below) and the words hang beneath it. */
+.launch .label {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(50% + 1.75rem + 1.25rem);
+  padding-inline: 1.5rem;
+}
+
 @keyframes curtain-fade {
   to { opacity: 0; }
 }
