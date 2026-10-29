@@ -26,6 +26,15 @@ describe("SignedInGuard", () => {
     expect(state.replace).not.toHaveBeenCalled();
   });
 
+  it("treats the Arabic landing like the English one", () => {
+    window.history.replaceState({}, "", "/ar?view=landing");
+    render(<SignedInGuard />);
+    expect(state.replace).not.toHaveBeenCalled();
+    window.history.replaceState({}, "", "/ar");
+    render(<SignedInGuard />);
+    expect(state.replace).toHaveBeenCalledWith("/platform");
+  });
+
   it("still hands off from the resolver, which is not a signed-out page", () => {
     window.history.replaceState({}, "", "/login");
     render(<SignedInGuard />);

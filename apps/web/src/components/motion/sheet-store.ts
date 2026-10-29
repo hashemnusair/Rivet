@@ -22,6 +22,14 @@ export const OPENING_DRAWING: SheetDock = "account";
 /** A fresh document's pre-paint cover (`sheet-entry`), while it is on the page. */
 export const SHEET_ENTRY_ID = "rivet-sheet-entry";
 
+/**
+ * Session storage: the path a sheet is leaving this document for on the same
+ * origin, so that page's pre-paint cover knows a sheet brings it. The landing
+ * and the doors are always covered; the other public pages only when a sheet
+ * brings them.
+ */
+export const SHEET_ARRIVAL_KEY = "rivet.sheet.arrival";
+
 /** The sign-in drawings' viewBox. Each drawing is centred in its box and scaled evenly to fit. */
 export const ART_VIEWBOX = { width: 800, height: 900 } as const;
 
@@ -43,6 +51,7 @@ export const IDLE_SHEET: SheetState = { phase: "idle", target: "", from: "", doc
 /** The public pages a sheet goes to, and the one whose art panel takes its drawing. */
 const SHEET_ROUTES: Record<string, { dock?: SheetDock }> = {
   "/": {},
+  "/ar": {},
   "/login": { dock: "account" },
   "/login/gym": { dock: "staff" },
   "/login/member": { dock: "member" },

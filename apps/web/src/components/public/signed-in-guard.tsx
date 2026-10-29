@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
 import { landingViewRequested } from "@/lib/routing/signed-in-routing";
+import { isLandingPath } from "@/lib/routing/landing";
 
 /**
  * Sends a visitor who arrives signed in at a signed-out page (the landing,
@@ -28,7 +29,7 @@ export function SignedInGuard({ demoOnly = false }: { demoOnly?: boolean }) {
     if (viewer.status !== "signed-in") return;
     // Only the landing asked for on purpose stays; the resolver at /login and
     // every other page this guard sits on still hand off as before.
-    if (window.location.pathname === "/" && landingViewRequested(window.location.search)) return;
+    if (isLandingPath(window.location.pathname) && landingViewRequested(window.location.search)) return;
     router.replace(viewer.destination.href);
   }, [demoOnly, router, viewer]);
 

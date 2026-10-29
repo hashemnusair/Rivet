@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from "react";
 import { cn } from "@/lib/utils/cn";
 import { decideHostRouting } from "@/lib/routing/host-routing";
-import { ART_VIEWBOX, IDLE_SHEET, OPENING_DRAWING, sheetRoute, sheetStore, sheetTarget, type SheetDock } from "./sheet-store";
+import { isLandingPath } from "@/lib/routing/landing";
+import { ART_VIEWBOX, IDLE_SHEET, OPENING_DRAWING, SHEET_ARRIVAL_KEY, sheetRoute, sheetStore, sheetTarget, type SheetDock } from "./sheet-store";
 import styles from "./page-sheet.module.css";
 
 /*
@@ -21,7 +22,9 @@ import styles from "./page-sheet.module.css";
  * while the next page's stylesheets are fetched, and that page is only asked
  * for once it is fully drawn. The next page opens on the same drawing (its
  * pre-paint cover, `sheet-entry`), which lifts as soon as that page has
- * painted, gliding onto a sign-in page's art panel as it does here. Product
+ * painted, gliding onto a sign-in page's art panel as it does here. The
+ * landing has its own root layout (it is built ahead), so going between it and
+ * any other page also loads a new document and goes the same way. Product
  * pages keep their short entrance.
  */
 
@@ -69,8 +72,19 @@ const DRAW_PACE = 0.3;
 
 const reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** Whether a sheet's target is on another RIVET host, so this document is left behind. */
+/** Whether a sheet's target is on another RIVET host. */
 const crossesHost = (target: string) => new URL(target, window.location.href).origin !== window.location.origin;
+
+/** Whether a path is the public landing here; an app host's root is its workspace. */
+const isLanding = (pathname: string) => isLandingPath(pathname) && decideHostRouting(window.location.hostname, pathname).kind !== "rewrite";
+
+/**
+ * Whether a sheet's target is drawn in another document, so this one is left
+ * behind: another host, or between the landing and the product's pages (two
+ * root layouts, which Next goes between with a full load).
+ */
+const leavesDocument = (target: string) =>
+  crossesHost(target) || isLanding(new URL(target, window.location.href).pathname) !== isLanding(window.location.pathname);
 
 const preconnected = new Set<string>();
 
@@ -209,8 +223,16 @@ export function PageSheet() {
   const departed = useRef(-1);
   const depart = useCallback(() => {
     const current = sheetStore.get();
-    if ((current.phase !== "rack" && current.phase !== "hold") || !crossesHost(current.target) || departed.current === current.startedAt) return;
+    if ((current.phase !== "rack" && current.phase !== "hold") || !leavesDocument(current.target) || departed.current === current.startedAt) return;
     departed.current = current.startedAt;
+    const next = new URL(current.target, window.location.href);
+    if (next.origin === window.location.origin) {
+      try {
+        window.sessionStorage.setItem(SHEET_ARRIVAL_KEY, next.pathname);
+      } catch {
+        // Without storage the next page only misses its cover.
+      }
+    }
     window.location.assign(current.target);
   }, []);
 
@@ -221,7 +243,8 @@ export function PageSheet() {
   // already owns the arrival and is kept. A full document lifts its own
   // pre-paint cover once painted (`sheet-entry`), without waiting for this.
   useLayoutEffect(() => {
-    const returningHome = pathname === "/" && previousPath.current !== pathname;
+    // The landing's language switch moves its address between "/" and "/ar": not an arrival.
+    const returningHome = pathname === "/" && !isLandingPath(previousPath.current);
     previousPath.current = pathname;
     if (returningHome && sheetStore.get().phase === "idle") arrive(pathname);
   }, [pathname]);
@@ -232,7 +255,7 @@ export function PageSheet() {
     const restored = (event: PageTransitionEvent) => {
       if (event.persisted) {
         settle();
-        if (window.location.pathname === "/") arrive("/");
+        if (isLandingPath(window.location.pathname)) arrive(window.location.pathname);
       }
     };
     const historyChanged = () => {
@@ -242,7 +265,7 @@ export function PageSheet() {
       if (home && current.phase !== "idle" && current.target === "/" && current.from === "") return;
       settle();
       // Moving between anchors on the landing is scrolling, not a page arrival.
-      if (home && previousPath.current !== "/") arrive("/");
+      if (home && !isLandingPath(previousPath.current)) arrive("/");
     };
     window.addEventListener("pageshow", restored);
     window.addEventListener("popstate", historyChanged);
@@ -261,13 +284,13 @@ export function PageSheet() {
   // A page on another host is asked for later, once the drawing has drawn itself (`depart`).
   useEffect(() => {
     if (sheet.phase !== "rack") return;
-    const crossingHost = crossesHost(sheet.target);
-    if (!crossingHost) router.prefetch(sheet.target);
+    const leaving = leavesDocument(sheet.target);
+    if (!leaving) router.prefetch(sheet.target);
     const timer = window.setTimeout(() => {
       document.documentElement.setAttribute("data-page-covered", "");
       if (sheet.dock) document.documentElement.setAttribute("data-sheet-docking", "");
       sheetStore.set({ ...sheet, phase: "hold" });
-      if (!crossingHost) router.push(sheet.target);
+      if (!leaving) router.push(sheet.target);
     }, RACK_MS);
     return () => window.clearTimeout(timer);
   }, [sheet, router]);
@@ -277,7 +300,7 @@ export function PageSheet() {
     if (sheet.phase !== "hold") return;
     const elapsed = performance.now() - sheet.startedAt;
     if (pathname === sheet.from) {
-      if (!crossesHost(sheet.target)) {
+      if (!leavesDocument(sheet.target)) {
         const timer = window.setTimeout(() => window.location.assign(sheet.target), Math.max(0, STALL_MS - elapsed));
         return () => window.clearTimeout(timer);
       }
@@ -348,8 +371,8 @@ export function PageSheet() {
 
   if (sheet.phase === "idle") return null;
   const lifting = sheet.phase === "lift";
-  // Leaving for another host, the drawing stays on the one it opened on: the one the next page opens on.
-  const departing = crossesHost(sheet.target);
+  // Leaving this document, the drawing stays on the one it opened on: the one the next page opens on.
+  const departing = leavesDocument(sheet.target);
   return (
     <div
       className={cn(styles.sheet, sheet.phase === "rack" && styles.covering, lifting && styles.lifting)}

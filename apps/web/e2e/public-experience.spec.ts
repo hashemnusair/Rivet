@@ -367,21 +367,23 @@ test.describe("RIVET platform administration", () => {
     await expect(suspendedCard).toBeVisible();
     await expect(suspendedCard.getByLabel("Subscription status: Suspended")).toBeVisible();
 
-    // Public discovery and the landing-page network section must both consume
-    // the filtered marketplace projection, never the platform tenant array.
-    // The landing is never shown to a signed-in account, so the administrator
-    // signs out and reaches the site from the sign-in page's brand link.
+    // Public discovery must consume the filtered marketplace projection, never
+    // the platform tenant array. The mock keeps the suspension only in this
+    // document, and the landing is a document of its own (built ahead for the
+    // edge), so discovery is reached in-app: the administrator signs out and
+    // continues as a member whose sign-in opens it. The landing's network
+    // section reads the same projection (`useMarketplaceGyms`), whose filter
+    // src/lib/public/marketplace-filters.test.ts covers.
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
-    await page.getByRole("link", { name: "RIVET home" }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await page.getByRole("link", { name: "Find a gym", exact: true }).first().click();
+    await page.getByRole("link", { name: "Member preview", exact: true }).click();
+    await expect(page).toHaveURL(/\/login\/member$/);
+    await page.getByRole("radio", { name: /Yousef Nasser/i }).click();
+    await page.getByTestId("member-continue").click();
     await expect(page).toHaveURL(/\/customer\/discover$/);
     await expect(page.getByRole("heading", { name: "Find a gym", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
-
-    await page.locator('a[href="/"]').first().click();
-    await expect(page).toHaveURL(/\/$/);
+    // Forge is the seed's only listed gym, so the settled directory is empty.
+    await expect(page.getByRole("heading", { name: "No gyms here yet" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Forge Fitness Club/i })).toHaveCount(0);
   });
 });

@@ -171,13 +171,19 @@ test("landing arrival plays on a full load and browser Back", async ({ page }) =
   // A full load opens on the drawn sheet, which lifts by itself once the page has painted.
   await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
   await settled(page);
+  // The landing is a document of its own: the drawing plays here, and the
+  // page it goes to opens on the same sheet, which lifts once it has painted.
   await page.getByRole("link", { name: "Privacy policy", exact: true }).click();
+  await expect(page.locator("[data-page-sheet] svg")).toBeVisible();
   await expect(page).toHaveURL(/\/privacy$/);
+  await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
   await settled(page);
+  // Back opens the landing's document again, on its arrival sheet.
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.locator("[data-page-sheet]")).toBeVisible();
+  await expect.poll(() => sheetTrace(page)).toEqual({ entryAdded: expect.any(Number), entryRemoved: expect.any(Number) });
   await settled(page);
+  await expect(page.locator("[data-landing-header]")).toBeVisible();
 });
 
 test("fresh sign-in documents hydrate cleanly under their arrival sheet", async ({ page }) => {

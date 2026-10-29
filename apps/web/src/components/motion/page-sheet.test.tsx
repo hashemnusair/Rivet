@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PageSheet, SheetLink, startSheet } from "./page-sheet";
-import { IDLE_SHEET, SHEET_ENTRY_ID, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
+import { IDLE_SHEET, SHEET_ARRIVAL_KEY, SHEET_ENTRY_ID, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
 import { drawingSvg } from "@/app/(main)/login/sign-in-drawings";
 import { SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
 import { SheetEntryArt } from "./sheet-entry-art";
@@ -137,6 +137,28 @@ describe("page sheet", () => {
     expect(container.querySelector("style")?.textContent).toBe(`html::before{background-image:${svgUrl(drawingSvg("staff"))}}`);
   });
 
+  it("covers the Arabic landing, and another public page only when a sheet brought it", () => {
+    runEntry("https://www.rivetjo.com/ar");
+    expect(document.getElementById(SHEET_ENTRY_ID)).not.toBeNull();
+    document.getElementById(SHEET_ENTRY_ID)?.remove();
+
+    runEntry("https://www.rivetjo.com/privacy");
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+    window.sessionStorage.setItem(SHEET_ARRIVAL_KEY, "/terms");
+    runEntry("https://www.rivetjo.com/privacy");
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+    // Read once, whichever page reads it.
+    expect(window.sessionStorage.getItem(SHEET_ARRIVAL_KEY)).toBeNull();
+
+    window.sessionStorage.setItem(SHEET_ARRIVAL_KEY, "/privacy");
+    runEntry("https://www.rivetjo.com/privacy");
+    expect(document.getElementById(SHEET_ENTRY_ID)).not.toBeNull();
+    expect(window.sessionStorage.getItem(SHEET_ARRIVAL_KEY)).toBeNull();
+    document.getElementById(SHEET_ENTRY_ID)?.remove();
+    runEntry("https://www.rivetjo.com/privacy");
+    expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
+  });
+
   it("does not cover reduced motion or an app-host workspace root", () => {
     runEntry("https://www.rivetjo.com/", true);
     expect(document.getElementById(SHEET_ENTRY_ID)).toBeNull();
@@ -182,6 +204,17 @@ describe("page sheet", () => {
     expect(nav.push).not.toHaveBeenCalled();
   });
 
+  it("plays no arrival when the landing's language switch moves its address", () => {
+    window.history.replaceState(null, "", "/ar");
+    nav.pathname = "/ar";
+    const { rerender } = render(<PageSheet />);
+    window.history.replaceState(null, "", "/");
+    nav.pathname = "/";
+    rerender(<PageSheet />);
+    expect(sheetStore.get().phase).toBe("idle");
+    expect(html).not.toHaveAttribute("data-page-covered");
+  });
+
   it("leaves navigation alone when nothing is mounted to play a sheet", () => {
     expect(startSheet("/login")).toBe(false);
     expect(sheetStore.get().phase).toBe("idle");
@@ -202,6 +235,8 @@ describe("page sheet", () => {
   });
 
   it("covers the page, navigates under it, and lifts once the next page is there", () => {
+    window.history.replaceState(null, "", "/privacy");
+    nav.pathname = "/privacy";
     const { rerender } = render(<PageSheet />);
     act(() => {
       startSheet("/terms");
@@ -257,6 +292,37 @@ describe("page sheet", () => {
     }
   });
 
+  it.each([
+    ["/", "/privacy"],
+    ["/ar", "/login"],
+    ["/terms", "/"],
+  ])("goes from %s to %s, between the landing's document and the product's, as it goes to another host", (from, to) => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      window.history.replaceState(null, "", from);
+      nav.pathname = from;
+      render(<PageSheet />);
+      act(() => {
+        expect(startSheet(to)).toBe(true);
+      });
+      // Not a router push: the drawing plays here, and the page is asked for once it is drawn.
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(sheetStore.get().phase).toBe("hold");
+      expect(documentNavigations(errors)).toBe(0);
+      act(() => vi.advanceTimersByTime(100));
+      expect(documentNavigations(errors)).toBe(1);
+      act(() => vi.advanceTimersByTime(2_000));
+      expect(documentNavigations(errors)).toBe(1);
+      expect(nav.push).not.toHaveBeenCalled();
+      expect(nav.prefetch).not.toHaveBeenCalled();
+      // The next page on this origin is told a sheet brings it, so its pre-paint cover takes over.
+      expect(window.sessionStorage.getItem(SHEET_ARRIVAL_KEY)).toBe(to);
+    } finally {
+      window.sessionStorage.removeItem(SHEET_ARRIVAL_KEY);
+      errors.mockRestore();
+    }
+  });
+
   it("lifts a stalled load on another host instead of asking for it again", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -278,6 +344,8 @@ describe("page sheet", () => {
   });
 
   it("lifts only once the first drawing is fully drawn, so it is never cut off", () => {
+    window.history.replaceState(null, "", "/privacy");
+    nav.pathname = "/privacy";
     const { rerender } = render(<PageSheet />);
     act(() => {
       startSheet("/terms");
@@ -293,6 +361,8 @@ describe("page sheet", () => {
   });
 
   it("tells the sign-in page its drawing is on the way, and stops when no panel is there to land on", () => {
+    window.history.replaceState(null, "", "/privacy");
+    nav.pathname = "/privacy";
     const { rerender } = render(<PageSheet />);
     act(() => {
       startSheet("/login");
