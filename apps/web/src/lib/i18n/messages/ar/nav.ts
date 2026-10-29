@@ -46,6 +46,11 @@ export const nav: typeof EnNav = {
     activeBranch: "الفرع النشط",
     branchUnavailable: "الفرع غير متاح",
   },
+  phone: {
+    title: "هذه الصفحة متاحة على الكمبيوتر أو الجهاز اللوحي",
+    body: "يعرض RIVET على الهاتف الرئيسية والاستقبال والأعضاء والحصص والتدريب الشخصي فقط.",
+    goToReception: "الانتقال إلى الاستقبال",
+  },
   chrome: {
     search: "بحث…",
     commandPalettePlaceholder: "ابحث عن الأعضاء بالاسم أو الهاتف أو الرقم — أو انتقل إلى صفحة…",

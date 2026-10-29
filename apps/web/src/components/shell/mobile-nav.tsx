@@ -13,6 +13,7 @@ import { useT } from "@/lib/i18n/provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { navIsActive } from "./sidebar";
 import { NAV_SECTIONS, navItemIsVisible } from "./nav-config";
+import { usePhoneAllows } from "./phone-page-boundary";
 import { ContextLabel } from "@/components/ui/typography";
 import { BetaBadge, BetaNote } from "@/components/shared/beta-badge";
 
@@ -25,6 +26,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   const pathname = usePathname();
   const t = useT();
   const { session, setBranch } = useApp();
+  const phoneAllows = usePhoneAllows();
   const brandLogo = session?.organization.brand?.logoUrl;
   const brandName = session?.organization.name ?? "RIVET";
 
@@ -77,7 +79,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
           {/* Nav — same sections and permission filtering as the desktop sidebar */}
           <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label={t("nav.sidebar.primary")}>
             {NAV_SECTIONS.map((section) => {
-              const visible = section.items.filter((item) => navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
+              const visible = section.items.filter((item) => phoneAllows(item.href) && navItemIsVisible(item, session ? { permissions: session.permissions, workspace: session.workspace } : undefined));
               if (visible.length === 0) return null;
               return (
                 <div key={section.labelKey} className="mb-4">

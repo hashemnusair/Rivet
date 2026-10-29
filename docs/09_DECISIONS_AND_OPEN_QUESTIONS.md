@@ -731,3 +731,39 @@ Decisions taken in that change (assumptions, open to the owners):
   the first screen), no manifest screenshots (they would show demo data), no
   pull-to-refresh on iPhone, and no caching of member data for offline use (unchanged
   privacy policy in `public/sw.js`).
+
+## Gym workspace on phones — 2026-10-29
+
+Elias decided that the gym workspace on a phone keeps only the most important daily
+work and that the rest is not shown on phones at all. He chose the list and the
+behaviour; the implementation details are assumptions, open to the owners.
+
+- **On phones (Elias).** Dashboard (key numbers only), Reception (check-in, renew, take
+  payment), Members and member profiles, Classes, Personal training.
+- **Not on phones (Elias).** Every other page: Checkout, Daily checklist, Stock &
+  purchasing, Leads, Follow-ups, Payments, Reports, Statements, Activity log, Downloads,
+  Support, Settings, Getting started, plans, automations and the rest. The phone menu
+  and search do not list them, and opening one (a link, bookmark or notification) shows
+  "This page is for a computer or tablet" with a button to Reception (Elias chose the
+  message over a silent redirect).
+- **Tablets keep everything (Elias).** Reception desks often run on tablets.
+- **What counts as a phone (assumption).** A touch screen (`pointer: coarse`) whose
+  shorter side is under 600 CSS px, measured on the screen rather than the window: a
+  phone turned sideways is still a phone; a narrow desktop window or a tablet in split
+  view is not. The smallest common tablets (7-inch Android, iPad mini) are 600 px or
+  wider. Desktop browser tests at 390 px therefore still see every page; the phone
+  checks in `e2e/phone-pages.spec.ts` emulate a touch phone.
+- **Inside the phone pages (assumptions).** Add member (`/members/new`) stays, as the
+  start of a sale at the desk; Import and Duplicates do not, and their buttons are hidden
+  on phones. Receipts (`/payments/receipts/*`) open, because taking a payment links to
+  one. The subscription agreement page opens, so a new owner on a phone is not locked
+  out. Reception hides its "shift history" link; opening and closing the drawer stay.
+  The account menu keeps language and sign-out only.
+- **Dashboards on phones (assumption).** Owner, manager, sales and reception dashboards
+  show the greeting and the key numbers only; the lists, charts and tables below are for
+  a computer or tablet. Sales loses its Follow-ups button. The trainer dashboard is
+  unchanged, because everything on it is Personal training.
+- **Not access control.** This is about screens. The same person opens every page their
+  role allows on a computer or tablet, and the server still checks every call. Wazen
+  (when available) is unchanged on phones and may link to a page that then shows the
+  message.

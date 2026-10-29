@@ -28,6 +28,7 @@ import { NaturalMemberFilters } from "@/features/assist/natural-filters";
 import { CollectionCalls } from "@/features/assist/collection-calls";
 import { useLocale, type TKey } from "@/lib/i18n/provider";
 import { useMembersScreen } from "@/features/ask-rivet/screens";
+import { useIsPhone } from "@/components/shell/phone-page-boundary";
 
 type MemberColumn = "phone" | "branch" | "plan" | "status" | "expiry" | "balance" | "last_check_in";
 const ALL_COLUMNS: Array<{ key: MemberColumn; label: TKey }> = [
@@ -36,6 +37,7 @@ const ALL_COLUMNS: Array<{ key: MemberColumn; label: TKey }> = [
 ];
 
 function MembersPageInner() {
+  const isPhone = useIsPhone();
   const { session } = useApp();
   const { t, isolate } = useLocale();
   const router = useRouter();
@@ -105,7 +107,7 @@ function MembersPageInner() {
   const validBulk = selected.size > 0 && (bulkKind === "members_archive" ? bulkReason.trim().length >= 3 : bulkValue.trim().length > 0);
 
   return <div className="space-y-4">
-    <PageHeader title={t("members.list.title")} description={t("members.list.description")} actions={<><Button asChild variant="secondary" size="sm"><Link href="/members/duplicates"><GitMerge /> {t("members.list.actions.duplicates")}</Link></Button><Gate permission="members.write"><Button asChild variant="secondary" size="sm"><Link href="/members/import"><FileUp /> {t("members.list.actions.import")}</Link></Button><Button asChild size="sm" data-testid="add-member"><Link href="/members/new"><Plus /> {t("members.list.actions.add")}</Link></Button></Gate></>} />
+    <PageHeader title={t("members.list.title")} description={t("members.list.description")} actions={<>{isPhone ? null : <Button asChild variant="secondary" size="sm"><Link href="/members/duplicates"><GitMerge /> {t("members.list.actions.duplicates")}</Link></Button>}<Gate permission="members.write">{isPhone ? null : <Button asChild variant="secondary" size="sm"><Link href="/members/import"><FileUp /> {t("members.list.actions.import")}</Link></Button>}<Button asChild size="sm" data-testid="add-member"><Link href="/members/new"><Plus /> {t("members.list.actions.add")}</Link></Button></Gate></>} />
     <div className="grid grid-cols-2 items-center gap-2 sm:grid-cols-3 min-[1180px]:flex min-[1180px]:flex-nowrap" data-testid="member-filters">
       <div className="relative col-span-2 min-w-0 sm:col-span-3 min-[1180px]:col-span-1 min-[1180px]:min-w-32 min-[1180px]:flex-1"><Search className="absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("members.list.search.placeholder")} className="h-11 ps-8 min-[1180px]:h-8" aria-label={t("members.list.search.label")} dir="auto" data-testid="member-search" /></div>
       <Select value={recordStatus} onValueChange={(value) => replaceParams({ record: value === "active" ? undefined : value })}><SelectTrigger sizeVariant="sm" className="h-11 min-[1180px]:h-8 min-[1180px]:w-28" aria-label={t("members.list.filters.recordLabel")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">{t("members.list.filters.recordActive")}</SelectItem><SelectItem value="archived">{t("members.list.filters.recordArchived")}</SelectItem></SelectContent></Select>

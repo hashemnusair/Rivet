@@ -21,9 +21,11 @@ import { visibleBranchId } from "@/lib/domain/branch-scope";
 
 import { useGreeting } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
+import { useIsPhone } from "@/components/shell/phone-page-boundary";
 
 export function ReceptionDashboard() {
   const { session } = useApp();
+  const isPhone = useIsPhone();
   const { t, isolate } = useLocale();
   const format = useFormat(session?.organization.timezone);
   const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
@@ -116,6 +118,8 @@ export function ReceptionDashboard() {
         </Metric>
       </section>
 
+      {/* Phones get the key numbers only. */}
+      {isPhone ? null : <>
       <div className="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
         <TodayQueue data={dashboard.data?.todayQueue} loading={dashboard.isLoading} />
         <section className="panel overflow-hidden" aria-labelledby="reception-dashboard-checkins">
@@ -195,6 +199,7 @@ export function ReceptionDashboard() {
           />
         </div>
       </section>
+      </>}
     </div>
   );
 }

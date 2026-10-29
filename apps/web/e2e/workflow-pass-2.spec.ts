@@ -97,7 +97,8 @@ test("retention preserves filters, pagination and member context on refresh", as
 });
 
 test("touch lead actions retain loss reasons and Board/List preference", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  // Leads are not on phones; this is a tablet in split view (src/lib/routing/phone-pages.ts).
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, screen: { width: 1024, height: 1366 }, hasTouch: true });
   const page = await context.newPage();
   await enter(page, "Sales");
   await page.goto("/crm/pipeline?view=list");

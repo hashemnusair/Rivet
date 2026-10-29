@@ -48,6 +48,11 @@ export const nav = {
     activeBranch: "Active branch",
     branchUnavailable: "Branch unavailable",
   },
+  phone: {
+    title: "This page is for a computer or tablet",
+    body: "On a phone, RIVET shows only Dashboard, Reception, Members, Classes and Personal training.",
+    goToReception: "Go to Reception",
+  },
   chrome: {
     search: "Search…",
     commandPalettePlaceholder: "Search members by name, phone or number — or jump to a page…",

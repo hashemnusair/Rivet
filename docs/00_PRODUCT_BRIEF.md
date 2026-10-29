@@ -87,7 +87,9 @@ All lifecycle events should appear in one **Member 360 timeline**.
 ### In the MVP
 
 - B2B web application.
-- Responsive enough for tablets and mobile browsers.
+- Responsive enough for tablets and mobile browsers. Since 29 October 2026 phones get a
+  short list of gym pages (dashboard key numbers, Reception, Members, Classes, Personal
+  training); tablets and computers get everything (docs/09).
 - Multi-branch gym organizations.
 - Operational and financial workflows listed above.
 

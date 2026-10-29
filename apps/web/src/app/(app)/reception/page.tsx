@@ -40,6 +40,7 @@ import { checkInMessage, lookupMessage } from "@/features/reception/checkin-copy
 import { checkInReasonLabel } from "@/features/reception/reason-codes";
 import { OverrideCheckInDialog } from "@/features/reception/reception-dialogs";
 import { CloseShiftDialog, OpenShiftDialog, authoritativeExpectedCash } from "@/features/finance/shift-dialogs";
+import { useIsPhone } from "@/components/shell/phone-page-boundary";
 import { ContextLabel } from "@/components/ui/typography";
 
 export default function ReceptionPage() {
@@ -615,6 +616,7 @@ function ShiftStrip({
 }) {
   const { t, isolate } = useLocale();
   const f = useFormat();
+  const isPhone = useIsPhone();
   if (loading) {
     return (
       <div className="flex min-h-11 items-center gap-3 border-b border-night-line bg-night-2 px-5 py-2.5 lg:px-8" role="status">
@@ -666,9 +668,9 @@ function ShiftStrip({
       ) : null}
       <div className="ms-auto flex items-center gap-2">
         {stale ? <span className="text-[12px] text-warning">{t("deskCompletion.reception.strip.reconnecting")}</span> : null}
-        <Button asChild size="xs" variant="night-ghost">
+        {isPhone ? null : <Button asChild size="xs" variant="night-ghost">
           <Link href="/payments/shifts">{t("reception.shift.history")}</Link>
-        </Button>
+        </Button>}
         {canClose ? (
           <Button size="xs" variant="night-outline" onClick={onClose} data-testid="close-shift">
             {t("deskCompletion.reception.strip.close")}

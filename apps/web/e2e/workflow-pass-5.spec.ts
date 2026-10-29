@@ -231,8 +231,9 @@ test("exports read as one list and each request is recorded with its state", asy
   await expect(recent.getByText(/rows · /)).toBeVisible();
 });
 
-test("automations read on a phone as lists that keep every state", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, locale: "en-US", timezoneId: "Asia/Amman", reducedMotion: "reduce" });
+test("automations read in a narrow touch window as lists that keep every state", async ({ browser }) => {
+  // Automations are not on phones; this is a tablet in split view (src/lib/routing/phone-pages.ts).
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, screen: { width: 1024, height: 1366 }, hasTouch: true, locale: "en-US", timezoneId: "Asia/Amman", reducedMotion: "reduce" });
   const page = await context.newPage();
   await fixClock(page);
   await signIn(page, "Owner");

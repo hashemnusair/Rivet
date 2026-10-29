@@ -1,5 +1,44 @@
 # GymOS / RIVET current implementation state
 
+## Gym workspace on phones — only the daily pages (29 October 2026)
+
+Elias decided that phones keep only the most important gym work: the dashboard's key
+numbers, Reception (check-in, renew, take payment), Members and profiles, Classes and
+Personal training. Every other page is for a computer or tablet; tablets keep
+everything. Decisions and assumptions: docs/09 "Gym workspace on phones".
+
+- **The list and the device rule.** `src/lib/routing/phone-pages.ts` holds the phone
+  pages (plus receipts and the subscription agreement, minus member import and
+  duplicates) and `deviceIsPhone`: a touch screen whose shorter side is under 600 px.
+  `src/components/shell/phone-page-boundary.tsx` reads it (`useIsPhone`,
+  `usePhoneAllows`) and wraps every workspace page in `src/app/(app)/layout.tsx`: on a
+  phone, any other page shows "This page is for a computer or tablet" with Go to
+  Reception (`nav.phone.*`, English and Arabic).
+- **Navigation.** The phone menu, search (pages, quick actions, pins, recents, results
+  and places) and the account menu (Settings, password, Getting started) list only phone
+  pages. Members hides Import and Duplicates; Reception hides "shift history".
+- **Dashboards.** Owner, manager, sales and reception dashboards show the greeting and
+  key numbers only on phones (the owner revenue chart is no longer preloaded there);
+  the trainer dashboard is unchanged.
+- **Tests.** Unit: `phone-pages.test.ts`, `phone-page-boundary.test.tsx`. Browser:
+  new `e2e/phone-pages.spec.ts` (touch phone at 390 px, English and Arabic, touch tablet,
+  narrow desktop window). Desktop-context checks at 360/390 px keep a mouse pointer, so
+  they still see every page and no screenshot reference changed. Two touch specs on
+  pages that left phones now run as a tablet in split view (`workflow-pass-2` leads,
+  `workflow-pass-5` automations); the touch scroll-physics check in `happy-path` moved
+  from Settings to Members.
+- **Verification (29 October 2026).** `tsc`; ESLint on the changed files; full Vitest
+  2,729 passed (two unrelated 5 s timeouts under load, both green when rerun alone).
+  Playwright on a private mock dev server: `phone-pages` 6/6, plus the changed
+  `happy-path`, `workflow-pass-2` and `workflow-pass-5` tests and `today-queue` (desktop
+  context at 390 px) all passed. Browser pane at the phone preset, English and Arabic:
+  owner dashboard numbers only, five-item menu, the message on Reports and Payments,
+  Go to Reception, Reception without shift history, search without payment pages,
+  Members without Import/Duplicates, no sideways scrolling; tablet size keeps Payments.
+- **Not verified.** The screenshot suites were not rerun (their contexts use a mouse, so
+  their pages render as before); no real phone or tablet was used. Frontend only; pushing
+  to `main` deploys it. No Convex change.
+
 ## Member app on the home screen — install button, tutorial, repeating reminder (29 October 2026)
 
 Elias asked for members to get RIVET as a phone app from a home-screen shortcut, fully

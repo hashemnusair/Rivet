@@ -447,7 +447,8 @@ test.describe("settings navigation", () => {
 
     try {
       await signIn(mobilePage, "Owner");
-      await mobilePage.goto("/settings");
+      // Settings is not on phones; Members is.
+      await mobilePage.goto("/members");
 
       const rootScrollPhysics = await mobilePage.evaluate(() => ({
         html: getComputedStyle(document.documentElement).overscrollBehaviorY,

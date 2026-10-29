@@ -30,6 +30,7 @@ import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { CommandPalette } from "./command-palette";
 import { NotificationCenter } from "./notification-center";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
+import { useIsPhone } from "./phone-page-boundary";
 import { WorkspaceRecentTracker } from "./workspace-recent-tracker";
 
 const DEMO_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const satisfies readonly RoleKey[];
@@ -41,6 +42,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
   const [resetting, setResetting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
+  const isPhone = useIsPhone();
   const { t, isolate } = useLocale();
 
   const role = session?.roles[0];
@@ -295,6 +297,8 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               </>
             ) : null}
             <DropdownMenuSeparator />
+            {/* Settings and the setup guide are not on phones (src/lib/routing/phone-pages.ts). */}
+            {isPhone ? null : <>
             <DropdownMenuItem onClick={() => router.push("/settings")}>
               <Building2 /> {t("shell.account.settings")}
             </DropdownMenuItem>
@@ -302,6 +306,7 @@ export function Topbar({ onOpenMobileNav }: { onOpenMobileNav?: () => void }) {
               <KeyRound /> {t("auth.changePassword.menu")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push("/getting-started")}><GraduationCap /> {t("shell.account.gettingStarted")}</DropdownMenuItem>
+            </>}
             <LanguageMenuItem />
             <DropdownMenuItem onClick={() => void handleSignOut()}>
               <LogOut /> {demoControlsEnabled ? t("shell.account.signOutDemo") : t("shell.account.signOut")}

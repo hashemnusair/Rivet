@@ -13,6 +13,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { useLocale, type TFunction, type TKey } from "@/lib/i18n/provider";
 import { localizeNavigationEntry, workspaceTargetCopy } from "@/lib/i18n/navigation";
 import { workspacePageTitle } from "./workspace-recent-tracker";
+import { usePhoneAllows } from "./phone-page-boundary";
 import { Badge } from "@/components/ui/badge";
 import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { navigationAccessFromSession } from "@/features/navigation/navigation-assist";
@@ -46,9 +47,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { signedIn, session } = useApp();
   const [query, setQuery] = useState("");
   const askRivet = useAskRivet();
+  const phoneAllows = usePhoneAllows();
   const settledQuery = useDebouncedValue(query.trim(), 200);
   const catalogue = useMemo(() => permittedNavigationEntries(navigationAccessFromSession(session)).map(entry => localizeNavigationEntry(t, entry)), [session, t]);
-  const places = useMemo(() => (settledQuery.length >= 2 ? keywordSearchNavigation(catalogue, settledQuery, 6) : []), [catalogue, settledQuery]);
+  const places = useMemo(() => (settledQuery.length >= 2 ? keywordSearchNavigation(catalogue, settledQuery, 6) : []).filter((entry) => phoneAllows(entry.href)), [catalogue, settledQuery, phoneAllows]);
   const search = useApiQuery(qk.workspaceSearch(settledQuery), (api) => api.searchWorkspace(settledQuery), { enabled: open && settledQuery.length >= 2, retry: false });
   const recents = useApiQuery(qk.workspaceRecents, (api) => api.listRecentWorkspaceItems(), { enabled: open });
   const pins = useApiQuery(qk.workspacePins, (api) => api.listPinnedWorkspaceItems(), { enabled: open });
@@ -82,13 +84,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     ...(canOpenManagementLedger ? [{ id: "finance", href: "/finance", title: workspacePageTitle(t, "finance") ?? "", subtitle: t("palette.pages.managementLedgerSubtitle"), icon: ScrollText }] : []),
     { id: "support", href: "/support", title: workspacePageTitle(t, "support") ?? "", subtitle: t("palette.pages.supportSubtitle"), icon: CircleHelp },
     { id: "settings", href: "/settings", title: workspacePageTitle(t, "settings") ?? "", subtitle: t("palette.pages.settingsSubtitle"), icon: Settings },
-  ].filter((page) => !page.perm || canAny(page.perm)), [canAny, canOpenManagementLedger, t]);
+  ].filter((page) => (!page.perm || canAny(page.perm)) && phoneAllows(page.href)), [canAny, canOpenManagementLedger, t, phoneAllows]);
   const quickActions = useMemo(() => [
     canAny(["members.write"]) ? { id: "new-member" as const, href: "/members/new", icon: Plus } : null,
     canAny(["crm.write"]) ? { id: "new-lead" as const, href: "/crm/pipeline?new=1", icon: UserPlus } : null,
     canAny(["payments.collect"]) ? { id: "collect-payment" as const, href: "/payments?collect=1", icon: ReceiptText } : null,
     canAny(["members.read"]) ? { id: "start-checkin" as const, href: "/reception", icon: ScanLine } : null,
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => ({ ...item, title: t(QUICK_ACTIONS[item.id].title), subtitle: t(QUICK_ACTIONS[item.id].subtitle) })), [canAny, t]);
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item && phoneAllows(item.href))).map((item) => ({ ...item, title: t(QUICK_ACTIONS[item.id].title), subtitle: t(QUICK_ACTIONS[item.id].subtitle) })), [canAny, t, phoneAllows]);
   const pinnedByTarget = new Map((pins.data ?? []).map((item) => [item.targetKey, item]));
 
   if (!signedIn) return null;
@@ -97,8 +99,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     if (target.kind !== "action") recordRecent.mutate({ kind: target.kind, id: target.id, title: target.title, subtitle: target.subtitle, subtitleParts: target.subtitleParts, href: target.href });
     router.push(target.href);
   };
-  const grouped = (search.data ?? []).reduce<Record<string, WorkspaceSearchResult[]>>((groups, result) => { (groups[result.kind] ??= []).push(result); return groups; }, {});
-  const serverHrefs = new Set((search.data ?? []).map((result) => result.href));
+  const results = (search.data ?? []).filter((result) => phoneAllows(result.href));
+  const pinnedItems = (pins.data ?? []).filter((item) => phoneAllows(item.href));
+  const recentItems = (recents.data ?? []).filter((item) => phoneAllows(item.href));
+  const grouped = results.reduce<Record<string, WorkspaceSearchResult[]>>((groups, result) => { (groups[result.kind] ??= []).push(result); return groups; }, {});
+  const serverHrefs = new Set(results.map((result) => result.href));
   const catalogueMatches = places.filter((entry) => !serverHrefs.has(entry.href));
   const openEntry = (entry: NavigationEntry) => go({ kind: "page", id: entry.id, title: entry.label, subtitle: entry.description, href: entry.href });
   const groupLabel = (kind: string) => { const key = GROUP_LABEL_KEYS[kind]; return key ? t(key) : kind; };
@@ -114,14 +119,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           {askRivet?.available ? <Command.Group heading={<GroupHeading>{t("askRivet.name")}</GroupHeading>}><PaletteItem onSelect={() => { onOpenChange(false); askRivet.ask(query.trim(), { send: true }); }} icon={RivetGlyph} title={t("askRivet.palette", { query: isolate(query.trim()) })} /></Command.Group> : null}
           {search.isLoading ? <p className="px-3 py-2 text-[12.5px] text-ink-3">{t("palette.search.searching")}</p> : null}
           {search.isError ? <div role="alert" className="mx-1 rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-3 text-[12.5px] text-danger"><p>{t("palette.search.errorMessage")}</p><button type="button" className="mt-2 font-medium underline underline-offset-2" onClick={() => { void search.refetch(); }}>{t("palette.search.errorRetry")}</button></div> : null}
-          {!search.isLoading && !search.isError && search.data?.length === 0 && catalogueMatches.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">{t("palette.search.noMatches", { query: isolate(settledQuery) })}</p> : null}
+          {!search.isLoading && !search.isError && results.length === 0 && catalogueMatches.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-3">{t("palette.search.noMatches", { query: isolate(settledQuery) })}</p> : null}
           {Object.entries(grouped).map(([kind, results]) => <Command.Group key={kind} heading={<GroupHeading>{groupLabel(kind)}</GroupHeading>}>{results.map((result) => <PaletteItem key={`${result.kind}-${result.id}`} onSelect={() => go(result)} icon={result.kind === "receipt" ? ReceiptText : result.kind === "lead" ? UserPlus : result.kind === "member" ? Users : result.kind === "action" ? Star : ArrowRight} title={workspaceTargetCopy(t, result).title} subtitle={workspaceTargetCopy(t, result).subtitle} trailing={<Badge variant="outline">{kindLabel(t, result.kind)}</Badge>} />)}</Command.Group>)}
           {catalogueMatches.length ? <Command.Group heading={<GroupHeading>{t("palette.groups.places")}</GroupHeading>}>{catalogueMatches.map((entry) => <PaletteItem key={entry.id} onSelect={() => openEntry(entry)} icon={ArrowRight} title={entry.label} subtitle={entry.description} trailing={<Badge variant="outline">{kindLabel(t, entry.kind)}</Badge>} />)}</Command.Group> : null}
         </> : <>
           {pins.isError || recents.isError ? <div role="alert" className="mx-1 mb-2 border-s-2 border-danger ps-3 text-[12.5px] text-danger"><p>{t("palette.pinned.loadError")}</p><button type="button" className="mt-1 font-medium underline underline-offset-2" onClick={() => { void pins.refetch(); void recents.refetch(); }}>{t("common.action.retry")}</button></div> : null}
-          {(pins.data?.length ?? 0) > 0 ? <Command.Group heading={<GroupHeading>{t("palette.groups.pinned")}</GroupHeading>}>{pins.data?.map((item) => <PaletteItem key={item.id} onSelect={() => go({ kind: "action", id: item.targetKey, title: pinnedTitle(item), href: item.href })} icon={Star} title={pinnedTitle(item)} subtitle={t("palette.pinned.subtitle")} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={t("palette.pinned.unpin", { name: isolate(pinnedTitle(item)) })} onClick={(event) => { event.stopPropagation(); unpin.mutate(item.id); }}><StarOff className="size-3.5" /></button>} />)}</Command.Group> : null}
+          {pinnedItems.length > 0 ? <Command.Group heading={<GroupHeading>{t("palette.groups.pinned")}</GroupHeading>}>{pinnedItems.map((item) => <PaletteItem key={item.id} onSelect={() => go({ kind: "action", id: item.targetKey, title: pinnedTitle(item), href: item.href })} icon={Star} title={pinnedTitle(item)} subtitle={t("palette.pinned.subtitle")} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={t("palette.pinned.unpin", { name: isolate(pinnedTitle(item)) })} onClick={(event) => { event.stopPropagation(); unpin.mutate(item.id); }}><StarOff className="size-3.5" /></button>} />)}</Command.Group> : null}
           <Command.Group heading={<GroupHeading>{t("palette.groups.quickActions")}</GroupHeading>}>{quickActions.map((item) => { const pinned = pinnedByTarget.get(item.id); return <PaletteItem key={item.id} onSelect={() => go({ kind: "action", ...item })} icon={item.icon} title={item.title} subtitle={item.subtitle} trailing={<button type="button" className="rounded p-1 text-ink-3 hover:bg-sunken hover:text-ink" aria-label={t(pinned ? "palette.pinned.unpin" : "palette.pinned.pin", { name: isolate(item.title) })} onClick={(event) => { event.stopPropagation(); if (pinned) unpin.mutate(pinned.id); else pin.mutate({ targetKey: item.id, kind: "action", label: item.title, href: item.href }); }}>{pinned ? <StarOff className="size-3.5" /> : <Star className="size-3.5" />}</button>} />; })}</Command.Group>
-          {(recents.data?.length ?? 0) > 0 ? <Command.Group heading={<div className="flex items-center justify-between"><GroupHeading>{t("palette.groups.recent")}</GroupHeading><button type="button" className="px-2 pt-2 text-[12px] text-ink-3 hover:text-ink" onClick={() => clearRecents.mutate()}>{t("palette.groups.clearRecent")}</button></div>}>{recents.data?.map((item) => <PaletteItem key={`${item.kind}-${item.id}`} onSelect={() => go(item)} icon={Clock3} title={workspaceTargetCopy(t, item).title} subtitle={workspaceTargetCopy(t, item).subtitle} trailing={<Badge variant="outline">{kindLabel(t, item.kind)}</Badge>} />)}</Command.Group> : null}
+          {recentItems.length > 0 ? <Command.Group heading={<div className="flex items-center justify-between"><GroupHeading>{t("palette.groups.recent")}</GroupHeading><button type="button" className="px-2 pt-2 text-[12px] text-ink-3 hover:text-ink" onClick={() => clearRecents.mutate()}>{t("palette.groups.clearRecent")}</button></div>}>{recentItems.map((item) => <PaletteItem key={`${item.kind}-${item.id}`} onSelect={() => go(item)} icon={Clock3} title={workspaceTargetCopy(t, item).title} subtitle={workspaceTargetCopy(t, item).subtitle} trailing={<Badge variant="outline">{kindLabel(t, item.kind)}</Badge>} />)}</Command.Group> : null}
           <Command.Group heading={<GroupHeading>{t("palette.groups.goTo")}</GroupHeading>}>{pages.map((page) => <PaletteItem key={page.href} onSelect={() => go({ kind: "page", ...page })} icon={page.icon} title={page.title} subtitle={page.subtitle} />)}</Command.Group>
         </>}
       </Command.List>

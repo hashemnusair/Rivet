@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/misc";
 import { ErrorState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
 import { TodayQueue } from "./today-queue";
+import { useIsPhone } from "@/components/shell/phone-page-boundary";
 import { useGreeting } from "./dashboard-scope";
 
 /**
@@ -28,6 +29,7 @@ import { useGreeting } from "./dashboard-scope";
 export function SalesDashboard() {
   const t = useT();
   const { session } = useApp();
+  const isPhone = useIsPhone();
   const f = useFormat(session?.organization.timezone);
   const today = todayISODate(session?.organization.timezone);
   const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
@@ -49,13 +51,13 @@ export function SalesDashboard() {
         sectionLabel={f.date(today)}
         title={greeting}
         description={t("deskCompletion.dashboard.sales.description")}
-        actions={
+        actions={isPhone ? undefined : (
           <Button asChild>
             <Link href="/crm/queues">
               {t("deskCompletion.dashboard.sales.openQueues")} <ArrowRight />
             </Link>
           </Button>
-        }
+        )}
       />
 
       <section aria-label={t("dashboard.sales.yourNumbers")} className="panel grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
@@ -74,6 +76,8 @@ export function SalesDashboard() {
         ))}
       </section>
 
+      {/* Phones get the key numbers only. */}
+      {isPhone ? null : <>
       <div className="grid gap-5 xl:grid-cols-2">
         <TodayQueue data={dashQuery.data?.todayQueue} loading={dashQuery.isLoading} />
 
@@ -113,6 +117,7 @@ export function SalesDashboard() {
           )}
         </section>
       </div>
+      </>}
     </div>
   );
 }

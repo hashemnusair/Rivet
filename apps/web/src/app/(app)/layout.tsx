@@ -8,6 +8,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef, useState } from "react";
 import { MobileNav } from "@/components/shell/mobile-nav";
+import { PhonePageBoundary } from "@/components/shell/phone-page-boundary";
 import { Sidebar } from "@/components/shell/sidebar";
 import { TenantBrandProvider } from "@/components/shell/tenant-brand-provider";
 import { Topbar } from "@/components/shell/topbar";
@@ -142,7 +143,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           <BillingNoticeBanner />
           {session ? <OnboardingBanner audience={session.roles[0] === "owner" ? "owner" : "staff"} /> : null}
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8"><PhonePageBoundary>{children}</PhonePageBoundary></main>
         </div>
       </WorkspaceColumn>
       <AskRivetLauncher />

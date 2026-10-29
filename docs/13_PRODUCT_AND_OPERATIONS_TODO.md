@@ -1230,7 +1230,9 @@ Convex or mutate Production data.
 - [ ] Run the credentialed isolated staging journeys, including the 14
   credential-gated browser journeys, with disposable identities and cleanup.
 - [ ] Complete authenticated mobile Production acceptance. Active-owner desktop
-  and platform-owner desktop acceptance are complete.
+  and platform-owner desktop acceptance are complete. Since 29 October 2026 phones get
+  only the phone pages (docs/09), so phone acceptance covers those pages and the
+  "for a computer or tablet" message.
 - [x] Resolve Convex Production database I/O (1.65 GB used against the 1 GB
   Free-plan allowance). Elias reported on 14 September 2026 that Convex
   capacity is in order.

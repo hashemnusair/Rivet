@@ -30,10 +30,12 @@ const RevenueChart = lazy(() => loadRevenueChart().then((module) => ({ default: 
 import { useDashboardScopeText, useGreeting } from "./dashboard-scope";
 import { TodayQueue } from "./today-queue";
 import { ContextLabel } from "@/components/ui/typography";
+import { useIsPhone } from "@/components/shell/phone-page-boundary";
 
 export function OwnerDashboard() {
   const { session } = useApp();
-  useEffect(() => { void loadRevenueChart(); }, []);
+  const isPhone = useIsPhone();
+  useEffect(() => { if (!isPhone) void loadRevenueChart(); }, [isPhone]);
   const { t, isolateLtr } = useLocale();
   const format = useFormat();
   const branchId = session?.activeBranchId;
@@ -102,6 +104,8 @@ export function OwnerDashboard() {
       </section>
       </div>
 
+      {/* Phones get the key numbers only; the lists and charts below are for a computer or tablet. */}
+      {isPhone ? null : <>
       <NeedsAttention branchId={branchId} />
 
       <TodayQueue data={data?.todayQueue} loading={isLoading || !data} initialVisible={4} />
@@ -176,6 +180,7 @@ export function OwnerDashboard() {
           </div>
         </section>
       </div>
+      </>}
     </div>
   );
 }
