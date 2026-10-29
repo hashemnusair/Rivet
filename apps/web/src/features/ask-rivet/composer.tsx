@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { ArrowUp, AtSign, FileText, ImageUp, KanbanSquare, Loader2, Paperclip, Plus, Square, TriangleAlert, UserRound, X } from "lucide-react";
 import { getApi } from "@/lib/api/client";
 import { CHAT_FILES_MAX, CHAT_TEXT_MAX, chatContextKey, type ChatAttachmentView, type ChatContextItem, type ChatFileRegisterResult, type ChatFileType } from "@/lib/ai/chat/contracts";
@@ -14,6 +14,8 @@ import type { AskRivetScreen } from "./ask-rivet-context";
 export interface ComposerHandle {
   addFiles: (files: File[]) => void;
   focus: () => void;
+  /** Whether the box holds words to send, including words just handed over by a launcher. */
+  hasDraft: () => boolean;
 }
 
 interface PendingFile {
@@ -92,6 +94,10 @@ export const Composer = forwardRef<ComposerHandle, {
   const listboxId = useId();
   const mentionOptions = useMentionOptions(mention?.query);
   const handledRequest = useRef(0);
+  const draft = useRef(text);
+  useLayoutEffect(() => {
+    draft.current = text;
+  }, [text]);
 
   const focusKey = screen.focus ? chatContextKey(screen.focus) : undefined;
   const attached = useMemo(() => {
@@ -142,7 +148,7 @@ export const Composer = forwardRef<ComposerHandle, {
     });
   }, [t]);
 
-  useImperativeHandle(ref, () => ({ addFiles, focus: () => textareaRef.current?.focus() }), [addFiles]);
+  useImperativeHandle(ref, () => ({ addFiles, focus: () => textareaRef.current?.focus(), hasDraft: () => draft.current.trim().length > 0 }), [addFiles]);
 
   const removeFile = (localId: string) => setFiles((current) => {
     const file = current.find((item) => item.localId === localId);
@@ -163,13 +169,16 @@ export const Composer = forwardRef<ComposerHandle, {
     setMention(undefined);
   }, [attached, onSend, readyFiles, sending, text, uploading]);
 
-  // A question asked from elsewhere (search, a suggested prompt) lands here.
-  useEffect(() => {
+  // A question asked from elsewhere (search, a suggested prompt) lands here. Words
+  // typed into a launcher keep coming: the box takes focus before the next key.
+  useLayoutEffect(() => {
     if (!request || request.nonce === handledRequest.current) return;
     handledRequest.current = request.nonce;
     if (request.send) void submit(request.text);
     else {
+      draft.current = request.text;
       setText(request.text);
+      textareaRef.current?.focus();
       requestAnimationFrame(() => {
         const element = textareaRef.current;
         if (!element) return;
@@ -394,6 +403,7 @@ export const Composer = forwardRef<ComposerHandle, {
             )}
             aria-label={working ? t("askRivet.composer.stop") : t("askRivet.composer.send")}
             data-testid={working ? "ask-stop" : "ask-send"}
+            data-ask-send
           >
             <ArrowUp className={cn("absolute size-4 transition-[opacity,transform] duration-150", working ? "scale-50 opacity-0" : "scale-100 opacity-100")} aria-hidden />
             <Square className={cn("absolute size-3 fill-current transition-[opacity,transform] duration-150", working ? "scale-100 opacity-100" : "scale-50 opacity-0")} aria-hidden />

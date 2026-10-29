@@ -57,6 +57,11 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
+/** Waits for Wazen's window to finish moving (opening, closing or changing size). */
+async function settled(page: Page) {
+  await page.evaluate(() => Promise.all(document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity).map((animation) => animation.finished.catch(() => undefined))));
+}
+
 test.describe("Wazen", () => {
   test("stays hidden until RIVET makes the gym available and the gym turns assistance on", async ({ page }) => {
     await enterOwner(page);
@@ -206,7 +211,7 @@ test.describe("Wazen", () => {
       expect(await column()).toEqual(before);
       for (const size of ["compact", "large"] as const) {
         await expect(panel).toHaveAttribute("data-size", size);
-        await page.waitForTimeout(320);
+        await settled(page);
         const box = (await panel.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.y).toBeGreaterThanOrEqual(0);
@@ -258,11 +263,21 @@ test.describe("Wazen", () => {
     await page.goto("/dashboard");
     const box = page.getByTestId("ask-rivet-chatbox");
     await expect(box).toBeVisible();
-    await page.getByTestId("ask-rivet-chatbox-input").fill("What needs my attention today?");
-    await page.keyboard.press("Enter");
+    const closed = (await box.boundingBox())!;
+    // The first key opens the window; the rest keep arriving in its message box while it opens.
+    await page.getByTestId("ask-rivet-chatbox-input").click();
+    await page.keyboard.type("What needs my attention today?", { delay: 5 });
     const panel = page.getByTestId("ask-rivet-panel");
     await expect(panel).toHaveAttribute("data-state", "open");
+    await expect(panel.getByTestId("ask-input")).toHaveValue("What needs my attention today?");
+    await expect(panel.getByTestId("ask-input")).toBeFocused();
     await expect(box).toHaveAttribute("inert", "");
+    // The window opened upward out of the box: the same side edges and the same bottom edge.
+    await settled(page);
+    const open = (await panel.boundingBox())!;
+    expect([open.x, open.x + open.width, open.y + open.height]).toEqual([closed.x, closed.x + closed.width, closed.y + closed.height]);
+    expect(await page.locator(".ask-arrow-ghost").count()).toBe(0);
+    await page.keyboard.press("Enter");
     await expect(panel.getByTestId("ask-user-message")).toContainText("What needs my attention today?");
     await expect(panel.getByTestId("ask-answer").last()).toHaveAttribute("data-status", "complete", { timeout: 20_000 });
     // The conversation is kept: closing and reopening shows it, and the list has it.
@@ -271,5 +286,12 @@ test.describe("Wazen", () => {
     await expect(panel.getByTestId("ask-user-message")).toContainText("What needs my attention today?");
     await panel.getByTestId("ask-history").click();
     await expect(panel.getByTestId("ask-thread")).toHaveCount(1);
+    // With reduced motion the window simply appears, and nothing is left moving.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await panel.getByTestId("ask-close").click();
+    await page.getByTestId("ask-rivet-chatbox").getByRole("button").click();
+    await expect(panel).toHaveAttribute("data-state", "open");
+    expect(await panel.evaluate((element) => [element, element.firstElementChild!].flatMap((part) => part.getAnimations()).length)).toBe(0);
+    expect(await page.locator(".ask-arrow-ghost").count()).toBe(0);
   });
 });

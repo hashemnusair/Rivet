@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, type ChangeEvent, type CompositionEvent } from "react";
 import { ArrowUp } from "lucide-react";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils/cn";
@@ -10,10 +10,19 @@ import { RivetGlyph } from "./rivet-glyph";
 
 /**
  * Wazen's place on every gym screen: the bottom corner, above the page. The
- * home screen offers a message box there, so asking is the first thing on
- * offer; elsewhere it is a compact button. Both step aside while the window
- * is open. Shown only where the gym can use Wazen.
+ * home screen offers a message box there, as wide as the window, so asking is
+ * the first thing on offer; elsewhere it is a compact button. The window grows
+ * out of whichever is showing, so each stays in place and steps aside only
+ * once the window covers it, and is back before the window settles into it.
+ * Shown only where the gym can use Wazen.
  */
+function shell(hidden: boolean) {
+  return cn(
+    "ask-launcher fixed bottom-4 end-4 z-40 mb-[env(safe-area-inset-bottom)] transition-opacity duration-0",
+    hidden && "pointer-events-none opacity-0 delay-150",
+  );
+}
+
 export function AskRivetLauncher() {
   const context = useAskRivet();
   const pathname = usePathname();
@@ -21,36 +30,39 @@ export function AskRivetLauncher() {
   const [text, setText] = useState("");
   if (!context?.available) return null;
   const hidden = context.open;
-  const home = pathname === "/dashboard";
 
-  const shell = cn(
-    "ask-launcher fixed bottom-4 end-4 z-40 mb-[env(safe-area-inset-bottom)] transition-[opacity,transform] duration-200 ease-out",
-    hidden && "pointer-events-none translate-y-2 opacity-0",
-  );
-
-  if (home) {
-    const submit = () => {
-      const question = text.trim();
-      if (!question) {
-        context.setOpen(true);
-        return;
-      }
-      context.ask(question, { send: true });
+  if (pathname === "/dashboard") {
+    // The first words typed open the window; they carry on in its message box.
+    const handOver = (words: string) => {
       setText("");
+      context.ask(words, { send: false });
+    };
+    const onChange = (event: ChangeEvent<HTMLInputElement>) => {
+      const words = event.target.value;
+      if (words.trim() && !(event.nativeEvent as InputEvent).isComposing) handOver(words);
+      else setText(words);
+    };
+    const onCompositionEnd = (event: CompositionEvent<HTMLInputElement>) => {
+      if (event.currentTarget.value.trim()) handOver(event.currentTarget.value);
     };
     return (
       <form
-        className={cn(shell, "hidden w-[min(380px,calc(100vw-32px))] items-center gap-2 rounded-full border border-line-2 bg-surface py-1.5 pe-1.5 ps-3.5 shadow-pop sm:flex")}
-        onSubmit={(event) => { event.preventDefault(); submit(); }}
+        className={cn(shell(hidden), "hidden h-[52px] w-[min(420px,calc(100vw-32px))] items-center gap-2.5 rounded-lg border border-line-2 bg-surface pe-[9px] ps-3.5 shadow-pop sm:flex")}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (text.trim()) handOver(text);
+          else context.setOpen(true);
+        }}
         inert={hidden || undefined}
+        data-ask-origin
         data-testid="ask-rivet-chatbox"
       >
         <RivetGlyph className="h-4 text-ink" />
         <label className="min-w-0 flex-1">
           <span className="sr-only">{t("askRivet.open")}</span>
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder={t("askRivet.launcher.placeholder")} dir="auto" maxLength={4_000} className="h-8 w-full bg-transparent text-[13.5px] text-ink outline-none placeholder:text-ink-3" data-testid="ask-rivet-chatbox-input" />
+          <input value={text} onChange={onChange} onCompositionEnd={onCompositionEnd} placeholder={t("askRivet.launcher.placeholder")} dir="auto" maxLength={4_000} className="h-8 w-full bg-transparent text-[13.5px] text-ink outline-none placeholder:text-ink-3" data-testid="ask-rivet-chatbox-input" />
         </label>
-        <button type="submit" className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-ink text-paper transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink" aria-label={t("askRivet.open")} aria-controls="ask-rivet-panel" aria-expanded={context.open} data-ask-launcher>
+        <button type="submit" className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-ink text-paper transition-colors duration-150 hover:bg-night-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink" aria-label={t("askRivet.open")} aria-controls="ask-rivet-panel" aria-expanded={context.open} data-ask-launcher data-ask-origin-arrow>
           <ArrowUp className="size-4" aria-hidden />
         </button>
       </form>
@@ -66,8 +78,9 @@ export function AskRivetLauncher() {
       aria-label={t("askRivet.open")}
       title={`${t("askRivet.open")} (⌘J)`}
       data-ask-launcher
+      data-ask-origin
       inert={hidden || undefined}
-      className={cn(shell, "group/launch inline-flex size-12 items-center justify-center gap-2 rounded-full bg-ink text-paper shadow-pop hover:bg-ink-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:h-11 sm:w-auto sm:px-4")}
+      className={cn(shell(hidden), "inline-flex size-12 items-center justify-center gap-2 rounded-lg bg-ink text-paper shadow-pop hover:bg-night-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:h-11 sm:w-auto sm:px-4")}
       data-testid="ask-rivet-launcher"
     >
       <RivetGlyph className="h-[18px] sm:h-4" />
@@ -76,7 +89,7 @@ export function AskRivetLauncher() {
   );
 }
 
-/** The home screen's message box is a desktop and tablet affordance; phones get the round button everywhere. */
+/** The home screen's message box is a desktop and tablet affordance; phones get the corner button everywhere. */
 export function AskRivetPhoneLauncher() {
   const context = useAskRivet();
   const pathname = usePathname();
@@ -90,8 +103,9 @@ export function AskRivetPhoneLauncher() {
       aria-controls="ask-rivet-panel"
       aria-label={t("askRivet.open")}
       inert={context.open || undefined}
-      className={cn("ask-launcher fixed bottom-4 end-4 z-40 mb-[env(safe-area-inset-bottom)] inline-flex size-12 items-center justify-center rounded-full bg-ink text-paper shadow-pop transition-[opacity,transform] duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:hidden", context.open && "pointer-events-none translate-y-2 opacity-0")}
+      className={cn(shell(context.open), "inline-flex size-12 items-center justify-center rounded-lg bg-ink text-paper shadow-pop focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:hidden")}
       data-ask-launcher
+      data-ask-origin
       data-testid="ask-rivet-launcher"
     >
       <RivetGlyph className="h-[18px]" />
