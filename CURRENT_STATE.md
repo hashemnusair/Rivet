@@ -1,5 +1,30 @@
 # GymOS / RIVET current implementation state
 
+## Scroll regression follows the phone/tablet rule (30 October 2026)
+
+- **Diagnosis.** Reproduced `tab-scroll-stability.spec.ts` on main `cf2eb7e8`:
+  after touch emulation, navigating to Suppliers re-evaluates the phone boundary
+  and replaces Operations with the intended computer-or-tablet message. The later
+  Branch click times out. The 29 October phone restriction is working as designed
+  (docs/09 "Gym workspace on phones").
+- **Coverage.** The scroll scenario keeps its 390 px viewport but uses a 1024 ×
+  1366 px screen through Playwright's `contextOptions`, like a tablet in split
+  view. It still starts with a fine pointer, switches to touch without remounting,
+  checks the actual screen size, and retains the horizontal-wheel, 30 fps spring,
+  swipe, tab-selection, Branch dropdown and untransformed-shell assertions.
+  `phone-pages.spec.ts` now checks Operations as well as Payments on a real phone
+  context, including the message and the link back to Reception.
+- **Verification (Mac).** Both browser files: 8/8 on the mock dev server and 8/8
+  on an optimized mock preview served with `next start` and two workers. The preview
+  build passed with its full Next.js typecheck. `pnpm typecheck`,
+  `pnpm convex:typecheck`, full lint/secret-output audit, an explicit TypeScript
+  check of the two E2E files, 19 focused unit tests (overscroll, phone routing and
+  boundary), 14 repository safety tests, and `git diff --check` passed.
+- **Scope.** Tests and this handoff only; the phone restriction and scroll code
+  are unchanged. These are emulated browser checks with seeded preview data, not
+  physical-device or live Clerk/Convex verification. Full CI results belong to the
+  submitted PR's exact head.
+
 ## Member app — profile page with ⋯ menu; opens on the RIVET mark (29 October 2026)
 
 Decisions: docs/09 "Member account page and opening the app".
