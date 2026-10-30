@@ -1,8 +1,14 @@
 import { expect, test } from "@playwright/test";
 
-test("horizontal tabs stay usable through desktop-to-phone emulation and slow frames", async ({ page, browserName }) => {
+// Operations stays available on a tablet in split view, even at a 390px
+// viewport. A small touch screen is a phone and intentionally blocks this page.
+test.use({
+  viewport: { width: 390, height: 844 },
+  contextOptions: { screen: { width: 1024, height: 1366 } },
+});
+
+test("horizontal tabs stay usable through desktop-to-touch emulation and slow frames", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "Emulation switching uses the Chromium protocol.");
-  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login/gym");
   await page.getByRole("radio", { name: /Owner Omar/ }).click();
   await page.getByTestId("sign-in-button").click();
@@ -48,10 +54,11 @@ test("horizontal tabs stay usable through desktop-to-phone emulation and slow fr
   expect(recovery.offsets.every((offset) => Number.isFinite(offset) && Math.abs(offset) <= 7)).toBe(true);
   expect(recovery.final).toBe("");
 
-  // Match changing an already-loaded in-app browser to its iPhone preset.
+  // Switch an already-loaded narrow desktop window to tablet touch input.
   const protocol = await page.context().newCDPSession(page);
   await protocol.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
   await expect(shell).toHaveAttribute("data-overscroll-mode", "native");
+  expect(await page.evaluate(() => Math.min(window.screen.width, window.screen.height))).toBe(1024);
   const bounds = (await tabs.boundingBox())!;
   const initialUrl = page.url();
   for (const [start, end] of [[340, 45], [45, 340], [340, 45]]) {

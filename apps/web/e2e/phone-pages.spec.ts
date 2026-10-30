@@ -32,18 +32,20 @@ test.describe("Phones get the short list of gym pages", () => {
     }
   });
 
-  test("a page that is not on phones points to a computer or tablet", async ({ browser, baseURL }) => {
-    const { context, page } = await openPhone(browser, baseURL);
-    try {
-      await signInOwner(page);
-      await page.goto("/payments");
-      await expect(page.getByRole("status")).toContainText("This page is for a computer or tablet");
-      await page.getByRole("link", { name: "Go to Reception" }).click();
-      await expect(page).toHaveURL(/\/reception$/);
-    } finally {
-      await context.close();
-    }
-  });
+  for (const path of ["/payments", "/operations"]) {
+    test(`${path} on a phone points to a computer or tablet`, async ({ browser, baseURL }) => {
+      const { context, page } = await openPhone(browser, baseURL);
+      try {
+        await signInOwner(page);
+        await page.goto(path);
+        await expect(page.getByRole("status")).toContainText("This page is for a computer or tablet");
+        await page.getByRole("link", { name: "Go to Reception" }).click();
+        await expect(page).toHaveURL(/\/reception$/);
+      } finally {
+        await context.close();
+      }
+    });
+  }
 
   test("members keeps finding and adding people but not bulk work", async ({ browser, baseURL }) => {
     const { context, page } = await openPhone(browser, baseURL);
