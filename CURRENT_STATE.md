@@ -24,6 +24,8 @@ docs/13 "Text field stress pass" and "Review follow-up" (dev advisories).
   `brace-expansion`, `minimatch`, `vite`. `pnpm audit` and `pnpm audit --prod`: no
   known vulnerabilities. Test changes for Vitest 4 listed in docs/09.
   `src/components/motion/page-sheet.tsx` gained `sheetDocument.load` (same behaviour).
+  `vitest.config.ts` `testTimeout` 15 s: the first CI run timed out the first Convex
+  test of `convex/ai.prepare.test.ts` at 5 s while loading the Convex module tree.
 - **Sign-in.** `src/lib/auth/rivet-identity.tsx` queries `identity.current` while
   `ensureCurrent` runs and trusts an early answer only for an active user; new
   `rivet-identity.startup.test.tsx` (fails on the old code).
