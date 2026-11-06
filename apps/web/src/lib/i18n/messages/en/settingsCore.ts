@@ -28,6 +28,7 @@ export const settingsCore = {
   "text023": "Emails and invoices from RIVET to your gym use this language. Signed agreement copies keep the language that was signed.",
   "text024": "Default language",
   "text025": "Enter the gym's name before saving.",
+  "callingCodeInvalid": "Enter 1 to 3 digits that do not start with 0, for example 962.",
   "text026": "Gym details were not saved. Try again.",
   "text027": "Save gym details",
   "text028": "Your gym’s locations. The branch code starts each member number and appears on receipts.",

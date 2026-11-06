@@ -213,8 +213,9 @@ export function useOperationsNumberProblems() {
       const result = readMoneyInput(value, currency);
       return result.ok ? undefined : moneyProblem(result, currency);
     },
-    integer(value: string, minimum: number, maximum?: number): string | undefined {
-      if (!value.trim()) return undefined;
+    /** `required`: a blank or all-space box says so instead of letting Save do nothing. */
+    integer(value: string, minimum: number, maximum?: number, required = false): string | undefined {
+      if (!value.trim()) return required ? t("common.state.required") : undefined;
       const normalized = latinDigits(value);
       return /^\d+$/.test(normalized) && Number.isSafeInteger(Number(normalized)) && Number(normalized) >= minimum && (maximum === undefined || Number(normalized) <= maximum)
         ? undefined : maximum === undefined ? t("operationsWorkspace.integerMinimum", { min: minimum }) : t("operationsWorkspace.integerRange", { min: minimum, max: maximum });

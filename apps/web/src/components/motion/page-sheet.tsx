@@ -69,6 +69,9 @@ const DRAW_PACE = 0.3;
 
 const reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/** How the sheet loads a page the ordinary way. One place, so tests can watch it: jsdom cannot navigate. */
+export const sheetDocument = { load: (target: string) => window.location.assign(target) };
+
 /** Whether a sheet's target is on another RIVET host, so this document is left behind. */
 const crossesHost = (target: string) => new URL(target, window.location.href).origin !== window.location.origin;
 
@@ -211,7 +214,7 @@ export function PageSheet() {
     const current = sheetStore.get();
     if ((current.phase !== "rack" && current.phase !== "hold") || !crossesHost(current.target) || departed.current === current.startedAt) return;
     departed.current = current.startedAt;
-    window.location.assign(current.target);
+    sheetDocument.load(current.target);
   }, []);
 
   useEffect(() => sheetStore.addPlayer(), []);
@@ -278,7 +281,7 @@ export function PageSheet() {
     const elapsed = performance.now() - sheet.startedAt;
     if (pathname === sheet.from) {
       if (!crossesHost(sheet.target)) {
-        const timer = window.setTimeout(() => window.location.assign(sheet.target), Math.max(0, STALL_MS - elapsed));
+        const timer = window.setTimeout(() => sheetDocument.load(sheet.target), Math.max(0, STALL_MS - elapsed));
         return () => window.clearTimeout(timer);
       }
       // The drawing's rest asks for the page (`depart`); this asks if it never rests.

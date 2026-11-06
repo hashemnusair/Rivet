@@ -1004,6 +1004,7 @@ export const apiErrors = {
   "supplierReturnCash": "Open a cash shift at {branch} so the returned cash has a drawer to go back into.",
   "checklistLimit": "A checklist holds at most {maximum} items.",
   "wholeNumberRange": "{field} must be a whole number between {minimum} and {maximum}.",
+  "textTooLong": "This text is too long. The limit is {maximum} characters.",
   "classOverlap": "This time overlaps “{className}” at {time}. Pick another slot.",
   "classCapacity": "Capacity cannot drop below the {count} people already in the class.",
   "classCapacityDate": "Capacity cannot drop below the {count} people already booked for {date}.",

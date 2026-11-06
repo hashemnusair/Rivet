@@ -122,7 +122,8 @@ describe("subscription agreement modal", () => {
     // The signed copy is downloadable straight from the confirmation, and it
     // is a real PDF built from the record.
     const saved: Array<{ name: string; type: string; bytes: number }> = [];
-    vi.stubGlobal("URL", { ...URL, createObjectURL: (blob: Blob) => { saved.push({ name: "", type: blob.type, bytes: blob.size }); return "blob:agreement"; }, revokeObjectURL: () => {} });
+    // A subclass keeps `new URL(...)` working (Vitest's own module loader uses it).
+    vi.stubGlobal("URL", Object.assign(class extends URL {}, { createObjectURL: (blob: Blob) => { saved.push({ name: "", type: blob.type, bytes: blob.size }); return "blob:agreement"; }, revokeObjectURL: () => {} }));
     const clicks = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { saved[saved.length - 1]!.name = this.download; });
     await user.click(within(done).getByTestId("download-agreement-pdf"));
     // The PDF builder loads on demand, so the file is saved a moment later.

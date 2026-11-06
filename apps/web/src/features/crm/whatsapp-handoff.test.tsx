@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WhatsAppHandoff, whatsAppHandoffNotes } from "./whatsapp-handoff";
 import { LocaleProvider, useLocale } from "@/lib/i18n/provider";
 
@@ -33,6 +33,10 @@ describe("WhatsAppHandoff", () => {
     mutate.mockReset();
     mutationState.onError = undefined;
     appState.defaultLanguage = "en";
+  });
+  // Each test spies on window.open afresh; Vitest 4 reuses a spy that is not restored.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("opens an editable Jordan-default handoff and records the attempt with the prepared message", async () => {

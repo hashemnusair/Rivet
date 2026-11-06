@@ -41,7 +41,8 @@ describe("subscription and invoices", () => {
   it("lists the gym's own RIVET invoices and opens one as the PDF that was emailed", async () => {
     const user = userEvent.setup();
     const opened: Array<{ url: string; type?: string }> = [];
-    vi.stubGlobal("URL", { ...URL, createObjectURL: (blob: Blob) => { opened.push({ url: "blob:invoice", type: blob.type }); return "blob:invoice"; }, revokeObjectURL: () => {} });
+    // A subclass keeps `new URL(...)` working (Vitest's own module loader uses it).
+    vi.stubGlobal("URL", Object.assign(class extends URL {}, { createObjectURL: (blob: Blob) => { opened.push({ url: "blob:invoice", type: blob.type }); return "blob:invoice"; }, revokeObjectURL: () => {} }));
     // The tab opens inside the click and shows the file once the renderer has loaded.
     const tab = { closed: false, opener: {} as unknown, location: { href: "" } };
     const open = vi.fn(() => tab as unknown as Window);

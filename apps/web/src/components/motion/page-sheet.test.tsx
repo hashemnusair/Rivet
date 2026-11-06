@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PageSheet, SheetLink, startSheet } from "./page-sheet";
+import { PageSheet, SheetLink, sheetDocument, startSheet } from "./page-sheet";
 import { IDLE_SHEET, SHEET_ENTRY_ID, sheetCarries, sheetRoute, sheetStore, sheetTarget } from "./sheet-store";
 import { drawingSvg } from "@/app/login/sign-in-drawings";
 import { SHEET_ENTRY_PRE_PAINT, svgUrl } from "./sheet-entry";
@@ -16,7 +16,7 @@ const html = document.documentElement;
 const runEntry = (href: string, reduce = false) => new Function("location", "matchMedia", SHEET_ENTRY_PRE_PAINT)(new URL(href), () => ({ matches: reduce }));
 const entryCss = () => document.getElementById(SHEET_ENTRY_ID)?.textContent ?? null;
 /** jsdom cannot leave the document: it reports each document navigation as an error instead. */
-const documentNavigations = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.filter(([message]) => String(message).includes("Not implemented: navigation")).length;
+const documentNavigations = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.length;
 
 describe("page sheet", () => {
   // The sheet fetches its drawing (the real one) lazily. Fetched first under
@@ -235,7 +235,7 @@ describe("page sheet", () => {
   });
 
   it("leaves for another host only once its drawing is fully drawn, and asks once", () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const loads = vi.spyOn(sheetDocument, "load").mockImplementation(() => {});
     try {
       window.history.replaceState(null, "", "/login");
       nav.pathname = "/login";
@@ -245,20 +245,20 @@ describe("page sheet", () => {
       expect(document.querySelector("[data-page-sheet] svg")).not.toBeNull();
       act(() => vi.advanceTimersByTime(1_000));
       expect(sheetStore.get().phase).toBe("hold");
-      expect(documentNavigations(errors)).toBe(0);
+      expect(documentNavigations(loads)).toBe(0);
       // Drawn: go, once, even when the limit comes round after.
       act(() => vi.advanceTimersByTime(100));
-      expect(documentNavigations(errors)).toBe(1);
+      expect(documentNavigations(loads)).toBe(1);
       act(() => vi.advanceTimersByTime(2_000));
-      expect(documentNavigations(errors)).toBe(1);
+      expect(documentNavigations(loads)).toBe(1);
       expect(nav.push).not.toHaveBeenCalled();
     } finally {
-      errors.mockRestore();
+      loads.mockRestore();
     }
   });
 
   it("lifts a stalled load on another host instead of asking for it again", () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const loads = vi.spyOn(sheetDocument, "load").mockImplementation(() => {});
     try {
       window.history.replaceState(null, "", "/login");
       nav.pathname = "/login";
@@ -267,13 +267,13 @@ describe("page sheet", () => {
       act(() => sheetStore.set({ phase: "hold", target: "https://dashboard.rivetjo.com/login/gym", from: "/login", dock: "staff", landing: false, startedAt: performance.now() }));
       act(() => vi.advanceTimersByTime(11_900));
       expect(sheetStore.get().phase).toBe("hold");
-      expect(documentNavigations(errors)).toBe(1);
+      expect(documentNavigations(loads)).toBe(1);
       act(() => vi.advanceTimersByTime(200));
       expect(sheetStore.get().phase).toBe("idle");
       expect(html).not.toHaveAttribute("data-page-covered");
-      expect(documentNavigations(errors)).toBe(1);
+      expect(documentNavigations(loads)).toBe(1);
     } finally {
-      errors.mockRestore();
+      loads.mockRestore();
     }
   });
 

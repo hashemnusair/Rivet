@@ -1006,6 +1006,7 @@ export const apiErrors: typeof EnApiErrors = {
   "supplierReturnCash": "يرجى فتح الصندوق في {branch} لتسجيل عودة مبلغ الكاش إليه.",
   "checklistLimit": "الحد الأقصى لعدد بنود قائمة المهام اليومية: {maximum}.",
   "wholeNumberRange": "يجب أن يكون {field} عددًا صحيحًا بين {minimum} و{maximum}.",
+  "textTooLong": "هذا النص طويل جدًا. الحد الأقصى لعدد الأحرف: {maximum}.",
   "classOverlap": "يتداخل هذا الوقت مع «{className}» عند {time}. يرجى اختيار موعد آخر.",
   "classCapacity": "لا يمكن خفض السعة عن عدد المسجّلين في الحصة حاليًا، وهو {count}.",
   "classCapacityDate": "لا يمكن خفض السعة عن عدد الحجوزات القائمة في {date}، وهو {count}.",

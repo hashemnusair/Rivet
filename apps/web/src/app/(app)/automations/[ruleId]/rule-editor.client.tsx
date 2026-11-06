@@ -26,7 +26,8 @@ import { isApiError } from "@/lib/api/errors";
 import { usePermissions } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { ACTION_LABEL_KEYS, TRIGGER_LABEL_KEYS } from "@/features/automations/labels";
-import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, hasValidAutomationTriggerParams, parseAutomationInteger } from "@/features/automations/form";
+import { automationTriggerFieldValue, automationTriggerParameterLabel, automationTriggerParams, automationTriggerRange, hasValidAutomationTriggerParams, parseAutomationInteger } from "@/features/automations/form";
+import { AUTOMATION_LIMITS } from "@/lib/domain/input-limits";
 import { automationExecutionLabel } from "@/features/automations/monitoring-ui";
 
 export default function RuleEditorPageClient() {
@@ -72,9 +73,9 @@ export default function RuleEditorPageClient() {
     (api) => {
       if (!rule) throw new Error("no rule");
       const rawTriggerValue = rule.trigger === "membership_expiring" ? daysBefore : paramValue;
-      if (!hasValidAutomationTriggerParams(rule.trigger, rawTriggerValue)) throw new Error(t("staffTools.automations.editor.validationNumber"));
-      const dedupeHours = parseAutomationInteger(dedupe);
-      if (dedupeHours === undefined) throw new Error(t("staffTools.automations.editor.validationDedupe"));
+      if (!hasValidAutomationTriggerParams(rule.trigger, rawTriggerValue)) throw new Error(t("staffTools.automations.editor.validationRange", automationTriggerRange(rule.trigger)));
+      const dedupeHours = parseAutomationInteger(dedupe, false, AUTOMATION_LIMITS.repeatWaitHours);
+      if (dedupeHours === undefined) throw new Error(t("staffTools.automations.editor.validationDedupe", { maximum: AUTOMATION_LIMITS.repeatWaitHours }));
       const triggerParams = automationTriggerParams(rule.trigger, rawTriggerValue);
       return api.updateAutomationRule(rule.id, {
         name,
@@ -134,7 +135,7 @@ export default function RuleEditorPageClient() {
   const selectedTemplate = templatesQuery.data?.find((t) => t.id === actions.find((a) => a.key === "queue_message")?.templateId);
   const queueMessageAction = actions.find((action) => action.key === "queue_message");
   const validTriggerParams = hasValidAutomationTriggerParams(rule.trigger, rule.trigger === "membership_expiring" ? daysBefore : paramValue);
-  const dedupeHours = parseAutomationInteger(dedupe);
+  const dedupeHours = parseAutomationInteger(dedupe, false, AUTOMATION_LIMITS.repeatWaitHours);
   const triggerKey = TRIGGER_LABEL_KEYS[rule.trigger];
   const ruleDescription = t("staffTools.automations.editor.description", {
     trigger: triggerKey ? t(triggerKey) : String(rule.trigger),
@@ -183,7 +184,7 @@ export default function RuleEditorPageClient() {
               ) : (
                 <Input aria-label={paramLabel} type="text" inputMode="numeric" value={paramValue} onChange={(e) => { setParamValue(e.target.value); setDirty(true); }} disabled={!canManage} aria-invalid={invalidTrigger} className="tabular" />
               )}
-              {invalidTrigger ? <p role="alert" className="text-[12px] text-danger">{t("staffTools.automations.editor.validationNumber")}</p> : null}
+              {invalidTrigger ? <p role="alert" className="text-[12px] text-danger">{t("staffTools.automations.editor.validationRange", automationTriggerRange(rule.trigger))}</p> : null}
             </Field>
 
             <Field label={t("staffTools.automations.editor.whatItDoesLabel")} hint={t("staffTools.automations.editor.chooseAtLeastOne")}>
@@ -237,7 +238,7 @@ export default function RuleEditorPageClient() {
 
             <Field label={t("staffTools.automations.editor.waitRepeat")} hint={t("staffTools.automations.editor.dedupeHint")}>
               <Input aria-label={t("staffTools.automations.editor.waitRepeat")} type="text" inputMode="numeric" min={1} value={dedupe} onChange={(e) => { setDedupe(e.target.value); setDirty(true); }} disabled={!canManage} aria-invalid={invalidDedupe} className="font-mono w-32" />
-              {invalidDedupe ? <p role="alert" className="text-[12px] text-danger">{t("staffTools.automations.editor.validationDedupe")}</p> : null}
+              {invalidDedupe ? <p role="alert" className="text-[12px] text-danger">{t("staffTools.automations.editor.validationDedupe", { maximum: AUTOMATION_LIMITS.repeatWaitHours })}</p> : null}
             </Field>
             {templatesQuery.isError && actions.some((action) => action.key === "queue_message") ? <ErrorState onRetry={() => { void templatesQuery.refetch(); }} /> : null}
           </div>

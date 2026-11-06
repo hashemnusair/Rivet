@@ -254,7 +254,7 @@ describe("plan capacity enforcement", () => {
     })), "members");
   });
 
-  it("rechecks future membership capacity when an archived member is restored", async () => {
+  it("never restores an archived member through an edit, so a full plan stays full", async () => {
     const t = convexTest(schema, modules);
     const fixture = await seed(t, { members: 1 });
     const today = new Date().toISOString().slice(0, 10);
@@ -270,7 +270,9 @@ describe("plan capacity enforcement", () => {
     });
 
     await expect(fixture.owner.mutation(api.domain.mutate, operation("members.update", { memberId: "restore-active-member", notes: "Non-archived profile edits remain available at capacity." }))).resolves.toMatchObject({ id: "restore-active-member" });
-    await expectCapacityFailure(fixture.owner.mutation(api.domain.mutate, operation("members.update", { memberId: "restore-archived-member", status: "active", archivedAt: null })), "members");
+    // `status` and `archivedAt` are not edit fields (`update-fields.ts`): the edit is
+    // accepted without them and the member stays archived, under the plan's capacity.
+    await expect(fixture.owner.mutation(api.domain.mutate, operation("members.update", { memberId: "restore-archived-member", status: "active", archivedAt: null }))).resolves.toMatchObject({ id: "restore-archived-member", status: "archived" });
     const restored = await t.run(async (ctx) => {
       const org = await ctx.db.query("organizations").withIndex("by_public_id", (q) => q.eq("publicId", "capacity-org")).unique();
       const member = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", org!._id).eq("entityType", "member").eq("publicId", "restore-archived-member")).unique();

@@ -203,15 +203,22 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
     };
   }, [claimInvitation, claimNonce, clerkLoaded, clerkSignedIn, ensureCurrentUser, fullName, isAuthenticated, syncKey]);
 
-  const canQueryIdentity = Boolean(isAuthenticated && syncKey && sync.key === syncKey && sync.status === "ready");
+  // The identity is asked for while the user row is synchronized, not after:
+  // a returning account already has its row, so the app opens one round trip
+  // sooner. Until the sync finishes only an answer that names an active user
+  // counts; a first-ever sign-in ("pending"), an unclaimed invitation (null)
+  // or a closed account keeps waiting for the sync, as before.
+  const syncing = Boolean(syncKey && sync.key === syncKey && sync.status === "syncing");
+  const canQueryIdentity = Boolean(isAuthenticated && syncKey && sync.key === syncKey && (sync.status === "ready" || sync.status === "syncing"));
   const result = useQuery(api.identity.current, canQueryIdentity ? {} : "skip");
+  const earlyIdentity = syncing && Boolean(result && !result.pending && !("deactivated" in result && result.deactivated) && result.user);
 
   let value: RivetIdentity;
   if (!clerkLoaded || authLoading) {
     value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
   } else if (!clerkSignedIn) {
     value = { status: "anonymous", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
-  } else if (!isAuthenticated || sync.status === "idle" || sync.status === "syncing") {
+  } else if (!isAuthenticated || sync.status === "idle" || (sync.status === "syncing" && !earlyIdentity)) {
     value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
   } else if (sync.status === "error") {
     value = {

@@ -235,8 +235,10 @@ function RenewalQueuePage() {
   const fromDate = params.get("from") ?? "";
   const toDate = params.get("to") ?? "";
   const days = params.get("days") ?? (fromDate || toDate ? "" : bucket === "expired" ? "45" : "14");
-  const normalizedDays = latinDigits(days);
+  const normalizedDays = latinDigits(days).trim();
   const daysNumber = /^\d+$/.test(normalizedDays) ? Number(normalizedDays) : Number.NaN;
+  // Typed text that is not a whole number of days, or is out of range, says so instead of being ignored.
+  const daysInvalid = normalizedDays !== "" && !(Number.isInteger(daysNumber) && daysNumber >= 1 && daysNumber <= 365);
   const selectedId = params.get("member") ?? undefined;
   const runId = params.get("run") ?? undefined;
   const page = Math.max(1, Number(params.get("page")) || 1);
@@ -290,8 +292,9 @@ function RenewalQueuePage() {
             <div className="mt-2 space-y-3">
               <label htmlFor="follow-up-days" className="grid gap-1.5 text-[12px] font-medium text-ink-2">
                 {t("crmCompletion.queues.days")}
-                <Input id="follow-up-days" type="text" inputMode="numeric" min={1} max={365} value={days} onChange={(event) => { update({ days: event.target.value, from: undefined, to: undefined, page: undefined, member: undefined }); }} aria-label={t("crm.queues.daysLabel")} dir="ltr" />
+                <Input id="follow-up-days" type="text" inputMode="numeric" min={1} max={365} value={days} onChange={(event) => { update({ days: event.target.value, from: undefined, to: undefined, page: undefined, member: undefined }); }} aria-label={t("crm.queues.daysLabel")} aria-invalid={daysInvalid || undefined} aria-describedby={daysInvalid ? "follow-up-days-error" : undefined} dir="ltr" />
               </label>
+              {daysInvalid ? <p id="follow-up-days-error" role="alert" className="text-[12px] text-danger">{t("crmCompletion.queues.daysInvalid")}</p> : null}
               <p className="text-[12px] text-ink-4">{t("crmCompletion.queues.exactDatesHint")}</p>
             </div>
           </div>

@@ -134,6 +134,7 @@ export const crmCompletion: typeof EnCrmCompletion = {
     timePeriod: "الفترة الزمنية",
     days: "الأيام",
     exactDatesHint: "أو اختر التواريخ المحددة أدناه.",
+    daysInvalid: "أدخل عددًا من الأيام بين 1 و365.",
     exactEndDates: "تواريخ الانتهاء المحددة",
     fromDate: "من تاريخ",
     toDate: "إلى تاريخ",

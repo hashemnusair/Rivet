@@ -45,9 +45,9 @@ it.each(["pending_payment", "suspended"] as const)("keeps both scoped destinatio
   expect(route.replace).not.toHaveBeenCalled();
   result.unmount(); resetApiForTests();
   route.pathname = "/billing"; route.search = "organizationId=billing-org";
-  let lookup: ReturnType<typeof vi.fn> = vi.fn();
+  let lookup = vi.fn<(organizationId?: string) => void>();
   await renderWithApp(<BillingCheckoutPage />, { prepare: async api => {
-    lookup = vi.fn();
+    lookup = vi.fn<(organizationId?: string) => void>();
     vi.spyOn(api, "getBillingCheckout").mockImplementation(async organizationId => { lookup(organizationId); return { gym: { id: "billing-org", name: "Billing Gym", status, billingInterval: "monthly", timezone: "UTC" }, canPay: true, paymentDetails: { cliqAlias: "", cliqName: "", iban: "", bankName: "", accountName: "", note: "" } }; });
   } });
   expect(await screen.findByText("Nothing to pay right now")).toBeInTheDocument();

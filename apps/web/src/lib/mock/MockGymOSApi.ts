@@ -122,7 +122,7 @@ import { addCalendarMonths, DAY_MS, INVOICE_LEAD_DAYS, PAYMENT_TERM_DAYS, RENEWA
 import { MESSAGE_TEMPLATE_CATALOGUE_VERSION } from "../../../convex/messagingTemplates";
 import { AGREEMENT_COPY_RECIPIENTS, AGREEMENT_PLANS, MAX_SIGNATURE_IMAGE_LENGTH, MAX_SIGNATURE_PRINT_IMAGE_LENGTH, SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_AR, agreementVersionForLanguage, agreementLanguageForVersion, agreementSectionsForVersion, agreementReference, canonicalAgreementText, maskIdNumber, sha256Hex, validCalendarDate, validNationalId, validPassportNumber } from "../../../convex/legalAgreementText";
 import { MAX_SUPPLIER_PAYMENT_ALLOCATIONS, MAX_SUPPLIER_PAYMENT_REFERENCE_LENGTH, PAYABLE_STATUSES, SUPPLIER_PAYMENT_METHODS, allocationsTotalMinor, calendarDaysBetween, matchesPayableFilters, payableStatusFor, summarizePayables } from "@/lib/domain/payables";
-import { canonicalPhoneKey, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
+import { canonicalPhoneKey, isValidCountryCallingCode, isValidLeadPhone, isValidOptionalEmail, normalizeLeadName, normalizeLeadPhone, normalizeOptionalEmail, normalizePhoneForStorage, phoneSearchMatches } from "@/lib/utils/contact";
 import { buildDuplicateCandidatePairs } from "@/lib/members/duplicate-candidates";
 import { deriveRetentionRisks } from "@/lib/retention/at-risk";
 import { buildCsvDocument, exportList, formatMinorUnits, type CsvValue } from "@/lib/exports/csv";
@@ -140,6 +140,7 @@ import type { CustomerMarketingPreference, CustomerMembership, CustomerPersona, 
 import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import { PLAN_COUNT_LIMITS, TEXT_LIMITS } from "@/lib/domain/input-limits";
+import { MEMBER_GENDERS, MEMBER_LANGUAGES, MEMBER_UPDATE_FIELDS, PLAN_BRANCH_ACCESS, PLAN_KINDS, PLAN_STATUSES, PLAN_UPDATE_FIELDS, pickFields } from "@/lib/domain/update-fields";
 import {
   currentRole,
   currentUser,
@@ -770,6 +771,11 @@ function applySort<I>(items: I[], sort: string | undefined, getter: (item: I, ke
     if (va > vb) return desc ? -1 : 1;
     return 0;
   });
+}
+
+/** An edit's field, when present, must hold one of its allowed values (as `assertOneOf` in Convex). */
+function assertMockOneOf(value: unknown, allowed: readonly string[], field: string, label: string): void {
+  if (value !== undefined && !(typeof value === "string" && allowed.includes(value))) throw ApiError.of(ERR.VALIDATION, `${label} is invalid.`, { fieldErrors: { [field]: ["Invalid"] } });
 }
 
 export class MockGymOSApi implements GymOSApi {
@@ -6468,11 +6474,17 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  updateMember(memberId: T.UUID, input: T.UpdateMemberInput): Promise<T.MemberDetail> {
+  updateMember(memberId: T.UUID, request: T.UpdateMemberInput): Promise<T.MemberDetail> {
     return this.respond(() => {
       this.require("members.write");
       const m = this.db.members.find((x) => x.id === memberId);
       if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      // Only what an edit may change, as in Convex (`update-fields.ts`).
+      const input = pickFields(request as Record<string, unknown>, MEMBER_UPDATE_FIELDS) as T.UpdateMemberInput;
+      assertMockOneOf(input.gender, MEMBER_GENDERS, "gender", "Gender");
+      assertMockOneOf(input.preferredLanguage, MEMBER_LANGUAGES, "preferredLanguage", "Preferred language");
+      if (input.dateOfBirth !== undefined && input.dateOfBirth !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(input.dateOfBirth)) throw ApiError.of(ERR.VALIDATION, "Date of birth must be a calendar date.", { fieldErrors: { dateOfBirth: ["Invalid"] } });
+      if (input.tags !== undefined && !(Array.isArray(input.tags) && input.tags.every((tag) => typeof tag === "string"))) throw ApiError.of(ERR.VALIDATION, "Tags is invalid.", { fieldErrors: { tags: ["Invalid"] } });
       if (input.fullName !== undefined && (!input.fullName.trim() || input.fullName.trim().length > TEXT_LIMITS.personName)) throw ApiError.of(ERR.VALIDATION, "Full name must be between 3 and 120 characters.", { fieldErrors: { fullName: ["Enter a full name"] } });
       const marketingChanged = input.marketingOptIn !== undefined || input.marketingPreferenceSource !== undefined;
       const beforePreference = m.marketingPreference ?? { optedIn: m.marketingOptIn, source: "system_default" as const };
@@ -6679,6 +6691,10 @@ export class MockGymOSApi implements GymOSApi {
 
   /** Same plan bounds as Convex `plans.create` / `plans.update`. */
   private assertPlanInput(input: T.UpdatePlanInput): void {
+    assertMockOneOf(input.kind, PLAN_KINDS, "kind", "Plan type");
+    assertMockOneOf(input.branchAccess, PLAN_BRANCH_ACCESS, "branchAccess", "Branch access");
+    assertMockOneOf(input.status, PLAN_STATUSES, "status", "Status");
+    if (input.basePrice !== undefined && !(Number.isSafeInteger(input.basePrice.amount) && input.basePrice.amount >= 0)) throw ApiError.of(ERR.VALIDATION, `Price must be a non-negative integer amount in ${input.basePrice.currency}.`, { fieldErrors: { basePrice: ["Invalid"] } });
     if (input.name !== undefined && (!input.name.trim() || input.name.trim().length > TEXT_LIMITS.planName)) throw ApiError.of(ERR.VALIDATION, input.name.trim() ? "Plan name is invalid." : "Plan name and code are required.");
     for (const field of Object.keys(PLAN_COUNT_LIMITS) as (keyof typeof PLAN_COUNT_LIMITS)[]) {
       const value = input[field];
@@ -6712,12 +6728,17 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  updatePlan(planId: T.UUID, input: T.UpdatePlanInput): Promise<T.MembershipPlan> {
+  updatePlan(planId: T.UUID, request: T.UpdatePlanInput): Promise<T.MembershipPlan> {
     return this.respond(() => {
       this.require("settings.manage");
       const plan = this.db.plans.find((p) => p.id === planId);
       if (!plan) throw ApiError.of(ERR.NOT_FOUND, "Plan not found.");
+      const input = pickFields(request as Record<string, unknown>, PLAN_UPDATE_FIELDS) as T.UpdatePlanInput;
       this.assertPlanInput(input);
+      if (input.code !== undefined) {
+        input.code = input.code.trim().toUpperCase();
+        if (!input.code) throw ApiError.of(ERR.VALIDATION, "Plan name and code are required.");
+      }
       const before = { basePrice: plan.basePrice.amount, status: plan.status };
       Object.assign(plan, input);
       this.audit({
@@ -11324,7 +11345,7 @@ export class MockGymOSApi implements GymOSApi {
       this.require("settings.manage");
       const before = { name: this.db.organization.name, receiptFooter: this.db.organization.receiptFooter, taxRatePercent: this.db.organization.taxRatePercent };
       const phoneCountryCallingCode = input.phoneCountryCallingCode?.replace(/\D/g, "");
-      if (input.phoneCountryCallingCode !== undefined && !/^\d{1,3}$/.test(phoneCountryCallingCode ?? "")) {
+      if (input.phoneCountryCallingCode !== undefined && !isValidCountryCallingCode(phoneCountryCallingCode ?? "")) {
         throw ApiError.of(ERR.VALIDATION, "Enter a valid country calling code.", { fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
       }
       Object.assign(this.db.organization, input, phoneCountryCallingCode ? { phoneCountryCallingCode } : {});

@@ -132,6 +132,7 @@ export const crmCompletion = {
     timePeriod: "Time period",
     days: "Days",
     exactDatesHint: "Or choose exact dates below.",
+    daysInvalid: "Enter a number of days from 1 to 365.",
     exactEndDates: "Exact end dates",
     fromDate: "From date",
     toDate: "To date",

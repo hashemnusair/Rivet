@@ -934,3 +934,44 @@ jumping in. Decisions taken (assumptions, open to the owners):
 - **Not changed.** The chain behind the wait (Clerk → Convex sign-in → `ensureCurrent`
   → identity → member record) is what takes the time; shortening it is a separate,
   measurable change.
+
+## Input hardening, dev toolchain and a quicker sign-in — 2026-11-06
+
+Elias asked for the code-only items of the backlog to be done and pushed. Decisions
+taken (assumptions, open to the owners):
+
+- **Edits change only edit fields.** `members.update` and `plans.update` keep the fields
+  of `UpdateMemberInput` / `UpdatePlanInput` and ignore everything else, in Convex and
+  in the preview adapter (`src/lib/domain/update-fields.ts`). Two consequences: an edit
+  can no longer un-archive a member (no screen did; there is no restore flow, so a
+  restore would need its own audited command), and the referrer (`referredByMemberId`)
+  is fixed when the member is created, because it decides who earns the referral
+  reward. Gender, message language, birth date, tags, plan type, branch access,
+  status and price are checked for valid values.
+- **Free text has a server limit by field name.** Every `domain.mutate` request is
+  checked before it runs: notes, reasons (`reason` and any `…Reason`), message bodies,
+  descriptions and resolution summaries 2,000 characters; subjects and city 255;
+  addresses 500. Each is at or above what the forms let anyone type (a line 255, the
+  gym address 300, a text area 2,000), so only a direct API caller sees
+  "This text is too long. The limit is {maximum} characters." Other fields keep their
+  own rules. The member import (CSV) and the assistant's chat are not affected.
+- **Numbers.** Automation triggers look at most 365 days or 720 hours ahead, and a
+  rule waits at most 8,760 hours (a year) before repeating; larger values were stored
+  but never fired. A country calling code is 1–3 digits that do not start with 0.
+  The Follow-ups days box and blank stock and purchase-order numbers now say what is
+  wrong instead of being ignored. A discount above the price still needs a product
+  decision (docs/24).
+- **Dev toolchain.** Vitest 4.1.12 replaces 3.2 (it no longer uses Tinypool, which
+  had the two critical advisories); Vite, `brace-expansion` and `minimatch` are
+  pinned to patched releases through workspace overrides. Tests adjusted for Vitest 4:
+  no spying on functions jsdom lacks, a `URL` stub that is still a constructor, spies
+  restored between tests, and the page sheet's page load made spy-able
+  (`sheetDocument.load`), since jsdom's navigation warning no longer reaches the
+  test's console.
+- **Sign-in one round trip quicker.** The app asks Convex who the account is while
+  it synchronizes the user row, instead of after. An early answer is used only when
+  it names an active user; a first-ever sign-in, an unclaimed invitation or a closed
+  account waits for the sync exactly as before.
+- **Release.** The frontend deploys with the push. The server-side parts (allowlists,
+  text limits, automation and calling-code limits) take effect only after the next
+  guarded Convex deploy (`pnpm convex:deploy`); the frontend does not depend on them.

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, act } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { MARKETPLACE_GYMS, type CustomerPersona, type MarketplaceGym } from "@/lib/public/experience-data";
 import { PUBLIC_EXPERIENCE_FIRST_SNAPSHOT_TIMEOUT_MS } from "@/lib/public/experience-refresh";
 import { ExperienceProvider, useExperience } from "./experience-provider";
@@ -8,7 +8,7 @@ type SubscriptionEntry<T> = {
   onValue: (value: T) => void;
   onError: (error: unknown) => void;
   resolve: (unsubscribe: () => void) => void;
-  unsubscribe: ReturnType<typeof vi.fn>;
+  unsubscribe: Mock<() => void>;
   active: boolean;
 };
 
@@ -20,7 +20,7 @@ function createStream<T>() {
       onValue,
       onError,
       resolve: (unsubscribe) => resolve(unsubscribe),
-      unsubscribe: vi.fn(),
+      unsubscribe: vi.fn<() => void>(),
       active: true,
     };
     entry.unsubscribe.mockImplementation(() => {

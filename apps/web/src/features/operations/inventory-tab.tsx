@@ -29,12 +29,14 @@ export function ProductForm({ currency, branchId, product, availableQuantity, pe
   const t = useT();
   const validate = useOperationsNumberProblems();
   const [form, setForm] = useState(() => ({ sku: product?.sku ?? "", name: product?.name ?? "", unit: product?.unit ?? "each", availableQuantity: product ? String(availableQuantity ?? 0) : "0", reorderPoint: product ? String(product.reorderPoint) : "", retailPrice: product?.retailPrice ? toMajorString(product.retailPrice) : "" }));
-  const problems = { availableQuantity: validate.integer(form.availableQuantity, 0), reorderPoint: validate.integer(form.reorderPoint, 0), retailPrice: validate.amount(form.retailPrice, currency) };
+  // Blank required numbers are named once Save has been pressed, not while the form is fresh.
+  const [attempted, setAttempted] = useState(false);
+  const problems = { availableQuantity: validate.integer(form.availableQuantity, 0, undefined, attempted), reorderPoint: validate.integer(form.reorderPoint, 0, undefined, attempted), retailPrice: validate.amount(form.retailPrice, currency) };
   const invalidNumbers = Object.values(problems).some(Boolean);
   const editing = Boolean(product);
   return (
     <FormPanel title={editing ? t("stockWorkspace.editItem") : t("stockWorkspace.addItemTitle")} description={t("stockWorkspace.itemHint")} onCancel={onCancel}>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); if (invalidNumbers || !form.availableQuantity.trim() || !form.reorderPoint.trim()) return; onSubmit({ id: product?.id, ...(branchId ? { branchId, availableQuantity: Number(latinDigits(form.availableQuantity)) } : {}), sku: form.sku, name: form.name, unit: form.unit as UpsertProductInput["unit"], reorderPoint: Number(latinDigits(form.reorderPoint)), retailPrice: minorValue(form.retailPrice, currency) }); }}>
+      <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setAttempted(true); if (invalidNumbers || !form.availableQuantity.trim() || !form.reorderPoint.trim()) return; onSubmit({ id: product?.id, ...(branchId ? { branchId, availableQuantity: Number(latinDigits(form.availableQuantity)) } : {}), sku: form.sku, name: form.name, unit: form.unit as UpsertProductInput["unit"], reorderPoint: Number(latinDigits(form.reorderPoint)), retailPrice: minorValue(form.retailPrice, currency) }); }}>
         <Field label={t("stockWorkspace.sku")} required><Input value={form.sku} onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value.toUpperCase() }))} placeholder="SUP-CREATINE" required /></Field>
         <Field label={t("common.label.name")} required><Input value={form.name} maxLength={TEXT_LIMITS.productName} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder={t("stockWorkspace.creatineExample")} required /></Field>
         <Field label={t("stockWorkspace.unit")} required><Select value={form.unit} onValueChange={(value) => setForm((current) => ({ ...current, unit: value as UpsertProductInput["unit"] }))}><SelectTrigger aria-label={t("stockWorkspace.unit")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="each">{t("stockWorkspace.each")}</SelectItem><SelectItem value="kg">{t("stockWorkspace.kg")}</SelectItem><SelectItem value="liter">{t("stockWorkspace.liter")}</SelectItem><SelectItem value="box">{t("stockWorkspace.box")}</SelectItem><SelectItem value="serving">{t("stockWorkspace.serving")}</SelectItem></SelectContent></Select></Field>
@@ -70,7 +72,7 @@ export function TransferStockDialog({ open, onOpenChange, sourceBranchId, branch
   }, [destinations, open, sourceBranchId, transferableProducts]); // Reset only when the source branch or dialog changes.
 
   const parsedQuantity = Number(latinDigits(quantity));
-  const quantityProblem = validate.integer(quantity, 1);
+  const quantityProblem = validate.integer(quantity, 1, undefined, true);
   const canSubmit = Boolean(sourceBranchId && productId && destinationBranchId && !quantityProblem && Number.isSafeInteger(parsedQuantity) && parsedQuantity > 0 && parsedQuantity <= selectedAvailable && reason.trim().length >= 3 && !pending);
   // A retry of the same unchanged transfer after a lost response replays the
   // original pair of movements; an edited draft or a reopened dialog is a new

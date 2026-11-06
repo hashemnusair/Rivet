@@ -51,7 +51,8 @@ describe("Brand kit editor", () => {
 
     await waitFor(() => expect(screen.getByTestId("shell-brand")).toHaveAttribute("data-palette", "gold"));
     expect(screen.getByTestId("shell-brand").parentElement).toHaveStyle({ "--tenant-brand-primary": "#b88a2b" });
-    expect(screen.getByTestId("shell-brand")).toHaveAttribute("data-logo", expect.stringContaining("mock-media://"));
+    // The preview stores the upload as a blob URL where the environment can make one, else a mock-media address.
+    expect(screen.getByTestId("shell-brand")).toHaveAttribute("data-logo", expect.stringMatching(/^(blob:|mock-media:\/\/)/));
     await expect(api.getBrandKit()).resolves.toMatchObject({ paletteKey: "gold", primaryColor: "#b88a2b", logoAltText: "Forge Fitness Club logo" });
   });
 

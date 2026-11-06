@@ -1,5 +1,16 @@
 # 12 — System Maps and Release Runbook
 
+## Input hardening — Convex deploy owed (6 November 2026)
+
+The 6 November input-hardening commit (CURRENT_STATE, docs/09) changes Convex
+functions only: `members.update` / `plans.update` allowlists and value checks, the
+free-text limit on every `domain.mutate` request, automation maxima and the
+calling-code rule. No schema, index or data change. The frontend shipped with the
+push and does not depend on these. Release them through the guarded procedure from
+that commit: `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` (names only),
+`pnpm convex:deploy -- --dry-run --yes` (expect no index change), then the deploy
+and `health:check --prod`. Record the SHA, deployment and time here.
+
 ## Git automatic deployments restored — 29 October 2026
 
 Hashem explicitly requested restoring automatic deployments. This supersedes the

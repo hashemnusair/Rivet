@@ -1,3 +1,4 @@
+import { AUTOMATION_LIMITS } from "@/lib/domain/input-limits";
 import type { AutomationTriggerKey } from "@/lib/domain/types";
 import { createTranslator } from "@/lib/i18n/core";
 import type { TFunction } from "@/lib/i18n/provider";
@@ -9,19 +10,25 @@ export function normalizeAutomationNumbers(raw: string): string {
   return latinDigits(raw).replace(/[،٬]/g, ",");
 }
 
-export function parseAutomationNumbers(raw: string, allowZero = false): number[] {
+export function parseAutomationNumbers(raw: string, allowZero = false, maximum: number = Number.MAX_SAFE_INTEGER): number[] {
   const tokens = normalizeAutomationNumbers(raw).split(",").map((value) => value.trim());
   if (tokens.length === 0 || tokens.some((value) => !/^\d+$/.test(value))) return [];
   const values = tokens.map((value) => Number(value));
-  if (values.some((value) => !Number.isSafeInteger(value) || (allowZero ? value < 0 : value <= 0))) return [];
+  if (values.some((value) => !Number.isSafeInteger(value) || (allowZero ? value < 0 : value <= 0) || value > maximum)) return [];
   return [...new Set(values)];
 }
 
-export function parseAutomationInteger(raw: string, allowZero = false): number | undefined {
+export function parseAutomationInteger(raw: string, allowZero = false, maximum: number = Number.MAX_SAFE_INTEGER): number | undefined {
   const value = normalizeAutomationNumbers(raw).trim();
   if (!/^\d+$/.test(value)) return undefined;
   const number = Number(value);
-  return Number.isSafeInteger(number) && (allowZero ? number >= 0 : number > 0) ? number : undefined;
+  return Number.isSafeInteger(number) && (allowZero ? number >= 0 : number > 0) && number <= maximum ? number : undefined;
+}
+
+/** The range a trigger's number may take: days up to a year, hours up to a month. */
+export function automationTriggerRange(trigger: AutomationTriggerKey): { minimum: number; maximum: number } {
+  const hours = trigger === "lead_untouched" || trigger === "follow_up_overdue";
+  return { minimum: trigger === "membership_expired" ? 0 : 1, maximum: hours ? AUTOMATION_LIMITS.hours : AUTOMATION_LIMITS.days };
 }
 
 const ENGLISH = createTranslator("en");
@@ -44,7 +51,7 @@ export function automationTriggerParameterLabel(trigger: AutomationTriggerKey, t
 }
 
 export function automationTriggerParams(trigger: AutomationTriggerKey, raw: string): AutomationTriggerParams {
-  const values = parseAutomationNumbers(raw, trigger === "membership_expired");
+  const values = parseAutomationNumbers(raw, trigger === "membership_expired", automationTriggerRange(trigger).maximum);
   if (trigger === "membership_expiring") return { daysBefore: values };
   if (trigger === "membership_expired") return { daysAfter: values[0] ?? 0 };
   if (trigger === "member_inactive" || trigger === "payment_outstanding") return { days: values[0] ?? 0 };
@@ -62,5 +69,5 @@ export function automationTriggerFieldValue(trigger: AutomationTriggerKey, param
 }
 
 export function hasValidAutomationTriggerParams(trigger: AutomationTriggerKey, raw: string): boolean {
-  return parseAutomationNumbers(raw, trigger === "membership_expired").length > 0;
+  return parseAutomationNumbers(raw, trigger === "membership_expired", automationTriggerRange(trigger).maximum).length > 0;
 }

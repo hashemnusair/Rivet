@@ -6,7 +6,8 @@ import { parseWorkspaceSubtitle } from "../src/lib/domain/workspace-subtitle";
 import { describeMemberImportError } from "../src/lib/imports/member-import-errors";
 import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-error";
 import { searchKey } from "../src/lib/utils/text";
-import { PLAN_COUNT_LIMITS, TEXT_LIMITS } from "../src/lib/domain/input-limits";
+import { AUTOMATION_LIMITS, PLAN_COUNT_LIMITS, TEXT_LIMITS, freeTextLimit } from "../src/lib/domain/input-limits";
+import { MEMBER_GENDERS, MEMBER_LANGUAGES, MEMBER_UPDATE_FIELDS, PLAN_BRANCH_ACCESS, PLAN_KINDS, PLAN_STATUSES, PLAN_UPDATE_FIELDS, pickFields } from "../src/lib/domain/update-fields";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -97,6 +98,7 @@ import {
   LEAD_EMAIL_PATTERN,
   LEAD_PHONE_PATTERN,
   normalizeCountryCallingCode,
+  isValidCountryCallingCode,
   normalizePhoneForStorage,
   phoneSearchMatches,
 } from "../src/lib/utils/contact";
@@ -420,6 +422,51 @@ function assertPlanCounts(input: Data, actor: ActorContext): void {
 
 function assertPlanName(name: string, actor: ActorContext): void {
   if (name.length > TEXT_LIMITS.planName) domainError("VALIDATION_ERROR", "Plan name is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "Plan name" } }, correlationId: actor.correlationId });
+}
+
+function invalidField(field: string, label: string, correlationId: string | undefined): never {
+  domainError("VALIDATION_ERROR", `${label} is invalid.`, { message: { key: "apiErrors.invalidField", params: { field: label } }, fieldErrors: { [field]: ["Invalid"] }, correlationId });
+}
+
+function assertOneOf(value: unknown, allowed: readonly string[], field: string, label: string, correlationId: string | undefined): void {
+  if (value !== undefined && !(typeof value === "string" && allowed.includes(value))) invalidField(field, label, correlationId);
+}
+
+/** A plan's fields that are present must hold values the plan can use; an edit sends only some. */
+function assertPlanFields(input: Data, actor: ActorContext): void {
+  assertOneOf(input.kind, PLAN_KINDS, "kind", "Plan type", actor.correlationId);
+  assertOneOf(input.branchAccess, PLAN_BRANCH_ACCESS, "branchAccess", "Branch access", actor.correlationId);
+  assertOneOf(input.status, PLAN_STATUSES, "status", "Status", actor.correlationId);
+  if (input.branchIds !== undefined && !(Array.isArray(input.branchIds) && input.branchIds.every((id) => typeof id === "string"))) invalidField("branchIds", "Branches", actor.correlationId);
+  if (input.basePrice !== undefined) {
+    const amount = data(input.basePrice).amount;
+    if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 0) {
+      domainError("VALIDATION_ERROR", `Price must be a non-negative integer amount in ${actor.organization.currency}.`, { message: { key: "apiErrors.nonNegativeAmount", params: { field: "Price", currency: actor.organization.currency } }, fieldErrors: { basePrice: ["Invalid"] }, correlationId: actor.correlationId });
+    }
+  }
+}
+
+/**
+ * Free text is bounded by field name wherever it sits in a request (notes,
+ * reasons, addresses, support messages; see `FREE_TEXT_LIMITS`). The forms
+ * stop at or below each limit, so only a direct caller meets the error.
+ */
+function assertFreeTextBounds(value: unknown, correlationId: string | undefined, depth = 0): void {
+  if (depth > 6 || value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const item of value) assertFreeTextBounds(item, correlationId, depth + 1);
+    return;
+  }
+  for (const [field, item] of Object.entries(value as Data)) {
+    if (typeof item === "string") {
+      const maximum = freeTextLimit(field);
+      if (maximum !== undefined && item.length > maximum) {
+        domainError("VALIDATION_ERROR", `This text is too long. The limit is ${maximum} characters.`, { message: { key: "apiErrors.textTooLong", params: { maximum } }, fieldErrors: { [field]: ["Too long"] }, correlationId });
+      }
+    } else {
+      assertFreeTextBounds(item, correlationId, depth + 1);
+    }
+  }
 }
 
 /** Member names are trimmed and bounded like lead and imported names; a pasted page never becomes a name. */
@@ -4346,24 +4393,24 @@ const AUTOMATION_TRIGGER_KEYS = [
 const AUTOMATION_ACTION_KEYS = ["create_task", "queue_message", "notify_manager"] as const;
 const AUTOMATION_TASK_OWNER_ROLES = ["owner", "manager", "salesperson", "receptionist", "trainer"] as const;
 
-function automationInteger(value: unknown, label: string, correlationId: string, minimum: number): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
-    domainError("VALIDATION_ERROR", `${label} must be a whole number of at least ${minimum}.`, { message: { key: "apiErrors.minimumWholeNumber", params: { field: String(label), minimum: String(minimum) } }, correlationId });
+function automationInteger(value: unknown, label: string, correlationId: string, minimum: number, maximum: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum || value > maximum) {
+    domainError("VALIDATION_ERROR", `${label} must be a whole number between ${minimum} and ${maximum}.`, { message: { key: "apiErrors.wholeNumberRange", params: { field: String(label), minimum: String(minimum), maximum: String(maximum) } }, correlationId });
   }
   return value;
 }
 
 function normalizedAutomationTriggerParams(trigger: string, raw: Data, correlationId: string): Data {
   if (trigger === "membership_expiring") {
-    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "End date checkpoints", correlationId, 1)))].sort((left, right) => left - right);
+    const daysBefore = [...new Set(arrayValue(raw.daysBefore).map((value) => automationInteger(value, "End date checkpoints", correlationId, 1, AUTOMATION_LIMITS.days)))].sort((left, right) => left - right);
     if (daysBefore.length === 0) domainError("VALIDATION_ERROR", "Add at least one end date checkpoint.", { correlationId });
     return { daysBefore };
   }
-  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after end date", correlationId, 0) };
-  if (trigger === "member_inactive") return { days: automationInteger(raw.days, "Inactive days", correlationId, 1) };
-  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Unpaid days", correlationId, 1) };
-  if (trigger === "lead_untouched") return { hours: automationInteger(raw.hours, "Untouched hours", correlationId, 1) };
-  if (trigger === "follow_up_overdue") return { hours: automationInteger(raw.hours, "Overdue hours", correlationId, 1) };
+  if (trigger === "membership_expired") return { daysAfter: automationInteger(raw.daysAfter, "Days after end date", correlationId, 0, AUTOMATION_LIMITS.days) };
+  if (trigger === "member_inactive") return { days: automationInteger(raw.days, "Inactive days", correlationId, 1, AUTOMATION_LIMITS.days) };
+  if (trigger === "payment_outstanding") return { days: automationInteger(raw.days, "Unpaid days", correlationId, 1, AUTOMATION_LIMITS.days) };
+  if (trigger === "lead_untouched") return { hours: automationInteger(raw.hours, "Untouched hours", correlationId, 1, AUTOMATION_LIMITS.hours) };
+  if (trigger === "follow_up_overdue") return { hours: automationInteger(raw.hours, "Overdue hours", correlationId, 1, AUTOMATION_LIMITS.hours) };
   domainError("VALIDATION_ERROR", "Automation trigger is invalid.", { correlationId });
 }
 
@@ -4411,7 +4458,7 @@ function normalizedAutomationRulePatch(input: Data, existing: Data | undefined, 
     if (typeof input.enabled !== "boolean" && creating) domainError("VALIDATION_ERROR", "Enabled state is invalid.", { correlationId });
     if (typeof input.enabled === "boolean") patch.enabled = input.enabled;
   }
-  if (creating || has("dedupeWindowHours")) patch.dedupeWindowHours = automationInteger(input.dedupeWindowHours ?? existing?.dedupeWindowHours ?? 24, "Deduplication window", correlationId, 1);
+  if (creating || has("dedupeWindowHours")) patch.dedupeWindowHours = automationInteger(input.dedupeWindowHours ?? existing?.dedupeWindowHours ?? 24, "Deduplication window", correlationId, 1, AUTOMATION_LIMITS.repeatWaitHours);
   return patch;
 }
 
@@ -8963,6 +9010,7 @@ async function ensureCustomerReferralLink(ctx: MutationCtx, membershipId: string
 }
 
 async function mutationData(ctx: MutationCtx, operation: string, input: Data, request: RequestArgs): Promise<unknown> {
+  assertFreeTextBounds(input, request.correlationId);
   if ((AI_MUTATION_OPERATIONS as readonly string[]).includes(operation)) return await aiMutation(ctx, operation, input, request, aiDomainPort);
   if (operation === "exports.member_personal_data") return await memberPersonalDataExport(ctx, input, request);
   if (operation === "bootstrap.ensure") {
@@ -10667,8 +10715,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "members.update": {
       requirePermission(actor, "members.write");
       const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
-      const patch: Data = { ...input };
-      delete patch.memberId;
+      const patch: Data = pickFields(input, MEMBER_UPDATE_FIELDS);
+      assertOneOf(patch.gender, MEMBER_GENDERS, "gender", "Gender", actor.correlationId);
+      assertOneOf(patch.preferredLanguage, MEMBER_LANGUAGES, "preferredLanguage", "Preferred language", actor.correlationId);
+      if (patch.dateOfBirth !== undefined && patch.dateOfBirth !== "" && !(typeof patch.dateOfBirth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(patch.dateOfBirth))) {
+        domainError("VALIDATION_ERROR", "Date of birth must be a calendar date.", { message: { key: "apiErrors.calendarField", params: { field: "Date of birth" } }, fieldErrors: { dateOfBirth: ["Invalid"] }, correlationId: actor.correlationId });
+      }
+      if (patch.tags !== undefined && !(Array.isArray(patch.tags) && patch.tags.every((tag) => typeof tag === "string"))) invalidField("tags", "Tags", actor.correlationId);
       if (Object.prototype.hasOwnProperty.call(input, "phone")) patch.phone = normalizedLeadPhone(input.phone, actor);
       if (Object.prototype.hasOwnProperty.call(input, "email")) patch.email = normalizedLeadEmail(input.email, actor);
       if (Object.prototype.hasOwnProperty.call(input, "fullName")) {
@@ -10832,6 +10885,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!name || !code) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
       assertPlanName(name, actor);
       assertPlanCounts(input, actor);
+      assertPlanFields(input, actor);
       const branches = arrayValue(input.branchIds).map(String);
       if (stringValue(input.branchAccess, "all") === "selected") for (const branchId of branches) assertBranchAccess(actor, await branchByPublicId(ctx, actor.organization._id, branchId));
       const includedPtSessions = numberValue(input.includedPtSessions);
@@ -10843,9 +10897,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
     case "plans.update": {
       requirePermission(actor, "settings.manage");
       const record = await recordOf(ctx, actor, "plan", recordId(input.planId));
-      const patch: Data = { ...input };
-      delete patch.planId;
+      const patch: Data = pickFields(input, PLAN_UPDATE_FIELDS);
+      assertPlanFields(patch, actor);
       if (patch.basePrice) patch.basePrice = money(amountOf(patch.basePrice), actor.organization.currency);
+      if (patch.code !== undefined) {
+        patch.code = stringValue(patch.code).trim().toUpperCase();
+        if (!patch.code) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
+      }
       if (patch.name !== undefined) {
         patch.name = stringValue(patch.name).trim();
         if (!patch.name) domainError("VALIDATION_ERROR", "Plan name and code are required.", { correlationId: actor.correlationId });
@@ -12530,7 +12588,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       for (const key of allowed) if (input[key] !== undefined) (patch as Record<string, unknown>)[key] = input[key];
       if (patch.phoneCountryCallingCode !== undefined) {
         const digits = String(patch.phoneCountryCallingCode).replace(/\D/g, "");
-        if (!/^\d{1,3}$/.test(digits)) domainError("VALIDATION_ERROR", "Enter a valid country calling code.", { correlationId: actor.correlationId, fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
+        if (!isValidCountryCallingCode(digits)) domainError("VALIDATION_ERROR", "Enter a valid country calling code.", { correlationId: actor.correlationId, fieldErrors: { phoneCountryCallingCode: ["Use 1 to 3 digits, for example +962"] } });
         patch.phoneCountryCallingCode = digits;
       }
       await ctx.db.patch(actor.organization._id, { ...patch, updatedAt: Date.now() });

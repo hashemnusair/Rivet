@@ -19,18 +19,24 @@ Branch `claude/sharp-edison-blgnof`; unreleased.
 - [x] Member names trimmed and bounded to 120 in `members.create`/`members.update`.
 - [x] Member freeze request reads the typed days exactly (`1.5` is refused, not 15);
   equipment numbers of only spaces are no longer sent as 0.
-- [ ] Add server-side length limits for the remaining free text (notes, reasons,
-  addresses, support messages, templates) with one shared Convex validator; the
-  client ceilings do not bind direct API callers.
-- [ ] Allowlist the fields `members.update` and `plans.update` accept; both
-  currently write every field sent (`{ ...input }`).
+- [x] Add server-side length limits for the remaining free text (notes, reasons,
+  addresses, support messages) with one shared Convex validator
+  (`FREE_TEXT_LIMITS` in `input-limits.ts`, checked on every `domain.mutate`
+  request; 6 November 2026). Templates have no free-text write path today.
+  Takes effect with the next guarded Convex deploy.
+- [x] Allowlist the fields `members.update` and `plans.update` accept
+  (`update-fields.ts`, both adapters; 6 November 2026). Values are checked too.
+  An edit can no longer un-archive a member or change the referrer.
 - [ ] Decide whether a discount above the price is an error; the sale dialog and
   the server currently cap the total at 0 without saying so.
-- [ ] Minor numeric gaps: the Follow-ups window filter silently ignores invalid
-  text; the country calling code accepts `0`/`000`; automation day/hour fields
-  have no maximum; a stock quantity of only spaces makes Save do nothing
-  without a message.
-- [ ] Settings section rail spills 16 px at 390 px (pre-existing).
+- [x] Minor numeric gaps (6 November 2026): the Follow-ups days box says when its
+  text is not 1–365; the calling code refuses a leading 0 (form, server, preview);
+  automation days stop at 365, hours at 720 and the repeat wait at 8,760 (form and
+  server); blank stock and purchase-order numbers say "Required" on Save.
+- [x] Settings section rail "spill" at 390 px: not a defect. The sticky section bar
+  bleeds into the page's 16 px side padding on purpose (`-mx-4 px-4`), which the
+  audit's per-element check reads as 16 px; the page itself does not scroll
+  sideways (`scrollWidth` 390 at 390 px, measured 6 November 2026).
 
 ## Source merge and deployment hold — 24 October 2026
 
@@ -614,13 +620,10 @@ frontend 2026-10-28T21:59Z by the Git-triggered Production deployment of `09b028
 - [ ] Complete separately authorized backend-first release and real Clerk
   multi-gym/operator-return/inbox acceptance. Source push and CI do not close
   deployment or production acceptance.
-- [ ] Triage inherited development-toolchain advisories in a separate scoped
-  remediation: the extra full audit reports 16 dev-only findings (2 critical,
-  5 high, 8 moderate, 1 low) in Vitest/mocker, Tinypool, Vite and brace-expansion.
-  Critical Tinypool advisories are GHSA-5gmw-xhrv-c9v3 and GHSA-85c8-ppgw-ccpr.
-  All 16 also occur in reviewed `9db78ef5`; exactly the four requested production
-  advisories were removed (20 → 16), with none introduced. This pass follows the
-  instruction against unrelated upgrades and does not suppress these findings.
+- [x] Development-toolchain advisories (6 November 2026): Vitest 3.2 → 4.1.12
+  (no Tinypool), Vite ≥ 7.3.7, `brace-expansion` ≥ 1.1.21 / 5.0.12 and
+  `minimatch` ≥ 11.0.1 through workspace overrides. `pnpm audit` (all
+  dependencies) and `pnpm audit --prod` report no known vulnerabilities.
 
 Production renewals, Resend/provider/inbox setup, legal/commercial reconciliation,
 restore/incident ownership and broader new features remain deferred unchanged.

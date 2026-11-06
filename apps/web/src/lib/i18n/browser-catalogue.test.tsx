@@ -25,6 +25,15 @@ async function freshModules() {
   return { core, provider, LanguageButton: switcher.LanguageButton };
 }
 
+/** Holds the Arabic catalogue back until the test releases it, so a wait is seen however fast the module loads. */
+async function heldArabic(): Promise<() => void> {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const actual = await vi.importActual<typeof import("./messages/ar")>("./messages/ar");
+  vi.doMock("./messages/ar", async () => { await gate; return actual; });
+  return release;
+}
+
 beforeEach(() => toastError.mockReset());
 afterEach(() => {
   vi.doUnmock("./messages/ar");
@@ -105,6 +114,7 @@ describe("Arabic catalogue in browser bundles", () => {
   });
 
   it("waits for Arabic instead of painting English when an Arabic page hydrates before its catalogue arrives", async () => {
+    const release = await heldArabic();
     const { core, provider } = await freshModules();
     const seen: string[] = [];
     function Probe() {
@@ -115,12 +125,13 @@ describe("Arabic catalogue in browser bundles", () => {
     // React retries a suspended render inside an awaited act() under test.
     await act(async () => { render(<Suspense fallback={<p>waiting</p>}><provider.LocaleProvider initialLocale="ar"><Probe /></provider.LocaleProvider></Suspense>); });
     expect(screen.getByText("waiting")).toBeInTheDocument();
-    await act(async () => { await core.loadCatalogue("ar"); });
+    await act(async () => { release(); await core.loadCatalogue("ar"); });
     expect(screen.getByTestId("probe")).toHaveTextContent(SAVE_AR);
     expect(seen).not.toContain("Save");
   });
 
   it("suspends a recipient-language translator until Arabic arrives", async () => {
+    const release = await heldArabic();
     const { core, provider } = await freshModules();
     function Draft() {
       const t = provider.useTranslatorFor("ar");
@@ -128,7 +139,7 @@ describe("Arabic catalogue in browser bundles", () => {
     }
     await act(async () => { render(<provider.LocaleProvider initialLocale="en"><Suspense fallback={<p data-testid="draft">waiting</p>}><Draft /></Suspense></provider.LocaleProvider>); });
     expect(screen.getByTestId("draft")).toHaveTextContent("waiting");
-    await act(async () => { await core.loadCatalogue("ar"); });
+    await act(async () => { release(); await core.loadCatalogue("ar"); });
     expect(screen.getByTestId("draft")).toHaveTextContent(SAVE_AR);
   });
 });

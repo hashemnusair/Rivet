@@ -1,5 +1,47 @@
 # GymOS / RIVET current implementation state
 
+## Input hardening, dev toolchain, quicker sign-in (6 November 2026)
+
+Decisions: docs/09 "Input hardening, dev toolchain and a quicker sign-in". Backlog:
+docs/13 "Text field stress pass" and "Review follow-up" (dev advisories).
+
+- **Edit allowlists.** `src/lib/domain/update-fields.ts` (`MEMBER_UPDATE_FIELDS`,
+  `PLAN_UPDATE_FIELDS`, `pickFields`, allowed values); used by `convex/domain.ts`
+  (`members.update`, `plans.update`, `assertPlanFields` also on `plans.create`) and
+  `MockGymOSApi`. `convex/planCapacity.test.ts` now asserts an edit cannot restore an
+  archived member.
+- **Server text limits.** `FREE_TEXT_LIMITS` / `freeTextLimit` in
+  `src/lib/domain/input-limits.ts`; `assertFreeTextBounds` runs first in
+  `mutationData`. New key `apiErrors.textTooLong` (English and Arabic).
+- **Numbers.** `AUTOMATION_LIMITS` (form `src/features/automations/form.ts`, editor,
+  `automationInteger` in Convex now takes a maximum); `isValidCountryCallingCode` in
+  `src/lib/utils/contact.ts` (settings form, Convex, preview); Follow-ups days message
+  (`crmCompletion.queues.daysInvalid`); `useOperationsNumberProblems().integer(...,
+  required)` and required item/supplier/unit cost in the purchase-order form. New copy:
+  `settingsCore.callingCodeInvalid`, `staffTools.automations.editor.validationRange`,
+  reworded `validationDedupe`; removed unused `validationNumber`.
+- **Toolchain.** `apps/web` Vitest `^4.1.12`; `pnpm-workspace.yaml` overrides for
+  `brace-expansion`, `minimatch`, `vite`. `pnpm audit` and `pnpm audit --prod`: no
+  known vulnerabilities. Test changes for Vitest 4 listed in docs/09.
+  `src/components/motion/page-sheet.tsx` gained `sheetDocument.load` (same behaviour).
+- **Sign-in.** `src/lib/auth/rivet-identity.tsx` queries `identity.current` while
+  `ensureCurrent` runs and trusts an early answer only for an active user; new
+  `rivet-identity.startup.test.tsx` (fails on the old code).
+- **Verification (6 November 2026, cloud session, Linux).** `tsc` (web and Convex);
+  ESLint (whole app) and the secret-output audit; full Vitest 2,781 passed,
+  3 skipped (new: `convex/domain.update-allowlist.test.ts` 4,
+  `src/lib/domain/update-fields.test.ts` 4, `rivet-identity.startup.test.tsx` 2);
+  Playwright on the mock dev server: `happy-path`, `operations-workflows`,
+  `workflow-pass-2`, `repo-workflows`, `feedback-regressions` and the rest of a 64-test
+  batch passed (50); `workflow-pass-4` 12/12 on a fresh server (the batch's server ran
+  out of memory mid-run); `workflow-pass-3` 10/11, the one failure being the 390 px
+  maintenance screenshot, which fails identically (19,274 px) on unmodified `main` in
+  this sandbox (font rendering). `pnpm audit` / `--prod` clean; 14 repository-safety
+  tests; `verify-lock.py`; `git diff --check`.
+- **Release.** Frontend: Git-triggered Production on push. Convex: **not deployed** by
+  this session (no deploy credentials here); run the guarded `pnpm convex:deploy` dry
+  run and deploy from this commit. No schema or index change.
+
 ## Scroll regression follows the phone/tablet rule (30 October 2026)
 
 - **Diagnosis.** Reproduced `tab-scroll-stability.spec.ts` on main `cf2eb7e8`:

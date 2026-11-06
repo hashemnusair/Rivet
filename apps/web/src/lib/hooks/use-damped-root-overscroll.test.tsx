@@ -18,7 +18,8 @@ describe("root overscroll gesture isolation and recovery", () => {
     coarse = mediaQuery("(pointer: coarse)");
     frames = new Map();
     sequence = 0;
-    vi.spyOn(window, "matchMedia").mockImplementation((query) => query === coarse.media ? coarse : mediaQuery(query));
+    // jsdom has no matchMedia; stub it rather than spy on a missing function.
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => query === coarse.media ? coarse : mediaQuery(query)));
     vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
       frames.set(++sequence, callback);
       return sequence;
@@ -28,6 +29,7 @@ describe("root overscroll gesture isolation and recovery", () => {
   afterEach(() => {
     shell.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   const wheel = (deltaX: number, deltaY: number) => {

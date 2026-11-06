@@ -18,6 +18,7 @@ import { money, parseMoneyInput, toMajorString, toWesternDigits } from "@/lib/ut
 import { cn } from "@/lib/utils/cn";
 import { useFormat } from "@/lib/i18n/format";
 import { latinDigits } from "@/lib/utils/text";
+import { isValidCountryCallingCode } from "@/lib/utils/contact";
 import { readSettingsNumber } from "./settings-number";
 import { RelativeText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +93,7 @@ export function OrganizationSection() {
     setBaseline(form);
   };
   const nameMissing = form.name.trim().length === 0;
+  const callingCodeInvalid = !isValidCountryCallingCode(form.phoneCountryCallingCode);
 
   return (
     <SettingsSection title={t("settingsCore.text008")} description={ORGANIZATION_DESCRIPTION}>
@@ -100,15 +102,15 @@ export function OrganizationSection() {
           <Field label={t("settingsCore.text009")} required error={nameMissing ? t("settingsCore.text010") : undefined}><Input value={form.name} aria-invalid={nameMissing || undefined} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
           <Field label={t("settingsCore.text011")} hint={t("settingsCore.text012")}><Select value={form.timezone} onValueChange={(v) => setForm((f) => ({ ...f, timezone: v }))}><SelectTrigger aria-label={t("settingsCore.text011")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Amman">{t("settingsCore.text013")}</SelectItem><SelectItem value="Asia/Riyadh">{t("settingsCore.text014")}</SelectItem><SelectItem value="Asia/Dubai">{t("settingsCore.text015")}</SelectItem></SelectContent></Select></Field>
           <Field label={t("settingsCore.text016")} hint={t("settingsCore.text017")}><Select value={form.locale} onValueChange={(v) => setForm((f) => ({ ...f, locale: v }))}><SelectTrigger aria-label={t("settingsCore.text016")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en-JO">{t("settingsCore.text018")}</SelectItem><SelectItem value="ar-JO">العربية (الأردن)</SelectItem></SelectContent></Select></Field>
-          <Field label={t("settingsCore.text019")} hint={t("settingsCore.text020")}><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label={t("settingsCore.text021")} value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: latinDigits(event.target.value).replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
+          <Field label={t("settingsCore.text019")} hint={t("settingsCore.text020")} error={callingCodeInvalid ? t("settingsCore.callingCodeInvalid") : undefined}><div className="relative"><span className="pointer-events-none absolute inset-y-0 start-3 flex items-center font-mono text-[13px] text-ink-3" aria-hidden>+</span><Input className="ps-7 font-mono" inputMode="numeric" aria-label={t("settingsCore.text021")} aria-invalid={callingCodeInvalid || undefined} value={form.phoneCountryCallingCode} onChange={(event) => setForm((current) => ({ ...current, phoneCountryCallingCode: latinDigits(event.target.value).replace(/\D/g, "").slice(0, 3) }))} /></div></Field>
           <Field label={t("settingsCore.text022")} hint={t("settingsCore.text023")}><Select value={form.defaultLanguage} onValueChange={(v) => setForm((f) => ({ ...f, defaultLanguage: v as "en" | "ar" }))}><SelectTrigger aria-label={t("settingsCore.text024")}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="en">{t("common.language.english")}</SelectItem><SelectItem value="ar">{t("common.language.arabic")}</SelectItem></SelectContent></Select></Field>
         </div>
       </SettingsPanel>
       <SettingsSaveBar
         dirty={dirty}
         saving={save.isPending}
-        saveDisabled={nameMissing}
-        saveDisabledReason={nameMissing ? t("settingsCore.text025") : undefined}
+        saveDisabled={nameMissing || callingCodeInvalid}
+        saveDisabledReason={nameMissing ? t("settingsCore.text025") : callingCodeInvalid ? t("settingsCore.callingCodeInvalid") : undefined}
         error={save.isError ? errorMessage(save.error, t("settingsCore.text026")) : undefined}
         onSave={commit}
         onDiscard={() => { if (baseline) setForm(baseline); }}

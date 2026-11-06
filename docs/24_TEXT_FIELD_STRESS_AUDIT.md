@@ -130,29 +130,20 @@ on the old code), the new freeze case in
 
 ## 4. Remaining work
 
-Tracked as open items in the canonical backlog,
-[docs/13](13_PRODUCT_AND_OPERATIONS_TODO.md) ("Text field stress pass"); the
-detail is kept here.
+Tracked in the canonical backlog,
+[docs/13](13_PRODUCT_AND_OPERATIONS_TODO.md) ("Text field stress pass").
+Closed on 6 November 2026: server-side free-text limits (`FREE_TEXT_LIMITS`,
+checked by field name on every `domain.mutate` request, each at or above the
+forms' own ceilings), the `members.update` / `plans.update` allowlists
+(`update-fields.ts`), and the numeric gaps below. The Settings rail item was
+measured again and is the sticky bar's intentional bleed into the page padding,
+not an overflow of the page.
 
-- **Server-side length limits are still missing for most free text** (notes,
-  reasons, addresses, support messages, templates). The new client ceilings
-  stop typing and pasting in the product; a direct API caller can still send
-  longer text. Recommended: one shared bounded-text validator in Convex,
-  applied per field from `input-limits.ts`.
-- **`members.update` and `plans.update` write every field they are sent**
-  (`{ ...input }`). Tenant isolation holds (`patchRecord` pins `id` and
-  `organizationId`), but a direct call can set fields such as a member's
-  `status` or `memberNumber` outside the dedicated, audited flows. Recommended
-  fix: an allowlist per update; suggested as a separate task.
+Still open:
+
 - A discount larger than the price silently brings the total to 0 in the sale
   dialog and on the server (`Math.min`). Needs a product decision before it
   becomes an error.
-- The follow-up window filter (Follow-ups) silently ignores invalid text; the
-  country calling code accepts `0`/`000`; automation day/hour fields have no
-  maximum; a stock quantity of only spaces makes Save do nothing without a
-  message.
-- The Settings section rail spills 16 px at 390 px on the ordinary seed
-  (pre-existing; unrelated to typed text).
 
 ## 5. Assumptions
 

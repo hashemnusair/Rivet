@@ -30,9 +30,14 @@ export function phoneDigits(value?: string | null): string {
   return latinDigits(value ?? "").replace(/\D/g, "");
 }
 
+/** A country calling code is 1 to 3 digits and never starts with 0 (+962, +44, +1). */
+export function isValidCountryCallingCode(digits: string): boolean {
+  return /^[1-9]\d{0,2}$/.test(digits);
+}
+
 export function normalizeCountryCallingCode(value?: string | null): string {
   const digits = phoneDigits(value);
-  return /^\d{1,3}$/.test(digits) ? digits : DEFAULT_PHONE_COUNTRY_CALLING_CODE;
+  return isValidCountryCallingCode(digits) ? digits : DEFAULT_PHONE_COUNTRY_CALLING_CODE;
 }
 
 export function countryCallingCodeForLocale(locale?: string | null): string {
