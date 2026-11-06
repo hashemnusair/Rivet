@@ -117,3 +117,21 @@ describe("free text is bounded on the server", () => {
     expect(updated.addressLine1).toHaveLength(500);
   });
 });
+
+describe("a membership discount is part of the price", () => {
+  it("refuses a discount above the price or below zero, and accepts one up to the price", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-allow-owner" });
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Rania Saleh", phone: "+962790007104", gender: "female", homeBranchId: "allow-branch" })) as { member: { id: string } };
+    const monthly = await owner.mutation(api.domain.mutate, operation("plans.create", plan)) as { id: string };
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman" }).format(new Date());
+    const sale = (discount: number) => operation("memberships.sale", { memberId: created.member.id, planId: monthly.id, startDate: today, discount: { amount: discount, currency: "JOD" }, discountReason: "Loyalty" });
+
+    for (const discount of [40_001, -1]) {
+      await expect(owner.mutation(api.domain.mutate, sale(discount))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR", messageKey: "apiErrors.discountAbovePrice" }) });
+    }
+    expect(await t.run(async (ctx) => (await ctx.db.query("domainRecords").collect()).filter((row) => row.entityType === "membership").length)).toBe(0);
+    await expect(owner.mutation(api.domain.mutate, sale(10_000))).resolves.toBeDefined();
+  });
+});

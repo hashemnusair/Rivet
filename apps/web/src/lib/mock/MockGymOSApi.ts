@@ -7241,7 +7241,11 @@ export class MockGymOSApi implements GymOSApi {
       this.require("memberships.override_dates");
       this.requireReason(args.overrideReason);
     }
-    const discountMinor = Math.min(args.discount?.amount ?? 0, priceMinor);
+    // As in Convex: a discount is part of the price, never more.
+    const discountMinor = args.discount?.amount ?? 0;
+    if (!Number.isSafeInteger(discountMinor) || discountMinor < 0 || discountMinor > priceMinor) {
+      throw ApiError.of(ERR.VALIDATION, "The discount cannot be more than the price.", { fieldErrors: { discount: ["The discount cannot be more than the price."] } });
+    }
     if (discountMinor > 0) {
       this.require("payments.discount");
       if (!args.discountReason?.trim()) {

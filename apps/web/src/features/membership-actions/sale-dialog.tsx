@@ -185,6 +185,8 @@ export function MembershipSaleDialog({
   const priceOverride = plan ? parseMoneyInput(rawPrice, currency) : null;
   const basePrice = plan ? (priceOverride ?? plan.basePrice) : money(0, currency);
   const discount = parseMoneyInput(rawDiscount, currency) ?? money(0, currency);
+  // A discount larger than the price is refused, here and on the server, rather than making the sale free.
+  const discountOverPrice = Boolean(plan) && discount.amount > basePrice.amount;
   const total = money(Math.max(0, basePrice.amount - discount.amount), currency);
   const payingNow = watchPayNow ? (rawPayAmount ? (parseMoneyInput(rawPayAmount, currency) ?? money(0, currency)) : total) : money(0, currency);
   const remaining = money(Math.max(0, total.amount - payingNow.amount), currency);
@@ -223,6 +225,10 @@ export function MembershipSaleDialog({
     }
     if (discountProblem) {
       form.setError("discount", { message: discountProblem });
+      return;
+    }
+    if (discountOverPrice) {
+      form.setError("discount", { message: t("renewFlow.sale.errors.discountOverPrice", { amount: amountText(basePrice) }) });
       return;
     }
     if (values.payNow && payAmountProblem) {
@@ -363,7 +369,7 @@ export function MembershipSaleDialog({
               ) : null}
 
               <FieldGrid alignFrom="base" className="grid-cols-2">
-                <Field label={t("renewFlow.sale.discount", { currency: isolateLtr(currency) })} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem : undefined)} hint={canDiscount ? undefined : t("renewFlow.sale.discountHint")}>
+                <Field label={t("renewFlow.sale.discount", { currency: isolateLtr(currency) })} error={form.formState.errors.discount?.message ?? (showProblem("discount") ? discountProblem ?? (discountOverPrice ? t("renewFlow.sale.errors.discountOverPrice", { amount: amountText(basePrice) }) : undefined) : undefined)} hint={canDiscount ? undefined : t("renewFlow.sale.discountHint")}>
                   <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(money(0, currency))} disabled={!canDiscount} {...form.register("discount")} />
                 </Field>
                 <Field label={t("renewFlow.sale.discountReason")} error={form.formState.errors.discountReason?.message}>

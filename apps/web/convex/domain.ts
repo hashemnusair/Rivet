@@ -425,7 +425,8 @@ function assertPlanName(name: string, actor: ActorContext): void {
 }
 
 function invalidField(field: string, label: string, correlationId: string | undefined): never {
-  domainError("VALIDATION_ERROR", `${label} is invalid.`, { message: { key: "apiErrors.invalidField", params: { field: label } }, fieldErrors: { [field]: ["Invalid"] }, correlationId });
+  const message = `${label} is invalid.`;
+  domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.invalidField", params: { field: label } }, fieldErrors: { [field]: [message] }, correlationId });
 }
 
 function assertOneOf(value: unknown, allowed: readonly string[], field: string, label: string, correlationId: string | undefined): void {
@@ -441,7 +442,8 @@ function assertPlanFields(input: Data, actor: ActorContext): void {
   if (input.basePrice !== undefined) {
     const amount = data(input.basePrice).amount;
     if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 0) {
-      domainError("VALIDATION_ERROR", `Price must be a non-negative integer amount in ${actor.organization.currency}.`, { message: { key: "apiErrors.nonNegativeAmount", params: { field: "Price", currency: actor.organization.currency } }, fieldErrors: { basePrice: ["Invalid"] }, correlationId: actor.correlationId });
+      const message = `Price must be a non-negative integer amount in ${actor.organization.currency}.`;
+      domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.nonNegativeAmount", params: { field: "Price", currency: actor.organization.currency } }, fieldErrors: { basePrice: [message] }, correlationId: actor.correlationId });
     }
   }
 }
@@ -461,7 +463,8 @@ function assertFreeTextBounds(value: unknown, correlationId: string | undefined,
     if (typeof item === "string") {
       const maximum = freeTextLimit(field);
       if (maximum !== undefined && item.length > maximum) {
-        domainError("VALIDATION_ERROR", `This text is too long. The limit is ${maximum} characters.`, { message: { key: "apiErrors.textTooLong", params: { maximum } }, fieldErrors: { [field]: ["Too long"] }, correlationId });
+        const message = `This text is too long. The limit is ${maximum} characters.`;
+        domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.textTooLong", params: { maximum } }, fieldErrors: { [field]: [message] }, correlationId });
       }
     } else {
       assertFreeTextBounds(item, correlationId, depth + 1);
@@ -8076,7 +8079,12 @@ async function createMembershipMutation(
     requireReason(input.overrideReason, actor.correlationId, "overrideReason");
   }
   const price = override ? amountOf(input.priceOverride) : amountOf(planData.basePrice);
-  const discount = Math.min(amountOf(input.discount), price);
+  // A discount is part of the price, never more: the sale used to cap the total at 0 without saying so.
+  const discount = amountOf(input.discount);
+  if (!Number.isSafeInteger(discount) || discount < 0 || discount > price) {
+    const message = "The discount cannot be more than the price.";
+    domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.discountAbovePrice" }, fieldErrors: { discount: [message] }, correlationId: actor.correlationId });
+  }
   if (discount > 0) {
     requirePermission(actor, "payments.discount");
     requireReason(input.discountReason, actor.correlationId, "discountReason");
@@ -10719,7 +10727,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       assertOneOf(patch.gender, MEMBER_GENDERS, "gender", "Gender", actor.correlationId);
       assertOneOf(patch.preferredLanguage, MEMBER_LANGUAGES, "preferredLanguage", "Preferred language", actor.correlationId);
       if (patch.dateOfBirth !== undefined && patch.dateOfBirth !== "" && !(typeof patch.dateOfBirth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(patch.dateOfBirth))) {
-        domainError("VALIDATION_ERROR", "Date of birth must be a calendar date.", { message: { key: "apiErrors.calendarField", params: { field: "Date of birth" } }, fieldErrors: { dateOfBirth: ["Invalid"] }, correlationId: actor.correlationId });
+        domainError("VALIDATION_ERROR", "Date of birth must be a calendar date.", { message: { key: "apiErrors.calendarField", params: { field: "Date of birth" } }, fieldErrors: { dateOfBirth: ["Date of birth must be a calendar date."] }, correlationId: actor.correlationId });
       }
       if (patch.tags !== undefined && !(Array.isArray(patch.tags) && patch.tags.every((tag) => typeof tag === "string"))) invalidField("tags", "Tags", actor.correlationId);
       if (Object.prototype.hasOwnProperty.call(input, "phone")) patch.phone = normalizedLeadPhone(input.phone, actor);

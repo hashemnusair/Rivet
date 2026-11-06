@@ -88,6 +88,24 @@ describe("MembershipSaleDialog reason gates", () => {
     expect(onCompleted.mock.calls[0]?.[0].payment).toBeUndefined();
   });
 
+  it("refuses a discount larger than the price instead of making the sale free", async () => {
+    const { api } = await renderWithApp(<div />);
+    const expiredMember = (await api.listMembers({ membershipStatus: "expired", pageSize: 100 })).items[0];
+    if (!expiredMember) throw new Error("missing expired seeded member");
+    resetApiForTests();
+
+    const user = userEvent.setup();
+    const onCompleted = vi.fn();
+    await renderWithApp(<MembershipSaleDialog open onOpenChange={() => undefined} member={expiredMember} onCompleted={onCompleted} />);
+    await chooseMonthlyPlan(user);
+    await user.type(screen.getByLabelText(/^Discount \(/), "9999");
+    await user.type(screen.getByLabelText("Discount reason"), "Loyalty");
+    await user.click(screen.getByTestId("confirm-sale"));
+
+    expect(await screen.findByText(/Can't be more than the .+ price/)).toBeInTheDocument();
+    expect(onCompleted).not.toHaveBeenCalled();
+  });
+
   it("keeps a listed-price, today, zero-discount sale routine and ungated", async () => {
     const { api } = await renderWithApp(<div />);
     const expiredMember = (await api.listMembers({ membershipStatus: "expired", pageSize: 100 })).items[0];

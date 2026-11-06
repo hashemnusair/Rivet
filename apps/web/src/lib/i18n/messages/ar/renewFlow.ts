@@ -79,6 +79,7 @@ export const renewFlow: typeof En = {
       chooseStartDate: "يرجى اختيار تاريخ البدء",
       payAmountPositive: "أدخلوا مبلغًا أكبر من صفر، أو اتركوا الحقل فارغًا لتحصيل الإجمالي كاملًا",
       payAmountOverTotal: "لا يمكن أن يزيد على الإجمالي البالغ {amount}",
+      discountOverPrice: "لا يمكن أن يزيد على السعر البالغ {amount}",
       discountReasonRequired: "يرجى كتابة سبب الخصم",
       overrideReasonRequired: "يرجى كتابة سبب تغيير السعر أو التاريخ",
       saveFailed: "لم يُحفظ البيع. حاولوا مرة أخرى.",

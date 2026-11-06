@@ -959,8 +959,9 @@ taken (assumptions, open to the owners):
   rule waits at most 8,760 hours (a year) before repeating; larger values were stored
   but never fired. A country calling code is 1–3 digits that do not start with 0.
   The Follow-ups days box and blank stock and purchase-order numbers now say what is
-  wrong instead of being ignored. A discount above the price still needs a product
-  decision (docs/24).
+  wrong instead of being ignored. A discount above the price is an error (Elias,
+  6 November 2026): the sale dialog and the server refuse it instead of making the
+  sale free; a negative discount is refused too.
 - **Dev toolchain.** Vitest 4.1.12 replaces 3.2 (it no longer uses Tinypool, which
   had the two critical advisories); Vite, `brace-expansion` and `minimatch` are
   pinned to patched releases through workspace overrides. Tests adjusted for Vitest 4:

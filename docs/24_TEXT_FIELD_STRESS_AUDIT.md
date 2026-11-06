@@ -139,11 +139,9 @@ forms' own ceilings), the `members.update` / `plans.update` allowlists
 measured again and is the sticky bar's intentional bleed into the page padding,
 not an overflow of the page.
 
-Still open:
-
-- A discount larger than the price silently brings the total to 0 in the sale
-  dialog and on the server (`Math.min`). Needs a product decision before it
-  becomes an error.
+The discount question was decided on 6 November 2026 (Elias): a discount above
+the price is now an error in the sale dialog and on the server. Nothing from this
+pass remains open.
 
 ## 5. Assumptions
 

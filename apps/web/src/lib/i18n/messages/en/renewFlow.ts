@@ -80,6 +80,7 @@ export const renewFlow = {
       chooseStartDate: "Choose a start date",
       payAmountPositive: "Enter an amount greater than zero, or leave it empty to collect the full total",
       payAmountOverTotal: "Can't be more than the {amount} total",
+      discountOverPrice: "Can't be more than the {amount} price",
       discountReasonRequired: "Add a reason for the discount",
       overrideReasonRequired: "Add a reason for the price or date change",
       saveFailed: "The sale was not saved. Try again.",

@@ -1,5 +1,56 @@
 # RIVET product, engineering, and operations backlog
 
+## Finalisation list — 6 November 2026
+
+What stands between today's `main` and a finished pilot product, in order. It
+reorders the open items of "Current priorities — reconciled 17 October 2026"
+(below, which keeps the detail) and adds what has landed since. The pending Convex
+batch of 17 October went out with the later Convex releases (22, 26 and 28 October);
+its post-release checks (visit-summary backfill `completed`, measured read usage)
+are not recorded and belong to item 3.
+
+**Launch blockers (people and providers)**
+
+1. [ ] Deploy the 6 November Convex changes (edit allowlists, text limits, number
+   limits, discount rule): guarded procedure in docs/12, top entry.
+2. [ ] Email end to end: Resend callback and webhook secret, Clerk → Resend template
+   cutover, reply inbox, then invitations, reset/verification codes and operational
+   emails seen in real inboxes (docs/19).
+3. [ ] Real-account acceptance: an owner, reception, trainer and member on a test gym
+   (refunds, shift close and reconciliation, PT, branch and tenant denial, the
+   TODO-007/011/012 concurrency evidence), Hashem's walkthrough retests, the
+   read-only Production checks, and the 17 October batch's post-release checks.
+4. [ ] Recovery and operations: a restore rehearsal from a Production export, the
+   rollback procedure, named monitoring and incident owners, the edge/WAF controls,
+   and a capacity check at pilot load.
+5. [ ] Legal and commercial: legal entity, registration, address and tax facts;
+   counsel review of the documents (Terms 1.2 vs Agreement 1.2 wording); the
+   commercial catalogue; the subscription-reconciliation policy and its activation;
+   the accounting-policy decisions (recognition, valuation, closing, tax).
+6. [ ] Final UI acceptance: the role/state/real-device matrix and Hashem's sign-off
+   (docs/20), refreshed screenshot references, and the member app on a real iPhone
+   and Android phone (re-added to the home screen for the launch image; Arabic
+   labels on an Arabic-language phone).
+
+**Turning on Wazen (AI)**
+
+7. [ ] Decide the AI sheet in docs/09: provider data terms and member-data
+   approval, budgets (proposed $5 per gym per month, $0.50 per run), packaging,
+   pilot gyms and owners.
+8. [ ] Elias adds the Claude key; Hashem runs the Hashem Test acceptance (AI-2.7,
+   AI-5.6, AI-6.5, AI-6.6, AI-7.7); one friendly gym after two clean weeks.
+
+**After launch (each needs a product decision)**
+
+9. [ ] Speed: start the member's record alongside the identity check; cache the
+   landing at the edge (needs the language in the URL); a server region nearer
+   Jordan (Hashem).
+10. [ ] Features: a restore-member action (edits can no longer un-archive), family
+    accounts, repayment schedules, push delivery, supplier notifications, member
+    document uploads, the marketplace, statutory accounting.
+11. [ ] Housekeeping: retire `temporary-current-work.md` once its last items are
+    reconciled here.
+
 ## Text field stress pass — 27 October 2026
 
 Method, coverage and evidence: [docs/24](24_TEXT_FIELD_STRESS_AUDIT.md).
@@ -27,8 +78,9 @@ Branch `claude/sharp-edison-blgnof`; unreleased.
 - [x] Allowlist the fields `members.update` and `plans.update` accept
   (`update-fields.ts`, both adapters; 6 November 2026). Values are checked too.
   An edit can no longer un-archive a member or change the referrer.
-- [ ] Decide whether a discount above the price is an error; the sale dialog and
-  the server currently cap the total at 0 without saying so.
+- [x] A discount above the price is an error (Elias, 6 November 2026): the sale
+  dialog says "Can't be more than the {amount} price", and Convex and the preview
+  refuse it (`apiErrors.discountAbovePrice`), as they do a negative discount.
 - [x] Minor numeric gaps (6 November 2026): the Follow-ups days box says when its
   text is not 1–365; the calling code refuses a leading 0 (form, server, preview);
   automation days stop at 365, hours at 720 and the repeat wait at 8,760 (form and

@@ -1,5 +1,16 @@
 # GymOS / RIVET current implementation state
 
+## Discount above the price is an error (6 November 2026)
+
+Elias decided it. `createMembershipMutation` (`convex/domain.ts`) refuses a discount
+that is negative or above the price (`apiErrors.discountAbovePrice`, English and
+Arabic) instead of `Math.min`-capping the total at 0; `MockGymOSApi` mirrors it; the
+sale dialog shows "Can't be more than the {amount} price"
+(`renewFlow.sale.errors.discountOverPrice`) and does not submit. Field-level
+messages of the new server checks now repeat their main message so they translate.
+Tests: `sale-dialog.test.tsx` (+1), `convex/domain.update-allowlist.test.ts` (+1).
+Server part released with the guarded Convex deploy owed in docs/12.
+
 ## Input hardening, dev toolchain, quicker sign-in (6 November 2026)
 
 Decisions: docs/09 "Input hardening, dev toolchain and a quicker sign-in". Backlog:
