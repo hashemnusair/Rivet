@@ -15,9 +15,13 @@ are not recorded and belong to item 3.
    day passes and the trial-booking fix): released 9 November 2026 from `1cb7c063`
    (docs/12). Still to do: the signed-in checks after release (Settings → Hours &
    trials, a day pass end to end on a test gym).
-2. [ ] Email end to end: Resend callback and webhook secret, Clerk → Resend template
-   cutover (the reply inbox, hello@rivetjo.com on Purelymail, was set up 9 November), then invitations, reset/verification codes and operational
-   emails seen in real inboxes (docs/19).
+2. [ ] Email end to end: the Resend callback and its Convex webhook secret; operational
+   emails (invoice, receipt, agreement copy) and Clerk's invitations and codes seen in
+   real Gmail and Outlook inboxes; the pilot gym's addresses on the allowlist, or
+   `live`; DMARC from `p=none` to quarantine (docs/19). The reply inbox,
+   hello@rivetjo.com on Purelymail, was set up 9 November. Elias decided on
+   9 November that sign-in email stays with Clerk; the Clerk → Resend relay is
+   optional and off.
 3. [ ] Real-account acceptance: an owner, reception, trainer and member on a test gym
    (refunds, shift close and reconciliation, PT, branch and tenant denial, the
    TODO-007/011/012 concurrency evidence), Hashem's walkthrough retests, the

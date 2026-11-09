@@ -225,6 +225,8 @@ or indexes are removed.
 - [x] **Decided 14 September 2026:** the sending address is
   `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). **Updated 7 October:**
   authentication emails also move to Resend using the separate cutover below.
+  **Updated 9 November (Elias):** sign-in email stays with Clerk, which already
+  sends from rivetjo.com; the cutover below is optional and not a launch step.
 - [x] Resend sending domain verified in the correct `rivetjo` workspace on
   7 October. DMARC is monitoring-only; review legitimate senders and receiver
   results before any enforcement change. Root mail moved from Spacemail to Purelymail on 9 November (root SPF now
@@ -287,7 +289,9 @@ staff-visible email ledger.
    outstanding custom-delivery events before disabling the relay. Do not
    leave both senders disabled for an active template.
 
-Live cutover is **pending**; no Clerk dashboard setting has been changed.
+Live cutover is **not planned for launch** (Elias, 9 November 2026): Clerk keeps
+delivering sign-in email. The relay stays in the code, switched off; no Clerk
+dashboard setting has been changed.
 Official references: [Clerk email delivery settings](https://clerk.com/docs/guides/customizing-clerk/email-sms-templates),
 [Clerk deliverability and email.created](https://clerk.com/docs/guides/development/troubleshooting/email-deliverability),
 [Resend retry keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
