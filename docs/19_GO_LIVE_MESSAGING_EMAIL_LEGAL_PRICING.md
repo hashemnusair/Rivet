@@ -227,7 +227,8 @@ or indexes are removed.
   authentication emails also move to Resend using the separate cutover below.
 - [x] Resend sending domain verified in the correct `rivetjo` workspace on
   7 October. DMARC is monitoring-only; review legitimate senders and receiver
-  results before any enforcement change. Do not replace Spacemail root SPF.
+  results before any enforcement change. Root mail moved from Spacemail to Purelymail on 9 November (root SPF now
+  `include:_spf.purelymail.com`); leave Resend's `send.` records alone.
 - [x] Production API-key/sender configuration names confirmed on 7 October;
   values were not read. This is dated evidence, not a fresh configuration check.
 - [x] Signed callback processing and persistent hard-bounce/complaint address
@@ -235,7 +236,8 @@ or indexes are removed.
 - [ ] Configure the Resend callback and its Convex webhook secret, then verify
   delivery events, replay handling and suppression through the actual provider.
 - [ ] Templates reviewed in Arabic and English with RIVET's contact details
-- [ ] Reply-to routed to a monitored inbox
+- [x] Reply-to routed to a monitored inbox: falls back to hello@rivetjo.com
+  (Purelymail), set up and tested by Elias on 9 November 2026
 - [ ] Two weeks in `allowlist` with RIVET staff and one pilot gym, zero
   unexplained failures
 - [ ] Runbook: how to switch back to `allowlist` in under five minutes

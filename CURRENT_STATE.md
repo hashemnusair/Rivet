@@ -18,6 +18,13 @@ Elias moved rivetjo.com mailboxes from Spacemail to Purelymail and replaced
   `clk*`) was checked live on 9 November 2026. DMARC is still `p=none`.
 - Unverified: whether the Production `RIVET_APPLICATION_RECIPIENTS` value still names
   `sales@`. Only Elias can read it.
+- **Release.** Pushed `1cb7c063`. Convex released to Production from that commit on
+  9 November 2026 (guarded dry run, then the deploy; `health:check --prod` ok). That
+  also released the owed 6 November hardening, Restore, day passes and the
+  trial-booking fix (docs/12). Local checks: `tsc` (web and Convex), ESLint on the
+  changed files, the secret audit, and the address and day-pass tests (62/62); the
+  landing menu was checked in the mock preview. Locally on Node 26, 14 checkout and
+  agreement tests also fail on unchanged `main` (jsdom localStorage and canvas); CI is the gate.
 
 ## Leads made simpler; day-pass screens tidied (9 November 2026)
 

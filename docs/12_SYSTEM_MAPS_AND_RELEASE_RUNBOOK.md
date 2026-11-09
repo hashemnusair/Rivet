@@ -73,7 +73,14 @@ uptime monitor, the edge/WAF rules in Vercel's firewall for the public forms (th
 server already rate-limits them), the first restore rehearsal, a capacity check at
 pilot load, and the owners' confirmation of this runbook.
 
-## Input hardening, member restore and day passes — Convex deploy owed (6 and 9 November 2026)
+## Input hardening, member restore and day passes — Convex released 9 November 2026
+
+**Released** 9 November 2026, about 16:10 UTC, from `1cb7c063` (main, which also carries the
+hello@rivetjo.com contact change) to Production `descriptive-meerkat-589` through
+the guarded wrapper. Env names checked, the dry run reported no index deletions
+and schema validation passed, the deploy succeeded, and `health:check --prod`
+returned `ok`. `www.rivetjo.com/api/health` returned 200. The read-only Settings and
+test-gym day-pass checks below still need a signed-in person.
 
 The 6 November input-hardening commit (CURRENT_STATE, docs/09) changes Convex
 functions only: `members.update` / `plans.update` allowlists and value checks, the

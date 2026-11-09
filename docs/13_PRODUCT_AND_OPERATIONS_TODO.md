@@ -11,12 +11,12 @@ are not recorded and belong to item 3.
 
 **Launch blockers (people and providers)**
 
-1. [ ] Deploy the owed Convex changes (6 November hardening, 9 November restore,
-   day passes and the trial-booking fix): guarded procedure in docs/12. Until then
-   member trial requests from a gym page are refused on Production (the profile
-   gender rule of 25 October), and Restore and day passes show an error.
+1. [x] Deploy the owed Convex changes (6 November hardening, 9 November restore,
+   day passes and the trial-booking fix): released 9 November 2026 from `1cb7c063`
+   (docs/12). Still to do: the signed-in checks after release (Settings → Hours &
+   trials, a day pass end to end on a test gym).
 2. [ ] Email end to end: Resend callback and webhook secret, Clerk → Resend template
-   cutover, reply inbox, then invitations, reset/verification codes and operational
+   cutover (the reply inbox, hello@rivetjo.com on Purelymail, was set up 9 November), then invitations, reset/verification codes and operational
    emails seen in real inboxes (docs/19).
 3. [ ] Real-account acceptance: an owner, reception, trainer and member on a test gym
    (refunds, shift close and reconciliation, PT, branch and tenant denial, the
