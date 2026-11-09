@@ -3,8 +3,11 @@ import { api } from "../../../../convex/_generated/api";
 
 export const dynamic = "force-dynamic";
 
-/** How long Convex may take before the check reports it unreachable. */
-export const CONVEX_HEALTH_TIMEOUT_MS = 5000;
+/**
+ * How long Convex may take before the check reports it unreachable. Not
+ * exported: a route file may export only its handlers and route config.
+ */
+const CONVEX_HEALTH_TIMEOUT_MS = 5000;
 
 const HEADERS = { "Cache-Control": "no-store" };
 

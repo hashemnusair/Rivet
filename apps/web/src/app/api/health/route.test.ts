@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fetchQuery = vi.hoisted(() => vi.fn());
 vi.mock("convex/nextjs", () => ({ fetchQuery }));
 
-const { CONVEX_HEALTH_TIMEOUT_MS, GET } = await import("./route");
+const { GET } = await import("./route");
+
+/** The route's 5 s Convex timeout. */
+const CONVEX_HEALTH_TIMEOUT_MS = 5000;
 
 describe("GET /api/health", () => {
   beforeEach(() => {
