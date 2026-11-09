@@ -8,6 +8,7 @@ import { workspaceModuleErrorMessage } from "../src/lib/domain/workspace-module-
 import { searchKey } from "../src/lib/utils/text";
 import { AUTOMATION_LIMITS, PLAN_COUNT_LIMITS, TEXT_LIMITS, freeTextLimit } from "../src/lib/domain/input-limits";
 import { MEMBER_GENDERS, MEMBER_LANGUAGES, MEMBER_UPDATE_FIELDS, PLAN_BRANCH_ACCESS, PLAN_KINDS, PLAN_STATUSES, PLAN_UPDATE_FIELDS, pickFields } from "../src/lib/domain/update-fields";
+import { DAY_PASS_GOAL, DAY_PASS_LIMITS, DAY_PASS_PAYMENT_METHODS, DAY_PASS_PLAN, TRIAL_OFFER_KINDS, dayPassAwaitsPayment, dayPassPaymentMethods, isDayPassBooking, publicTrialOfferOf, trialOfferOf } from "../src/lib/domain/day-pass";
 import { ConvexError, v } from "convex/values";
 import { mutation as convexMutation, query as convexQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -257,6 +258,7 @@ const DEFAULT_OPERATIONAL_POLICIES = {
   },
   operatingHours: [],
   trialSchedules: [],
+  trialOffer: { kind: "free_trial" },
 };
 // The public SaaS catalog is configuration, not demo tenant data. Production
 // intentionally starts without the Forge reference seed, so keep the approved
@@ -1466,6 +1468,7 @@ async function settingsData(ctx: ReadContext, actor: ActorContext): Promise<Data
       memberFreezes: { ...DEFAULT_OPERATIONAL_POLICIES.memberFreezes, ...data(operational.memberFreezes) },
       operatingHours: Array.isArray(operational.operatingHours) ? operational.operatingHours : [],
       trialSchedules: Array.isArray(operational.trialSchedules) ? operational.trialSchedules : [],
+      trialOffer: trialOfferOf(operational.trialOffer),
     },
   };
 }
@@ -2238,7 +2241,96 @@ async function validatedOperationalPolicies(ctx: MutationCtx, actor: ActorContex
     retention: { inactivityDays, expiredWinBackDays, defaultSnoozeDays },
     operatingHours,
     trialSchedules,
+    trialOffer: await validatedTrialOffer(ctx, actor, value.trialOffer),
   };
+}
+
+/**
+ * The trial offer a gym saves: a free trial, or a day pass with a price and,
+ * optionally, a CliQ alias (only when CliQ is a payment method the gym takes).
+ * The day-pass plan id is the server's, never the caller's. A caller that sends
+ * no offer (an older screen) keeps the current one.
+ */
+async function validatedTrialOffer(ctx: MutationCtx, actor: ActorContext, raw: unknown): Promise<Data> {
+  const settings = await settingsData(ctx, actor);
+  const current = trialOfferOf(data(settings.operationalPolicies).trialOffer);
+  if (raw === undefined || raw === null) return { ...current };
+  const value = data(raw);
+  assertOneOf(value.kind, TRIAL_OFFER_KINDS, "kind", "Trial offer", actor.correlationId);
+  const kind = stringValue(value.kind, "free_trial");
+  const rawPrice = value.dayPassPrice === undefined || value.dayPassPrice === null ? undefined : data(value.dayPassPrice);
+  let dayPassPrice: Data | undefined;
+  if (rawPrice) {
+    const amount = rawPrice.amount;
+    if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0 || amount > DAY_PASS_LIMITS.maxPriceMinor || currencyOf(rawPrice, actor.organization.currency) !== actor.organization.currency) {
+      const message = "Enter a day-pass price above zero.";
+      domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.dayPassPrice" }, fieldErrors: { dayPassPrice: [message] }, correlationId: actor.correlationId });
+    }
+    dayPassPrice = money(amount, actor.organization.currency);
+  }
+  if (kind === "day_pass" && !dayPassPrice) {
+    const message = "Enter a day-pass price above zero.";
+    domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.dayPassPrice" }, fieldErrors: { dayPassPrice: [message] }, correlationId: actor.correlationId });
+  }
+  const cliqAlias = optionalString(value.cliqAlias)?.trim() || undefined;
+  if (cliqAlias && cliqAlias.length > DAY_PASS_LIMITS.cliqAlias) invalidField("cliqAlias", "CliQ alias", actor.correlationId);
+  if (kind === "day_pass" && cliqAlias) {
+    const cliq = arrayValue(settings.paymentMethods).map(data).find((item) => item.key === "cliq");
+    if (cliq && !booleanValue(cliq.enabled, true)) {
+      const message = "Turn on CliQ in payment methods before members can pay a day pass by CliQ.";
+      domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.dayPassCliqDisabled" }, fieldErrors: { cliqAlias: [message] }, correlationId: actor.correlationId });
+    }
+  }
+  return {
+    kind,
+    ...(dayPassPrice ? { dayPassPrice } : {}),
+    ...(cliqAlias ? { cliqAlias } : {}),
+    ...(current.dayPassPlanId ? { dayPassPlanId: current.dayPassPlanId } : {}),
+  };
+}
+
+/**
+ * A gym selling day passes has a "Day pass" plan (one visit) at the day-pass
+ * price: a recorded payment sells it. Created the first time, then kept at the
+ * price and active while the gym sells day passes. Turning day passes off
+ * leaves the plan for the gym to keep selling at the desk or archive.
+ */
+async function syncDayPassPlan(ctx: MutationCtx, actor: ActorContext, offer: Data): Promise<Data> {
+  if (stringValue(offer.kind) !== "day_pass") return offer;
+  const price = amountOf(offer.dayPassPrice);
+  const planId = optionalString(offer.dayPassPlanId);
+  const existing = planId
+    ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", planId)).unique()
+    : null;
+  if (existing) {
+    const plan = data(existing.data);
+    const patch: Data = {};
+    if (amountOf(plan.basePrice) !== price) patch.basePrice = money(price, actor.organization.currency);
+    if (stringValue(plan.status, "active") !== "active") patch.status = "active";
+    if (Object.keys(patch).length > 0) {
+      await patchRecord(ctx, actor, existing, patch);
+      await insertAudit(ctx, actor, { category: "settings", action: "plan.update", entityType: "plan", entityId: stringValue(plan.id), entityLabel: `${stringValue(plan.name)} · ${stringValue(plan.code)}`, summary: "Day-pass plan kept in step with the trial settings", before: { basePrice: plan.basePrice, status: stringValue(plan.status, "active") }, after: { basePrice: patch.basePrice ?? plan.basePrice, status: "active" } });
+    }
+    return offer;
+  }
+  const id = newPublicId();
+  const plan = await insertRecord(ctx, actor, "plan", {
+    id,
+    organizationId: publicOrganizationId(actor.organization),
+    name: actor.organization.defaultLanguage === "ar" ? DAY_PASS_PLAN.nameAr : DAY_PASS_PLAN.name,
+    code: DAY_PASS_PLAN.code,
+    kind: DAY_PASS_PLAN.kind,
+    visitAllowance: DAY_PASS_PLAN.visitAllowance,
+    visitValidityDays: DAY_PASS_PLAN.visitValidityDays,
+    basePrice: money(price, actor.organization.currency),
+    branchAccess: "all",
+    branchIds: [],
+    freezeAllowanceDays: 0,
+    includedPtSessions: 0,
+    status: "active",
+  });
+  await insertAudit(ctx, actor, { category: "settings", action: "plan.create", entityType: "plan", entityId: plan.id, entityLabel: `${stringValue(plan.name)} · ${DAY_PASS_PLAN.code}`, summary: "Day-pass plan created from the trial settings" });
+  return { ...offer, dayPassPlanId: id };
 }
 
 function organizationView(org: Organization): Data {
@@ -4247,6 +4339,8 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     preferredTime,
     goal: stringValue(input.goal),
     referralToken,
+    paymentMethod: optionalString(input.paymentMethod),
+    cliqReference: optionalString(input.cliqReference),
   });
   const idempotencyScope = `customer.trial.create:${await privacyFingerprint(publicUserId(user))}`;
   if (idempotencyKey) {
@@ -4276,18 +4370,39 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   if (!branch || !branch.active || branch.status === "inactive") {
     domainError("NOT_FOUND", "The selected gym branch is not accepting online trial requests yet.");
   }
-  const weekday = validatedWeekdayForDate(preferredDate);
-  if (!weekday || !TIME_PATTERN.test(preferredTime)) domainError("VALIDATION_ERROR", "Choose a valid trial date and time.");
   const settings = await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "settings").eq("publicId", "settings")).unique();
+  // A day pass asks for a date and how the member will pay; a free trial for a date and a time.
+  const offer = trialOfferOf(data(data(settings?.data).operationalPolicies).trialOffer);
+  const dayPass = offer.kind === "day_pass";
+  const weekday = validatedWeekdayForDate(preferredDate);
+  if (!weekday || (!dayPass && !TIME_PATTERN.test(preferredTime))) domainError("VALIDATION_ERROR", dayPass ? "Choose a valid day-pass date." : "Choose a valid trial date and time.");
   const schedule = arrayValue(data(data(settings?.data).operationalPolicies).trialSchedules).map(data).find((candidate) => candidate.branchId === publicBranchId(branch));
   if (!schedule) domainError("VALIDATION_ERROR", "Trial bookings are not set up for this branch yet.");
   const trialWindow = normalizedTrialWindow(data(data(schedule.days)[weekday]));
-  if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
+  if (dayPass) {
+    if (!booleanValue(trialWindow.enabled)) {
+      domainError("CONFLICT", "This branch does not take day passes on that day.", { message: { key: "apiErrors.dayPassDayClosed" } });
+    }
+  } else if (!booleanValue(trialWindow.enabled) || preferredTime < stringValue(trialWindow.opensAt) || preferredTime > stringValue(trialWindow.closesAt)) {
     domainError("CONFLICT", "That trial time is outside this branch's trial-request hours.");
   }
-  const [hour = 0, minute = 0] = preferredTime.split(":").map(Number);
+  // A day pass is for the day: it stays bookable until that day's window closes, and is stored at its opening.
+  const bookedTime = dayPass ? stringValue(trialWindow.opensAt) : preferredTime;
+  const [hour = 0, minute = 0] = (dayPass ? stringValue(trialWindow.closesAt) : preferredTime).split(":").map(Number);
   const requestedAt = ptWallTime(preferredDate, hour * 60 + minute, storageOrganization.timezone || TZ_FALLBACK);
-  if (requestedAt <= Date.now()) domainError("VALIDATION_ERROR", "Choose a future trial time.");
+  if (requestedAt <= Date.now()) domainError("VALIDATION_ERROR", dayPass ? "Choose today or a later day." : "Choose a future trial time.", dayPass ? { message: { key: "apiErrors.dayPassPastDate" } } : undefined);
+  let dayPassFacts: Data = {};
+  if (dayPass) {
+    const methods = dayPassPaymentMethods(offer);
+    const paymentMethod = optionalString(input.paymentMethod);
+    if (!paymentMethod || !(methods as readonly string[]).includes(paymentMethod)) {
+      const message = "Choose how you will pay for the day pass.";
+      domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.dayPassPaymentMethod" }, fieldErrors: { paymentMethod: [message] } });
+    }
+    const cliqReference = paymentMethod === "cliq" ? optionalString(input.cliqReference)?.trim() || undefined : undefined;
+    if (cliqReference && cliqReference.length > DAY_PASS_LIMITS.cliqReference) invalidField("cliqReference", "CliQ reference", undefined);
+    dayPassFacts = { kind: "day_pass", price: offer.dayPassPrice, paymentMethod, paymentStatus: "unpaid", ...(cliqReference ? { cliqReference } : {}) };
+  }
   const existingOpenRequest = (await ctx.db.query("domainRecords").withIndex("by_entity_type", (q) => q.eq("entityType", "trialBooking")).collect()).find((record) => {
     const booking = data(record.data);
     return booking.customerUserId === publicUserId(user) && booking.gymId === stringValue(input.gymId) && ["requested", "confirmed"].includes(stringValue(booking.status));
@@ -4299,7 +4414,23 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     maxRequests: 10,
     windowMs: 24 * 60 * 60 * 1000,
   });
-  const profile = await saveCustomerProfile(ctx, user, input);
+  // The booking form carries a name and phone only. Saving it as the whole
+  // profile failed every request once a profile needed a gender (25 October)
+  // and would have wiped the member's birth date, language, address and
+  // emergency contact: keep the saved profile and take only those two.
+  const savedProfile = await customerProfileForUser(ctx, publicUserId(user));
+  const profile = await saveCustomerProfile(ctx, user, {
+    dateOfBirth: savedProfile?.dateOfBirth,
+    gender: optionalString(input.gender) ?? savedProfile?.gender,
+    preferredLanguage: savedProfile?.preferredLanguage,
+    addressLine1: savedProfile?.addressLine1,
+    city: savedProfile?.city,
+    emergencyContactName: savedProfile?.emergencyContactName,
+    emergencyContactRelationship: savedProfile?.emergencyContactRelationship,
+    emergencyContactPhone: savedProfile?.emergencyContactPhone,
+    fullName: optionalString(input.fullName)?.trim() || savedProfile?.name,
+    phone: optionalString(input.phone)?.trim() || savedProfile?.phone,
+  });
   const ownership = customerProfileOwnership(publicUserId(user), profile.id);
   const bookingId = newPublicId();
   const createdAt = isoNow();
@@ -4312,10 +4443,11 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
     email: profile.email,
     phone: profile.phone,
     preferredDate,
-    preferredTime,
-    goal: stringValue(input.goal),
+    preferredTime: bookedTime,
+    goal: dayPass ? optionalString(input.goal)?.trim() || DAY_PASS_GOAL : stringValue(input.goal),
     status: "requested",
     createdAt,
+    ...dayPassFacts,
   };
   await ctx.db.insert("domainRecords", { organizationId: storageOrganization._id, entityType: "trialBooking", publicId: bookingId, branchId: branch?._id, createdAt: Date.now(), updatedAt: Date.now(), data: base });
 
@@ -4323,7 +4455,10 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
   if (branch) {
     leadId = newPublicId();
     const branchPublicId = publicBranchId(branch);
-    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: referredByMemberId ? "referral" : "other", referredByMemberId, expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: `Free trial requested through RIVET Member${referredByMemberId ? " via a member referral link" : ""}. Goal: ${base.goal}`, createdAt, updatedAt: createdAt };
+    const requestNote = dayPass
+      ? `Day pass requested through RIVET Member${referredByMemberId ? " via a member referral link" : ""}. Pays ${stringValue(dayPassFacts.paymentMethod) === "cliq" ? "by CliQ" : "cash at the gym"}.`
+      : `Free trial requested through RIVET Member${referredByMemberId ? " via a member referral link" : ""}. Goal: ${base.goal}`;
+    const lead = { id: leadId, organizationId: publicOrganizationId(targetOrganization), branchId: branchPublicId, fullName: base.fullName, phone: base.phone, email: base.email, stage: "trial_booked", source: referredByMemberId ? "referral" : "other", referredByMemberId, expectedValue: money(numberValue(gym.fromPriceMinor), targetOrganization.currency), nextFollowUpAt: utcIso(requestedAt), notes: requestNote, createdAt, updatedAt: createdAt };
     await ctx.db.insert("domainRecords", { organizationId: targetOrganization._id, entityType: "lead", publicId: leadId, branchId: branch._id, leadPublicId: leadId, createdAt: Date.now(), updatedAt: Date.now(), data: lead });
     await ctx.db.patch((await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", storageOrganization._id).eq("entityType", "trialBooking").eq("publicId", bookingId)).unique())!._id, { data: { ...base, leadId }, updatedAt: Date.now() });
     await notifyOrganizationRoles(ctx, {
@@ -4331,10 +4466,12 @@ async function createCustomerTrial(ctx: MutationCtx, input: Data): Promise<Data>
       branchId: branch._id,
       roles: ["owner", "manager", "sales", "receptionist"],
       kind: "trial_request",
-      title: "New free-trial request",
-      body: `${base.fullName} · ${branch.name} · ${base.preferredDate} ${base.preferredTime}`,
-      titleMessage: systemMessage("communicationCompletion.notifications.trialRequest"),
-      bodyMessage: systemMessage("communicationCompletion.notifications.facts3", { a: stringValue(base.fullName), b: branch.name, c: { message: dateClockMessage(base.preferredDate, base.preferredTime) } }),
+      title: dayPass ? "New day-pass request" : "New free-trial request",
+      body: dayPass ? `${base.fullName} · ${branch.name} · ${base.preferredDate}` : `${base.fullName} · ${branch.name} · ${base.preferredDate} ${base.preferredTime}`,
+      titleMessage: systemMessage(dayPass ? "communicationCompletion.notifications.dayPassRequest" : "communicationCompletion.notifications.trialRequest"),
+      bodyMessage: dayPass
+        ? systemMessage("communicationCompletion.notifications.facts3", { a: stringValue(base.fullName), b: branch.name, c: { date: base.preferredDate } })
+        : systemMessage("communicationCompletion.notifications.facts3", { a: stringValue(base.fullName), b: branch.name, c: { message: dateClockMessage(base.preferredDate, base.preferredTime) } }),
       href: `/crm/leads/${leadId}`,
       dedupeKey: `trial-request:${bookingId}`,
     });
@@ -5986,7 +6123,9 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         gymMediaAssetView(ctx, organization, optionalString(listingValue.coverAssetId), "gym_cover"),
         Promise.all(arrayValue(listingValue.galleryAssetIds).map((id) => gymMediaAssetView(ctx, organization, optionalString(id), "gym_gallery"))),
       ]);
-      const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active");
+      const storedTrialOffer = trialOfferOf(data(data(tenantSettings?.data).operationalPolicies).trialOffer);
+      // The day pass has its own place on the page; it is not a membership "from" price.
+      const activePlans = plans.map((item) => data(item.data)).filter((item) => stringValue(item.status, "active") === "active" && item.id !== storedTrialOffer.dayPassPlanId);
       const activePrices = activePlans.map((item) => amountOf(item.basePrice)).filter((amount) => amount > 0);
       // Keep the public projection aligned with the tenant lifecycle even if
       // an older directory row has not yet been repaired by an admin.
@@ -6029,6 +6168,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         memberCount: members.filter((item) => stringValue(data(item.data).status, "active") === "active").length,
         branchCount: liveBranches.length,
         fromPriceMinor: activePrices.length ? Math.min(...activePrices) : 0,
+        trialOffer: publicTrialOfferOf(storedTrialOffer),
         trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
         ptPackages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
         logo,
@@ -8057,7 +8197,23 @@ async function createMembershipMutation(
   actor: ActorContext,
   input: Data,
   previousMembershipId?: string,
-  options: { operation?: "sale" | "renewal" | "plan_change"; reason?: string; previousPlanId?: string; effectiveDate?: "immediate" | "next_renewal"; standardStartDate?: string } = {},
+  options: {
+    operation?: "sale" | "renewal" | "plan_change";
+    reason?: string;
+    previousPlanId?: string;
+    effectiveDate?: "immediate" | "next_renewal";
+    standardStartDate?: string;
+    /**
+     * Server-only: a day pass sells at the price the member was quoted when
+     * they booked, even if the gym has since changed it (audited when it
+     * differs). Never taken from a caller's input.
+     */
+    quotedPrice?: number;
+    /** Server-only: a day pass is not the "first membership" that earns a referral reward. */
+    skipReferralReward?: boolean;
+    /** Server-only: paid ahead of its day (CliQ before the visit), like a PT package; not left upcoming. */
+    dueOnIssue?: boolean;
+  } = {},
 ): Promise<Data> {
   requirePermission(actor, "memberships.sell");
   const member = await recordOf(ctx, actor, "member", recordId(input.memberId));
@@ -8071,14 +8227,15 @@ async function createMembershipMutation(
   }
   const startDate = stringValue(input.startDate);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) domainError("VALIDATION_ERROR", "Start date must be a calendar date.", { correlationId: actor.correlationId });
-  const override = input.priceOverride != null;
+  const quotedPrice = options.quotedPrice;
+  const override = quotedPrice === undefined && input.priceOverride != null;
   const priceOverride = override && amountOf(input.priceOverride) !== amountOf(planData.basePrice);
   const dateOverride = Boolean(options.standardStartDate && startDate !== options.standardStartDate);
   if (priceOverride || dateOverride) {
     requirePermission(actor, "memberships.override_dates");
     requireReason(input.overrideReason, actor.correlationId, "overrideReason");
   }
-  const price = override ? amountOf(input.priceOverride) : amountOf(planData.basePrice);
+  const price = quotedPrice ?? (override ? amountOf(input.priceOverride) : amountOf(planData.basePrice));
   // A discount is part of the price, never more: the sale used to cap the total at 0 without saying so.
   const discount = amountOf(input.discount);
   if (!Number.isSafeInteger(discount) || discount < 0 || discount > price) {
@@ -8146,7 +8303,7 @@ async function createMembershipMutation(
   await grantIncludedPtCredits(ctx, actor, membership, planData);
   const total = price - discount;
   const issueDate = todayIn(actor.organization.timezone || TZ_FALLBACK);
-  const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", issueDate, dueDate: startDate > issueDate ? startDate : issueDate, createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
+  const charge = await insertRecord(ctx, actor, "charge", { id: newPublicId(), organizationId: publicOrganizationId(actor.organization), memberId: memberData.id, membershipId: membership.id, description: `${stringValue(planData.name)} membership`, subtotal: money(price, actor.organization.currency), discount: money(discount, actor.organization.currency), tax: money(0, actor.organization.currency), total: money(total, actor.organization.currency), paidAmount: money(0, actor.organization.currency), outstandingAmount: money(total, actor.organization.currency), status: total === 0 ? "paid" : "unpaid", issueDate, dueDate: startDate > issueDate && !options.dueOnIssue ? startDate : issueDate, createdAt: isoNow() }, { branchId: stringValue(memberData.homeBranchId), memberPublicId: memberData.id });
   const renewal = operation === "renewal";
   const event = await insertTimeline(ctx, actor, {
     memberId: memberData.id,
@@ -8163,6 +8320,7 @@ async function createMembershipMutation(
     meta: { membershipId: membership.id, previousMembershipId, previousPlanId: options.previousPlanId, effectiveDate: operation === "plan_change" ? options.effectiveDate : undefined },
   });
   if (priceOverride) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Price override: ${actor.organization.currency} ${formatMinorUnits(price, actor.organization.currency)}`, reason: stringValue(input.overrideReason), before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
+  if (quotedPrice !== undefined && quotedPrice !== amountOf(planData.basePrice)) await insertAudit(ctx, actor, { category: "payments", action: "membership.price_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Day pass at its booked price: ${actor.organization.currency} ${formatMinorUnits(price, actor.organization.currency)}`, reason: "The price quoted when the day pass was booked", before: { price: amountOf(planData.basePrice) }, after: { price }, branchId: memberData.homeBranchId });
   if (dateOverride) await insertAudit(ctx, actor, { category: "memberships", action: "membership.date_override", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Start date overridden to ${startDate}`, reason: stringValue(input.overrideReason), before: { startDate: options.standardStartDate }, after: { startDate }, branchId: memberData.homeBranchId });
   if (discount > 0) await insertAudit(ctx, actor, { category: "payments", action: "membership.discount", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `Discount applied: ${actor.organization.currency} ${formatMinorUnits(discount, actor.organization.currency)}`, reason: stringValue(input.discountReason), before: { price, discount: 0, approvalStatus: "none" }, after: { price, discount, approvalStatus: approvalPending ? "pending" : "approved" }, approvalStatus: approvalPending ? "pending" : "approved", branchId: memberData.homeBranchId });
   await insertAudit(ctx, actor, { category: "memberships", action: operation === "plan_change" ? "membership.plan_change" : renewal ? "membership.renew" : "membership.sale", entityType: "membership", entityId: membership.id, entityLabel: `${memberData.fullName} · ${memberData.memberNumber}`, summary: `${stringValue(planData.name)} — ${actor.organization.currency} ${formatMinorUnits(total, actor.organization.currency)}${operation === "plan_change" ? " · no proration" : ""}`, reason: options.reason, before: operation === "plan_change" ? { planId: options.previousPlanId } : undefined, after: { startDate: membership.startDate, endDate: membership.endDate, total, planId: planData.id }, branchId: memberData.homeBranchId });
@@ -8190,7 +8348,7 @@ async function createMembershipMutation(
     });
   }
   await syncCustomerMembershipProjection(ctx, actor, membership, memberData, planData);
-  if (operation === "sale") await applyReferralReward(ctx, actor, memberData);
+  if (operation === "sale" && !options.skipReferralReward) await applyReferralReward(ctx, actor, memberData);
   if (operation !== "plan_change") await closeObsoleteAiRenewalWork(ctx, actor, stringValue(memberData.id), membership.id);
   return result;
 }
@@ -11942,6 +12100,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (!trialTransitionAllowed(currentStatus, nextStatus)) domainError("VALIDATION_ERROR", `Trial cannot move from ${currentStatus.replaceAll("_", " ")} to ${nextStatus.replaceAll("_", " ")}.`, { message: { key: "apiErrors.trialTransition", params: { fromStatus: String(currentStatus.replaceAll("_", " ")), toStatus: String(nextStatus.replaceAll("_", " ")) } }, correlationId: actor.correlationId });
       const note = optionalString(input.note);
       if ((nextStatus === "no_show" || nextStatus === "cancelled") && !note) domainError("VALIDATION_ERROR", "Record a reason for this trial outcome.", { correlationId: actor.correlationId });
+      if (nextStatus === "completed" && isDayPassBooking(current) && stringValue(current.paymentStatus) !== "paid") {
+        domainError("CONFLICT", "Record the day-pass payment before marking the visit done.", { message: { key: "apiErrors.dayPassUnpaid" }, correlationId: actor.correlationId });
+      }
       const leadId = optionalString(current.leadId);
       if (!leadId) domainError("NOT_FOUND", "This trial is not linked to a lead.", { correlationId: actor.correlationId });
       const lead = await recordOf(ctx, actor, "lead", leadId);
@@ -11998,6 +12159,156 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
       const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
       return { ...(await toLeadSummary(ctx, actor, updatedLead)), notes: optionalString(updatedLead.notes), activities, offers, trialBooking: updatedBooking };
+    }
+    case "trials.collect_day_pass": {
+      // The gym records a day pass's payment (CliQ it received, or cash at the
+      // desk): its "Day pass" plan is sold at the booked price to the visitor,
+      // an existing member with the same phone or email or a new one, and paid,
+      // so the money has a receipt, a drawer and a ledger line like any sale.
+      requirePermission(actor, "crm.write");
+      requirePermission(actor, "members.write");
+      requirePermission(actor, "memberships.sell");
+      requirePermission(actor, "payments.collect");
+      const bookingId = recordId(input.bookingId);
+      const idempotencyKey = recordId(input.idempotencyKey);
+      assertOneOf(input.method, DAY_PASS_PAYMENT_METHODS, "method", "Payment method", actor.correlationId);
+      const method = stringValue(input.method);
+      if (!method) invalidField("method", "Payment method", actor.correlationId);
+      const externalReference = optionalString(input.externalReference)?.trim() || undefined;
+      if (externalReference && externalReference.length > DAY_PASS_LIMITS.cliqReference) invalidField("externalReference", "CliQ reference", actor.correlationId);
+      assertOneOf(input.gender, MEMBER_GENDERS, "gender", "Gender", actor.correlationId);
+      const requestHash = JSON.stringify({ bookingId, method, externalReference, gender: optionalString(input.gender) });
+      const leadDetailFor = async (leadId: string) => {
+        const leadRecord = await recordOf(ctx, actor, "lead", leadId);
+        const bookingRecord = await recordOf(ctx, actor, "trialBooking", bookingId);
+        const activities = (await recordsOfLead(ctx, actor.organization._id, leadId, "timeline")).map((item) => data(item.data)).filter((event) => event.leadId === leadId);
+        const offers = (await recordsOfLead(ctx, actor.organization._id, leadId, "offer")).map((item) => offerProjection(data(item.data))).filter((offer) => offer.leadId === leadId);
+        const leadValue = data(leadRecord.data);
+        return { ...(await toLeadSummary(ctx, actor, leadValue)), notes: optionalString(leadValue.notes), activities, offers, trialBooking: data(bookingRecord.data) };
+      };
+      const replay = await ctx.db.query("idempotencyRecords").withIndex("by_organization_operation_key", (q) => q.eq("organizationId", actor.organization._id).eq("operation", "trial.collect_day_pass").eq("key", idempotencyKey)).unique();
+      if (replay) {
+        if (replay.requestHash !== requestHash) domainError("VALIDATION_ERROR", "These details changed since your last attempt. Refresh and check the result before trying again.", { correlationId: actor.correlationId });
+        return await leadDetailFor(stringValue(data(replay.result).leadId));
+      }
+      const booking = await recordOf(ctx, actor, "trialBooking", bookingId);
+      const current = data(booking.data);
+      if (!isDayPassBooking(current)) domainError("VALIDATION_ERROR", "This is a free trial; there is nothing to pay.", { message: { key: "apiErrors.dayPassNotDayPass" }, correlationId: actor.correlationId });
+      if (!dayPassAwaitsPayment(current)) domainError("CONFLICT", "This day pass is already paid or closed.", { message: { key: "apiErrors.dayPassNotPayable" }, correlationId: actor.correlationId });
+      const leadId = optionalString(current.leadId);
+      if (!leadId) domainError("NOT_FOUND", "This trial is not linked to a lead.", { correlationId: actor.correlationId });
+      const lead = await recordOf(ctx, actor, "lead", leadId);
+      const leadValue = data(lead.data);
+      const branchId = stringValue(leadValue.branchId);
+      const branch = await branchByPublicId(ctx, actor.organization._id, branchId);
+      assertBranchAccess(actor, branch);
+      const offer = trialOfferOf(data((await settingsData(ctx, actor)).operationalPolicies).trialOffer);
+      const planRecord = offer.dayPassPlanId
+        ? await ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", actor.organization._id).eq("entityType", "plan").eq("publicId", offer.dayPassPlanId!)).unique()
+        : null;
+      if (!planRecord || stringValue(data(planRecord.data).status, "active") !== "active") {
+        domainError("CONFLICT", "Set the day-pass price in Settings → Trials before recording a payment.", { message: { key: "apiErrors.dayPassNoPlan" }, correlationId: actor.correlationId });
+      }
+      const price = amountOf(current.price);
+      if (!Number.isSafeInteger(price) || price <= 0) domainError("CONFLICT", "This day pass has no price to collect.", { message: { key: "apiErrors.dayPassNotPayable" }, correlationId: actor.correlationId });
+
+      const matches = duplicateMemberMatches(
+        (await memberRecords(ctx, actor)).map((record) => data(record.data)),
+        { phone: leadValue.phone, email: leadValue.email },
+        organizationPhoneCountryCallingCode(actor.organization),
+      );
+      const matchingMemberIds = [...new Set(matches.map((match) => match.memberId))];
+      if (matchingMemberIds.length > 1) {
+        domainError("DUPLICATE_MEMBER", "More than one member matches this visitor. Open the correct member and resolve the duplicate records first.", { correlationId: actor.correlationId, details: { matches } });
+      }
+      const existingMember = matchingMemberIds[0] ? await recordOf(ctx, actor, "member", matchingMemberIds[0]) : undefined;
+      if (existingMember && stringValue(data(existingMember.data).status) !== "active") {
+        domainError("VALIDATION_ERROR", "The matching member is inactive. Reactivate the member before selling a membership.", { correlationId: actor.correlationId });
+      }
+      const customerUserId = optionalString(current.customerUserId);
+      const profile = customerUserId ? await customerProfileForUser(ctx, customerUserId) : null;
+      const gender = optionalString(input.gender) ?? optionalString(profile?.gender);
+      if (!existingMember && gender !== "male" && gender !== "female") {
+        const message = "Choose the visitor's gender to add them as a member.";
+        domainError("VALIDATION_ERROR", message, { message: { key: "apiErrors.dayPassGender" }, fieldErrors: { gender: [message] }, correlationId: actor.correlationId });
+      }
+      const member = existingMember
+        ? data(existingMember.data)
+        : data((await createMemberMutation(ctx, actor, {
+          fullName: leadValue.fullName,
+          phone: leadValue.phone,
+          email: leadValue.email,
+          gender,
+          homeBranchId: branchId,
+          preferredLanguage: optionalString(profile?.preferredLanguage),
+          source: leadValue.source,
+          assignedSalespersonId: leadValue.ownerId,
+          referredByMemberId: leadValue.referredByMemberId,
+        }, { rejectDuplicates: true })).member);
+
+      const today = todayIn(actor.organization.timezone || TZ_FALLBACK);
+      const bookedDate = stringValue(current.preferredDate);
+      const sale = await createMembershipMutation(ctx, actor, {
+        memberId: member.id,
+        planId: planRecord.publicId,
+        startDate: bookedDate < today ? today : bookedDate,
+        idempotencyKey: `day-pass:${idempotencyKey}`,
+        payment: { amount: money(price, actor.organization.currency), method, externalReference, branchId },
+      }, undefined, { operation: "sale", quotedPrice: price, skipReferralReward: true, dueOnIssue: true });
+      const receipt = data(sale.receipt);
+      const membership = data(sale.membership);
+      const paidAt = isoNow();
+      const currentStatus = stringValue(current.status, "requested");
+      await patchRecord(ctx, actor, booking, {
+        status: currentStatus === "requested" ? "confirmed" : currentStatus,
+        paymentStatus: "paid",
+        paymentMethod: method,
+        paidAt,
+        memberId: stringValue(member.id),
+        membershipId: stringValue(membership.id),
+        receiptId: optionalString(receipt.id),
+        updatedAt: paidAt,
+      });
+      await patchRecord(ctx, actor, lead, { updatedAt: paidAt });
+      await insertTimeline(ctx, actor, {
+        leadId,
+        memberId: stringValue(member.id),
+        branchId,
+        type: "trial_confirmed",
+        title: "Day pass paid",
+        titleMessage: systemMessage("communicationCompletion.timeline.dayPassPaid"),
+        body: `${actor.organization.currency} ${formatMinorUnits(price, actor.organization.currency)} · ${method === "cliq" ? "CliQ" : "Cash"}`,
+        bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: price, currency: actor.organization.currency }, b: { enum: "paymentMethod", value: method } }),
+        actorId: publicUserId(actor.user),
+        actorName: actor.user.fullName,
+        meta: { bookingId, membershipId: stringValue(membership.id), receiptId: optionalString(receipt.id) },
+      });
+      await insertAudit(ctx, actor, { category: "crm", action: "trial.day_pass_paid", entityType: "trial_booking", entityId: bookingId, entityLabel: `${stringValue(current.fullName)} · ${bookedDate}`, summary: "Day-pass payment recorded", before: { paymentStatus: "unpaid", status: currentStatus }, after: { paymentStatus: "paid", method, amount: price, memberId: stringValue(member.id), receiptId: optionalString(receipt.id) }, branchId });
+      const customerUser = customerUserId ? await ctx.db.query("users").withIndex("by_public_id", (q) => q.eq("publicId", customerUserId)).unique() : null;
+      if (customerUser && customerUser.status !== "deactivated") {
+        await insertOperationalNotification(ctx, {
+          recipientUserId: customerUser._id,
+          organizationId: actor.organization._id,
+          branchId: booking.branchId,
+          kind: "trial_status",
+          title: "Day pass paid",
+          body: `${actor.organization.name} · ${bookedDate}`,
+          titleMessage: systemMessage("communicationCompletion.timeline.dayPassPaid"),
+          bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: actor.organization.name, b: { date: bookedDate } }),
+          href: "/customer/my-gyms",
+          dedupeKey: `day-pass-paid:${bookingId}`,
+        });
+      }
+      await ctx.db.insert("idempotencyRecords", {
+        organizationId: actor.organization._id,
+        operation: "trial.collect_day_pass",
+        key: idempotencyKey,
+        requestHash,
+        result: { leadId, bookingId },
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 86_400_000 * 365,
+      });
+      return await leadDetailFor(leadId);
     }
     case "offers.create": {
       requirePermission(actor, "crm.write");
@@ -12658,7 +12969,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       requirePermission(actor, "settings.manage");
       const settings = await settingsRecord(ctx, actor);
       const before = (await settingsData(ctx, actor)).operationalPolicies;
-      const operationalPolicies = await validatedOperationalPolicies(ctx, actor, input.operationalPolicies ?? input);
+      const validated = await validatedOperationalPolicies(ctx, actor, input.operationalPolicies ?? input);
+      const operationalPolicies = { ...validated, trialOffer: await syncDayPassPlan(ctx, actor, data(validated.trialOffer)) };
       const value = { ...(settings ? data(settings.data) : {}), operationalPolicies };
       if (settings) await patchRecord(ctx, actor, settings, value);
       else await insertRecord(ctx, actor, "settings", { id: "settings", ...value });

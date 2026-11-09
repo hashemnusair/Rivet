@@ -63,6 +63,7 @@ export const activityLog = {
     offerAccepted: "Offer accepted",
     offerDeclined: "Offer declined",
     trialScheduled: "Trial visit booked",
+    trialDayPassPaid: "Day-pass payment recorded",
     trialConfirmed: "Trial visit confirmed",
     trialCompleted: "Trial visit done",
     trialNoShow: "Missed trial visit",

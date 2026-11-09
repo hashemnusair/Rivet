@@ -1,5 +1,5 @@
 import type { SubscriptionAddOns } from "../../../convex/subscriptionAddOns";
-import type { Money, PlanKind, TrialBookingStatus, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
+import type { DayPassBookingFacts, Money, PlanKind, TrialBookingStatus, TrialOfferKind, TrialScheduleDay, UUID, WeekdayKey } from "@/lib/domain/types";
 import { BRANCH_ABD, BRANCH_SWF } from "@/lib/mock/store";
 
 export interface MarketplaceBranch {
@@ -39,6 +39,8 @@ export interface MarketplaceGym {
   trainers?: import("@/lib/domain/types").PtTrainerProfile[];
   ptPackages?: import("@/lib/domain/types").PtPackage[];
   plans?: PublicMembershipPlan[];
+  /** What the trial days offer. Missing means a free trial. */
+  trialOffer?: PublicTrialOffer;
   logo?: import("@/lib/domain/types").MediaAsset;
   cover?: import("@/lib/domain/types").MediaAsset;
   gallery?: import("@/lib/domain/types").MediaAsset[];
@@ -80,6 +82,14 @@ export interface MarketplaceGym {
   archivedAt?: string;
   archiveReason?: string;
   branches: MarketplaceBranch[];
+}
+
+/** The public side of the gym's trial offer: what it is, its price, and where CliQ goes. */
+export interface PublicTrialOffer {
+  kind: TrialOfferKind;
+  dayPassPrice?: Money;
+  /** Shown to a member who chooses CliQ. Without it, a day pass is paid at the gym. */
+  cliqAlias?: string;
 }
 
 export interface PublicMembershipPlan {
@@ -209,7 +219,7 @@ export interface CustomerActivity {
   occurredAt: string;
 }
 
-export interface TrialBooking {
+export interface TrialBooking extends DayPassBookingFacts {
   id: string;
   customerId?: string;
   /** Stable client retry key for the durable customer trial mutation. */

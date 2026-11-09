@@ -131,6 +131,9 @@ import type {
   UUID,
 } from "@/lib/domain/types";
 import type { CustomerMembership, CustomerPersona, CustomerProfileInput, CustomerReferralProgram, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+
+/** What a member sends to book; the gym's settings decide the kind and the price. */
+export type CreateTrialBookingInput = Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId" | "kind" | "price" | "paymentStatus" | "paidAt" | "memberId" | "membershipId" | "receiptId"> & { customerId?: string; referralToken?: string };
 import type {
   CustomerFinancialSummary,
   CustomerReceipt,
@@ -1124,7 +1127,12 @@ export interface GymOSApi {
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona>;
   /** The optional customerId is used only by the deterministic mock; Convex derives identity from Clerk. */
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona>;
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking>;
+  /**
+   * A free trial or, when the gym sells day passes, a day pass: the server
+   * decides which from the gym's settings and quotes the price; the member
+   * chooses how to pay (`paymentMethod`).
+   */
+  createTrialBooking(input: CreateTrialBookingInput): Promise<TrialBooking>;
   ensureCustomerReferralLink(membershipId: UUID): Promise<CustomerReferralProgram>;
 
   // --- Read-only operational analytics (Reports area) ---
@@ -1320,6 +1328,12 @@ export interface GymOSApi {
     input: { status: Extract<import("@/lib/domain/types").TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string },
   ): Promise<LeadDetail>;
   scheduleLeadTrial(leadId: UUID, input: ScheduleLeadTrialInput): Promise<LeadDetail>;
+  /**
+   * Records a day pass's payment: sells the gym's "Day pass" plan at the quoted
+   * price to the visitor (an existing member with the same phone or email, or a
+   * new one) and collects it, with a receipt. Confirms a requested booking.
+   */
+  collectDayPassPayment(bookingId: UUID, input: import("@/lib/domain/types").CollectDayPassPaymentInput): Promise<LeadDetail>;
   createOffer(input: CreateOfferInput): Promise<Offer>;
   markOfferDelivered(offerId: UUID, input: MarkOfferDeliveredInput): Promise<Offer>;
   recordOfferOutcome(offerId: UUID, input: RecordOfferOutcomeInput): Promise<Offer>;

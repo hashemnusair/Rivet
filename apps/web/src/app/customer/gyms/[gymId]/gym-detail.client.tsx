@@ -8,7 +8,7 @@ import { isolate } from "@/lib/i18n/bidi";
 import { useT } from "@/lib/i18n/provider";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, CalendarCheck, Check, Clock, MapPin } from "lucide-react";
+import { ArrowLeft, CalendarCheck, Check, Clock, Copy, MapPin, Ticket } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,21 +21,33 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
+import { RadioCard, RadioGroup } from "@/components/ui/radio-group";
+import { DAY_PASS_LIMITS, dayPassPaymentMethods } from "@/lib/domain/day-pass";
+import type { DayPassPaymentMethod } from "@/lib/domain/types";
+import type { TrialBooking } from "@/lib/public/experience-data";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { isTimeInTrialWindow, trialWindowForDate } from "@/lib/public/trial-schedule";
 import { money } from "@/lib/utils/money";
 import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
+// A day pass asks for a date only (the member pays instead of describing a
+// goal); a free trial also needs a time and a goal.
 const trialSchema = z.object({
   fullName: z.string().trim().min(2, "Enter your full name").max(TEXT_LIMITS.personName),
   email: z.string().email("Enter a valid email"),
   phone: z.string().transform(latinDigits).pipe(z.string().min(8, "Enter a valid phone number")),
   branchId: z.string().min(1, "Choose a branch"),
   preferredDate: z.string().min(1, "Choose a date"),
-  preferredTime: z.string().min(1, "Choose a time"),
-  goal: z.string().trim().min(4, "Tell the gym what you want from your trial"),
+  preferredTime: z.string(),
+  goal: z.string(),
+  offerKind: z.enum(["free_trial", "day_pass"]),
+}).superRefine((value, context) => {
+  if (value.offerKind === "day_pass") return;
+  if (!value.preferredTime) context.addIssue({ code: "custom", path: ["preferredTime"], message: "Choose a time" });
+  if (value.goal.trim().length < 4) context.addIssue({ code: "custom", path: ["goal"], message: "Tell the gym what you want from your trial" });
 });
+const DAY_PASS_DETAIL_FIELDS = ["fullName", "email", "phone", "branchId", "preferredDate"] as const;
 type TrialValues = z.infer<typeof trialSchema>;
 
 const SELECT_CLASS = "h-11 w-full rounded-md border border-line-2 bg-surface px-3 text-[13.5px] text-ink transition-colors hover:border-line-3 focus:border-[var(--tenant-brand-primary)] sm:h-9";
@@ -60,7 +72,13 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const searchParams = useSearchParams();
   const referralToken = searchParams.get("ref")?.trim() || undefined;
   const [booked, setBooked] = useState(false);
+  const [bookedDayPass, setBookedDayPass] = useState<TrialBooking>();
   const [submitting, setSubmitting] = useState(false);
+  const dayPassOffer = gym?.trialOffer?.kind === "day_pass" && gym.trialOffer.dayPassPrice ? gym.trialOffer : undefined;
+  const [step, setStep] = useState<"details" | "payment">("details");
+  const [paymentMethod, setPaymentMethod] = useState<DayPassPaymentMethod>();
+  const [cliqReference, setCliqReference] = useState("");
+  const [aliasCopied, setAliasCopied] = useState(false);
   const trialRequestKeyRef = useRef<string | undefined>(undefined);
   const defaultDate = useMemo(() => {
     const date = new Date();
@@ -75,7 +93,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
   const formContextKey = gym ? `${gym.id}:${customer?.id ?? "guest"}` : "unavailable";
   const initializedFormContextRef = useRef(formContextKey);
 
-  const { register, handleSubmit, watch, reset, setValue, formState: { errors, dirtyFields } } = useForm<TrialValues>({
+  const { register, handleSubmit, watch, reset, setValue, trigger, formState: { errors, dirtyFields } } = useForm<TrialValues>({
     resolver: zodResolver(trialSchema),
     defaultValues: {
       fullName: customer?.name ?? "",
@@ -85,8 +103,14 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       preferredDate: defaultDate,
       preferredTime: "",
       goal: defaultGoal,
+      offerKind: dayPassOffer ? "day_pass" : "free_trial",
     },
   });
+
+  // The gym's offer can arrive (or change) after the first render.
+  useEffect(() => {
+    setValue("offerKind", dayPassOffer ? "day_pass" : "free_trial", { shouldDirty: false });
+  }, [dayPassOffer, setValue]);
 
   const branchQueryAppliedRef = useRef(false);
   useEffect(() => {
@@ -108,6 +132,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       preferredDate: defaultDate,
       preferredTime: "",
       goal: defaultGoal,
+      offerKind: gym.trialOffer?.kind === "day_pass" && gym.trialOffer.dayPassPrice ? "day_pass" : "free_trial",
     }, {
       // If identity or asynchronously loaded gym defaults change after the
       // visitor starts typing, retain their explicit input and refresh only
@@ -176,12 +201,16 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       router.push(memberSignupHref);
       return;
     }
+    if (dayPassOffer && !paymentMethod) return;
     setSubmitting(true);
     setSubmitError(undefined);
     try {
       const idempotencyKey = trialRequestKeyRef.current ?? (trialRequestKeyRef.current = crypto.randomUUID());
-      await bookTrial({ gymId: gym.id, ...values, idempotencyKey, referralToken });
+      const { offerKind: _offerKind, ...fields } = values;
+      const payment = dayPassOffer ? { paymentMethod, cliqReference: paymentMethod === "cliq" ? cliqReference.trim() || undefined : undefined } : {};
+      const booking = await bookTrial({ gymId: gym.id, ...fields, ...payment, idempotencyKey, referralToken });
       trialRequestKeyRef.current = undefined;
+      if (dayPassOffer) setBookedDayPass(booking);
       setBooked(true);
     } catch (error) {
       setSubmitError(error);
@@ -189,6 +218,26 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
       setSubmitting(false);
     }
   });
+
+  const continueToPayment = async () => {
+    const valid = await trigger([...DAY_PASS_DETAIL_FIELDS]);
+    if (!valid || !availableTrialWindow) return;
+    // A changed date or branch is a new request, not a retry of the last one.
+    trialRequestKeyRef.current = undefined;
+    setSubmitError(undefined);
+    setStep("payment");
+  };
+  const dayPassMethods = dayPassOffer ? dayPassPaymentMethods(dayPassOffer) : [];
+  const dayPassPrice = dayPassOffer?.dayPassPrice ? f.money(dayPassOffer.dayPassPrice) : "";
+  const copyAlias = async () => {
+    if (!dayPassOffer?.cliqAlias) return;
+    try {
+      await navigator.clipboard.writeText(dayPassOffer.cliqAlias);
+      setAliasCopied(true);
+    } catch {
+      setAliasCopied(false);
+    }
+  };
 
   return (
     <main className="mx-auto max-w-[1080px] px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
@@ -202,7 +251,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
           <p className="text-[12px] font-medium text-ink-3">{publicProfileLabel(t, gym.category)} · {gym.city}</p>
           <h1 className="mt-0.5 font-display text-[26px] font-semibold leading-tight tracking-tight">{gym.name}</h1>
         </div>
-        {!booked ? <Button asChild className="w-full sm:w-auto lg:hidden"><a href="#book-trial"><CalendarCheck /> {" "}{t("customerPortal.bookFreeTrial")}</a></Button> : null}
+        {!booked ? <Button asChild className="w-full sm:w-auto lg:hidden"><a href="#book-trial">{dayPassOffer ? <><Ticket /> {" "}{t("customerPortal.buyDayPass")}</> : <><CalendarCheck /> {" "}{t("customerPortal.bookFreeTrial")}</>}</a></Button> : null}
       </header>
       {gym.tagline ? <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-ink-2">{locale === "ar" ? gym.taglineAr || gym.tagline : gym.tagline}</p> : null}
 
@@ -229,7 +278,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                 <div key={branch.id} className="panel p-4">
                   <h3 className="text-[14px] font-semibold">{branch.name}</h3>
                   <p className="mt-1 flex items-start gap-1.5 text-[13px] text-ink-2"><MapPin className="mt-0.5 size-3.5 shrink-0 text-ink-3" aria-hidden /> {branch.address}</p>
-                  <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink-3"><Clock className="size-3.5 shrink-0" aria-hidden /> {branch.trialSchedule ? t("customerPortal.trialAvailable") : t("customerPortal.trialNotConfigured")}</p>
+                  <p className="mt-2 flex items-center gap-1.5 text-[12.5px] text-ink-3"><Clock className="size-3.5 shrink-0" aria-hidden /> {branch.trialSchedule ? (dayPassOffer ? t("customerPortal.dayPassAvailable") : t("customerPortal.trialAvailable")) : t("customerPortal.trialNotConfigured")}</p>
                 </div>
               ))}
             </div>
@@ -316,7 +365,110 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
         </div>
 
         <aside id="book-trial" className="panel h-fit scroll-mt-24 p-4 sm:p-5 lg:sticky lg:top-24" aria-labelledby="book-trial-title">
-          {booked ? (
+          {booked && bookedDayPass ? (
+            <div className="py-3 text-center" data-testid="day-pass-booked">
+              <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep"><Check className="size-6" aria-hidden /></span>
+              <p className="mt-4 text-[12px] font-medium text-ink-3">{t("customerPortal.sentTo", { gym: locale === "ar" ? isolate(gym.name) : gym.name })}</p>
+              <h2 id="book-trial-title" className="mt-1 text-[20px] font-semibold leading-tight">{t("customerPortal.dayPassBooked")}</h2>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-ink-2">
+                {bookedDayPass.paymentMethod === "cliq" && dayPassOffer?.cliqAlias
+                  ? t("customerPortal.dayPassBookedCliq", { price: dayPassPrice, alias: isolate(dayPassOffer.cliqAlias) })
+                  : t("customerPortal.dayPassBookedCash", { price: dayPassPrice })}
+              </p>
+              <div className="mt-4 rounded-md border border-line bg-sunken p-3 text-start">
+                <p className="text-[13.5px] font-medium">{confirmedBranch?.name ?? t("customerPortal.selectedBranch")}</p>
+                <p className="mt-1 text-[12.5px] text-ink-2"><bdi>{f.date(bookedDayPass.preferredDate)}</bdi></p>
+              </div>
+              <Button asChild className="mt-4 w-full"><Link href="/customer/my-gyms">{t("customerPortal.openGyms")}</Link></Button>
+            </div>
+          ) : !booked && dayPassOffer ? (
+            <>
+              <p className="text-[12px] font-medium text-ink-3">{t("customerPortal.dayPassEyebrow", { price: dayPassPrice })}</p>
+              <h2 id="book-trial-title" className="mt-0.5 text-[20px] font-semibold leading-tight">{t("customerPortal.dayPassAt", { gym: locale === "ar" ? isolate(gym.shortName) : gym.shortName })}</h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-ink-2">{t("customerPortal.dayPassInstructions")}</p>
+              {!customerSignedIn ? (
+                <p className="mt-4 rounded-md border border-line bg-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
+                  {" "}{t("customerPortal.trialFillNow")}{" "}<Link href={memberSignupHref} className="font-semibold text-ink underline underline-offset-4">{t("customerPortal.trialCreateAccount")}</Link> {" "}{t("customerPortal.trialKeepName")}{" "}</p>
+              ) : null}
+              {step === "details" ? (
+                <form onSubmit={(event) => { event.preventDefault(); void continueToPayment(); }} className="mt-4 space-y-4" noValidate data-testid="day-pass-details">
+                  <Field label={t("common.label.fullName")} htmlFor="trial-name" error={errors.fullName ? t("customerPortal.fullName") : undefined}>
+                    <Input dir="auto" id="trial-name" className="h-11 sm:h-9" autoComplete="name" maxLength={TEXT_LIMITS.personName} aria-invalid={Boolean(errors.fullName) || undefined} {...register("fullName")} />
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    <Field label={t("common.label.phone")} htmlFor="trial-phone" error={errors.phone ? t("customerPortal.validPhone") : undefined}>
+                      <Input dir="ltr" id="trial-phone" type="tel" inputMode="tel" autoComplete="tel" className="h-11 sm:h-9" aria-invalid={Boolean(errors.phone) || undefined} {...register("phone")} />
+                    </Field>
+                    <Field label={t("common.label.email")} htmlFor="trial-email" error={errors.email ? t("customerPortal.validEmail") : undefined}>
+                      <Input dir="ltr" id="trial-email" type="email" inputMode="email" autoComplete="email" className="h-11 sm:h-9" aria-invalid={Boolean(errors.email) || undefined} {...register("email")} />
+                    </Field>
+                  </div>
+                  <Field label={t("common.label.branch")} htmlFor="trial-branch" error={errors.branchId ? t("customerPortal.chooseBranch") : undefined}>
+                    <select id="trial-branch" className={SELECT_CLASS} aria-invalid={Boolean(errors.branchId) || undefined} {...register("branchId")}>
+                      <option value="">{t("members.bulk.chooseBranch")}</option>
+                      {gym.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={t("customerPortal.dayPassDate")} htmlFor="trial-date" error={errors.preferredDate ? t("customerPortal.chooseDate") : undefined}>
+                    <Input id="trial-date" type="date" className="h-11 sm:h-9" min={new Date().toISOString().slice(0, 10)} aria-invalid={Boolean(errors.preferredDate) || undefined} {...register("preferredDate")} />
+                  </Field>
+                  {availableTrialWindow ? (
+                    <p role="status" className="text-[12.5px] text-ink-2">{t("customerPortal.dayPassHours", { from: f.clock(availableTrialWindow.opensAt), to: f.clock(availableTrialWindow.closesAt) })}</p>
+                  ) : (
+                    <p role="status" className="rounded-md border border-line bg-sunken px-3 py-2.5 text-[12.5px] text-ink-2">{selectedBranch?.trialSchedule ? t("customerPortal.dayPassNoDay") : selectedBranch ? t("customerPortal.trialNoOnline") : t("customerPortal.trialChooseBranch")}</p>
+                  )}
+                  <Button type="submit" variant="signal" size="lg" className="w-full" disabled={!selectedBranch || !availableTrialWindow}>{t("customerPortal.continueToPayment")}</Button>
+                </form>
+              ) : (
+                <form onSubmit={submit} className="mt-4 space-y-4" noValidate data-testid="day-pass-payment">
+                  <div className="flex items-start justify-between gap-3 rounded-md border border-line bg-sunken p-3">
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-medium">{selectedBranch?.name}</p>
+                      <p className="mt-0.5 text-[12.5px] text-ink-2"><bdi>{f.date(selectedDate)}</bdi></p>
+                    </div>
+                    <p className="shrink-0 text-[15px] font-semibold tabular">{dayPassPrice}</p>
+                  </div>
+                  <fieldset>
+                    <legend className="mb-2 text-[13px] font-semibold text-ink">{t("customerPortal.dayPassHowToPay")}</legend>
+                    <RadioGroup value={paymentMethod ?? ""} onValueChange={(value) => setPaymentMethod(value === "cliq" ? "cliq" : "cash")} className="grid gap-2">
+                      {dayPassMethods.includes("cliq") ? (
+                        <RadioCard value="cliq" data-testid="pay-cliq">
+                          <span className="block text-[13.5px] font-semibold text-ink">{t("customerPortal.payCliq")}</span>
+                          <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("customerPortal.payCliqHint")}</span>
+                        </RadioCard>
+                      ) : null}
+                      <RadioCard value="cash" data-testid="pay-cash">
+                        <span className="block text-[13.5px] font-semibold text-ink">{t("customerPortal.payCash")}</span>
+                        <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("customerPortal.payCashHint")}</span>
+                      </RadioCard>
+                    </RadioGroup>
+                  </fieldset>
+                  {paymentMethod === "cliq" && dayPassOffer.cliqAlias ? (
+                    <div className="space-y-3 rounded-md border border-line p-3">
+                      <p className="text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.cliqSendTo", { price: dayPassPrice })}</p>
+                      <div className="flex items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-[11.5px] text-ink-3">{t("customerPortal.cliqAliasLabel")}</p>
+                          <bdi dir="ltr" className="block truncate font-mono text-[14px] font-semibold text-ink" data-testid="cliq-alias">{dayPassOffer.cliqAlias}</bdi>
+                        </div>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => void copyAlias()}><Copy />{" "}{aliasCopied ? t("customerPortal.aliasCopied") : t("customerPortal.copyAlias")}</Button>
+                      </div>
+                      <Field label={t("customerPortal.cliqReference")} htmlFor="day-pass-reference" hint={t("customerPortal.cliqReferenceHint")}>
+                        <Input id="day-pass-reference" dir="ltr" autoComplete="off" className="h-11 sm:h-9" maxLength={DAY_PASS_LIMITS.cliqReference} value={cliqReference} onChange={(event) => setCliqReference(event.target.value)} />
+                      </Field>
+                    </div>
+                  ) : paymentMethod === "cash" ? (
+                    <p className="rounded-md border border-line p-3 text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.payCashNote", { price: dayPassPrice })}</p>
+                  ) : null}
+                  {submitError ? <p role="alert" className="text-[13px] text-danger">{isApiError(submitError) ? localizeApiError(submitError, locale).message : t("apiErrors.unexpected")}</p> : null}
+                  <div className="flex gap-2">
+                    <Button type="button" variant="secondary" size="lg" onClick={() => setStep("details")}>{t("common.action.back")}</Button>
+                    <Button type="submit" variant="signal" size="lg" className="flex-1" loading={submitting} disabled={!paymentMethod}><Ticket />{" "}{t("customerPortal.confirmDayPass")}</Button>
+                  </div>
+                </form>
+              )}
+            </>
+          ) : booked ? (
             <div className="py-3 text-center">
               <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-bg text-success-deep"><Check className="size-6" aria-hidden /></span>
               <p className="mt-4 text-[12px] font-medium text-ink-3">{t("customerPortal.sentTo", { gym: locale === "ar" ? isolate(gym.name) : gym.name })}</p>

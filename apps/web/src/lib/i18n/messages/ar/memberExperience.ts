@@ -202,4 +202,13 @@ export const memberExperience: typeof English = {
   entrySoon: "تنتهي صلاحيته قريبًا. اعرضه في الاستقبال.",
   entryRefresh: "طلب رمز جديد",
 
+  requestsTitle: "طلباتك",
+  requestFreeTrial: "زيارة تجريبية مجانية",
+  requestDayPass: "اشتراك يومي",
+  requestWaiting: "بانتظار ردّ النادي",
+  requestConfirmed: "مؤكَّد",
+  requestPaid: "مدفوع · {price}",
+  requestPayCliq: "حوّل {price} إلى الاسم المستعار {alias} في كليك. يؤكد النادي الدفعة عند وصولها.",
+  requestPayCliqNoAlias: "ينتظر النادي دفعتك عبر كليك بقيمة {price}.",
+  requestPayCash: "ادفع {price} عند الاستقبال عند وصولك.",
 };

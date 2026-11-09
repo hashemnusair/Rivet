@@ -1,11 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS, type CustomerMembership } from "@/lib/public/experience-data";
+import { INITIAL_CUSTOMER_MEMBERSHIPS, MARKETPLACE_GYMS, type CustomerMembership, type MarketplaceGym, type TrialBooking } from "@/lib/public/experience-data";
 import MemberDashboardPage from "./page";
 
 const state = vi.hoisted(() => ({
   memberships: [] as CustomerMembership[],
+  bookings: [] as TrialBooking[],
+  gyms: undefined as MarketplaceGym[] | undefined,
   searchParams: new URLSearchParams(),
   replace: vi.fn(),
   getEntryPass: vi.fn(),
@@ -19,8 +21,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/hooks/use-member-gate", () => ({ useMemberGate: () => ({ ready: true, identitySignedIn: true, profileSelected: true }) }));
 vi.mock("@/lib/providers/experience-provider", () => ({
   useCustomerPersona: () => ({ id: "customer-lina", name: "Lina Haddad", email: "lina@example.com" }),
-  useExperience: () => ({ customerMemberships: state.memberships, experienceStatus: "ready" }),
-  useMarketplaceGyms: () => MARKETPLACE_GYMS,
+  useExperience: () => ({ customerMemberships: state.memberships, customerBookings: state.bookings, experienceStatus: "ready" }),
+  useMarketplaceGyms: () => state.gyms ?? MARKETPLACE_GYMS,
 }));
 
 const base = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
@@ -28,6 +30,8 @@ const base = INITIAL_CUSTOMER_MEMBERSHIPS[0]!;
 describe("member home", () => {
   beforeEach(() => {
     state.memberships = [{ ...base, endDate: "2020-01-31", status: "expiring" }];
+    state.bookings = [];
+    state.gyms = undefined;
     state.searchParams = new URLSearchParams();
     state.replace.mockReset();
     state.getEntryPass.mockReset().mockResolvedValue({ token: "rivet://entry", expiresAt: new Date(Date.now() + 60_000).toISOString(), membershipId: base.id });
@@ -86,5 +90,23 @@ describe("member home", () => {
     expect(screen.getByRole("region", { name: "Your gyms" })).toHaveTextContent("0 gyms");
     expect(screen.getByRole("heading", { name: "No gym membership yet" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Find a gym/ })).toHaveAttribute("href", "/customer/discover");
+  });
+
+  it("lists open requests and says how to pay for an unpaid day pass", () => {
+    const gym = MARKETPLACE_GYMS[0]!;
+    state.gyms = [{ ...gym, trialOffer: { kind: "day_pass", dayPassPrice: { amount: 5_000, currency: "JOD" }, cliqAlias: "FORGEGYM" } }, ...MARKETPLACE_GYMS.slice(1)];
+    const request = { gymId: gym.id, branchId: gym.branches[0]!.id, fullName: "Lina Haddad", email: "lina@example.com", phone: "+962790000000", goal: "Day pass", createdAt: "2026-11-01T10:00:00.000Z", customerId: "customer-lina" };
+    state.bookings = [
+      { ...request, id: "pass-cliq", preferredDate: "2026-11-20", preferredTime: "09:00", status: "requested", kind: "day_pass", price: { amount: 5_000, currency: "JOD" }, paymentMethod: "cliq", paymentStatus: "unpaid" },
+      { ...request, id: "pass-paid", preferredDate: "2026-11-21", preferredTime: "09:00", status: "confirmed", kind: "day_pass", price: { amount: 5_000, currency: "JOD" }, paymentMethod: "cash", paymentStatus: "paid" },
+      { ...request, id: "trial", preferredDate: "2026-11-22", preferredTime: "18:00", status: "requested", goal: "Strength" },
+      { ...request, id: "closed", preferredDate: "2026-11-02", preferredTime: "18:00", status: "cancelled", goal: "Strength" },
+    ];
+    render(<MemberDashboardPage />);
+    const requests = screen.getByRole("region", { name: "Your requests" });
+    expect(requests.querySelectorAll("li")).toHaveLength(3);
+    expect(requests).toHaveTextContent(/Send JOD\s?5\.000 to CliQ alias .*FORGEGYM.*\. The gym confirms when it arrives\./);
+    expect(requests).toHaveTextContent(/Paid · JOD\s?5\.000/);
+    expect(requests).toHaveTextContent("Free trial");
   });
 });

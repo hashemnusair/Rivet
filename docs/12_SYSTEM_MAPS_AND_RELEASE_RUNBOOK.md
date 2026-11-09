@@ -73,16 +73,23 @@ uptime monitor, the edge/WAF rules in Vercel's firewall for the public forms (th
 server already rate-limits them), the first restore rehearsal, a capacity check at
 pilot load, and the owners' confirmation of this runbook.
 
-## Input hardening and member restore — Convex deploy owed (6 and 9 November 2026)
+## Input hardening, member restore and day passes — Convex deploy owed (6 and 9 November 2026)
 
 The 6 November input-hardening commit (CURRENT_STATE, docs/09) changes Convex
 functions only: `members.update` / `plans.update` allowlists and value checks, the
 free-text limit on every `domain.mutate` request, automation maxima, the
-calling-code rule and the discount-above-price refusal. The 9 November commit adds
-the `members.restore` operation. No schema, index or data change. The frontend
-shipped with the push and does not depend on the 6 November checks; the
-**Restore member…** item on an archived member's profile does need `members.restore`
-and shows an error until this deploy runs. Release them through the guarded procedure from
+calling-code rule and the discount-above-price refusal. The 9 November commits add
+the `members.restore` operation, day passes (`trialOffer` in the operational
+policies, the day-pass booking in `customer.trial.create`, `trials.collect_day_pass`)
+and the trial-booking fix (a booking keeps the saved member profile). No schema,
+index or data change; settings saved before day passes read as a free trial. The
+frontend shipped with the pushes. Until this deploy: **Restore member…** and the
+day-pass settings and payment show an error, and member trial requests from a gym
+page keep failing on the 25 October profile gender rule.
+
+After the deploy, check read-only on Production: Settings → Hours & trials shows
+"What visitors book"; a gym page still offers a free trial; then, on a test gym
+only, a day pass end to end (book with CliQ, record the payment, open the receipt). Release them through the guarded procedure from
 that commit: `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` (names only),
 `pnpm convex:deploy -- --dry-run --yes` (expect no index change), then the deploy
 and `health:check --prod`. Record the SHA, deployment and time here.

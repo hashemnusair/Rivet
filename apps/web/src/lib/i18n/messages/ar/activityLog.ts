@@ -63,6 +63,7 @@ export const activityLog: typeof EnglishActivityLog = {
     offerAccepted: "قبول عرض الاشتراك",
     offerDeclined: "رفض عرض الاشتراك",
     trialScheduled: "حجز زيارة تجريبية",
+    trialDayPassPaid: "تسجيل دفعة اشتراك يومي",
     trialConfirmed: "تأكيد الزيارة التجريبية",
     trialCompleted: "إتمام الزيارة التجريبية",
     trialNoShow: "لم يحضر الزيارة التجريبية",

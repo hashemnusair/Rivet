@@ -320,4 +320,18 @@ export const settingsDetails = {
   decimalRange: "Enter a number from {min} to {max}, with up to {places} decimal places.",
   invalidNumbers: "Check the highlighted numbers before saving.",
 
+  trialOfferTitle: "What visitors book",
+  trialOfferDescription: "On the trial days below, visitors book a free trial or buy a day pass.",
+  trialOfferFree: "Free trial",
+  trialOfferFreeHint: "Visitors pick a day and a time. Nothing to pay.",
+  trialOfferDayPass: "Day pass",
+  trialOfferDayPassHint: "Visitors pick a day, then pay by CliQ before they come or cash at the desk.",
+  dayPassPrice: "Day-pass price ({currency})",
+  dayPassPriceRequired: "Enter the day-pass price.",
+  cliqAlias: "CliQ alias (optional)",
+  cliqAliasHint: "Members who choose CliQ send the money to this alias before they come. Leave it empty to take payment at the gym only.",
+  dayPassPlanNote: "Recording a day-pass payment sells the visitor a one-visit “Day pass” plan at this price, with a receipt, and it shows in your reports like any sale.",
+  hoursAndDayPasses: "Branch hours and day passes",
+  dayPassTimes: "Day-pass hours",
+  weekSummaryDayPass: "Open {open} of 7 days. Day passes on {trial} of them. Edit one branch at a time. Changes to other branches are kept until you save.",
 };

@@ -2126,7 +2126,7 @@ export type TrialBookingStatus =
   | "cancelled"
   | "converted";
 
-export interface LeadTrialBooking {
+export interface LeadTrialBooking extends DayPassBookingFacts {
   id: UUID;
   customerId?: UUID;
   gymId: UUID;
@@ -2140,6 +2140,40 @@ export interface LeadTrialBooking {
   status: TrialBookingStatus;
   createdAt: ISODateTime;
   leadId?: UUID;
+}
+
+/** What a visitor books from a gym's public page: a free trial or a paid day pass. */
+export type TrialOfferKind = "free_trial" | "day_pass";
+/** How a member pays for a day pass: CliQ before they come, or cash at the desk. */
+export type DayPassPaymentMethod = "cliq" | "cash";
+export type DayPassPaymentStatus = "unpaid" | "paid";
+
+/**
+ * Day-pass facts on a trial booking. A booking without `kind` is a free trial
+ * (every booking made before day passes existed).
+ */
+export interface DayPassBookingFacts {
+  kind?: TrialOfferKind;
+  /** The price quoted when the day pass was booked; what the gym charges. */
+  price?: Money;
+  paymentMethod?: DayPassPaymentMethod;
+  paymentStatus?: DayPassPaymentStatus;
+  /** The member's own CliQ transfer reference, if they gave one. */
+  cliqReference?: string;
+  /** Set once the gym records the payment. */
+  paidAt?: ISODateTime;
+  memberId?: UUID;
+  membershipId?: UUID;
+  receiptId?: UUID;
+}
+
+export interface CollectDayPassPaymentInput {
+  method: DayPassPaymentMethod;
+  /** Required for CliQ: the transfer reference the gym sees in its bank app. */
+  externalReference?: string;
+  /** Needed when the visitor is new to the gym and their RIVET profile has none. */
+  gender?: "male" | "female";
+  idempotencyKey: string;
 }
 
 export interface ScheduleLeadTrialInput {
@@ -3723,6 +3757,22 @@ export interface BranchTrialSchedule {
   days: Record<WeekdayKey, TrialScheduleDay>;
 }
 
+/**
+ * What the gym's public page offers on the trial days: a free trial, or a day
+ * pass for a price. A day pass is sold as the gym's "Day pass" plan (one visit)
+ * when the gym records the payment, so it reaches receipts, the cash drawer
+ * and reports like any membership sale.
+ */
+export interface TrialOffer {
+  kind: TrialOfferKind;
+  /** Price of one day pass; required for a day pass. */
+  dayPassPrice?: Money;
+  /** Where members send a CliQ payment. Without one, members pay at the gym. */
+  cliqAlias?: string;
+  /** Kept by the server: the plan a recorded day-pass payment sells. */
+  dayPassPlanId?: UUID;
+}
+
 export interface OperationalPolicies {
   entry: {
     outstandingBalance: "allow" | "warn" | "block";
@@ -3738,6 +3788,8 @@ export interface OperationalPolicies {
   };
   operatingHours: BranchOperatingHours[];
   trialSchedules: BranchTrialSchedule[];
+  /** Missing on settings saved before day passes existed: a free trial. */
+  trialOffer?: TrialOffer;
   personalTraining: {
     sessionDurationMinutes: 60;
     bookingHorizonDays: number;

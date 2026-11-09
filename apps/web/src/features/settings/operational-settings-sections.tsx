@@ -11,13 +11,16 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox, Switch } from "@/components/ui/switch";
+import { RadioCard, RadioGroup } from "@/components/ui/radio-group";
 import { SettingsPanel, SettingsSaveBar, SettingsSection, SettingsToggleRow, SettingsUnitInput } from "@/features/settings/settings-layout";
 import { isApiError } from "@/lib/api/errors";
 import { qk } from "@/lib/api/keys";
-import type { OperationalPolicies, WeekdayKey } from "@/lib/domain/types";
+import type { OperationalPolicies, TrialOffer, WeekdayKey } from "@/lib/domain/types";
+import { DAY_PASS_LIMITS } from "@/lib/domain/day-pass";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { exponentFor, toWesternDigits } from "@/lib/utils/money";
+import { exponentFor, readMoneyInput, toMajorString, toWesternDigits } from "@/lib/utils/money";
+import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-format";
 import { cn } from "@/lib/utils/cn";
 
 const WEEKDAY_ROWS: Array<{ key: WeekdayKey }> = [
@@ -77,6 +80,7 @@ type OperationalPoliciesInput = {
   retention?: Partial<OperationalPolicies["retention"]>;
   operatingHours?: OperationalPolicies["operatingHours"];
   trialSchedules?: OperationalPolicies["trialSchedules"];
+  trialOffer?: OperationalPolicies["trialOffer"];
 };
 
 export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): OperationalPolicies {
@@ -140,6 +144,7 @@ export function normalizeOperationalPolicies(value?: OperationalPoliciesInput): 
     trialSchedules: Array.isArray(value?.trialSchedules)
       ? value.trialSchedules.map((schedule) => ({ ...schedule, days: normalizedTrialDays(schedule.days) }))
       : [],
+    trialOffer: value?.trialOffer ? { ...value.trialOffer } : { kind: "free_trial" },
   };
 }
 
@@ -455,15 +460,22 @@ export function OperationalRulesSection() {
 export function HoursAndTrialsSection() {
   const t = useT();
   const HOURS_DESCRIPTION = t("settingsDetails.text075");
+  const moneyProblemText = useMoneyProblemText();
 
   const invalidate = useInvalidate();
   const { session } = useApp();
   const { settingsQuery, policies, setPolicies, dirty, discard, markSaved } = useOperationalPoliciesDraft();
   const [selectedBranchId, setSelectedBranchId] = useState("");
+  const currency = settingsQuery.data?.organization.currency ?? session?.organization.currency ?? "JOD";
+  // The price is typed as text and read under the money input policy; the
+  // policy holds it only once it reads cleanly.
+  const storedPrice = policies?.trialOffer?.dayPassPrice;
+  const [priceText, setPriceText] = useState<string>();
+  const shownPriceText = priceText ?? (storedPrice ? toMajorString(storedPrice) : "");
   const save = useApiMutation((api, value: OperationalPolicies) => api.updateOperationalPolicies(value), {
     onSuccess: async () => {
       toast.success(t("settingsDetails.text076"));
-      await invalidate([qk.settings, qk.checkIns({}), qk.customerClasses("all")]);
+      await invalidate([qk.settings, qk.checkIns({}), qk.customerClasses("all"), ["plans"]]);
     },
     onError: (error) => toast.error(isApiError(error) ? error.message : t("settingsDetails.text077")),
   });
@@ -485,21 +497,62 @@ export function HoursAndTrialsSection() {
     setPolicies((current) => current ? { ...current, operatingHours: current.operatingHours.map((schedule) => schedule.branchId === selectedBranchId ? { ...schedule, days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } } } : schedule) } : current);
   const updateTrialWindow = (weekday: WeekdayKey, patch: Partial<OperationalPolicies["trialSchedules"][number]["days"][WeekdayKey]>) =>
     setPolicies((current) => current ? { ...current, trialSchedules: current.trialSchedules.map((schedule) => schedule.branchId === selectedBranchId ? { ...schedule, days: { ...schedule.days, [weekday]: { ...schedule.days[weekday], ...patch } } } : schedule) } : current);
+  const offer: TrialOffer = policies.trialOffer ?? { kind: "free_trial" };
+  const dayPass = offer.kind === "day_pass";
+  const priceRead = readMoneyInput(shownPriceText, currency);
+  const priceProblem = dayPass && !priceRead.ok ? (priceRead.problem === "empty" ? t("settingsDetails.dayPassPriceRequired") : moneyProblemText(priceRead, currency)) : undefined;
+  const updateOffer = (patch: Partial<TrialOffer>) => setPolicies((current) => current ? { ...current, trialOffer: { ...(current.trialOffer ?? { kind: "free_trial" }), ...patch } } : current);
+  const changePrice = (text: string) => {
+    setPriceText(text);
+    const read = readMoneyInput(text, currency);
+    if (read.ok && read.money.amount > 0) updateOffer({ dayPassPrice: read.money });
+  };
   const commit = async () => {
     await save.mutateAsync(policies);
     markSaved(policies);
+    setPriceText(undefined);
   };
   const openDays = selectedSchedule ? WEEKDAY_ROWS.filter(({ key }) => selectedSchedule.days[key].enabled).length : 0;
   const trialDays = selectedSchedule && selectedTrialSchedule ? WEEKDAY_ROWS.filter(({ key }) => selectedSchedule.days[key].enabled && selectedTrialSchedule.days[key].enabled).length : 0;
 
   return (
     <SettingsSection title={t("settingsCore.text192")} description={HOURS_DESCRIPTION}>
+      <SettingsPanel title={t("settingsDetails.trialOfferTitle")} description={t("settingsDetails.trialOfferDescription")} className="mb-4">
+        <RadioGroup
+          value={offer.kind}
+          onValueChange={(kind) => updateOffer({ kind: kind === "day_pass" ? "day_pass" : "free_trial" })}
+          className="grid gap-2 sm:grid-cols-2"
+          aria-label={t("settingsDetails.trialOfferTitle")}
+        >
+          <RadioCard value="free_trial" data-testid="trial-offer-free">
+            <span className="block text-[13.5px] font-semibold text-ink">{t("settingsDetails.trialOfferFree")}</span>
+            <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("settingsDetails.trialOfferFreeHint")}</span>
+          </RadioCard>
+          <RadioCard value="day_pass" data-testid="trial-offer-day-pass">
+            <span className="block text-[13.5px] font-semibold text-ink">{t("settingsDetails.trialOfferDayPass")}</span>
+            <span className="mt-0.5 block text-[12.5px] text-ink-2">{t("settingsDetails.trialOfferDayPassHint")}</span>
+          </RadioCard>
+        </RadioGroup>
+        {dayPass ? (
+          <div className="mt-4 space-y-3">
+            <FieldGrid>
+              <Field label={t("settingsDetails.dayPassPrice", { currency })} htmlFor="day-pass-price" required error={priceProblem}>
+                <Input id="day-pass-price" inputMode="decimal" dir="ltr" value={shownPriceText} placeholder={toMajorString({ amount: 0, currency })} aria-invalid={priceProblem ? true : undefined} onChange={(event) => changePrice(event.target.value)} />
+              </Field>
+              <Field label={t("settingsDetails.cliqAlias")} htmlFor="day-pass-cliq" hint={t("settingsDetails.cliqAliasHint")}>
+                <Input id="day-pass-cliq" dir="ltr" autoComplete="off" maxLength={DAY_PASS_LIMITS.cliqAlias} value={offer.cliqAlias ?? ""} onChange={(event) => updateOffer({ cliqAlias: event.target.value.trim() ? event.target.value : undefined })} />
+              </Field>
+            </FieldGrid>
+            <p className="text-[12.5px] leading-relaxed text-ink-3">{t("settingsDetails.dayPassPlanNote")}</p>
+          </div>
+        ) : null}
+      </SettingsPanel>
       {branches.length === 0 ? (
         <EmptyState layout="section" title={t("settingsCore.text059")} description={t("settingsCore.text060")} />
       ) : (
         <SettingsPanel
-          title={t("settingsDetails.text078")}
-          description={selectedSchedule ? t("settingsDetails.weekSummary", { open: openDays, trial: trialDays }) : t("settingsDetails.text079")}
+          title={dayPass ? t("settingsDetails.hoursAndDayPasses") : t("settingsDetails.text078")}
+          description={selectedSchedule ? t(dayPass ? "settingsDetails.weekSummaryDayPass" : "settingsDetails.weekSummary", { open: openDays, trial: trialDays }) : t("settingsDetails.text079")}
           bodyClassName="p-0"
           control={
             <label className="flex items-center gap-2 text-[12.5px] font-medium text-ink-2">
@@ -514,7 +567,7 @@ export function HoursAndTrialsSection() {
           {selectedSchedule && selectedTrialSchedule ? (
             <div>
               <div className="hidden grid-cols-[150px_minmax(240px,1fr)_minmax(280px,1fr)] gap-5 border-b border-line bg-sunken/60 px-5 py-2 text-[12px] font-semibold text-ink-3 lg:grid">
-                <span>{t("settingsDetails.text081")}</span><span>{t("settingsDetails.text082")}</span><span>{t("settingsDetails.text083")}</span>
+                <span>{t("settingsDetails.text081")}</span><span>{t("settingsDetails.text082")}</span><span>{dayPass ? t("settingsDetails.dayPassTimes") : t("settingsDetails.text083")}</span>
               </div>
               <div className="divide-y divide-line">
                 {WEEKDAY_ROWS.map(({ key }) => {
@@ -529,7 +582,7 @@ export function HoursAndTrialsSection() {
                         {day.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" value={day.opensAt} onChange={(event) => updateHours(key, { opensAt: event.target.value })} aria-label={t("settingsDetails.dayStart", { day: label })} /><Input type="time" value={day.closesAt} onChange={(event) => updateHours(key, { closesAt: event.target.value })} aria-label={t("settingsDetails.dayEnd", { day: label })} /></div> : <p className="flex min-h-9 items-center text-[12.5px] text-ink-3">{t("settingsDetails.text086")}</p>}
                       </div>
                       <div>
-                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">{t("settingsDetails.text083")}</p>
+                        <p className="mb-1 text-[12px] font-medium text-ink-3 lg:hidden">{dayPass ? t("settingsDetails.dayPassTimes") : t("settingsDetails.text083")}</p>
                         <div className="grid gap-2 sm:grid-cols-[124px_1fr] sm:items-center">
                           <label className={cn("flex min-h-9 cursor-pointer items-center gap-2.5 text-[12.5px] font-medium text-ink-2", !day.enabled && "cursor-not-allowed text-ink-3")} data-touch-target><Checkbox checked={trialWindow.enabled} disabled={!day.enabled} onCheckedChange={(value) => updateTrialWindow(key, { enabled: value === true })} aria-label={t("settingsDetails.dayTrials", { day: label })} />{t("settingsDetails.text087")}</label>
                           {day.enabled && trialWindow.enabled ? <div className="grid grid-cols-2 gap-2"><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.opensAt} onChange={(event) => updateTrialWindow(key, { opensAt: event.target.value })} aria-label={t("settingsDetails.dayTrialStart", { day: label })} /><Input type="time" min={day.opensAt} max={day.closesAt} value={trialWindow.closesAt} onChange={(event) => updateTrialWindow(key, { closesAt: event.target.value })} aria-label={t("settingsDetails.dayTrialEnd", { day: label })} /></div> : <span className="flex min-h-9 items-center text-[12.5px] text-ink-3">{day.enabled ? t("settingsDetails.text088") : t("settingsDetails.text089")}</span>}
@@ -546,11 +599,13 @@ export function HoursAndTrialsSection() {
         </SettingsPanel>
       )}
       <SettingsSaveBar
-        dirty={dirty}
+        dirty={dirty || priceText !== undefined}
         saving={save.isPending}
+        saveDisabled={Boolean(priceProblem)}
+        saveDisabledReason={priceProblem}
         error={save.isError ? (isApiError(save.error) ? save.error.message : t("settingsDetails.text091")) : undefined}
         onSave={commit}
-        onDiscard={discard}
+        onDiscard={() => { discard(); setPriceText(undefined); }}
         saveLabel={t("settingsDetails.text092")}
         guardTitle={t("settingsDetails.text093")}
       />

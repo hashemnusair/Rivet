@@ -10,7 +10,10 @@ import { GymMark } from "@/components/public/gym-mark";
 import { StatusChip } from "@/components/shared/status-chip";
 import { Button } from "@/components/ui/button";
 import { StatePanel } from "@/components/ui/states";
-import type { CustomerMembership, MarketplaceGym } from "@/lib/public/experience-data";
+import type { CustomerMembership, MarketplaceGym, TrialBooking } from "@/lib/public/experience-data";
+import { isDayPassBooking } from "@/lib/domain/day-pass";
+import { isolate } from "@/lib/i18n/bidi";
+import { useFormat } from "@/lib/i18n/format";
 import { membershipDisplayStatus } from "@/lib/public/membership-status";
 import { useMemberGate } from "@/lib/hooks/use-member-gate";
 import { useCustomerPersona, useExperience, useMarketplaceGyms } from "@/lib/providers/experience-provider";
@@ -28,7 +31,7 @@ export default function MemberDashboardPage() {
 function MemberHome() {
   const t = useT();
   const customer = useCustomerPersona();
-  const { customerMemberships, experienceStatus } = useExperience();
+  const { customerMemberships, customerBookings, experienceStatus } = useExperience();
   const gyms = useMarketplaceGyms();
   const { ready, identitySignedIn, profileSelected } = useMemberGate();
   const router = useRouter();
@@ -96,6 +99,8 @@ function MemberHome() {
         )}
       </section>
 
+      <OpenRequests bookings={customerBookings} gymFor={gymFor} />
+
       {passFor ? (
         <EntryPassDialog
           open
@@ -139,6 +144,53 @@ function MembershipPass({ membership, gym, onShowPass }: { membership: CustomerM
         <bdi dir="ltr" className="ms-auto font-mono text-[12px] text-ink-3">{membership.memberNumber}</bdi>
       </div>
     </article>
+  );
+}
+
+/**
+ * Trial and day-pass requests the gym has not closed yet, newest day first. A
+ * day pass says whether it is paid and, if not, how to pay (the CliQ alias
+ * comes from the gym's current public offer).
+ */
+function OpenRequests({ bookings, gymFor }: { bookings: TrialBooking[]; gymFor: (id: string) => MarketplaceGym | undefined }) {
+  const t = useT();
+  const f = useFormat();
+  const open = bookings
+    .filter((booking) => booking.status === "requested" || booking.status === "confirmed")
+    .sort((left, right) => left.preferredDate.localeCompare(right.preferredDate));
+  if (open.length === 0) return null;
+  return (
+    <section className="mt-8" aria-labelledby="open-requests-title" data-testid="open-requests">
+      <h2 id="open-requests-title" className="text-[17px] font-semibold">{t("memberExperience.requestsTitle")}</h2>
+      <ul className="panel mt-3 divide-y divide-line overflow-hidden">
+        {open.map((booking) => {
+          const gym = gymFor(booking.gymId);
+          const branch = gym?.branches.find((item) => item.id === booking.branchId)?.name;
+          const dayPass = isDayPassBooking(booking);
+          const price = booking.price ? f.money(booking.price) : "";
+          const alias = gym?.trialOffer?.cliqAlias;
+          const paymentLine = !dayPass
+            ? undefined
+            : booking.paymentStatus === "paid"
+              ? t("memberExperience.requestPaid", { price })
+              : booking.paymentMethod === "cliq"
+                ? alias ? t("memberExperience.requestPayCliq", { price, alias: isolate(alias) }) : t("memberExperience.requestPayCliqNoAlias", { price })
+                : t("memberExperience.requestPayCash", { price });
+          return (
+            <li key={booking.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="text-[14px] font-semibold">{dayPass ? t("memberExperience.requestDayPass") : t("memberExperience.requestFreeTrial")}</span>
+                <StatusChip tone={booking.status === "confirmed" ? "green" : "amber"} dot>{booking.status === "confirmed" ? t("memberExperience.requestConfirmed") : t("memberExperience.requestWaiting")}</StatusChip>
+              </div>
+              <p className="mt-1 text-[13px] text-ink-2">
+                {gym?.name ?? t("memberExperience.gym")}{branch ? ` · ${branch}` : ""}{" · "}<bdi>{f.date(booking.preferredDate)}</bdi>{dayPass ? null : <>{" · "}<bdi>{f.clock(booking.preferredTime)}</bdi></>}
+              </p>
+              {paymentLine ? <p className={cn("mt-1 text-[12.5px]", booking.paymentStatus === "paid" ? "text-success-deep" : "text-ink-3")}>{paymentLine}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

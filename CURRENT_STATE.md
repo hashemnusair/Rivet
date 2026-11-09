@@ -1,5 +1,64 @@
 # GymOS / RIVET current implementation state
 
+## Day passes instead of a free trial; trial booking fixed (9 November 2026)
+
+Elias asked for gyms that sell a day pass instead of a free trial: the gym chooses
+which and the price, the member picks a date and then pays by CliQ or cash at the
+gym. Decisions: docs/09 "Day passes". Shared rules: `src/lib/domain/day-pass.ts`.
+
+- **Gym.** Settings → Hours & trials → "What visitors book": Free trial or Day pass,
+  the price, and an optional CliQ alias (refused while CliQ is switched off as a
+  payment method). Saving a day pass keeps a one-visit "Day pass" plan
+  (`DAY-PASS`, «اشتراك يومي» for an Arabic gym) at that price (`syncDayPassPlan`,
+  audited). Stored as `operationalPolicies.trialOffer`; older settings read as a
+  free trial.
+- **Member.** The gym page shows "Day pass · price": branch and date (the trial days
+  are the day-pass days), "Continue to payment", then CliQ (alias, copy, optional
+  transfer reference) or cash at the gym, then "Book day pass". The confirmation and
+  a new "Your requests" list on My gyms repeat how to pay. The public gym view
+  carries `trialOffer` (no plan id) and keeps the day-pass plan out of its plan list
+  and "from" price.
+- **Server.** `customer.trial.create` quotes the price on the booking
+  (`kind`, `price`, `paymentMethod`, `paymentStatus`, `cliqReference`), stores the
+  day's opening as its time, and notifies staff "New day-pass request". New
+  `trials.collect_day_pass` (crm.write, members.write, memberships.sell,
+  payments.collect; idempotent): sells the Day pass plan at the booked price to the
+  visitor (the member matching their phone or email, or a new member; gender from
+  the dialog or their profile), collects CliQ (reference required) or cash (open
+  shift required) with a receipt, confirms the booking and notifies the member.
+  The sale charges the quoted price (audited when the plan price changed), is due
+  when issued (paid ahead like a PT package) and earns no referral reward. A day
+  pass is marked completed only once paid. Preview adapter mirrors all of it.
+- **Staff.** Lead page: the panel is titled "Day pass", shows price, payment choice
+  and reference, paid or not, a receipt link, and "Record payment" (dialog: CliQ or
+  cash, reference, optional gender; refusals stay in the dialog).
+- **Trial booking fix.** Since 25 October `saveCustomerProfile` requires a gender,
+  and `customer.trial.create` saved the booking form (name, phone, no gender) as the
+  whole profile: every member trial request from a gym page was refused, and a
+  successful one would have reset the birth date, language, address and emergency
+  contact. The booking now keeps the saved profile and takes only the name and phone.
+- **Copy.** English and Arabic (`apiErrors.dayPass*`, `settingsDetails.trialOffer*`,
+  `customerPortal.dayPass*`, `crmCompletion.dayPass.*`, `memberExperience.request*`,
+  `activityLog.action.trialDayPassPaid`). «اشتراك يومي» is a proposed term, not in
+  `docs/arabic/DECISIONS.md`; Elias to confirm.
+- **Tests.** `convex/day-pass.test.ts` (8, including the profile fix and cash only
+  into an open shift), `src/lib/domain/day-pass.test.ts` (4, rules and the preview
+  adapter), `src/app/customer/my-gyms/page.test.tsx` (+1),
+  `settings-sections.test.ts` (offer default).
+- **Verification (9 November 2026, cloud session, Linux).** `tsc` (web and Convex);
+  ESLint and the secret-output audit; full Vitest 2,805 passed, 3 skipped;
+  `verify-lock.py`; `git diff --check`; `next build`. Playwright on the preview
+  server: a one-off day-pass journey (settings → book with CliQ → record payment →
+  receipt; and the payment step in Arabic at 390 px), not kept as a spec;
+  `public-experience` 15/15 and `workflow-pass-2` 13/13 (the failures of the first
+  runs were the dev server running out of memory, and passed on a fresh server);
+  `workflow-pass-6` 13/14: the Hours & trials captures pass at 390 and 1440 px, and
+  the one failure is the 390 px "My profile" capture, the same sandbox font
+  difference seen on unchanged `main`.
+- **Release.** Frontend on push. Convex: needs the guarded deploy owed in docs/12;
+  until then the day-pass screens and Restore show an error and trial requests stay
+  refused on Production.
+
 ## Restore member, early member record, health check, runbook (9 November 2026)
 
 Elias asked for the finalisation items that need no credentials or owner decision.

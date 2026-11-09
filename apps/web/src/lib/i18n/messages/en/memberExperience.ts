@@ -201,4 +201,13 @@ export const memberExperience = {
   entrySoon: "Expires soon. Show it at reception.",
   entryRefresh: "Get a new code",
 
+  requestsTitle: "Your requests",
+  requestFreeTrial: "Free trial",
+  requestDayPass: "Day pass",
+  requestWaiting: "Waiting for the gym",
+  requestConfirmed: "Confirmed",
+  requestPaid: "Paid · {price}",
+  requestPayCliq: "Send {price} to CliQ alias {alias}. The gym confirms when it arrives.",
+  requestPayCliqNoAlias: "The gym is waiting for your CliQ payment of {price}.",
+  requestPayCash: "Pay {price} at reception when you arrive.",
 };

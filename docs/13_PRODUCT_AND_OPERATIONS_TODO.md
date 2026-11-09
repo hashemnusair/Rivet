@@ -11,8 +11,10 @@ are not recorded and belong to item 3.
 
 **Launch blockers (people and providers)**
 
-1. [ ] Deploy the 6 November Convex changes (edit allowlists, text limits, number
-   limits, discount rule): guarded procedure in docs/12, top entry.
+1. [ ] Deploy the owed Convex changes (6 November hardening, 9 November restore,
+   day passes and the trial-booking fix): guarded procedure in docs/12. Until then
+   member trial requests from a gym page are refused on Production (the profile
+   gender rule of 25 October), and Restore and day passes show an error.
 2. [ ] Email end to end: Resend callback and webhook secret, Clerk → Resend template
    cutover, reply inbox, then invitations, reset/verification codes and operational
    emails seen in real inboxes (docs/19).
@@ -52,7 +54,12 @@ are not recorded and belong to item 3.
    asked for alongside the identity check.
 10. [ ] Features: family accounts, repayment schedules, push delivery, supplier
     notifications, member document uploads, the marketplace, statutory accounting.
-    Done 9 November: an audited restore-member action.
+    Done 9 November: an audited restore-member action; paid day passes (CliQ or
+    cash at the gym) as an alternative to the free trial. Day-pass follow-ups:
+    Elias to confirm «اشتراك يومي» as the Arabic term; trial emails still say
+    "trial request" for a day pass; an online CliQ check (RIVET only records what
+    the gym saw in its bank app); refunds of a paid day pass use the normal
+    payment refund.
 11. [ ] Validate maintenance with a pilot gym before building more of it: assignees,
     recurring opening and closing checklists, photo evidence, overdue escalation.
 12. [x] Housekeeping: `temporary-current-work.md` retired on 9 November 2026; its

@@ -83,6 +83,7 @@ import type {
   MemberImportUndoInput,
   MemberImportUndoResult,
   CustomerExperience,
+  CreateTrialBookingInput,
 } from "@/lib/api/GymOSApi";
 import { DEFAULT_BEHAVIOR } from "@/lib/api/GymOSApi";
 import { ApiError, ERR } from "@/lib/api/errors";
@@ -141,6 +142,8 @@ import { publicMarketplaceGyms } from "@/lib/public/marketplace-filters";
 import { isTimeInTrialWindow } from "@/lib/public/trial-schedule";
 import { PLAN_COUNT_LIMITS, TEXT_LIMITS } from "@/lib/domain/input-limits";
 import { MEMBER_GENDERS, MEMBER_LANGUAGES, MEMBER_UPDATE_FIELDS, PLAN_BRANCH_ACCESS, PLAN_KINDS, PLAN_STATUSES, PLAN_UPDATE_FIELDS, pickFields } from "@/lib/domain/update-fields";
+import { DAY_PASS_GOAL, DAY_PASS_LIMITS, DAY_PASS_PLAN, TRIAL_OFFER_KINDS, dayPassAwaitsPayment, dayPassPaymentMethods, isDayPassBooking, publicTrialOfferOf, trialOfferOf } from "@/lib/domain/day-pass";
+import { trialWindowForDate } from "@/lib/public/trial-schedule";
 import {
   currentRole,
   currentUser,
@@ -789,6 +792,7 @@ export class MockGymOSApi implements GymOSApi {
   private platformAuditEvents: MockPlatformAuditEvent[] = [];
   private readonly prospects = new MockProspectStore();
   private readonly marketplaceSubscribers = new Map<(gyms: MarketplaceGym[]) => void, ((error: unknown) => void) | undefined>();
+  private readonly dayPassIdempotency = new Map<string, { signature: string; leadId: string }>();
   private readonly publicPlanSubscribers = new Map<(plans: PlatformSaasPlan[]) => void, ((error: unknown) => void) | undefined>();
   private readonly websiteOfferSubscribers = new Map<(offer: WebsiteOffer) => void, ((error: unknown) => void) | undefined>();
   private commerce: { websiteOffer: { enabled: boolean; places: number; priceMinor: number }; paymentDetails: PlatformPaymentDetails } = mockCommerceSettings();
@@ -1275,6 +1279,11 @@ export class MockGymOSApi implements GymOSApi {
       .filter((gym) => this.isProvisionedGym(gym) && !this.archivedGymIds.has(gym.id))
       .map((gym) => {
         const cloned = cloneMarketplaceGym(gym);
+        if (cloned.branches.some((branch) => branch.internalBranchId && this.db.branches.some((candidate) => candidate.id === branch.internalBranchId))) {
+          const offer = trialOfferOf(this.db.operationalPolicies.trialOffer);
+          cloned.trialOffer = publicTrialOfferOf(offer);
+          if (cloned.plans && offer.dayPassPlanId) cloned.plans = cloned.plans.filter((plan) => plan.id !== offer.dayPassPlanId);
+        }
         delete cloned.logoUrl;
         delete cloned.isProvisioned;
         delete cloned.isArchived;
@@ -2253,12 +2262,26 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> {
+  createTrialBooking(input: CreateTrialBookingInput): Promise<TrialBooking> {
     return this.respond(() => {
       const gym = this.platformGyms.find((item) => item.id === input.gymId);
       const directoryBranch = gym?.branches.find((item) => item.id === input.branchId);
       if (!gym || !this.isProvisionedGym(gym) || !publicMarketplaceGyms([gym]).length || !directoryBranch) throw ApiError.of(ERR.NOT_FOUND, "Gym branch not found.");
-      if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
+      // Parity with Convex: the tenant's own gym follows its trial offer.
+      const tenantGym = Boolean(directoryBranch.internalBranchId && this.db.branches.some((branch) => branch.id === directoryBranch.internalBranchId));
+      const offer = tenantGym ? trialOfferOf(this.db.operationalPolicies.trialOffer) : trialOfferOf(undefined);
+      const dayPass = offer.kind === "day_pass";
+      const window = trialWindowForDate(directoryBranch, input.preferredDate);
+      let dayPassFacts: Partial<TrialBooking> = {};
+      if (dayPass) {
+        if (!window) throw ApiError.of(ERR.CONFLICT, "This branch does not take day passes on that day.", { message: { key: "apiErrors.dayPassDayClosed" } });
+        if (new Date(`${input.preferredDate}T${window.closesAt}:00+03:00`).getTime() <= Date.now()) throw ApiError.of(ERR.VALIDATION, "Choose today or a later day.", { message: { key: "apiErrors.dayPassPastDate" } });
+        if (!input.paymentMethod || !dayPassPaymentMethods(offer).includes(input.paymentMethod)) throw ApiError.of(ERR.VALIDATION, "Choose how you will pay for the day pass.", { message: { key: "apiErrors.dayPassPaymentMethod" }, fieldErrors: { paymentMethod: ["Choose how you will pay for the day pass."] } });
+        const cliqReference = input.paymentMethod === "cliq" ? input.cliqReference?.trim() || undefined : undefined;
+        if (cliqReference && cliqReference.length > DAY_PASS_LIMITS.cliqReference) throw ApiError.of(ERR.VALIDATION, "CliQ reference is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "CliQ reference" } } });
+        dayPassFacts = { kind: "day_pass", price: offer.dayPassPrice, paymentMethod: input.paymentMethod, paymentStatus: "unpaid", ...(cliqReference ? { cliqReference } : {}) };
+      } else if (!isTimeInTrialWindow(directoryBranch, input.preferredDate, input.preferredTime)) throw ApiError.of(ERR.CONFLICT, "That trial time is outside this branch's trial-request hours.");
+      const bookedTime = dayPass && window ? window.opensAt : input.preferredTime;
       const referralLink = input.referralToken ? [...this.referralLinks.values()].find((link) => link.token === input.referralToken && link.gymId === input.gymId) : undefined;
       if (input.referralToken && !referralLink) throw ApiError.of(ERR.NOT_FOUND, "This referral link is no longer available.");
       const idempotencyKey = input.idempotencyKey?.trim();
@@ -2283,7 +2306,7 @@ export class MockGymOSApi implements GymOSApi {
       let leadId: string | undefined;
       if (gym && internalBranchId) {
         leadId = mockUuid();
-        const followUp = new Date(`${input.preferredDate}T${input.preferredTime}:00+03:00`).toISOString();
+        const followUp = new Date(`${input.preferredDate}T${bookedTime}:00+03:00`).toISOString();
         const lead: T.Lead & { referredByMemberId?: string; notes?: string } = {
           id: leadId,
           organizationId: this.db.organization.id,
@@ -2300,12 +2323,14 @@ export class MockGymOSApi implements GymOSApi {
           createdAt: nowISO(),
           updatedAt: nowISO(),
         };
-        lead.notes = `Free trial requested through RIVET Member${referralLink ? " via a member referral link" : ""} for ${directoryBranch.name}. Goal: ${input.goal}`;
+        lead.notes = dayPass
+          ? `Day pass requested through RIVET Member${referralLink ? " via a member referral link" : ""} for ${directoryBranch.name}. Pays ${input.paymentMethod === "cliq" ? "by CliQ" : "cash at the gym"}.`
+          : `Free trial requested through RIVET Member${referralLink ? " via a member referral link" : ""} for ${directoryBranch.name}. Goal: ${input.goal}`;
         this.db.leads.push(lead);
-        this.activity({ leadId, type: "member_created", title: "Free trial requested", body: input.goal, actorName: "RIVET Member" });
+        this.activity({ leadId, type: "member_created", title: dayPass ? "Day pass requested" : "Free trial requested", body: dayPass ? undefined : input.goal, actorName: "RIVET Member" });
       }
-      const { referralToken: _referralToken, ...bookingInput } = input;
-      const booking: TrialBooking = { ...bookingInput, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}) };
+      const { referralToken: _referralToken, paymentMethod: _paymentMethod, cliqReference: _cliqReference, ...bookingInput } = input;
+      const booking: TrialBooking = { ...bookingInput, preferredTime: bookedTime, goal: dayPass ? input.goal?.trim() || DAY_PASS_GOAL : input.goal, customerId, id: `trial-${Date.now()}`, createdAt: nowISO(), status: "requested", ...(leadId ? { leadId } : {}), ...dayPassFacts };
       this.trialBookings.unshift(booking);
       if (idempotencyMapKey) this.trialIdempotency.set(idempotencyMapKey, { signature, result: { ...booking } });
       return { ...booking };
@@ -7254,14 +7279,20 @@ export class MockGymOSApi implements GymOSApi {
     standardStartDate?: T.ISODate;
     idempotencyKey?: string;
     soldBy: T.UUID;
+    /** Parity with Convex: a day pass sells at the price quoted when it was booked. */
+    quotedPrice?: T.Money;
+    /** Parity with Convex: a day pass does not earn the referrer's first-sale reward. */
+    skipReferralReward?: boolean;
+    /** Parity with Convex: a day pass is paid ahead of its day, so its charge is due when issued. */
+    dueOnIssue?: boolean;
   }): T.MembershipSaleResult {
     const member = this.db.members.find((m) => m.id === args.memberId);
     if (!member) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
     const plan = this.db.plans.find((p) => p.id === args.planId);
     if (!plan || plan.status !== "active") throw ApiError.of(ERR.NOT_FOUND, "Plan not found or inactive.");
 
-    const priceMinor = args.priceOverride?.amount ?? plan.basePrice.amount;
-    const priceOverride = Boolean(args.priceOverride && args.priceOverride.amount !== plan.basePrice.amount);
+    const priceMinor = args.quotedPrice?.amount ?? args.priceOverride?.amount ?? plan.basePrice.amount;
+    const priceOverride = !args.quotedPrice && Boolean(args.priceOverride && args.priceOverride.amount !== plan.basePrice.amount);
     const dateOverride = Boolean(args.standardStartDate && args.startDate !== args.standardStartDate);
     if (priceOverride || dateOverride) {
       this.require("memberships.override_dates");
@@ -7355,7 +7386,7 @@ export class MockGymOSApi implements GymOSApi {
       outstandingAmount: money(totalMinor, saleCurrency),
       status: totalMinor === 0 ? "paid" : "unpaid",
       issueDate: this.today(),
-      dueDate: args.startDate > this.today() ? args.startDate : this.today(),
+      dueDate: args.startDate > this.today() && !args.dueOnIssue ? args.startDate : this.today(),
       createdAt: nowISO(),
     };
     this.db.charges.push(charge);
@@ -7456,7 +7487,10 @@ export class MockGymOSApi implements GymOSApi {
 
     const result = { membership: this.toMembership(record), charge, payment, receipt, timelineEventIds: timelineIds };
     if (idempotencyMapKey && idempotencySignature) this.membershipSaleIdempotency.set(idempotencyMapKey, { signature: idempotencySignature, result });
-    if (operation === "sale") this.applyReferralReward(member);
+    if (args.quotedPrice && args.quotedPrice.amount !== plan.basePrice.amount) {
+      this.audit({ category: "payments", action: "membership.price_override", entityType: "membership", entityId: record.id, entityLabel: `${member.fullName} · ${member.memberNumber}`, summary: `Day pass at its booked price: ${this.amountText(priceMinor)}`, reason: "The price quoted when the day pass was booked", before: { price: plan.basePrice.amount }, after: { price: priceMinor }, branchId: member.homeBranchId });
+    }
+    if (operation === "sale" && !args.skipReferralReward) this.applyReferralReward(member);
     return result;
   }
 
@@ -8221,6 +8255,7 @@ export class MockGymOSApi implements GymOSApi {
       };
       if (!transitions[booking.status].includes(input.status)) throw ApiError.of(ERR.VALIDATION, `Trial cannot move from ${booking.status.replaceAll("_", " ")} to ${input.status.replaceAll("_", " ")}.`, { message: { key: "apiErrors.trialTransition", params: { fromStatus: String(booking.status.replaceAll("_", " ")), toStatus: String(input.status.replaceAll("_", " ")) } } });
       if ((input.status === "no_show" || input.status === "cancelled") && !input.note?.trim()) throw ApiError.of(ERR.VALIDATION, "Record a reason for this trial outcome.");
+      if (input.status === "completed" && isDayPassBooking(booking) && booking.paymentStatus !== "paid") throw ApiError.of(ERR.CONFLICT, "Record the day-pass payment before marking the visit done.", { message: { key: "apiErrors.dayPassUnpaid" } });
       const previous = booking.status;
       booking.status = input.status;
       const followUpAt = new Date(Date.now() + 86_400_000).toISOString();
@@ -8237,6 +8272,75 @@ export class MockGymOSApi implements GymOSApi {
         this.db.tasks.push({ id: mockUuid(), organizationId: this.db.organization.id, type: "trial_follow_up", title: input.status === "no_show" ? "Reschedule missed trial" : "Follow up after trial", ownerId: lead.ownerId ?? this.actor().id, ownerName: this.db.users.find((user) => user.id === lead.ownerId)?.name ?? this.actor().name, dueAt: followUpAt, priority: input.status === "no_show" ? "high" : "normal", status: "open", leadId: lead.id, subjectName: lead.fullName, createdById: this.actor().id, createdAt: nowISO() });
       }
       this.audit({ category: "crm", action: `trial.${input.status}`, entityType: "trial_booking", entityId: booking.id, entityLabel: `${booking.fullName} · ${booking.preferredDate} ${booking.preferredTime}`, summary: labels[input.status], reason: input.note, before: { status: previous }, after: { status: input.status }, branchId: lead.branchId });
+      return this.getLeadSync(lead.id);
+    });
+  }
+
+  collectDayPassPayment(bookingId: T.UUID, input: T.CollectDayPassPaymentInput): Promise<T.LeadDetail> {
+    return this.respond(() => {
+      this.require("crm.write");
+      this.require("members.write");
+      this.require("memberships.sell");
+      this.require("payments.collect");
+      if (input.method !== "cliq" && input.method !== "cash") throw ApiError.of(ERR.VALIDATION, "Payment method is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "Payment method" } } });
+      const externalReference = input.externalReference?.trim() || undefined;
+      const signature = JSON.stringify({ bookingId, method: input.method, externalReference, gender: input.gender });
+      const replay = this.dayPassIdempotency.get(input.idempotencyKey);
+      if (replay) {
+        if (replay.signature !== signature) throw ApiError.of(ERR.VALIDATION, "These details changed since your last attempt. Refresh and check the result before trying again.");
+        return this.getLeadSync(replay.leadId);
+      }
+      const booking = this.trialBookings.find((item) => item.id === bookingId);
+      const lead = booking?.leadId ? this.db.leads.find((item) => item.id === booking.leadId) : undefined;
+      if (!booking || !lead || !this.branchIsVisible(lead.branchId)) throw ApiError.of(ERR.NOT_FOUND, "Trial booking not found.");
+      if (!isDayPassBooking(booking)) throw ApiError.of(ERR.VALIDATION, "This is a free trial; there is nothing to pay.", { message: { key: "apiErrors.dayPassNotDayPass" } });
+      if (!dayPassAwaitsPayment(booking) || !booking.price) throw ApiError.of(ERR.CONFLICT, "This day pass is already paid or closed.", { message: { key: "apiErrors.dayPassNotPayable" } });
+      const offer = trialOfferOf(this.db.operationalPolicies.trialOffer);
+      const plan = offer.dayPassPlanId ? this.db.plans.find((item) => item.id === offer.dayPassPlanId && item.status === "active") : undefined;
+      if (!plan) throw ApiError.of(ERR.CONFLICT, "Set the day-pass price in Settings → Hours & trials before recording a payment.", { message: { key: "apiErrors.dayPassNoPlan" } });
+      const duplicates = this.findDuplicates({ phone: lead.phone, email: lead.email });
+      const duplicateMemberIds = [...new Set(duplicates.map((match) => match.memberId))];
+      if (duplicateMemberIds.length > 1) throw ApiError.of(ERR.DUPLICATE_MEMBER, "More than one member matches this visitor. Open the correct member and resolve the duplicate records first.", { details: { matches: duplicates } });
+      const existingMember = duplicateMemberIds[0] ? this.db.members.find((member) => member.id === duplicateMemberIds[0]) : undefined;
+      if (existingMember && existingMember.status !== "active") throw ApiError.of(ERR.VALIDATION, "The matching member is inactive. Reactivate the member before selling a membership.");
+      if (!existingMember && input.gender !== "male" && input.gender !== "female") throw ApiError.of(ERR.VALIDATION, "Choose the visitor's gender to add them as a member.", { message: { key: "apiErrors.dayPassGender" }, fieldErrors: { gender: ["Choose the visitor's gender to add them as a member."] } });
+      const member = existingMember ?? this.createMemberSync({
+        fullName: lead.fullName,
+        phone: lead.phone,
+        email: lead.email,
+        gender: input.gender as "male" | "female",
+        homeBranchId: lead.branchId,
+        preferredLanguage: "en",
+        source: lead.source,
+        assignedSalespersonId: lead.ownerId,
+        referredByMemberId: (lead as T.Lead & { referredByMemberId?: string }).referredByMemberId,
+      });
+      const today = this.today();
+      const sale = this.buildSale({
+        memberId: member.id,
+        planId: plan.id,
+        startDate: booking.preferredDate < today ? today : booking.preferredDate,
+        idempotencyKey: `day-pass:${input.idempotencyKey}`,
+        payment: { amount: booking.price, method: input.method, externalReference, branchId: lead.branchId },
+        quotedPrice: booking.price,
+        skipReferralReward: true,
+        dueOnIssue: true,
+        soldBy: this.actor().id,
+      });
+      const previous = booking.status;
+      Object.assign(booking, {
+        status: booking.status === "requested" ? "confirmed" : booking.status,
+        paymentStatus: "paid",
+        paymentMethod: input.method,
+        paidAt: nowISO(),
+        memberId: member.id,
+        membershipId: sale.membership.id,
+        receiptId: sale.receipt?.id,
+      });
+      lead.updatedAt = nowISO();
+      this.activity({ leadId: lead.id, memberId: member.id, type: "trial_confirmed", title: "Day pass paid", titleMessage: systemMessage("communicationCompletion.timeline.dayPassPaid"), body: `${this.amountText(booking.price.amount)} · ${input.method === "cliq" ? "CliQ" : "Cash"}`, bodyMessage: systemMessage("communicationCompletion.notifications.facts2", { a: { amountMinor: booking.price.amount, currency: booking.price.currency }, b: { enum: "paymentMethod", value: input.method } }), actorId: this.actor().id, actorName: this.actor().name, meta: { bookingId, membershipId: sale.membership.id, receiptId: sale.receipt?.id } });
+      this.audit({ category: "crm", action: "trial.day_pass_paid", entityType: "trial_booking", entityId: bookingId, entityLabel: `${booking.fullName} · ${booking.preferredDate}`, summary: "Day-pass payment recorded", before: { paymentStatus: "unpaid", status: previous }, after: { paymentStatus: "paid", method: input.method, amount: booking.price.amount, memberId: member.id, receiptId: sale.receipt?.id ?? null }, branchId: lead.branchId });
+      this.dayPassIdempotency.set(input.idempotencyKey, { signature, leadId: lead.id });
       return this.getLeadSync(lead.id);
     });
   }
@@ -11437,7 +11541,9 @@ export class MockGymOSApi implements GymOSApi {
       if (calendar.calendarStartHour !== undefined && (!Number.isSafeInteger(calendar.calendarStartHour) || calendar.calendarStartHour < 0 || calendar.calendarStartHour > 23)) throw ApiError.of(ERR.VALIDATION, "Calendar start hour must be between 00 and 23.");
       if (calendar.calendarEndHour !== undefined && (!Number.isSafeInteger(calendar.calendarEndHour) || calendar.calendarEndHour < 1 || calendar.calendarEndHour > 24)) throw ApiError.of(ERR.VALIDATION, "Calendar end hour must be between 01 and 24.");
       if (calendar.calendarStartHour !== undefined && calendar.calendarEndHour !== undefined && calendar.calendarEndHour <= calendar.calendarStartHour) throw ApiError.of(ERR.VALIDATION, "The calendar must end after it starts.");
-      this.db.operationalPolicies = structuredClone(input);
+      const trialOffer = this.validatedTrialOffer(input.trialOffer);
+      this.db.operationalPolicies = { ...structuredClone(input), trialOffer: this.syncDayPassPlan(trialOffer) };
+      void this.emitMarketplaceSubscribers();
       this.audit({
         category: "settings",
         action: "settings.operational_policies",
@@ -11448,6 +11554,64 @@ export class MockGymOSApi implements GymOSApi {
       });
       return this.getOrganizationSettingsSync();
     });
+  }
+
+  /** Parity with Convex `validatedTrialOffer`: the plan id stays the server's. */
+  private validatedTrialOffer(raw: T.TrialOffer | undefined): T.TrialOffer {
+    const current = trialOfferOf(this.db.operationalPolicies.trialOffer) as T.TrialOffer;
+    if (!raw) return { ...current };
+    if (!(TRIAL_OFFER_KINDS as readonly string[]).includes(raw.kind)) throw ApiError.of(ERR.VALIDATION, "Trial offer is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "Trial offer" } } });
+    const currency = this.db.organization.currency;
+    const priceProblem = () => ApiError.of(ERR.VALIDATION, "Enter a day-pass price above zero.", { message: { key: "apiErrors.dayPassPrice" }, fieldErrors: { dayPassPrice: ["Enter a day-pass price above zero."] } });
+    const amount = raw.dayPassPrice?.amount;
+    if (raw.dayPassPrice && (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount <= 0 || amount > DAY_PASS_LIMITS.maxPriceMinor || raw.dayPassPrice.currency !== currency)) throw priceProblem();
+    if (raw.kind === "day_pass" && !raw.dayPassPrice) throw priceProblem();
+    const cliqAlias = raw.cliqAlias?.trim() || undefined;
+    if (cliqAlias && cliqAlias.length > DAY_PASS_LIMITS.cliqAlias) throw ApiError.of(ERR.VALIDATION, "CliQ alias is invalid.", { message: { key: "apiErrors.invalidField", params: { field: "CliQ alias" } } });
+    if (raw.kind === "day_pass" && cliqAlias && this.db.paymentMethods.find((method) => method.key === "cliq")?.enabled === false) {
+      throw ApiError.of(ERR.VALIDATION, "Turn on CliQ in payment methods before members can pay a day pass by CliQ.", { message: { key: "apiErrors.dayPassCliqDisabled" }, fieldErrors: { cliqAlias: ["Turn on CliQ in payment methods before members can pay a day pass by CliQ."] } });
+    }
+    return {
+      kind: raw.kind,
+      ...(raw.dayPassPrice ? { dayPassPrice: money(raw.dayPassPrice.amount, currency) } : {}),
+      ...(cliqAlias ? { cliqAlias } : {}),
+      ...(current.dayPassPlanId ? { dayPassPlanId: current.dayPassPlanId } : {}),
+    };
+  }
+
+  /** Parity with Convex `syncDayPassPlan`: a one-visit plan at the day-pass price. */
+  private syncDayPassPlan(offer: T.TrialOffer): T.TrialOffer {
+    if (offer.kind !== "day_pass" || !offer.dayPassPrice) return offer;
+    const price = offer.dayPassPrice;
+    const existing = offer.dayPassPlanId ? this.db.plans.find((plan) => plan.id === offer.dayPassPlanId) : undefined;
+    if (existing) {
+      if (existing.basePrice.amount !== price.amount || existing.status !== "active") {
+        const before = { basePrice: existing.basePrice.amount, status: existing.status };
+        existing.basePrice = { ...price };
+        existing.status = "active";
+        this.audit({ category: "settings", action: "plan.update", entityType: "plan", entityId: existing.id, entityLabel: `${existing.name} · ${existing.code}`, summary: "Day-pass plan kept in step with the trial settings", before, after: { basePrice: existing.basePrice.amount, status: "active" } });
+      }
+      return offer;
+    }
+    const plan: T.MembershipPlan = {
+      id: mockUuid(),
+      organizationId: this.db.organization.id,
+      name: this.db.organization.defaultLanguage === "ar" ? DAY_PASS_PLAN.nameAr : DAY_PASS_PLAN.name,
+      code: DAY_PASS_PLAN.code,
+      kind: DAY_PASS_PLAN.kind,
+      visitAllowance: DAY_PASS_PLAN.visitAllowance,
+      visitValidityDays: DAY_PASS_PLAN.visitValidityDays,
+      basePrice: { ...price },
+      branchAccess: "all",
+      branchIds: [],
+      freezeAllowanceDays: 0,
+      includedPtSessions: 0,
+      status: "active",
+      activeSubscribers: 0,
+    };
+    this.db.plans.push(plan);
+    this.audit({ category: "settings", action: "plan.create", entityType: "plan", entityId: plan.id, entityLabel: `${plan.name} · ${plan.code}`, summary: "Day-pass plan created from the trial settings" });
+    return { ...offer, dayPassPlanId: plan.id };
   }
 
   getOperationalEmailSettings(): Promise<T.OperationalEmailActivationSettings> {

@@ -33,6 +33,10 @@ export interface BookTrialInput {
   preferredDate: string;
   preferredTime: string;
   goal: string;
+  /** A day pass only: how the member will pay. */
+  paymentMethod?: import("@/lib/domain/types").DayPassPaymentMethod;
+  /** A day pass paid by CliQ: the member's transfer reference, if they have it. */
+  cliqReference?: string;
   idempotencyKey?: string;
   referralToken?: string;
 }

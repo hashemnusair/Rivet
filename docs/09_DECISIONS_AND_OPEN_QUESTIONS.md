@@ -999,3 +999,34 @@ Decisions taken (assumptions, open to the owners):
 - **Runbook.** The rollback, restore-rehearsal and incident steps in docs/12 are a
   draft; the proposed owners (Hashem incident owner, Elias backup and keys) stand only
   once both confirm.
+
+## Day passes — 2026-11-09
+
+Elias asked for gyms that charge for a first visit. Decisions taken (assumptions,
+open to the owners):
+
+- **One offer per gym.** A gym offers either a free trial or a day pass on its trial
+  days, with one price for all branches. Per-branch prices can follow if a gym asks.
+- **The money goes through a sale, not a new kind of payment.** Recording a day-pass
+  payment sells the gym's one-visit "Day pass" plan to the visitor, so the payment
+  has a receipt, reaches the cash drawer, reports and accounting, and can be
+  refunded or voided, all through the existing paths. The visitor becomes a member
+  (or the existing member with the same phone or email is used) with a one-visit
+  membership for the day, so reception checks them in like anyone else; a later
+  membership sale reuses that member. The lead stays at "trial booked" (a day pass is
+  not a membership sale), and the day pass does not earn a referral reward.
+- **The quoted price holds.** The booking records the price at booking time and the
+  sale charges it, even if the gym changed the price since (audited as a price
+  difference). The day-pass charge is due when issued so CliQ can be recorded before
+  the visit, as with PT packages.
+- **CliQ is recorded, not verified.** RIVET has no bank connection: the member
+  transfers to the gym's alias (optionally giving a reference), staff check their bank
+  app and record it with the transfer reference. Cash is recorded at the desk into
+  the open shift. A day pass is "completed" only once paid.
+- **Day and time.** A day pass asks for a date only; the trial window of that day
+  says when the branch takes day passes, and the booking stores its opening time.
+- **Arabic.** «اشتراك يومي» is used for "day pass" (also the plan name for a gym whose
+  default language is Arabic). It is not in the approved decisions; Elias to confirm.
+- **Trial booking fix.** A member's booking no longer overwrites their saved profile:
+  only the name and phone typed on the booking form are taken. This also ends the
+  refusal of every member trial request since the 25 October gender rule.

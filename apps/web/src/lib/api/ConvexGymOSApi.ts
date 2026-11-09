@@ -58,6 +58,7 @@ import type {
   CustomerExperience,
   MarketingPreferenceMigrationPreview,
   MarketingPreferenceMigrationProgress,
+  CreateTrialBookingInput,
 } from "./GymOSApi";
 import { ApiError, ERR } from "./errors";
 import { convexClient } from "@/lib/providers/convex-client-provider";
@@ -503,7 +504,7 @@ export class ConvexGymOSApi implements GymOSApi {
   registerCustomer(input: CustomerProfileInput & { fullName: string; email: string }): Promise<CustomerPersona> { return this.mutate("customer.register", input); }
   updateCustomerProfile(input: CustomerProfileInput): Promise<CustomerPersona> { return this.mutate("customer.profile.update", input); }
   updateCustomerMarketingPreference(input: { optedIn: boolean; customerId?: string }): Promise<CustomerPersona> { return this.mutate("customer.marketingPreference.update", input); }
-  createTrialBooking(input: Omit<TrialBooking, "id" | "createdAt" | "status" | "customerId" | "leadId"> & { customerId?: string; referralToken?: string }): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
+  createTrialBooking(input: CreateTrialBookingInput): Promise<TrialBooking> { return this.mutate("customer.trial.create", input); }
   ensureCustomerReferralLink(membershipId: T.UUID): Promise<CustomerReferralProgram> { return this.mutate("customer.referral.ensure", { membershipId }); }
   getPeakHoursReport(input: T.AnalyticsReportInput): Promise<T.PeakHoursReport> { return this.query("analytics.peak_hours", input); }
   getClassUtilizationReport(input: T.AnalyticsReportInput): Promise<T.ClassUtilizationReport> { return this.query("analytics.class_utilization", input); }
@@ -732,6 +733,7 @@ export class ConvexGymOSApi implements GymOSApi {
   logContactAttempt(leadId: T.UUID, input: T.ContactAttemptInput): Promise<T.LeadDetail> { return this.mutate("leads.contact", { leadId, ...input }); }
   updateTrialBooking(bookingId: T.UUID, input: { status: Extract<T.TrialBookingStatus, "confirmed" | "completed" | "no_show" | "cancelled">; note?: string }): Promise<T.LeadDetail> { return this.mutate("trials.update", { bookingId, ...input }); }
   scheduleLeadTrial(leadId: T.UUID, input: T.ScheduleLeadTrialInput): Promise<T.LeadDetail> { return this.mutate("trials.schedule_for_lead", { leadId, ...input }); }
+  collectDayPassPayment(bookingId: T.UUID, input: T.CollectDayPassPaymentInput): Promise<T.LeadDetail> { return this.mutate("trials.collect_day_pass", { bookingId, ...input }); }
   createOffer(input: CreateOfferInput): Promise<T.Offer> { return this.mutate("offers.create", input); }
   markOfferDelivered(offerId: T.UUID, input: MarkOfferDeliveredInput): Promise<T.Offer> { return this.mutate("offers.deliver", { offerId, ...input }); }
   recordOfferOutcome(offerId: T.UUID, input: RecordOfferOutcomeInput): Promise<T.Offer> { return this.mutate("offers.respond", { offerId, ...input }); }

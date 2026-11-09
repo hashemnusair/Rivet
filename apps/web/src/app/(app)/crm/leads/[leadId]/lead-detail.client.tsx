@@ -2,7 +2,7 @@
 import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 
-import { CalendarClock, Check, CheckCircle2, CreditCard, Phone, UserCheck, UserX } from "lucide-react";
+import { Banknote, CalendarClock, Check, CheckCircle2, CreditCard, Phone, UserCheck, UserX } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,6 +38,8 @@ import { EditLeadContactDialog } from "@/features/crm/edit-lead-contact-dialog";
 import { LeadContactConsent } from "@/features/crm/lead-contact-consent";
 import { OfferWorkPanel } from "@/features/crm/offer-work-panel";
 import { WhatsAppHandoff } from "@/features/crm/whatsapp-handoff";
+import { DayPassFacts, RecordDayPassPaymentDialog } from "@/features/crm/day-pass-payment";
+import { dayPassAwaitsPayment, isDayPassBooking } from "@/lib/domain/day-pass";
 import { useFormat } from "@/lib/i18n/format";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
 import { useLeadScreen } from "@/features/ask-rivet/screens";
@@ -79,6 +81,7 @@ export default function LeadDetailPageClient() {
   const [trialTime, setTrialTime] = useState("18:00");
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [contactEditOpen, setContactEditOpen] = useState(false);
+  const [dayPassOpen, setDayPassOpen] = useState(false);
   const { session } = useApp();
   const format = useFormat(session?.organization.timezone);
 
@@ -161,6 +164,9 @@ export default function LeadDetailPageClient() {
   const saleDone = progressFacts.hasConversion && Boolean(saleMilestone);
   const saleFailed = progressFacts.hasLoss;
   const trialStopped = progressFacts.hasTrialNoShow || progressFacts.hasTrialCancellation;
+  const dayPass = Boolean(lead.trialBooking && isDayPassBooking(lead.trialBooking));
+  const dayPassUnpaid = Boolean(lead.trialBooking && dayPassAwaitsPayment(lead.trialBooking));
+  const canRecordDayPass = (["payments.collect", "memberships.sell", "members.write"] as const).every((permission) => session?.permissions.includes(permission));
 
   return (
     <div className="space-y-4">
@@ -209,20 +215,24 @@ export default function LeadDetailPageClient() {
             <div className="flex items-start justify-between gap-3">
               <div>
 
-                <h2 className="mt-1 font-display text-[16px] font-semibold">{t("crm.lead.trial")}</h2>
+                <h2 className="mt-1 font-display text-[16px] font-semibold">{dayPass ? t("crmCompletion.dayPass.label") : t("crm.lead.trial")}</h2>
               </div>
               {trialStatus ? <Badge variant={trialDone ? "success" : trialStatus === "no_show" || trialStatus === "cancelled" ? "signal" : "warning"}>{trialStatusLabel(trialStatus, t)}</Badge> : null}
             </div>
 
             {lead.trialBooking ? (
               <>
-                <p className="mt-3 text-[13px] font-medium"><bdi>{format.date(lead.trialBooking.preferredDate)}</bdi> · <bdi>{format.clock(lead.trialBooking.preferredTime)}</bdi></p>
-                {lead.trialBooking.goal ? <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{lead.trialBooking.goal}</p> : null}
+                <p className="mt-3 text-[13px] font-medium"><bdi>{format.date(lead.trialBooking.preferredDate)}</bdi>{dayPass ? null : <> · <bdi>{format.clock(lead.trialBooking.preferredTime)}</bdi></>}</p>
+                {lead.trialBooking.goal && !dayPass ? <p className="mt-1 text-[12.5px] leading-relaxed text-ink-2">{lead.trialBooking.goal}</p> : null}
+                {dayPass ? <DayPassFacts booking={lead.trialBooking} /> : null}
+                {dayPassUnpaid && canRecordDayPass ? (
+                  <Button className="mt-4 w-full" data-testid="record-day-pass-payment" onClick={() => setDayPassOpen(true)}><Banknote />{" "}{t("crmCompletion.dayPass.record")}</Button>
+                ) : null}
                 {trialStatus === "requested" ? (
-                  <Button className="mt-4 w-full" loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock />{" "}{t("crm.lead.confirmTrial")}</Button>
+                  <Button className={dayPassUnpaid && canRecordDayPass ? "mt-2 w-full" : "mt-4 w-full"} variant={dayPassUnpaid && canRecordDayPass ? "secondary" : undefined} loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock />{" "}{t("crm.lead.confirmTrial")}</Button>
                 ) : trialStatus === "confirmed" ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 />{" "}{t("crm.lead.completed")}</Button>
+                    {dayPassUnpaid ? null : <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 />{" "}{t("crm.lead.completed")}</Button>}
                     <Button variant="secondary" onClick={() => setTrialOutcome("no_show")}><UserX />{" "}{t("crm.lead.noShow")}</Button>
                     <Button variant="ghost" onClick={() => setTrialOutcome("cancelled")}>{t("crm.lead.cancelled")}</Button>
                   </div>
@@ -313,6 +323,7 @@ export default function LeadDetailPageClient() {
       </div>
 
       <CompleteSaleDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} branchId={lead.branchId} open={saleOpen} onOpenChange={setSaleOpen} />
+      {lead.trialBooking && dayPass ? <RecordDayPassPaymentDialog booking={lead.trialBooking} open={dayPassOpen} onOpenChange={setDayPassOpen} /> : null}
       <EditLeadContactDialog leadId={lead.id} fullName={lead.fullName} phone={lead.phone} email={lead.email} open={contactEditOpen} onOpenChange={setContactEditOpen} />
 
       <Dialog open={Boolean(trialOutcome)} onOpenChange={(next) => { if (!next) { setTrialOutcome(undefined); setTrialNote(""); } }}>

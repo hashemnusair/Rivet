@@ -13,6 +13,7 @@ describe("normalizeOperationalPolicies", () => {
       retention: { inactivityDays: 14, expiredWinBackDays: 90, defaultSnoozeDays: 7 },
       operatingHours: [],
       trialSchedules: [],
+      trialOffer: { kind: "free_trial" },
     });
   });
 
