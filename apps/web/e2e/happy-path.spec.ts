@@ -480,7 +480,7 @@ test.describe("CRM lead capture", () => {
     await signIn(page, "Owner");
     await page.goto("/crm/pipeline");
     await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Trial" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Following up" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Membership sold" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Membership not sold" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Did not answer" })).toBeVisible();

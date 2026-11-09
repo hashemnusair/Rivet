@@ -24,21 +24,31 @@ export function DayPassFacts({ booking }: { booking: LeadTrialBooking }) {
   const t = useT();
   const paid = booking.paymentStatus === "paid";
   return (
-    <div className="mt-3 rounded-md border border-line bg-sunken/60 p-3 text-[12.5px]" data-testid="day-pass-facts">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="font-semibold text-ink">{t("crmCompletion.dayPass.label")}</span>
-        {booking.price ? <MoneyText money={booking.price} className="text-[13.5px] font-semibold" /> : null}
-      </div>
-      <p className="mt-1.5 flex flex-wrap items-center gap-2 text-ink-2">
-        <Badge variant={paid ? "success" : "warning"}>{paid ? t("crmCompletion.dayPass.paid") : t("crmCompletion.dayPass.unpaid")}</Badge>
-        <span>{booking.paymentMethod === "cliq" ? t("crmCompletion.dayPass.byCliq") : t("crmCompletion.dayPass.byCash")}</span>
-        {booking.cliqReference ? <span>{t("crmCompletion.dayPass.reference")}{" "}<bdi dir="ltr" className="font-mono">{booking.cliqReference}</bdi></span> : null}
-      </p>
+    <div className="mt-3" data-testid="day-pass-facts">
+      <dl className="space-y-1.5 text-[12.5px]">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-ink-3">{t("crmCompletion.dayPass.price")}</dt>
+          <dd>{booking.price ? <MoneyText money={booking.price} className="font-semibold" /> : "—"}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-ink-3">{t("crmCompletion.dayPass.payment")}</dt>
+          <dd className="flex items-center gap-2">
+            <span className="text-ink-2">{booking.paymentMethod === "cliq" ? t("crmCompletion.dayPass.cliq") : t("crmCompletion.dayPass.cashAtDesk")}</span>
+            <Badge variant={paid ? "success" : "warning"}>{paid ? t("crmCompletion.dayPass.paid") : t("crmCompletion.dayPass.unpaid")}</Badge>
+          </dd>
+        </div>
+        {booking.cliqReference ? (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-ink-3">{t("crmCompletion.dayPass.reference")}</dt>
+            <dd><bdi dir="ltr" className="font-mono">{booking.cliqReference}</bdi></dd>
+          </div>
+        ) : null}
+      </dl>
       {!paid && dayPassAwaitsPayment(booking) ? (
-        <p className="mt-1.5 text-ink-3">{booking.paymentMethod === "cliq" ? t("crmCompletion.dayPass.cliqHint") : t("crmCompletion.dayPass.cashHint")}</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-ink-3">{booking.paymentMethod === "cliq" ? t("crmCompletion.dayPass.cliqHint") : t("crmCompletion.dayPass.cashHint")}</p>
       ) : null}
       {paid && booking.receiptId ? (
-        <Link href={`/payments/receipts/${booking.receiptId}`} className="mt-2 inline-flex min-h-8 items-center gap-1.5 font-medium text-ink underline underline-offset-4"><Receipt className="size-3.5" aria-hidden />{t("crmCompletion.dayPass.viewReceipt")}</Link>
+        <Link href={`/payments/receipts/${booking.receiptId}`} className="mt-2 inline-flex min-h-8 items-center gap-1.5 text-[12.5px] font-medium text-ink underline underline-offset-4"><Receipt className="size-3.5" aria-hidden />{t("crmCompletion.dayPass.viewReceipt")}</Link>
       ) : null}
     </div>
   );

@@ -2,13 +2,13 @@
 import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 
-import { FilterX, GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
+import { Ellipsis, FilterX, GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
-import { contactOutcomeLabel, leadSourceLabel } from "@/features/crm/crm-labels";
+import { LEAD_STATUS_LABEL_KEYS, leadStatusKey } from "@/lib/crm/lead-status";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import type { LeadListQuery } from "@/lib/api/GymOSApi";
@@ -31,17 +31,19 @@ import { toast } from "sonner";
 import { WorkspaceModuleBoundary } from "@/components/shell/workspace-module-boundary";
 import { Checkbox } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { BulkOperationKind } from "@/lib/domain/qol";
 import { searchKey } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
 import { useLeadsScreen } from "@/features/ask-rivet/screens";
 
-type PipelineColumn = "trial" | "sold" | "not_sold" | "no_answer";
+// The work first (open leads, then the ones to call again), the outcomes after.
+type PipelineColumn = "open" | "no_answer" | "sold" | "not_sold";
 const PIPELINE_COLUMNS: Array<{ column: PipelineColumn; labelKey: TKey; hintKey: TKey }> = [
-  { column: "trial", labelKey: "crmCompletion.pipeline.columns.trial.label", hintKey: "crmCompletion.pipeline.columns.trial.hint" },
+  { column: "open", labelKey: "crmCompletion.pipeline.columns.open.label", hintKey: "crmCompletion.pipeline.columns.open.hint" },
+  { column: "no_answer", labelKey: "crmCompletion.pipeline.columns.noAnswer.label", hintKey: "crmCompletion.pipeline.columns.noAnswer.hint" },
   { column: "sold", labelKey: "crmCompletion.pipeline.columns.sold.label", hintKey: "crmCompletion.pipeline.columns.sold.hint" },
   { column: "not_sold", labelKey: "crmCompletion.pipeline.columns.notSold.label", hintKey: "crmCompletion.pipeline.columns.notSold.hint" },
-  { column: "no_answer", labelKey: "crmCompletion.pipeline.columns.noAnswer.label", hintKey: "crmCompletion.pipeline.columns.noAnswer.hint" },
 ];
 
 function pipelineColumn(lead: LeadSummary): PipelineColumn {
@@ -49,7 +51,13 @@ function pipelineColumn(lead: LeadSummary): PipelineColumn {
   if (facts.hasConversion) return "sold";
   if (facts.hasLoss) return "not_sold";
   if (facts.hasAttempt && lead.lastContactOutcome === "no_answer") return "no_answer";
-  return "trial";
+  return "open";
+}
+
+/** One word for where a lead is: the same status its lead page shows, or its column once closed. */
+function leadStatus(lead: LeadSummary, column: PipelineColumn, t: ReturnType<typeof useT>): string {
+  if (column !== "open") return columnLabel(column, t);
+  return t(LEAD_STATUS_LABEL_KEYS[leadStatusKey(lead.progressFacts ?? deriveLeadProgressFacts(lead), lead.lastContactOutcome)]);
 }
 
 const PIPELINE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
@@ -397,6 +405,9 @@ function LeadCard({
 }) {
   const { t, isolate } = useLocale();
   const actionable = column !== "sold" && column !== "not_sold";
+  // On the board the column already names the outcome; in the list it does not.
+  const status = embedded || column === "open" ? leadStatus(lead, column, t) : undefined;
+  const followUp = actionable && lead.nextFollowUpAt ? lead.nextFollowUpAt : undefined;
   return (
     <article
       aria-label={`${isolate(lead.fullName)}, ${columnLabel(column, t)}`}
@@ -404,7 +415,7 @@ function LeadCard({
       onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/lead-id", lead.id); }}
       className={cn("group bg-surface", !embedded && "rounded-md border border-line transition-colors hover:border-line-3")}
     >
-      <div className="flex items-start gap-2 p-2.5 active:cursor-grabbing">
+      <div className={cn("flex items-start gap-2 active:cursor-grabbing", embedded ? "pb-2" : "p-2.5 pb-2")}>
         {!embedded ? <GripVertical className="mt-0.5 hidden size-4 shrink-0 cursor-grab text-ink-4 [@media(pointer:fine)]:block" aria-hidden /> : null}
         <div className="min-w-0 flex-1">
           <Link href={`/crm/leads/${lead.id}`} className="block break-words text-[13.5px] font-medium hover:underline" dir="auto" aria-label={t("crmCompletion.pipeline.card.openLead", { name: isolate(lead.fullName) })}>
@@ -414,33 +425,52 @@ function LeadCard({
         </div>
         <span title={lead.ownerName ?? t("crmCompletion.pipeline.card.unassigned")}><Monogram name={lead.ownerName ?? "?"} size="xs" /></span>
       </div>
-      <div className="flex items-center justify-between gap-2 px-2.5 pb-2 text-[12px]">
-        <span className="text-ink-2" dir="auto">{lead.ownerName ?? t("crmCompletion.pipeline.card.unassigned")}</span>
-        {lead.expectedValue ? <MoneyText money={lead.expectedValue} className="text-ink-2" /> : null}
-      </div>
-      {lead.lastContactAt ? <p className="px-2.5 pb-2 text-[12px] text-ink-2">{contactOutcomeLabel(t, lead.lastContactOutcome) ?? t("crmCompletion.pipeline.card.lastContact")} · <RelativeText iso={lead.lastContactAt} /></p> : <p className="px-2.5 pb-2 text-[12px] text-ink-2">{t("crmCompletion.pipeline.card.notContacted")}</p>}
-      {lead.nextFollowUpAt ? (
-        <p className={cn("mx-2.5 border-t border-line/70 py-1.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
-          {lead.overdue ? `${t("crmCompletion.pipeline.card.overdue")} — ` : `${t("crmCompletion.pipeline.card.followUp")} `}
-          <RelativeText iso={lead.nextFollowUpAt} />
+      {status || followUp ? (
+        <p className={cn("text-[12px] leading-5", embedded ? "pb-2" : "px-2.5 pb-2")} data-testid="lead-card-status">
+          {status ? <span className="font-medium text-ink-2">{status}</span> : null}
+          {status && followUp ? <span className="text-ink-4"> · </span> : null}
+          {followUp ? (
+            <span className={lead.overdue ? "font-medium text-danger" : "text-ink-3"}>
+              {lead.overdue ? `${t("crmCompletion.pipeline.card.overdue")} ` : `${t("crmCompletion.pipeline.card.followUp")} `}
+              <RelativeText iso={followUp} />
+            </span>
+          ) : null}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-1 border-t border-line px-2 py-1.5">
+      <div className={cn("flex items-center gap-1 border-t border-line py-1.5", embedded ? "-mx-1" : "px-2")}>
         <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-8 items-center gap-1 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">
           <PhoneCall className="size-3.5" aria-hidden /> {t("crmCompletion.pipeline.card.call")}
         </a>
         {actionable && column !== "no_answer" ? (
-          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={t("crmCompletion.pipeline.card.noAnswerFor", { name: isolate(lead.fullName) })}>{t("memberProfile.contact.outcome.no_answer")}</button>
+          <button data-touch-target type="button" className="min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink" onClick={onNoAnswer} aria-label={t("crmCompletion.pipeline.card.noAnswerFor", { name: isolate(lead.fullName) })}>
+            {t("memberProfile.contact.outcome.no_answer")}
+          </button>
         ) : null}
         {actionable ? (
-          <button data-touch-target type="button" className="ms-auto min-h-8 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={onNotSold} aria-label={t("crmCompletion.pipeline.card.markNotSoldFor", { name: isolate(lead.fullName) })}>
-            {t("crmCompletion.pipeline.card.notSold")}
-          </button>
+          <LeadMoreMenu lead={lead} onNotSold={onNotSold} className="ms-auto" />
         ) : (
           <Link data-touch-target href={`/crm/leads/${lead.id}`} className="ms-auto inline-flex min-h-8 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken hover:text-ink">{t("crmCompletion.pipeline.card.view")}</Link>
         )}
       </div>
     </article>
+  );
+}
+
+/** The less frequent actions on an open lead, kept out of the way. */
+function LeadMoreMenu({ lead, onNotSold, className }: { lead: LeadSummary; onNotSold: () => void; className?: string }) {
+  const { t, isolate } = useLocale();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button data-touch-target type="button" className={cn("inline-flex min-h-8 min-w-8 items-center justify-center rounded-sm text-ink-3 hover:bg-sunken hover:text-ink", className)} aria-label={t("crmCompletion.pipeline.card.moreFor", { name: isolate(lead.fullName) })}>
+          <Ellipsis className="size-4" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem asChild><Link href={`/crm/leads/${lead.id}`}>{t("dashboard.today.action.open")}</Link></DropdownMenuItem>
+        <DropdownMenuItem onSelect={onNotSold}>{t("crmCompletion.pipeline.card.notSold")}</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -457,9 +487,9 @@ function LeadListView({ leads, filtered, onClearSearch, onNewLead, onNoAnswer, o
   return (
     <div className="panel overflow-hidden">
       <ul className="divide-y divide-line xl:hidden" aria-label={t("crm.pipeline.title")}>
-        {leads.map((lead) => <li key={lead.id} className="p-4" data-testid="lead-compact-row">
-          <div className="mb-3 flex items-center justify-between gap-3"><Checkbox checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={t("crmCompletion.pipeline.card.selectLead", { name: lead.fullName })} /><span className="text-[12px] text-ink-2">{columnLabel(pipelineColumn(lead), t)}</span></div>
-          <LeadCard embedded lead={lead} column={pipelineColumn(lead)} onNoAnswer={() => onNoAnswer(lead)} onNotSold={() => onNotSold(lead)} />
+        {leads.map((lead) => <li key={lead.id} className="flex items-start gap-3 px-4 pt-3.5" data-testid="lead-compact-row">
+          <Checkbox className="mt-1" checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={t("crmCompletion.pipeline.card.selectLead", { name: lead.fullName })} />
+          <div className="min-w-0 flex-1"><LeadCard embedded lead={lead} column={pipelineColumn(lead)} onNoAnswer={() => onNoAnswer(lead)} onNotSold={() => onNotSold(lead)} /></div>
         </li>)}
       </ul>
       <div className="hidden overflow-x-auto xl:block">
@@ -471,15 +501,13 @@ function LeadListView({ leads, filtered, onClearSearch, onNewLead, onNoAnswer, o
                 ["lead", "crmCompletion.pipeline.card.headers.lead"],
                 ["stage", "crmCompletion.pipeline.card.headers.stage"],
                 ["owner", "crmCompletion.pipeline.card.headers.owner"],
-                ["source", "crmCompletion.pipeline.card.headers.source"],
-                ["expectedSale", "crmCompletion.pipeline.card.headers.expectedSale"],
                 ["nextFollowUp", "crmCompletion.pipeline.card.headers.nextFollowUp"],
-                ["actions", "crmCompletion.pipeline.card.headers.actions"],
               ] as const).map(([key, headerKey]) => (
                 <th key={key} className="whitespace-nowrap px-3 py-2 text-start text-[12px] font-medium text-ink-3">
                   {t(headerKey)}
                 </th>
               ))}
+              <th className="px-3 py-2"><span className="sr-only">{t("crmCompletion.pipeline.card.headers.actions")}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -492,23 +520,18 @@ function LeadListView({ leads, filtered, onClearSearch, onNewLead, onNoAnswer, o
                   </Link>
                   <span className="block whitespace-nowrap text-[12px] text-ink-3" dir="ltr">{lead.phone}</span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{columnLabel(pipelineColumn(lead), t)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] font-medium text-ink-2">{leadStatus(lead, pipelineColumn(lead), t)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2" dir="auto">{lead.ownerName ?? "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink-2">{leadSourceLabel(t, lead.source)}</td>
-                <td className="whitespace-nowrap px-3 py-2.5">{lead.expectedValue ? <MoneyText money={lead.expectedValue} /> : "—"}</td>
                 <td className={cn("whitespace-nowrap px-3 py-2.5 text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
-                  {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
+                  {lead.nextFollowUpAt && pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5">
                   <div className="flex items-center justify-end gap-1">
-                    <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">{t("crmCompletion.pipeline.card.call")}</a>
-                    {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold" ? (
-                      <>
-                        {pipelineColumn(lead) !== "no_answer" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>{t("memberProfile.contact.outcome.no_answer")}</button> : null}
-                        <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNotSold(lead)}>{t("crmCompletion.pipeline.card.notSold")}</button>
-                      </>
-                    ) : null}
-                    <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">{t("dashboard.today.action.open")}</Link>
+                    <a data-touch-target href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex min-h-9 items-center gap-1 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken"><PhoneCall className="size-3.5" aria-hidden />{t("crmCompletion.pipeline.card.call")}</a>
+                    {pipelineColumn(lead) === "open" ? <button data-touch-target type="button" className="min-h-9 rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken" onClick={() => onNoAnswer(lead)}>{t("memberProfile.contact.outcome.no_answer")}</button> : null}
+                    {pipelineColumn(lead) !== "sold" && pipelineColumn(lead) !== "not_sold"
+                      ? <LeadMoreMenu lead={lead} onNotSold={() => onNotSold(lead)} />
+                      : <Link data-touch-target href={`/crm/leads/${lead.id}`} className="inline-flex min-h-9 items-center rounded-sm px-2 text-[12px] font-medium text-ink-2 hover:bg-sunken">{t("crmCompletion.pipeline.card.view")}</Link>}
                   </div>
                 </td>
               </tr>

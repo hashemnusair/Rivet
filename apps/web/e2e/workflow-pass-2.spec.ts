@@ -103,7 +103,8 @@ test("touch lead actions retain loss reasons and Board/List preference", async (
   await enter(page, "Sales");
   await page.goto("/crm/pipeline?view=list");
   const row = page.getByTestId("lead-compact-row").first();
-  await row.getByRole("button", { name: /Mark .* not sold/ }).click();
+  await row.getByRole("button", { name: /More actions for/ }).click();
+  await page.getByRole("menuitem", { name: "Not sold…" }).click();
   const dialog = page.getByRole("dialog", { name: "Mark membership as not sold?" });
   await expect(dialog.getByRole("button", { name: "Mark not sold", exact: true })).toBeDisabled();
   await dialog.getByLabel("Reason", { exact: true }).fill("The class schedule does not fit their work hours.");

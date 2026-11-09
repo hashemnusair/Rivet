@@ -13,6 +13,7 @@ import { qk } from "@/lib/api/keys";
 import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
 import { contactOutcomeLabel, leadSourceLabel } from "@/features/crm/crm-labels";
 import { leadStageProgress } from "@/lib/crm/lead-stage-progress";
+import { LEAD_STATUS_LABEL_KEYS, leadStatusKey } from "@/lib/crm/lead-status";
 import type { MembershipPlan, TrialBookingStatus, WeekdayKey } from "@/lib/domain/types";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
@@ -22,7 +23,7 @@ import { exponentFor, money, readMoneyInput, toMajorString } from "@/lib/utils/m
 import { latinDigits } from "@/lib/utils/text";
 import { Breadcrumbs } from "@/components/shared/chrome";
 import { DateTimeText, MoneyText, RelativeText } from "@/components/shared/data-display";
-import { LeadStageChip } from "@/components/shared/status-chip";
+import { StatusChip } from "@/components/shared/status-chip";
 import { TimelineFeed } from "@/components/shared/timeline-feed";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -167,6 +168,20 @@ export default function LeadDetailPageClient() {
   const dayPass = Boolean(lead.trialBooking && isDayPassBooking(lead.trialBooking));
   const dayPassUnpaid = Boolean(lead.trialBooking && dayPassAwaitsPayment(lead.trialBooking));
   const canRecordDayPass = (["payments.collect", "memberships.sell", "members.write"] as const).every((permission) => session?.permissions.includes(permission));
+  // The chip, the steps and the trial panel read the same facts, so they never
+  // disagree (a stage saved by an old call outcome used to say "Trial done"
+  // beside "Schedule the trial first").
+  const statusKey = leadStatusKey(progressFacts, lead.lastContactOutcome);
+  const status: { label: string; tone: "green" | "red" | "amber" | "neutral" } = saleDone
+    ? { label: t("crm.lead.membershipSold"), tone: "green" }
+    : saleFailed
+      ? { label: t("crm.lead.notSold"), tone: "red" }
+      : trialStopped && trialStatus && !trialDone
+        ? { label: trialStatusLabel(trialStatus, t), tone: "red" }
+        : dayPass && statusKey === "trial_booked"
+          ? { label: t("crmCompletion.dayPass.label"), tone: "amber" }
+          : { label: t(LEAD_STATUS_LABEL_KEYS[statusKey]), tone: statusKey === "trial_booked" || statusKey === "trial_done" || statusKey === "offer_sent" ? "amber" : "neutral" };
+  const trialAgreedOnCall = progressFacts.hasTrialBooking && !lead.trialBooking;
 
   return (
     <div className="space-y-4">
@@ -178,7 +193,7 @@ export default function LeadDetailPageClient() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="min-w-0 font-display text-[26px] font-semibold leading-tight tracking-tight [overflow-wrap:anywhere]" dir="auto">{lead.fullName}</h1>
-              <LeadStageChip stage={lead.stage} />
+              <StatusChip tone={status.tone} dot>{status.label}</StatusChip>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ink-2">
               <a href={`tel:${lead.phone.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-[13px] hover:text-ink" dir="ltr"><Phone className="size-3.5 text-ink-3" /> {lead.phone}</a>
@@ -187,6 +202,7 @@ export default function LeadDetailPageClient() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {!saleDone ? <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} open={contactOpen} onOpenChange={(next) => { if (next) setContactOpen(true); else closeContact(); }} /> : null}
             <WhatsAppHandoff
               subject="lead"
               subjectId={lead.id}
@@ -201,8 +217,8 @@ export default function LeadDetailPageClient() {
           </div>
         </div>
 
-        <ol className="mt-5 grid gap-2 sm:grid-cols-3" aria-label={t("crmCompletion.lead.salesSteps")} data-testid="lead-stage-progress">
-          <SimpleStep number={1} title={t("crm.lead.trial")} state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? t("crm.lead.completed") : trialStatus ? trialStatusLabel(trialStatus, t) : progressFacts.hasTrialBooking ? t("memberProfile.pt.bookingStatus.reserved") : t("crmCompletion.lead.notBooked")} />
+        <ol className="mt-5 grid grid-cols-3 gap-2" aria-label={t("crmCompletion.lead.salesSteps")} data-testid="lead-stage-progress">
+          <SimpleStep number={1} title={dayPass ? t("crmCompletion.dayPass.label") : t("crm.lead.trial")} state={trialDone ? "done" : trialStopped ? "stopped" : "current"} detail={trialDone ? t("crm.lead.completed") : trialStatus ? trialStatusLabel(trialStatus, t) : progressFacts.hasTrialBooking ? t("memberProfile.pt.bookingStatus.reserved") : t("crmCompletion.lead.notBooked")} />
           <SimpleStep number={2} title={t("crm.lead.membershipSale")} state={saleDone ? "done" : saleFailed ? "stopped" : trialDone ? "current" : "waiting"} detail={saleDone ? t("crm.lead.membershipSold") : saleFailed ? t("crm.lead.notSold") : trialDone ? t("crm.lead.ready") : t("crm.lead.afterTrial")} />
           <SimpleStep number={3} title={t("crm.lead.member")} state={saleDone ? "done" : saleFailed ? "stopped" : "waiting"} detail={saleDone ? t("crmCompletion.lead.memberAdded") : t("crmCompletion.lead.addedAfterSale")} />
         </ol>
@@ -229,7 +245,7 @@ export default function LeadDetailPageClient() {
                   <Button className="mt-4 w-full" data-testid="record-day-pass-payment" onClick={() => setDayPassOpen(true)}><Banknote />{" "}{t("crmCompletion.dayPass.record")}</Button>
                 ) : null}
                 {trialStatus === "requested" ? (
-                  <Button className={dayPassUnpaid && canRecordDayPass ? "mt-2 w-full" : "mt-4 w-full"} variant={dayPassUnpaid && canRecordDayPass ? "secondary" : undefined} loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock />{" "}{t("crm.lead.confirmTrial")}</Button>
+                  <Button className={dayPassUnpaid && canRecordDayPass ? "mt-2 w-full" : "mt-4 w-full"} variant={dayPassUnpaid && canRecordDayPass ? "secondary" : undefined} loading={updateTrial.isPending} onClick={() => updateTrial.mutate({ bookingId: lead.trialBooking!.id, status: "confirmed" })}><CalendarClock />{" "}{dayPass ? t("crmCompletion.dayPass.confirm") : t("crm.lead.confirmTrial")}</Button>
                 ) : trialStatus === "confirmed" ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     {dayPassUnpaid ? null : <Button onClick={() => setTrialOutcome("completed")}><CheckCircle2 />{" "}{t("crm.lead.completed")}</Button>}
@@ -244,7 +260,7 @@ export default function LeadDetailPageClient() {
               </>
             ) : (
               <div className="mt-3">
-                <p className="text-[12.5px] text-ink-2">{t("crmCompletion.lead.scheduleHint")}</p>
+                <p className="text-[12.5px] text-ink-2">{trialAgreedOnCall ? t("crmCompletion.lead.agreedOnCallHint") : t("crmCompletion.lead.scheduleHint")}</p>
                 <Button className="mt-4 w-full" onClick={() => setScheduleOpen(true)}><CalendarClock />{" "}{t("crm.lead.scheduleTrial")}</Button>
                 <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
                   <DialogContent>
@@ -287,17 +303,6 @@ export default function LeadDetailPageClient() {
 
           {!saleDone && !saleFailed ? <OfferWorkPanel leadId={lead.id} leadName={lead.fullName} phone={lead.phone} organizationName={settingsQuery.data?.organization.name ?? session?.organization.name ?? "RIVET"} currency={settingsQuery.data?.organization.currency ?? session?.organization.currency ?? "JOD"} defaultCountryCallingCode={settingsQuery.data?.organization.phoneCountryCallingCode} offers={lead.offers} plans={plansQuery.data?.items ?? []} /> : null}
 
-          {!saleDone ? (
-            <section className="panel p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="font-display text-[14px] font-semibold">{t("crm.lead.followUpNote")}</h2>
-                  <p className="mt-1 text-[12px] text-ink-3">{t("crmCompletion.lead.followUpNoteDescription")}</p>
-                </div>
-                <LogContactDialog subject="lead" leadId={lead.id} currentStage={lead.stage} open={contactOpen} onOpenChange={(next) => { if (next) setContactOpen(true); else closeContact(); }} />
-              </div>
-            </section>
-          ) : null}
 
           <section className="panel p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -305,7 +310,6 @@ export default function LeadDetailPageClient() {
               {session?.permissions.includes("crm.write") ? <Button variant="secondary" size="sm" onClick={() => setContactEditOpen(true)}>{t("crmCompletion.lead.editContact")}</Button> : null}
             </div>
             <dl className="space-y-2 text-[12.5px]">
-              <ContextRow label={t("crm.newLead.phone")}><span dir="ltr">{lead.phone}</span></ContextRow>
               <ContextRow label={t("crm.newLead.email")}><span dir={lead.email ? "ltr" : undefined}>{lead.email ?? "—"}</span></ContextRow>
               <ContextRow label={t("crm.lead.ownerLabel")}><span dir="auto">{lead.ownerName ?? t("crmCompletion.pipeline.card.unassigned")}</span></ContextRow>
               <LeadContactConsent lead={lead} canEdit={Boolean(session?.permissions.includes("crm.write"))} />
@@ -366,12 +370,12 @@ export default function LeadDetailPageClient() {
 
 function SimpleStep({ number, title, detail, state }: { number: number; title: string; detail: string; state: "done" | "current" | "waiting" | "stopped" }) {
   return (
-    <li className={`border-t px-3 py-2.5 ${state === "current" ? "border-ink bg-sunken" : state === "done" ? "border-success/35 bg-success-bg/40" : state === "stopped" ? "border-signal/25 bg-signal-bg/30" : "border-line"}`} aria-current={state === "current" ? "step" : undefined}>
-      <div className="flex items-center gap-2">
+    <li className={`min-w-0 border-t px-2 py-2.5 sm:px-3 ${state === "current" ? "border-ink bg-sunken" : state === "done" ? "border-success/35 bg-success-bg/40" : state === "stopped" ? "border-signal/25 bg-signal-bg/30" : "border-line"}`} aria-current={state === "current" ? "step" : undefined}>
+      <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
         <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[10.5px] font-mono ${state === "done" ? "border-success bg-success text-white" : state === "current" ? "border-ink bg-ink text-paper" : "border-line-3 text-ink-3"}`}>{state === "done" ? <Check className="size-3" /> : number}</span>
-        <span className="text-[12.5px] font-medium">{title}</span>
+        <span className="min-w-0 text-[12.5px] font-medium leading-tight">{title}</span>
       </div>
-      <p className="mt-1 ps-7 text-[12px] text-ink-3">{detail}</p>
+      <p className="mt-1 text-[12px] leading-snug text-ink-3 sm:ps-7">{detail}</p>
     </li>
   );
 }

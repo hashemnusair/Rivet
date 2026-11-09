@@ -27,14 +27,14 @@ export function LeadContactConsent({ lead, canEdit }: { lead: Pick<LeadDetail, "
   return (
     <div className="flex items-start justify-between gap-3" data-testid="lead-contact-consent">
       <dt className="shrink-0 text-ink-3">{t("crmCompletion.lead.consent.label")}</dt>
-      <dd className="space-y-1 text-end">
+      <dd className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-end">
         {lead.doNotContact
           ? <p className="font-medium text-warning-deep" data-testid="lead-contact-consent-state">{t("crmCompletion.lead.consent.no")} · <DateTimeText iso={lead.doNotContact.since} /></p>
           : <p data-testid="lead-contact-consent-state">{t("crmCompletion.lead.consent.yes")}</p>}
         {canEdit ? (
           lead.doNotContact
             ? <Button type="button" variant="ghost" size="xs" loading={change.isPending} onClick={() => change.mutate(false)} data-testid="lead-contact-consent-allow">{t("crmCompletion.lead.consent.allow")}</Button>
-            : <Button type="button" variant="ghost" size="xs" onClick={() => setOpen(true)} data-testid="lead-contact-consent-mark">{t("crmCompletion.lead.consent.mark")}</Button>
+            : <button type="button" className="min-h-8 text-[12px] text-ink-3 underline underline-offset-4 hover:text-ink" onClick={() => setOpen(true)} data-testid="lead-contact-consent-mark">{t("crmCompletion.lead.consent.mark")}</button>
         ) : null}
       </dd>
       <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setReason(""); }}>

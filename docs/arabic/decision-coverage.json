@@ -3521,13 +3521,12 @@
     {
       "id": "trial",
       "keys": [
-        "crmCompletion.pipeline.columns.trial.label",
         "crmCompletion.lead.trial"
       ],
       "rules": [],
       "candidateOccurrences": [],
       "status": "in progress",
-      "remaining": "Exact Arabic catalog mapping: crmCompletion.pipeline.columns.trial.label, crmCompletion.lead.trial."
+      "remaining": "Exact Arabic catalog mapping: crmCompletion.lead.trial."
     },
     {
       "id": "no-answer",

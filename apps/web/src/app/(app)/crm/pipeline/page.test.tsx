@@ -114,12 +114,21 @@ describe("CRM pipeline semantics", () => {
     expect(screen.getByRole("group", { name: "Lead view" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Board" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("link", { name: "Open Pipeline Lead" })).toHaveAttribute("href", "/crm/leads/lead-1");
-    expect(screen.getByRole("article", { name: "Pipeline Lead, Trial" })).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Pipeline Lead, Following up" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "No answer for Pipeline Lead" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mark Pipeline Lead not sold" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Membership sold" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Membership not sold" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Did not answer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "More actions for Pipeline Lead" })).toBeInTheDocument();
+    // The work first, the outcomes after.
+    expect(screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["Following up", "Did not answer", "Membership sold", "Membership not sold"]);
+  });
+
+  it("keeps marking a lead not sold behind the card's ⋯ menu, with a reason", async () => {
+    const user = userEvent.setup();
+    render(<PipelinePage />);
+
+    await user.click(screen.getByRole("button", { name: "More actions for Pipeline Lead" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Not sold…" }));
+    expect(await screen.findByRole("dialog", { name: "Mark membership as not sold?" })).toBeInTheDocument();
+    expect(state.closeMutation).not.toHaveBeenCalled();
   });
 
   it("keeps the pressed state truthful when switching to list view", async () => {
@@ -135,7 +144,7 @@ describe("CRM pipeline semantics", () => {
     const user = userEvent.setup();
     render(<PipelinePage />);
 
-    const card = screen.getByRole("article", { name: "Pipeline Lead, Trial" });
+    const card = screen.getByRole("article", { name: "Pipeline Lead, Following up" });
     const target = screen.getByRole("region", { name: "Membership not sold" });
     const dataTransfer = {
       effectAllowed: "",

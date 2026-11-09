@@ -501,6 +501,8 @@ export function HoursAndTrialsSection() {
   const dayPass = offer.kind === "day_pass";
   const priceRead = readMoneyInput(shownPriceText, currency);
   const priceProblem = dayPass && !priceRead.ok ? (priceRead.problem === "empty" ? t("settingsDetails.dayPassPriceRequired") : moneyProblemText(priceRead, currency)) : undefined;
+  // Choosing Day pass does not shout at an empty field; the save bar says what is missing.
+  const shownPriceProblem = priceText !== undefined ? priceProblem : undefined;
   const updateOffer = (patch: Partial<TrialOffer>) => setPolicies((current) => current ? { ...current, trialOffer: { ...(current.trialOffer ?? { kind: "free_trial" }), ...patch } } : current);
   const changePrice = (text: string) => {
     setPriceText(text);
@@ -536,8 +538,8 @@ export function HoursAndTrialsSection() {
         {dayPass ? (
           <div className="mt-4 space-y-3">
             <FieldGrid>
-              <Field label={t("settingsDetails.dayPassPrice", { currency })} htmlFor="day-pass-price" required error={priceProblem}>
-                <Input id="day-pass-price" inputMode="decimal" dir="ltr" value={shownPriceText} placeholder={toMajorString({ amount: 0, currency })} aria-invalid={priceProblem ? true : undefined} onChange={(event) => changePrice(event.target.value)} />
+              <Field label={t("settingsDetails.dayPassPrice", { currency })} htmlFor="day-pass-price" required error={shownPriceProblem}>
+                <Input id="day-pass-price" inputMode="decimal" dir="ltr" value={shownPriceText} placeholder={toMajorString({ amount: 0, currency })} aria-invalid={shownPriceProblem ? true : undefined} onChange={(event) => changePrice(event.target.value)} />
               </Field>
               <Field label={t("settingsDetails.cliqAlias")} htmlFor="day-pass-cliq" hint={t("settingsDetails.cliqAliasHint")}>
                 <Input id="day-pass-cliq" dir="ltr" autoComplete="off" maxLength={DAY_PASS_LIMITS.cliqAlias} value={offer.cliqAlias ?? ""} onChange={(event) => updateOffer({ cliqAlias: event.target.value.trim() ? event.target.value : undefined })} />

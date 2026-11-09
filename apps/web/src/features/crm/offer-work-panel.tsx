@@ -91,7 +91,7 @@ export function OfferWorkPanel(props: OfferWorkPanelProps) {
         <Button type="button" size="sm" onClick={() => { setError(undefined); setOpen(true); }} disabled={!activePlans.length}><Plus /> {t("crmCompletion.offers.new")}</Button>
       </div>
 
-      {sortedOffers.length ? <div className="mt-4 space-y-2">{sortedOffers.map((offer) => <OfferRow key={offer.id} {...props} offer={offer} />)}</div> : <p className="mt-4 rounded-md border border-dashed border-line px-3 py-3 text-[12px] text-ink-3">{t("crmCompletion.offers.empty")}</p>}
+      {sortedOffers.length ? <div className="mt-4 space-y-2">{sortedOffers.map((offer) => <OfferRow key={offer.id} {...props} offer={offer} />)}</div> : <p className="mt-3 text-[12px] text-ink-3">{t("crmCompletion.offers.empty")}</p>}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

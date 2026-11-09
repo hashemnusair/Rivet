@@ -420,8 +420,8 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                   <Button type="submit" variant="signal" size="lg" className="w-full" disabled={!selectedBranch || !availableTrialWindow}>{t("customerPortal.continueToPayment")}</Button>
                 </form>
               ) : (
-                <form onSubmit={submit} className="mt-4 space-y-4" noValidate data-testid="day-pass-payment">
-                  <div className="flex items-start justify-between gap-3 rounded-md border border-line bg-sunken p-3">
+                <form onSubmit={submit} className="mt-4 space-y-5" noValidate data-testid="day-pass-payment">
+                  <div className="flex items-start justify-between gap-3 border-b border-line pb-3">
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-medium">{selectedBranch?.name}</p>
                       <p className="mt-0.5 text-[12.5px] text-ink-2"><bdi>{f.date(selectedDate)}</bdi></p>
@@ -444,7 +444,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                     </RadioGroup>
                   </fieldset>
                   {paymentMethod === "cliq" && dayPassOffer.cliqAlias ? (
-                    <div className="space-y-3 rounded-md border border-line p-3">
+                    <div className="space-y-3">
                       <p className="text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.cliqSendTo", { price: dayPassPrice })}</p>
                       <div className="flex items-center justify-between gap-2 rounded-md bg-sunken px-3 py-2">
                         <div className="min-w-0">
@@ -458,7 +458,7 @@ export default function GymDetailClient({ gymId }: { gymId: string }) {
                       </Field>
                     </div>
                   ) : paymentMethod === "cash" ? (
-                    <p className="rounded-md border border-line p-3 text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.payCashNote", { price: dayPassPrice })}</p>
+                    <p className="text-[12.5px] leading-relaxed text-ink-2">{t("customerPortal.payCashNote", { price: dayPassPrice })}</p>
                   ) : null}
                   {submitError ? <p role="alert" className="text-[13px] text-danger">{isApiError(submitError) ? localizeApiError(submitError, locale).message : t("apiErrors.unexpected")}</p> : null}
                   <div className="flex gap-2">

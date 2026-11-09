@@ -59,6 +59,27 @@ function renderLead(api: MockGymOSApi) {
 }
 
 describe("CRM lead workflow language and transitions", () => {
+  it("gives one status: a trial agreed on a call is booked, still needs a date, and the call log sits in the header", async () => {
+    const api = new MockGymOSApi();
+    api.setBehavior({ latencyMs: 0 });
+    window.sessionStorage.setItem("rivet.demo.persona", "owner");
+    const session = await api.getSession();
+    const branchId = session.activeBranchId ?? session.branches[0]!.id;
+    window.sessionStorage.setItem("rivet.demo.branch", branchId);
+    const lead = await api.createLead({ fullName: "Agreed On Call", phone: "+962790000098", branchId, source: "walk_in" });
+    await api.logContactAttempt(lead.id, { outcome: "trial_booked", notes: "Will come on Tuesday" });
+    navigation.leadId = lead.id;
+    renderLead(api);
+
+    expect(await screen.findByRole("heading", { name: "Agreed On Call" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Sales steps" })).toHaveTextContent("Booked");
+    expect(screen.getByText("Trial booked")).toBeInTheDocument();
+    expect(screen.queryByText("Trial done")).not.toBeInTheDocument();
+    expect(screen.getByText("A trial was agreed on a call. Add its date and time so it is on the schedule.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Log contact" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Follow-up note" })).not.toBeInTheDocument();
+  });
+
   it("opens the contact log straight from a ?action=contact link and clears the flag when closed", async () => {
     const api = new MockGymOSApi();
     api.setBehavior({ latencyMs: 0 });

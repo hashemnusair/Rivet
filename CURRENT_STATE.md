@@ -1,5 +1,43 @@
 # GymOS / RIVET current implementation state
 
+## Leads made simpler; day-pass screens tidied (9 November 2026)
+
+Elias asked for a UI pass on day passes (ordered, not stacked) and a simpler leads
+section.
+
+- **One status per lead.** `src/lib/crm/lead-status.ts` reads the status from what
+  happened (calls, the trial booking, offers, the sale), not the stored stage; the
+  leads list and the lead page both use it. A stage left at "Trial done" by an old
+  call outcome no longer sits beside "Schedule the trial first".
+- **Leads page.** Columns in working order: Following up (was "Trial": it holds
+  every open lead), Did not answer, Membership sold, Membership not sold. Cards: name,
+  phone, owner initials, one line (status · follow-up, "Overdue …" in red), then
+  Call and No answer; "Not sold…" and Open sit behind ⋯. The list drops the Source
+  and Expected sale columns; tablet rows put the checkbox beside the card.
+- **Lead page.** The header chip is that status (or "Day pass", "No-show", sold /
+  not sold); Log contact moved up beside WhatsApp and its panel is gone; the three
+  steps stay three across on phones; a trial agreed on a call says to add its date
+  and time; the Contact panel drops the phone (in the header) and "Mark as do not
+  contact" is an inline link; the offers empty state is plain text.
+- **Day pass.** Lead page: price, payment (method + paid badge) and reference as
+  plain rows, "Confirm booking", the first step named "Day pass". Member payment
+  step: no box inside a box (the summary is a line, the CliQ alias the only filled
+  block). Settings: an empty price is not flagged red before the owner types.
+- **Copy.** `crmCompletion.pipeline.columns.open`, `card.moreFor`, shorter
+  `card.overdue`, `lead.agreedOnCallHint`, `dayPass.{price,payment,cashAtDesk,confirm}`,
+  `settingsDetails.hoursAndDayPasses`; removed unused card and dayPass keys. English
+  and Arabic. `docs/arabic/decision-coverage.json`: the approved «زيارة تجريبية»
+  now maps to `crmCompletion.lead.trial` only (the renamed column is not a trial).
+- **Tests.** `lead-status.test.ts` (2), lead page (+1, fails on the old page),
+  leads page (+1, ⋯ menu; column order); `happy-path`, `public-experience` and
+  `workflow-pass-2` follow the new names. References `pass-2-leads-{1440,390}` and
+  `pass-2-lead-detail-{1440,390}` re-captured on Linux in this session (only
+  `lead-detail-390` was outside the 4% tolerance before).
+- **Verification.** Browser: leads board and list, lead pages and the day-pass
+  journey at 1440 and 390, Arabic at 1440; `happy-path` 20/20, `workflow-pass-2`
+  13/13 (the PT test needed a warm server), the member trial journey, the lead
+  consent and the RTL audit of the leads page. No server change: no Convex deploy.
+
 ## Day passes instead of a free trial; trial booking fixed (9 November 2026)
 
 Elias asked for gyms that sell a day pass instead of a free trial: the gym chooses
