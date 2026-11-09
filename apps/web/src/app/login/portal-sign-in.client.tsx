@@ -171,9 +171,10 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 
   return (
     <div className="relative">
-      {/* A signed-in visitor has no business on a door; the resolver at
-          /login reads the role instead, so only demo personas leave it. */}
-      <SignedInGuard demoOnly={audience === "account"} />
+      {/* Real accounts keep the selected portal until IdentityPanel checks
+          its audience. Redirecting to the generic resolver here bypasses that
+          check for an existing session or a completed sign-in. */}
+      <SignedInGuard demoOnly />
       {/* Above the heading, out of the flow: every sign-in page's heading
           starts at the same height, so a door opens with its name where the
           chooser's was. */}
@@ -205,10 +206,8 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
         )
       ) : null}
 
-      {/* The form is on the page from the server's first paint, before Clerk
-          has loaded; its submit waits for Clerk. A signed-in visitor is sent
-          on by the middleware first, so it gives way only in the rare case
-          Clerk reports a session here, keeping whatever was typed otherwise. */}
+      {/* The form is on the server's first paint; its submit waits for Clerk.
+          An authenticated account is checked against this portal before entry. */}
       {!DEMO_AUTH_BYPASS && audience !== "account" ? (
         clerkLoaded && clerkSignedIn ? (
           <>
@@ -228,18 +227,18 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
 /**
  * Each door carries RIVET's own email-and-password form rather than Clerk's
  * boxed, adaptive widget, so both fields are always on screen with their
- * placeholders and nothing is cut off. The role read after sign-in still
- * decides where the account lands. Only the member door offers account
+ * placeholders and nothing is cut off. The role read after sign-in must
+ * match the selected portal. Only the member door offers account
  * creation.
  */
 function ClerkPanel({ audience, redirectUrl }: { audience: Audience; mode: AuthMode; redirectUrl: string }) {
-  return <PasswordSignIn redirectUrl={redirectUrl} signUp={audience === "member"} />;
+  return <PasswordSignIn audience={audience} redirectUrl={redirectUrl} signUp={audience === "member"} />;
 }
 
 /**
  * The two doors. A gym team and a member never share a sign-in page: each
- * door carries its own form and its own words, and the account's role still
- * decides where it lands once it is through.
+ * door carries its own form and its own words, and its role check must pass
+ * before the account can enter that area.
  */
 function DoorChooser({ next }: { next: string | null }) {
   const t = useT();

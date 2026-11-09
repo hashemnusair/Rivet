@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { RIVET_HOSTS } from "@/lib/routing/host-routing";
 
 /**
  * The one route-level not-found page. It cannot know which area the visitor
@@ -31,7 +32,7 @@ export default function NotFound() {
         <Button onClick={goBack}>{t("common.action.goBack")}</Button>
         <Button asChild variant="secondary"><Link href="/login">{t("marketing.actions.openRivet")}</Link></Button>
       </div>
-      <p className="mt-5 text-[12px] text-ink-3"><Link href="/" className="underline underline-offset-4 hover:text-ink">rivet.jo</Link></p>
+      <p className="mt-5 text-[12px] text-ink-3"><Link href={`https://${RIVET_HOSTS.public}`} className="underline underline-offset-4 hover:text-ink">{RIVET_HOSTS.public}</Link></p>
     </main>
   );
 }

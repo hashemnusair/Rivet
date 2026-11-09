@@ -18,13 +18,13 @@ const copy: AgreementCopy = {
 
 describe("agreement copy email", () => {
   it("renders RIVET's copy on the branded template, with the masked ID and the attachment chip", () => {
-    const rendered = renderAgreementCopyEmail(copy, "rivet", { siteUrl: "https://app.rivet.jo/", attachment: { filename: "RIVET-agreement-RVT-20261001-ABCDE.pdf", sizeLabel: "26 KB" } });
+    const rendered = renderAgreementCopyEmail(copy, "rivet", { siteUrl: "https://platform.rivetjo.com/", attachment: { filename: "RIVET-agreement-RVT-20261001-ABCDE.pdf", sizeLabel: "26 KB" } });
     expect(rendered.subject).toBe("Iron <House> Fitness signed the RIVET subscription agreement (RVT-20261001-ABCDE)");
     expect(rendered.html).toContain("Iron &lt;House&gt; Fitness Co.");
     expect(rendered.html).not.toContain("<House>");
     expect(rendered.html).toContain("••••••4567");
-    expect(rendered.html).toContain("https://app.rivet.jo/brand/rivet-lockup.png");
-    expect(rendered.html).toContain("https://app.rivet.jo/platform/agreements");
+    expect(rendered.html).toContain("https://platform.rivetjo.com/brand/rivet-lockup.png");
+    expect(rendered.html).toContain("https://platform.rivetjo.com/platform/agreements");
     expect(rendered.html).toContain("RIVET-agreement-RVT-20261001-ABCDE.pdf");
     expect(rendered.html).toContain("26 KB");
     // The agreement itself travels as the PDF, not as text in the body.

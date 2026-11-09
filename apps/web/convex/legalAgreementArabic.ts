@@ -1,8 +1,9 @@
-/** Arabic counterpart of agreement 1.2. Immutable once signed; add a new version for future changes. */
+/** Versioned Arabic agreements. Published text is immutable; 1.3 corrects the website domain only. */
 import type { AgreementSection } from "./legalAgreementText";
 
-export const SUBSCRIPTION_AGREEMENT_VERSION_AR = "1.2-ar \u00b7 2 October 2026";
-export const SUBSCRIPTION_AGREEMENT_SECTIONS_AR: readonly AgreementSection[] = [
+export const SUBSCRIPTION_AGREEMENT_VERSION_AR = "1.3-ar \u00b7 9 November 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION_AR_1_2 = "1.2-ar \u00b7 2 October 2026";
+export const SUBSCRIPTION_AGREEMENT_SECTIONS_AR_V1_2: readonly AgreementSection[] = [
   {
     "number": "3",
     "heading": "نطاق الاتفاقية",
@@ -76,3 +77,9 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS_AR: readonly AgreementSection[] = [
     ]
   }
 ];
+
+/** Domain-only correction. Preserve the exact Arabic wording and the signed 1.2-ar text. */
+export const SUBSCRIPTION_AGREEMENT_SECTIONS_AR: readonly AgreementSection[] = SUBSCRIPTION_AGREEMENT_SECTIONS_AR_V1_2.map((section) => ({
+  ...section,
+  paragraphs: section.paragraphs.map((paragraph) => paragraph.replaceAll("rivet.jo/", "rivetjo.com/")),
+}));

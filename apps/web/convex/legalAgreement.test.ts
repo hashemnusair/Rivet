@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_1_1, SUBSCRIPTION_AGREEMENT_VERSION_AR, canonicalAgreementText, sha256Hex } from "./legalAgreementText";
+import { SUBSCRIPTION_AGREEMENT_VERSION, SUBSCRIPTION_AGREEMENT_VERSION_1_1, SUBSCRIPTION_AGREEMENT_VERSION_1_2, SUBSCRIPTION_AGREEMENT_VERSION_AR, canonicalAgreementText, sha256Hex } from "./legalAgreementText";
 import { decodeBase64 } from "./pdfDocument";
 
 declare global { interface ImportMeta { glob(pattern: string): Record<string, () => Promise<unknown>>; } }
@@ -244,7 +244,7 @@ describe("subscription agreement e-signature", () => {
 
 describe("Arabic agreement versions", () => {
   it("preserves the exact published English hashes", async () => {
-    expect(await sha256Hex(canonicalAgreementText())).toBe("af0a917ebc219e4cda2901b489a6708a1f9e6d23e8ddf6adbbe76294b86a8c9b");
+    expect(await sha256Hex(canonicalAgreementText(SUBSCRIPTION_AGREEMENT_VERSION_1_2))).toBe("af0a917ebc219e4cda2901b489a6708a1f9e6d23e8ddf6adbbe76294b86a8c9b");
     expect(await sha256Hex(canonicalAgreementText(SUBSCRIPTION_AGREEMENT_VERSION_1_1))).toBe("a7739cafef818f349f22f586504de9314abf946141f610367be5bd6b64ccadd0");
   });
 

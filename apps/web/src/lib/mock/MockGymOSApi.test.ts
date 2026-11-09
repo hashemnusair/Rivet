@@ -2208,7 +2208,7 @@ describe("free-trial lifecycle", () => {
     referrerMembership.startDate = addDays(todayISODate(), -5);
     referrerMembership.endDate = addDays(todayISODate(), 30);
     const originalEndDate = referrerMembership.endDate;
-    const referralToken = new URL(program.sharePath!, "https://rivet.jo").searchParams.get("ref")!;
+    const referralToken = new URL(program.sharePath!, "https://www.rivetjo.com").searchParams.get("ref")!;
 
     const booking = await api.createTrialBooking({
       customerId: "customer-referred-prospect",

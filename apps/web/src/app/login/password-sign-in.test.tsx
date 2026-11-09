@@ -203,6 +203,32 @@ describe("PasswordSignIn", () => {
     });
   });
 
+  it.each([
+    ["staff", "/login/gym", "/login/gym"],
+    ["member", "/login/member", "/login/member"],
+    ["admin", "/login/admin", "/login/admin"],
+    ["staff", "/members/123", "/login/gym?next=%2Fmembers%2F123"],
+    ["staff", "/platform", "/login/gym?next=%2Fplatform"],
+  ] as const)("retains the %s audience after authentication with continuation %s", async (audience, redirectUrl, expected) => {
+    const decorateUrl = vi.fn((path: string) => path);
+    const finalize = vi.fn(async ({ navigate }: { navigate: (args: { decorateUrl: (path: string) => string }) => Promise<void> }) => {
+      await navigate({ decorateUrl });
+      return { error: null };
+    });
+    clerk.hook = {
+      signIn: { status: "complete", password: vi.fn().mockResolvedValue({ error: null }), finalize },
+      errors: NO_FIELD_ERRORS,
+      fetchStatus: "idle",
+    };
+    render(<PasswordSignIn audience={audience} redirectUrl={redirectUrl} />);
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "member@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith(expected));
+    expect(decorateUrl).toHaveBeenCalledWith(expected);
+  });
+
   it("shows a Clerk rejection when finalizing throws and re-enables sign in", async () => {
     const password = vi.fn().mockResolvedValue({ error: null });
     const finalize = vi.fn().mockRejectedValue({ errors: [{ message: "The session could not be finalized." }] });

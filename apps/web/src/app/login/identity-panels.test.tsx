@@ -134,6 +134,30 @@ describe("IdentityPanel", () => {
   });
 
   it.each([
+    ["staff", "dashboard.rivetjo.com", "member", "This account is not on a gym team"],
+    ["staff", "dashboard.rivetjo.com", "admin", "This account is not on a gym team"],
+    ["member", "app.rivetjo.com", "staff", "This sign-in is for gym members"],
+    ["member", "app.rivetjo.com", "admin", "This sign-in is for gym members"],
+    ["admin", "platform.rivetjo.com", "member", "This is for RIVET staff only"],
+    ["admin", "platform.rivetjo.com", "staff", "This is for RIVET staff only"],
+  ] as const)("rejects a %s portal mismatch on %s for a %s account before any host redirect", (audience, hostname, role, message) => {
+    state.identity.platformAdmin = role === "admin";
+    state.identity.memberships = role === "staff" ? [gymMembership("all")] : [];
+    const location = { hostname, search: "?next=%2Fplatform", replace: vi.fn() };
+    vi.stubGlobal("window", new Proxy(window, { get: (target, key) => key === "location" ? location : Reflect.get(target, key) }));
+
+    render(<IdentityPanel audience={audience} />);
+
+    expect(screen.getByText(message)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign out and use another account" })).toBeVisible();
+    expect(location.replace).not.toHaveBeenCalled();
+    expect(state.replace).not.toHaveBeenCalled();
+    expect(state.signIn).not.toHaveBeenCalled();
+    expect(state.signInAsIdentity).not.toHaveBeenCalled();
+    expect(state.signInPlatformAdmin).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ["platform", "https://platform.rivetjo.com/platform"],
     ["all-branch gym", "https://dashboard.rivetjo.com/members"],
     ["member", "https://app.rivetjo.com/customer/my-gyms"],

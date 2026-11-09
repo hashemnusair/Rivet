@@ -1,6 +1,6 @@
 import { latinDigits } from "../src/lib/utils/text";
-import { SUBSCRIPTION_AGREEMENT_SECTIONS_AR, SUBSCRIPTION_AGREEMENT_VERSION_AR } from "./legalAgreementArabic";
-export { SUBSCRIPTION_AGREEMENT_VERSION_AR } from "./legalAgreementArabic";
+import { SUBSCRIPTION_AGREEMENT_SECTIONS_AR, SUBSCRIPTION_AGREEMENT_SECTIONS_AR_V1_2, SUBSCRIPTION_AGREEMENT_VERSION_AR, SUBSCRIPTION_AGREEMENT_VERSION_AR_1_2 } from "./legalAgreementArabic";
+export { SUBSCRIPTION_AGREEMENT_VERSION_AR, SUBSCRIPTION_AGREEMENT_VERSION_AR_1_2 } from "./legalAgreementArabic";
 /**
  * The subscription agreement RIVET asks a gym owner to sign at onboarding.
  *
@@ -22,8 +22,12 @@ export { SUBSCRIPTION_AGREEMENT_VERSION_AR } from "./legalAgreementArabic";
  * document reads as one sequence: 1 Parties and 2 Details in the signature
  * block, the clauses, then 13 Signatures. The one internal cross-reference
  * moves with its section. 1.1 stays here because a test gym signed it.
+ *
+ * 1.3 corrects only the public website domain in the Terms and Privacy links.
+ * Published 1.1, 1.2 and 1.2-ar text stays byte-for-byte reproducible.
  */
-export const SUBSCRIPTION_AGREEMENT_VERSION = "1.2 · 4 September 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION = "1.3 · 9 November 2026";
+export const SUBSCRIPTION_AGREEMENT_VERSION_1_2 = "1.2 · 4 September 2026";
 export const SUBSCRIPTION_AGREEMENT_VERSION_1_1 = "1.1 · 3 September 2026";
 
 export interface AgreementSection {
@@ -109,23 +113,31 @@ export const SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1: readonly AgreementSection[] =
 
 const RENUMBERED: Record<string, string> = { "01": "3", "02": "4", "03": "5", "04": "6", "05": "7", "06": "8", "07": "9", "08": "10", "09": "11", "10": "12" };
 
-/** Current text: the 1.1 clauses, numbered to follow Parties and Details. */
-export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1.map((section) => ({
+/** Published 1.2 text: the 1.1 clauses, numbered to follow Parties and Details. */
+export const SUBSCRIPTION_AGREEMENT_SECTIONS_V1_2: readonly AgreementSection[] = SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1.map((section) => ({
   number: RENUMBERED[section.number] ?? section.number,
   heading: section.heading,
   paragraphs: section.paragraphs.map((paragraph) => paragraph.replaceAll("as section 06 sets out", "as section 8 sets out")),
 }));
 
+/** 1.3 changes the website domain only; keep the literal independent of live brand settings. */
+export const SUBSCRIPTION_AGREEMENT_SECTIONS: readonly AgreementSection[] = SUBSCRIPTION_AGREEMENT_SECTIONS_V1_2.map((section) => ({
+  ...section,
+  paragraphs: section.paragraphs.map((paragraph) => paragraph.replaceAll("rivet.jo/", "rivetjo.com/")),
+}));
+
 /** The clauses that were published under a given version string. */
 export function agreementSectionsForVersion(version: string): readonly AgreementSection[] | undefined {
   if (version === SUBSCRIPTION_AGREEMENT_VERSION_AR) return SUBSCRIPTION_AGREEMENT_SECTIONS_AR;
+  if (version === SUBSCRIPTION_AGREEMENT_VERSION_AR_1_2) return SUBSCRIPTION_AGREEMENT_SECTIONS_AR_V1_2;
   if (version === SUBSCRIPTION_AGREEMENT_VERSION) return SUBSCRIPTION_AGREEMENT_SECTIONS;
+  if (version === SUBSCRIPTION_AGREEMENT_VERSION_1_2) return SUBSCRIPTION_AGREEMENT_SECTIONS_V1_2;
   if (version === SUBSCRIPTION_AGREEMENT_VERSION_1_1) return SUBSCRIPTION_AGREEMENT_SECTIONS_V1_1;
   return undefined;
 }
 
 export function agreementVersionForLanguage(language: "en" | "ar" = "en"): string { return language === "ar" ? SUBSCRIPTION_AGREEMENT_VERSION_AR : SUBSCRIPTION_AGREEMENT_VERSION; }
-export function agreementLanguageForVersion(version: string): "en" | "ar" { return version === SUBSCRIPTION_AGREEMENT_VERSION_AR ? "ar" : "en"; }
+export function agreementLanguageForVersion(version: string): "en" | "ar" { return version === SUBSCRIPTION_AGREEMENT_VERSION_AR || version === SUBSCRIPTION_AGREEMENT_VERSION_AR_1_2 ? "ar" : "en"; }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 

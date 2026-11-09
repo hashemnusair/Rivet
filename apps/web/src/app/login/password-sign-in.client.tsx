@@ -3,7 +3,7 @@
 import { AuthFlowError, authErrorText, authMessage, renderAuthMessage } from "@/lib/auth/messages";
 import type { MessageDescriptor, TKey } from "@/lib/i18n/core";
 import { latinDigits } from "@/lib/utils/text";
-import { loginHref, safeInternalRedirect } from "@/lib/routing/host-routing";
+import { safeInternalRedirect } from "@/lib/routing/host-routing";
 import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, KeyRound, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Label } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useT, type TFunction } from "@/lib/i18n/provider";
+import { PORTALS, type Audience } from "./portals";
 
 type VerificationKind = "email_code" | "phone_code" | "totp" | "backup_code";
 /** Forgot password: ask for the email, then take the emailed code and a new password together. */
@@ -35,7 +36,7 @@ function resetSendMessage(error: unknown): MessageDescriptor {
  * and, if Clerk then wants a second factor, continues into the same second
  * step as a normal sign-in.
  */
-export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redirectUrl?: string; signUp?: boolean }) {
+export function PasswordSignIn({ audience = "account", redirectUrl = "/login", signUp = true }: { audience?: Audience; redirectUrl?: string; signUp?: boolean }) {
   const { signIn, errors, fetchStatus } = useSignIn();
   const { loaded: clerkLoaded } = useClerk();
   const router = useRouter();
@@ -66,7 +67,10 @@ export function PasswordSignIn({ redirectUrl = "/login", signUp = true }: { redi
     setFinishing(true);
     try {
       const continuation = safeInternalRedirect(redirectUrl, "/login");
-      const resolver = continuation.startsWith("/login") ? "/login" : loginHref(continuation);
+      // Complete on the selected portal so its Convex role check runs before
+      // any continuation. The generic resolver deliberately has no audience.
+      const portalPath = PORTALS[audience].href;
+      const resolver = continuation.startsWith("/login") ? portalPath : `${portalPath}?next=${encodeURIComponent(continuation)}`;
       let decoratedRedirect = resolver;
       const { error } = await signIn.finalize({
         navigate: async ({ decorateUrl }) => {

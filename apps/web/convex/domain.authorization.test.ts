@@ -32,6 +32,20 @@ async function seed(t: TestConvex<typeof schema>) {
 }
 
 describe("Convex authorization matrix", () => {
+  it("rejects an authenticated member without a gym-team membership from gym and platform operations", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      await ctx.db.insert("users", { publicId: "auth-member-only", authSubject: "clerk-auth-member-only", email: "member@example.com", fullName: "Member Only", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+    });
+    const member = t.withIdentity({ subject: "clerk-auth-member-only" });
+    for (const name of ["session", "members.list", "platform.snapshot"]) {
+      await expectCode(member.query(api.domain.query, operation(name, {}, { organizationId: "org-auth-a" })), "FORBIDDEN");
+    }
+    await expectCode(member.mutation(api.domain.mutate, operation("members.create", { fullName: "Must not be created", phone: "+962790000001", homeBranchId: "auth-branch-a" }, { organizationId: "org-auth-a" })), "FORBIDDEN");
+  });
+
   it("returns only accepted check-ins from the requested tenant-local business date", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

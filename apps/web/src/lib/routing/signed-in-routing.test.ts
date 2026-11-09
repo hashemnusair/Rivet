@@ -12,14 +12,20 @@ describe("signed-in routing", () => {
     expect(at("/", "?view=landing")).toBeNull();
     expect(at("/", "?view=landing&utm_source=console")).toBeNull();
     expect(at("/", "?view=other")).toBe("/login");
-    // The request only opens the landing, never a sign-in door.
+    // Only the landing uses this exception. Portals keep their own role check.
     expect(at("/signup", "?view=landing")).toBe("/login");
-    expect(at("/login/admin", "?view=landing")).toBe("/login");
+    expect(at("/login/admin", "?view=landing")).toBeNull();
   });
 
-  it("sends the application and every sign-in door to the resolver", () => {
-    for (const path of ["/signup", "/login/gym", "/login/member", "/login/admin", "/login/member/create"]) {
+  it("sends application and registration pages to the resolver", () => {
+    for (const path of ["/signup", "/login/member/create"]) {
       expect(at(path)).toBe("/login");
+    }
+  });
+
+  it("keeps explicit portals so signed-in accounts must pass their audience checks", () => {
+    for (const path of ["/login/gym", "/login/member", "/login/admin"]) {
+      expect(at(path, "?next=%2Fplatform")).toBeNull();
     }
   });
 

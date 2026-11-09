@@ -1,5 +1,94 @@
 # GymOS / RIVET current implementation state
 
+## Explicit sign-in portals retain their audience (10 November 2026, local)
+
+Elias observed a member account entering through Gym team during the release
+check. The portal selection was being discarded: the proxy and client guard
+sent existing sessions to the generic `/login` resolver, password completion
+also used that resolver, and the identity host gate could redirect a member to
+`app.rivetjo.com` before the staff-audience check ran.
+
+- Explicit gym/member/admin login routes now retain their selected audience for
+  both existing sessions and fresh authentication. The authenticated Convex role
+  must pass that portal's existing entitlement check before any entry or
+  continuation. A member on Gym team sees “This account is not on a gym team”
+  and the existing sign-out/account-switch action. No new translations needed.
+- Generic `/login` still resolves an account to its own area. Landing/application
+  behavior, same-area continuation validation and invitation recovery remain.
+- Direct member calls to gym session, member listing/creation and platform
+  snapshot endpoints were tested and rejected with `FORBIDDEN`; this change fixes
+  portal routing, without changing backend access rights or provider settings.
+- Validation: 83 focused tests across portal rendering, password/MFA/reset,
+  production-host audience checks, proxy/routing and Convex authorization passed;
+  web/Convex typechecks and changed-file ESLint passed. Node 26's global storage conflicts
+  with jsdom in the existing password tests; those 31 tests pass with
+  `NODE_OPTIONS=--no-experimental-webstorage pnpm --filter web exec vitest run
+  src/app/login/password-sign-in.test.tsx --maxWorkers=2`. The other 52 tests pass
+  in the normal runner.
+- **Not deployed.** No live accounts, permissions, credentials, environment
+  variables or DNS were changed for this fix. The original read-only Test Gym
+  “What visitors book” release check subsequently passed in the gym-owner session
+  on 10 November (see below); that check does not validate this unreleased fix.
+- Read first: `apps/web/src/app/login/identity-panels.client.tsx`,
+  `portal-sign-in.client.tsx`, `password-sign-in.client.tsx`, and
+  `apps/web/src/lib/routing/signed-in-routing.ts`.
+
+## Public domain correction and provider setup (9 November 2026)
+
+- **Domain correction, local and not deployed.** The 404 footer now names and links
+  to `www.rivetjo.com` through `RIVET_HOSTS.public`; the metadata fallback uses the
+  same host. New subscription agreements are version `1.3` / `1.3-ar`, dated
+  9 November 2026, changing only the Terms and Privacy domains to `rivetjo.com`.
+  Published English 1.1/1.2 and Arabic 1.2-ar retain their exact text, fingerprints,
+  language and PDF lookup. Existing signed records are not rewritten or re-signed.
+  Instagram `@rivet.jo` is an account handle, not the website, and is unchanged;
+  frozen legal-review/Arabic evidence also remains intact. Test URL fixtures now
+  use the real hosts. Read `convex/legalAgreementText.ts`,
+  `convex/legalAgreementArabic.ts`, and `src/app/not-found.tsx` first (under `apps/web`).
+- **Provider setup completed through the dashboards.** Production Convex
+  `RIVET_APPLICATION_RECIPIENTS` is `hello@rivetjo.com`;
+  `RIVET_EMAIL_ALLOWLIST` preserves Elias and Hashem and adds that address.
+  `RIVET_EMAIL_MODE` was not changed. Resend team `rivetjo` now has an enabled
+  webhook to `https://descriptive-meerkat-589.eu-west-1.convex.site/webhooks/resend`
+  for `email.delivered`, `email.bounced`, `email.complained`, `email.failed` and
+  `email.suppressed`; its signing secret was saved only to Production
+  `RESEND_WEBHOOK_SECRET`. Purelymail routing now forwards `dmarc@rivetjo.com`
+  to `elias@rivetjo.com`.
+- **Monitoring verified.** Free UptimeRobot monitor `RIVET health` checks
+  `https://www.rivetjo.com/api/health` every five minutes and alerts
+  `elias@rivetjo.com`; observed **Up**. Monitor ID `804610341`.
+- **Inbox test passed.** The correct admin routes are
+  `/platform/agreements` and `/platform/email-log`, not `/agreements` and
+  `/email-log`. Resending agreement `RVT-20260927-CU4U6` queued the two RIVET
+  copies successfully. At Elias's request, the copy to `elias@rivetjo.com` was
+  inspected in Apple Mail's Rivetjo Inbox instead of Purelymail webmail. Received
+  9 November at 20:15:01 UTC; Purelymail's Authentication-Results report SPF,
+  DKIM and DMARC **pass** (the policy was `p=none` at receipt). RIVET shows
+  **Delivered** for both copies. Both Resend `email.delivered` callbacks show
+  **Success / 200 OK**, response `ok`, on their first attempt; the Elias event's
+  message ID matches the received email.
+- **DMARC tightened after all delivery checks passed.** Updated only the existing
+  `_dmarc` TXT from `v=DMARC1; p=none;` to
+  `v=DMARC1; p=quarantine; rua=mailto:dmarc@rivetjo.com` in Spaceship. Refreshed
+  the DNS page and verified the persisted value and unchanged count of 23 records
+  at 23:43 Amman (20:43 UTC). No other DNS records were edited.
+- **Release UI check passed, 10 November.** After Elias signed in to the gym
+  dashboard, Test Gym → Settings → Hours & trials at
+  `https://dashboard.rivetjo.com/settings?section=hours` visibly showed
+  **What visitors book**, with **Free trial** selected and Day pass available.
+  The section was inspected only; no settings were changed. All seven requested
+  provider/monitoring/inbox/release-check parts are complete. The platform admin
+  Settings tab does not expose this section; it requires the gym session.
+- **Validation.** Focused agreement/version/email/PDF tests: 28/28 passed;
+  web and Convex typechecks, changed-file ESLint, the secret-output audit,
+  Arabic revision-607 lock and `git diff --check` passed.
+  Re-run: `pnpm --filter web exec vitest run convex/legalAgreementText.test.ts
+  convex/legalAgreement.test.ts convex/legalAgreementEmail.test.ts
+  convex/legalAgreementPdf.test.ts --maxWorkers=2`. Before releasing the new
+  agreement versions, deploy the reviewed backend through `pnpm convex:deploy`
+  before publishing the matching frontend; do not publish just the frontend's
+  new signing version against the older backend.
+
 ## Contact address is hello@rivetjo.com (9 November 2026)
 
 Elias moved rivetjo.com mailboxes from Spacemail to Purelymail and replaced
@@ -15,9 +104,10 @@ Elias moved rivetjo.com mailboxes from Spacemail to Purelymail and replaced
 - Test expectations, `.env.example`, docs/12 and docs/19 updated. Historical entries
   below and the Arabic evidence files keep `sales@` as it was then.
 - Mail DNS (Purelymail MX/SPF/DKIM; Resend `send.` and `resend._domainkey`; Clerk
-  `clk*`) was checked live on 9 November 2026. DMARC is still `p=none`.
-- Unverified: whether the Production `RIVET_APPLICATION_RECIPIENTS` value still names
-  `sales@`. Only Elias can read it.
+  `clk*`) was checked live on 9 November 2026. DMARC was `p=none` at that check;
+  it was tightened later that day after the inbox test (see above).
+- Production `RIVET_APPLICATION_RECIPIENTS` was checked and changed to `hello@`
+  later on 9 November; see the provider setup entry above.
 - **Release.** Pushed `1cb7c063`. Convex released to Production from that commit on
   9 November 2026 (guarded dry run, then the deploy; `health:check --prod` ok). That
   also released the owed 6 November hardening, Restore, day passes and the

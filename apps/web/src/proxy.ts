@@ -41,9 +41,9 @@ function routeByHost(request: NextRequest) {
   return applyHostDecision(request, decideHostRouting(hostOf(request), request.nextUrl.pathname));
 }
 
-/** Signed-in doors and the landing hand off to the shared resolver, which
- * opens the account's own area. App roots initialize Clerk before their
- * internal rewrites. */
+/** Signed-in landing/registration visits hand off to the shared resolver.
+ * Explicit login portals keep their audience check. App roots initialize Clerk
+ * before their internal rewrites. */
 const clerkProxy = clerkMiddleware(async (auth, request) => {
   const decision = decideHostRouting(hostOf(request), request.nextUrl.pathname);
   if (decision.kind !== "next") return applyHostDecision(request, decision);

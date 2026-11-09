@@ -41,10 +41,15 @@ describe("production host proxy", () => {
     expect(state.calls).toBe(3);
   });
 
-  it("retains the continuation when a signed-in door hands off to the resolver", async () => {
+  it.each([
+    ["/login/gym", "dashboard.rivetjo.com"],
+    ["/login/member", "app.rivetjo.com"],
+    ["/login/admin", "platform.rivetjo.com"],
+  ])("keeps signed-in accounts on %s for its audience check", async (path, host) => {
     state.userId = "test-identity";
-    const response = await request("/login/gym?next=%2Fmembers%2F123", "dashboard.rivetjo.com");
-    expect(response?.headers.get("location")).toBe("https://dashboard.rivetjo.com/login?next=%2Fmembers%2F123");
+    const response = await request(`${path}?next=%2Fmembers%2F123`, host);
+    expect(response?.headers.get("location")).toBeNull();
+    expect(state.calls).toBe(1);
   });
 
   it("sends a signed-in visitor from the landing to the resolver", async () => {

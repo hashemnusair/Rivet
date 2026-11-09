@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PortalSignIn } from "./portal-sign-in.client";
 
 const clerk = vi.hoisted(() => ({ isLoaded: false, isSignedIn: false }));
+const navigation = vi.hoisted(() => ({ replace: vi.fn(), viewerSignedIn: false }));
 
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isLoaded: clerk.isLoaded, isSignedIn: clerk.isLoaded ? clerk.isSignedIn : undefined }),
@@ -14,13 +15,15 @@ vi.mock("@clerk/nextjs", () => ({
 
 vi.mock("@/lib/auth/demo-auth", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/auth/demo-auth")>()), DEMO_AUTH_BYPASS: false }));
 vi.mock("@/lib/providers/convex-client-provider", () => ({ CONVEX_ENABLED: false }));
-vi.mock("@/lib/auth/public-viewer", () => ({ usePublicViewer: () => ({ status: "signed-out" }) }));
+vi.mock("@/lib/auth/public-viewer", () => ({ usePublicViewer: () => navigation.viewerSignedIn
+  ? { status: "signed-in", destination: { href: "/customer/my-gyms" } }
+  : { status: "signed-out" } }));
 vi.mock("@/lib/providers/app-providers", () => ({ useApp: () => ({ signIn: vi.fn(), sessionLoading: false }) }));
 vi.mock("@/lib/providers/experience-provider", () => ({
   useExperience: () => ({ customers: [], experienceReady: true, signInCustomer: vi.fn(), signInPlatformAdmin: vi.fn() }),
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ replace: navigation.replace, push: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => "/login/gym",
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -29,6 +32,8 @@ describe("a sign-in door", () => {
   beforeEach(() => {
     clerk.isLoaded = false;
     clerk.isSignedIn = false;
+    navigation.viewerSignedIn = false;
+    navigation.replace.mockReset();
   });
 
   it("is on the server's first paint with its form, not a loading mark, before Clerk has loaded", () => {
@@ -57,5 +62,13 @@ describe("a sign-in door", () => {
     render(<PortalSignIn audience="staff" />);
     expect(screen.queryByLabelText(/Email address/)).toBeNull();
     expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+  });
+
+  it("does not redirect an already signed-in member past the Gym team audience check", () => {
+    clerk.isLoaded = true;
+    clerk.isSignedIn = true;
+    navigation.viewerSignedIn = true;
+    render(<PortalSignIn audience="staff" />);
+    expect(navigation.replace).not.toHaveBeenCalled();
   });
 });

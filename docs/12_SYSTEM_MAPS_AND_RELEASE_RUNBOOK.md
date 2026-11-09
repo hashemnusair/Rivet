@@ -1,5 +1,24 @@
 # 12 — System Maps and Release Runbook
 
+## Sign-in portal correction — 10 November 2026, not released
+
+The local frontend fix keeps explicit Gym team / Gym member / Platform
+administration sign-ins on their selected portal until its Convex identity check
+passes. Previously generic session redirects and a role-based cross-host redirect
+could bypass that portal check and open the account's own, different area.
+Focused tests verify all six wrong-role/portal combinations on production hosts,
+existing sessions, password completion, and direct member API rejection. Generic
+account resolution, backend authorization and provider settings are unchanged.
+
+For release verification, a member opening `/login/gym` must see “This account is
+not on a gym team” and an account-switch action, with no member-host redirect;
+repeat with both an existing session and a fresh sign-in. A real gym owner should
+still reach their gym. The separate read-only What visitors book check passed on
+the existing live release on 10 November; it does not validate this unreleased
+login fix. This frontend fix needs no Convex deploy by itself; releasing the
+separate agreement-domain correction in the same bundle still requires the
+backend-first procedure below.
+
 ## Rollback, restore and incidents — runbook (9 November 2026, draft for the owners)
 
 Written from the release evidence in this file; nothing here has been rehearsed yet.
@@ -12,9 +31,10 @@ reachable during gym opening hours; the other knows the plan.
 
 **Watching.** `GET /api/health` on any RIVET host (for example
 `https://www.rivetjo.com/api/health`) answers `200 {"status":"ok"}` only when the
-website and Convex both answer, and `503` otherwise; it reads no data. Point an uptime
-monitor at it every minute, with an alert to both owners after two failures (the
-monitor itself is a provider choice, not yet made). Also watch: GitHub CI on `main`,
+website and Convex both answer, and `503` otherwise; it reads no data. Elias selected
+the free UptimeRobot monitor **RIVET health** on 9 November 2026: that URL,
+five-minute interval, email alerts to `elias@rivetjo.com`, no delay/repeat.
+Monitor `804610341` was saved and observed **Up**. Also watch: GitHub CI on `main`,
 Vercel deployment status, the Convex dashboard's function errors (server errors are
 logged as `[rivet.server.error]` with a correlation id, never with personal data),
 Clerk sign-in errors, and Resend bounces once email is live.
@@ -68,10 +88,45 @@ how it was verified.
 5. *Record*: a short incident note in CURRENT_STATE (start, detection, impact, cause,
    fix, follow-ups). Audit and timeline records are never edited to hide an incident.
 
-**Still open** (docs/13 finalisation list, item 4): choosing and connecting the
-uptime monitor, the edge/WAF rules in Vercel's firewall for the public forms (the
+**Still open** (docs/13 finalisation list, item 4): the edge/WAF rules in Vercel's firewall for the public forms (the
 server already rate-limits them), the first restore rehearsal, a capacity check at
 pilot load, and the owners' confirmation of this runbook.
+
+## Email provider setup and domain correction — 9 November 2026
+
+Production Convex now sends application notifications to `hello@rivetjo.com`;
+the email allowlist retains `elias@rivetjo.com,hashem@rivetjo.com` and adds
+`hello@rivetjo.com`. The email mode was left unchanged. The `rivetjo` Resend team's
+enabled callback targets the production `/webhooks/resend` HTTP action and listens
+for delivered, bounced, complained, failed and suppressed events. Its signing
+secret is configured as `RESEND_WEBHOOK_SECRET`; never print or copy it into docs.
+Purelymail forwards `dmarc@rivetjo.com` to `elias@rivetjo.com`.
+
+The real agreement-copy test passed for signed agreement `RVT-20260927-CU4U6`:
+the Elias copy arrived at 20:15:01 UTC in the Rivetjo Inbox (inspected in Apple Mail
+at Elias's request), and Purelymail's Authentication-Results report SPF, DKIM and
+DMARC **pass**. RIVET's `/platform/email-log` shows **Delivered** for both RIVET
+copies. Both Resend delivered callbacks succeeded with **200 OK**, response `ok`,
+on their first attempt; the Elias callback's message ID matches the inbox copy.
+
+After those checks passed, only Spaceship's existing `_dmarc` TXT was updated from
+`v=DMARC1; p=none;` to
+`v=DMARC1; p=quarantine; rua=mailto:dmarc@rivetjo.com`. The refreshed DNS page
+confirmed that value at 20:43 UTC, with the record count still 23. All other DNS
+records were left untouched. The read-only release UI check passed on
+10 November after Elias signed in as the gym owner: Test Gym → Settings →
+Hours & trials (`https://dashboard.rivetjo.com/settings?section=hours`) shows
+**What visitors book**, **Free trial** selected, and the Day pass option.
+No gym settings were changed. All seven requested setup/check parts are complete.
+
+Local source also corrects the 404 website label/link and metadata fallback, and
+adds domain-only agreement versions 1.3 / 1.3-ar while preserving all prior signed
+text/hashes. This source is **not deployed**. Release the reviewed Convex source
+through the guarded `pnpm convex:deploy` workflow before the matching frontend,
+because signing accepts only the backend's current versions. No database
+migration, agreement invalidation, DNS edit or additional environment change is
+needed for the code correction. See CURRENT_STATE for the completed browser
+checks and the separate unreleased sign-in fix.
 
 ## Input hardening, member restore and day passes — Convex released 9 November 2026
 
@@ -79,8 +134,9 @@ pilot load, and the owners' confirmation of this runbook.
 hello@rivetjo.com contact change) to Production `descriptive-meerkat-589` through
 the guarded wrapper. Env names checked, the dry run reported no index deletions
 and schema validation passed, the deploy succeeded, and `health:check --prod`
-returned `ok`. `www.rivetjo.com/api/health` returned 200. The read-only Settings and
-test-gym day-pass checks below still need a signed-in person.
+returned `ok`. `www.rivetjo.com/api/health` returned 200. The read-only Settings
+visibility check below passed on 10 November (see above); public-page and
+end-to-end test-gym day-pass checks remain outside this setup task.
 
 The 6 November input-hardening commit (CURRENT_STATE, docs/09) changes Convex
 functions only: `members.update` / `plans.update` allowlists and value checks, the

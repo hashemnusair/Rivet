@@ -61,7 +61,7 @@ const instrumentSans = Instrument_Sans({
   display: "swap",
 });
 
-const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://rivet.jo");
+const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? `https://${RIVET_HOSTS.public}`);
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getRequestLocale();

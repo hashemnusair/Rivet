@@ -710,7 +710,7 @@ describe("exported Convex customer ownership boundaries", () => {
     expect(program.sharePath).toMatch(/^\/customer\/gyms\/gym-a\?ref=[0-9a-f-]+$/);
     expect(program.sharePath).not.toContain("member-a");
     expect(program.sharePath).not.toContain("Customer A");
-    const token = new URL(program.sharePath, "https://rivet.jo").searchParams.get("ref");
+    const token = new URL(program.sharePath, "https://www.rivetjo.com").searchParams.get("ref");
     expect(token).toBeTruthy();
 
     const booking = await referred.mutation(api.domain.mutate, operation("customer.trial.create", {

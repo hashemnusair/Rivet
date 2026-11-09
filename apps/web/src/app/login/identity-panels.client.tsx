@@ -26,9 +26,9 @@ const ENTRY_TRANSITION_MS = 900;
 const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
 
 /**
- * Once Clerk authenticates someone, their Convex role—not the portal they
- * happened to open—decides where they go. This prevents an administrator from
- * being offered member access merely because they signed in on the gym page.
+ * Clerk authenticates the account; Convex determines its permitted roles.
+ * Explicit portals check that role before entering any area. Only the generic
+ * account resolver may choose a different host from the account's role.
  */
 export function IdentityPanel({ audience = "account" }: { audience?: Audience }) {
   const identity = useRivetIdentity();
@@ -53,7 +53,10 @@ export function IdentityPanel({ audience = "account" }: { audience?: Audience })
 
   if (identity.status !== "ready") return null;
 
-  return <IdentityHostGate identity={identity}><IdentityEntries identity={identity} audience={audience} /></IdentityHostGate>;
+  const entries = <IdentityEntries identity={identity} audience={audience} />;
+  // Explicit login routes already have canonical hosts. A role-based host
+  // redirect here would bypass their audience checks on production domains.
+  return audience === "account" ? <IdentityHostGate identity={identity}>{entries}</IdentityHostGate> : entries;
 }
 
 /**
