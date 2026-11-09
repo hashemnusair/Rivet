@@ -1,8 +1,28 @@
 # 12 — System Maps and Release Runbook
 
-## Sign-in portal correction — 10 November 2026, not released
+## Domain and sign-in production release — 10 November 2026
 
-The local frontend fix keeps explicit Gym team / Gym member / Platform
+Released application commit `cd1fadc8a03ec862b1437d58f7a803a25fe435cc` to `main`
+at Elias's request. Convex Production `descriptive-meerkat-589` was deployed first
+through the guarded dry run/deploy workflow at about 21:32 UTC on 9 November
+(00:32 Amman on 10 November): no index deletions, schema validation passed,
+`health:check --prod` returned `ok`. Vercel Production
+`dpl_8XHvhzD1giFK9FonzXfMUKDh4kzz` succeeded at 21:36:40 UTC. Full
+[CI run 42703525865](https://github.com/hashemnusair/Rivet/actions/runs/42703525865)
+passed; local build and all 111 focused tests also passed.
+
+Live read-only checks confirmed the corrected `www.rivetjo.com` 404 link, the
+gym owner's rejection on the member login portal with an account-switch option,
+and successful access through Gym team to Test Gym's dashboard. No account was
+switched for this check; automated tests cover the six wrong-role combinations
+and fresh authentication. Public `/api/health` reported web/Convex `ok` at
+21:38:28 UTC. No DNS, environment, permission or gym-setting changes accompanied
+this deployment. New agreement versions 1.3/1.3-ar correct the domain only;
+prior signed text and fingerprints remain reproducible.
+
+## Sign-in portal correction — 10 November 2026, released
+
+The frontend fix keeps explicit Gym team / Gym member / Platform
 administration sign-ins on their selected portal until its Convex identity check
 passes. Previously generic session redirects and a role-based cross-host redirect
 could bypass that portal check and open the account's own, different area.
@@ -14,10 +34,9 @@ For release verification, a member opening `/login/gym` must see “This account
 not on a gym team” and an account-switch action, with no member-host redirect;
 repeat with both an existing session and a fresh sign-in. A real gym owner should
 still reach their gym. The separate read-only What visitors book check passed on
-the existing live release on 10 November; it does not validate this unreleased
-login fix. This frontend fix needs no Convex deploy by itself; releasing the
-separate agreement-domain correction in the same bundle still requires the
-backend-first procedure below.
+the earlier live release on 10 November; post-release login evidence is above.
+This frontend fix needs no Convex deploy by itself; the agreement-domain
+correction in the same bundle was released backend first.
 
 ## Rollback, restore and incidents — runbook (9 November 2026, draft for the owners)
 
@@ -119,14 +138,14 @@ Hours & trials (`https://dashboard.rivetjo.com/settings?section=hours`) shows
 **What visitors book**, **Free trial** selected, and the Day pass option.
 No gym settings were changed. All seven requested setup/check parts are complete.
 
-Local source also corrects the 404 website label/link and metadata fallback, and
+The released source also corrects the 404 website label/link and metadata fallback, and
 adds domain-only agreement versions 1.3 / 1.3-ar while preserving all prior signed
-text/hashes. This source is **not deployed**. Release the reviewed Convex source
-through the guarded `pnpm convex:deploy` workflow before the matching frontend,
-because signing accepts only the backend's current versions. No database
+text/hashes. It was deployed on 10 November in `cd1fadc8`: Convex through the
+guarded `pnpm convex:deploy` workflow before the matching frontend, because
+signing accepts only the backend's current versions. No database
 migration, agreement invalidation, DNS edit or additional environment change is
 needed for the code correction. See CURRENT_STATE for the completed browser
-checks and the separate unreleased sign-in fix.
+checks and the sign-in release evidence.
 
 ## Input hardening, member restore and day passes — Convex released 9 November 2026
 

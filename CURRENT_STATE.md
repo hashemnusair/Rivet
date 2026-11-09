@@ -1,6 +1,31 @@
 # GymOS / RIVET current implementation state
 
-## Explicit sign-in portals retain their audience (10 November 2026, local)
+## Domain and sign-in fixes released (10 November 2026)
+
+- **Source:** `cd1fadc8a03ec862b1437d58f7a803a25fe435cc`, pushed to `main` at
+  Elias's request. The existing untracked `outputs/` directory was not included.
+- **Backend first:** guarded production dry run and deploy to
+  `descriptive-meerkat-589` succeeded at about 21:32 UTC on 9 November
+  (00:32 Amman on 10 November), with schema validation and no index deletions.
+  `health:check --prod` returned `ok` at 21:32:42 UTC.
+- **Frontend:** Vercel Production deployment
+  `dpl_8XHvhzD1giFK9FonzXfMUKDh4kzz` for that source succeeded at
+  21:36:40 UTC. [Deployment](https://vercel.com/nusairhashem04-gmailcoms-projects/rivet-web/8XHvhzD1giFK9FonzXfMUKDh4kzz).
+- **Validation:** local production build, 111 focused tests, typechecks/lint,
+  Arabic revision-607 lock, secret-output audit and patch formatting passed.
+  [Full GitHub CI](https://github.com/hashemnusair/Rivet/actions/runs/42703525865)
+  passed all jobs for the application commit.
+- **Live read-only checks:** the 404 footer now shows `www.rivetjo.com`; the
+  signed-in Test Gym owner opening `/login/member` stays on “This sign-in is for
+  gym members” with the account-switch action; opening `/login/gym` still reaches
+  the Test Gym dashboard. All six wrong-role combinations and fresh sign-in
+  completion are covered by automated tests; the live check used the owner's
+  existing session. Public `/api/health` returned web/Convex `ok` at 21:38:28 UTC.
+- **Preserved:** signed agreement versions/hashes, Instagram account handle,
+  current DNS, all environment values, and live gym settings. This release adds
+  no data migration or permission changes.
+
+## Explicit sign-in portals retain their audience (10 November 2026, released)
 
 Elias observed a member account entering through Gym team during the release
 check. The portal selection was being discarded: the proxy and client guard
@@ -25,17 +50,17 @@ also used that resolver, and the identity host gate could redirect a member to
   `NODE_OPTIONS=--no-experimental-webstorage pnpm --filter web exec vitest run
   src/app/login/password-sign-in.test.tsx --maxWorkers=2`. The other 52 tests pass
   in the normal runner.
-- **Not deployed.** No live accounts, permissions, credentials, environment
+- **Released in `cd1fadc8`.** No live accounts, permissions, credentials, environment
   variables or DNS were changed for this fix. The original read-only Test Gym
   “What visitors book” release check subsequently passed in the gym-owner session
-  on 10 November (see below); that check does not validate this unreleased fix.
+  on 10 November (see below); the separate post-release login checks are above.
 - Read first: `apps/web/src/app/login/identity-panels.client.tsx`,
   `portal-sign-in.client.tsx`, `password-sign-in.client.tsx`, and
   `apps/web/src/lib/routing/signed-in-routing.ts`.
 
 ## Public domain correction and provider setup (9 November 2026)
 
-- **Domain correction, local and not deployed.** The 404 footer now names and links
+- **Domain correction, released 10 November in `cd1fadc8`.** The 404 footer now names and links
   to `www.rivetjo.com` through `RIVET_HOSTS.public`; the metadata fallback uses the
   same host. New subscription agreements are version `1.3` / `1.3-ar`, dated
   9 November 2026, changing only the Terms and Privacy domains to `rivetjo.com`.
@@ -84,10 +109,9 @@ also used that resolver, and the identity host gate could redirect a member to
   Arabic revision-607 lock and `git diff --check` passed.
   Re-run: `pnpm --filter web exec vitest run convex/legalAgreementText.test.ts
   convex/legalAgreement.test.ts convex/legalAgreementEmail.test.ts
-  convex/legalAgreementPdf.test.ts --maxWorkers=2`. Before releasing the new
-  agreement versions, deploy the reviewed backend through `pnpm convex:deploy`
-  before publishing the matching frontend; do not publish just the frontend's
-  new signing version against the older backend.
+  convex/legalAgreementPdf.test.ts --maxWorkers=2`. The new agreement versions
+  were released backend first through `pnpm convex:deploy`, then the matching
+  frontend through the `main` push; release evidence is above.
 
 ## Contact address is hello@rivetjo.com (9 November 2026)
 
