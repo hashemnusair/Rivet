@@ -1,5 +1,24 @@
 # GymOS / RIVET current implementation state
 
+## Contact address is hello@rivetjo.com (9 November 2026)
+
+Elias moved rivetjo.com mailboxes from Spacemail to Purelymail and replaced
+`sales@` with `hello@rivetjo.com`.
+
+- `BRAND_CONTACT.email` (`convex/brandTokens.ts`) is now `hello@rivetjo.com`: email
+  footers, invoice and agreement PDFs, document sheets, and the operational Reply-To
+  fallback (Production sets no `RESEND_REPLY_TO_EMAIL`).
+- `RIVET_CONTACT.email` / `emailHref` (`src/lib/rivet-contact.ts`) read the same token.
+  The checkout notice now uses it instead of its own `SALES_EMAIL`. The landing menu
+  used to show `hello@rivet.jo`, a domain with no DNS, so that mail bounced; it now
+  uses the token too.
+- Test expectations, `.env.example`, docs/12 and docs/19 updated. Historical entries
+  below and the Arabic evidence files keep `sales@` as it was then.
+- Mail DNS (Purelymail MX/SPF/DKIM; Resend `send.` and `resend._domainkey`; Clerk
+  `clk*`) was checked live on 9 November 2026. DMARC is still `p=none`.
+- Unverified: whether the Production `RIVET_APPLICATION_RECIPIENTS` value still names
+  `sales@`. Only Elias can read it.
+
 ## Leads made simpler; day-pass screens tidied (9 November 2026)
 
 Elias asked for a UI pass on day passes (ordered, not stacked) and a simpler leads

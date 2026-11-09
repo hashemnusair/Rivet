@@ -42,7 +42,7 @@ export const BRAND_CONTACT = {
   supportHours: "Support 09:00–21:00 Amman time, Saturday to Thursday",
   supportHoursAr: "الدعم من 9:00 ص إلى 9:00 م بتوقيت عمّان، من السبت إلى الخميس",
   /** The one address RIVET prints: on invoices, in footers, for questions. */
-  email: "sales@rivetjo.com",
+  email: "hello@rivetjo.com",
 } as const;
 
 /**

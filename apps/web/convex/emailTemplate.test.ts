@@ -141,7 +141,7 @@ describe("branded email", () => {
     expect(footerLines({ ...base }).join("\n")).toContain("Privacy policy · Terms of service · Email preferences");
     expect(footerLines({ ...base, marketing: true }).join("\n")).toContain("Unsubscribe");
     expect(footerLines({ ...base }).join("\n")).not.toContain("Unsubscribe");
-    expect(footerLines({ ...base })[1]).toContain("sales@rivetjo.com");
+    expect(footerLines({ ...base })[1]).toContain("hello@rivetjo.com");
   });
 
   it("marks every message as RIVET Beta while RIVET is in beta", () => {

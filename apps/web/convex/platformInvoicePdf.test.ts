@@ -31,7 +31,7 @@ describe("invoice document", () => {
     // Nothing about tax or bank details is invented, and nothing bracketed is printed.
     expect(blocks).not.toMatch(/\[[A-Za-z]/);
     expect(blocks).not.toContain("\"Tax\"");
-    expect(blocks).toContain("confirms them on request at sales@rivetjo.com");
+    expect(blocks).toContain("confirms them on request at hello@rivetjo.com");
   });
 
   it("shows the status as a quiet chip, and red only when it is past due", () => {
@@ -50,7 +50,7 @@ describe("invoice document", () => {
     expect(body).toContain("(Invoice) Tj");
     expect(body).toContain("/Subtype /Image");
     expect(body).toContain("(PAGE 1 OF 1) Tj");
-    expect(body).toContain("sales@rivetjo.com");
+    expect(body).toContain("hello@rivetjo.com");
     expect(invoicePdfFilename("INV-2026-000184")).toBe("RIVET-invoice-INV-2026-000184.pdf");
   });
 
@@ -106,9 +106,9 @@ describe("invoice document", () => {
     expect(cliqOnly).toContain("Alias RIVETJO");
     expect(cliqOnly).not.toContain("Bank transfer");
     // Nothing set, or only a note: the general line, with the note under it.
-    expect(JSON.stringify(invoicePdfBlocks(invoice))).toContain("confirms them on request at sales@rivetjo.com");
+    expect(JSON.stringify(invoicePdfBlocks(invoice))).toContain("confirms them on request at hello@rivetjo.com");
     const noteOnly = JSON.stringify(invoicePdfBlocks({ ...invoice, paymentDetails: { cliqAlias: "", iban: "", note: details.note } }));
-    expect(noteOnly).toContain("confirms them on request at sales@rivetjo.com");
+    expect(noteOnly).toContain("confirms them on request at hello@rivetjo.com");
     expect(noteOnly).toContain(details.note);
     // The stored invoice projection carries the details through, and Arabic labels them.
     expect(invoicePdfInput("INV-1", { amountMinor: 1_000 }, { name: "Gym" }, { paymentDetails: details }).paymentDetails).toEqual(details);

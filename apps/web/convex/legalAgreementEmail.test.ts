@@ -61,7 +61,7 @@ describe("agreement copy email", () => {
     const rendered = renderAgreementCopyEmail(copy, "signer", { siteUrl: "https://www.rivetjo.com" });
     const lines = footerLines({ language: "en", audience: "gym", headline: "", paragraphs: [] });
     expect(lines[0]).toBe("RIVET · Amman, Jordan");
-    expect(lines[1]).toBe("077 837 8608 · wa.me/962778378608 · @rivet.jo · www.rivetjo.com · sales@rivetjo.com");
+    expect(lines[1]).toBe("077 837 8608 · wa.me/962778378608 · @rivet.jo · www.rivetjo.com · hello@rivetjo.com");
     expect(lines[2]).toBe("Support 09:00–21:00 Amman time, Saturday to Thursday");
     expect(lines[3]).toBe("Privacy policy · Terms of service · Email preferences");
     expect(lines[4]).toBe("This is a service message about your RIVET account.");

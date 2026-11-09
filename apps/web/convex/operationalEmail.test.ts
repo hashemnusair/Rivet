@@ -413,7 +413,7 @@ describe("operational email go-live modes", () => {
     const body = JSON.parse(String(request.body)) as { to: string[]; subject: string; reply_to?: string };
     expect(body.to).toEqual(["inbox@rivetjo.com"]);
     expect(body.subject).toBe("[sandbox → owner@gym.jo] Invoice issued");
-    expect(body.reply_to).toBe("sales@rivetjo.com");
+    expect(body.reply_to).toBe("hello@rivetjo.com");
     const delivery = await t.run(async (ctx) => (await ctx.db.query("operationalEmailDeliveries").collect())[0]);
     expect(delivery?.attempts[0]).toMatchObject({ outcome: "accepted", mode: "sandbox", deliveredTo: "inbox@rivetjo.com" });
     await t.mutation(internal.operationalEmail.recordWebhook, { webhookId: "sandbox-hard-bounce", providerId: "provider-sandbox", eventType: "email.bounced", occurredAt: Date.now(), recipientEmails: ["inbox@rivetjo.com"], bounceType: "Permanent" });
@@ -454,7 +454,7 @@ describe("operational email go-live modes", () => {
     await t.action(internal.operationalEmail.processDue, {});
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(request.body)) as { reply_to?: string };
-    expect(body.reply_to).toBe("sales@rivetjo.com");
+    expect(body.reply_to).toBe("hello@rivetjo.com");
   });
 
   it("suppresses recipients outside the allowlist with a readable reason and never calls the provider for them", async () => {

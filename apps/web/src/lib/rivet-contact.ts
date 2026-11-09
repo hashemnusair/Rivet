@@ -1,9 +1,14 @@
+import { BRAND_CONTACT } from "../../convex/brandTokens";
+
 /**
  * RIVET's own contact details. One place, used by every footer, legal page,
  * confirmation and signing screen so a number can never drift between them.
  */
 export const RIVET_CONTACT = {
   legalName: "RIVET",
+  /** The one address RIVET prints; shared with emails and PDFs via BRAND_CONTACT. */
+  email: BRAND_CONTACT.email,
+  emailHref: `mailto:${BRAND_CONTACT.email}`,
   city: "Amman, Jordan",
   /** Display form, as printed on cards and in footers. */
   phoneDisplay: "077 837 8608",

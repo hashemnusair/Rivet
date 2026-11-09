@@ -99,7 +99,7 @@ as verified merely because Clerk supports it.
   values. `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` is absent, so the current
   code suppresses no-organization application emails at the global-kind
   gate. `RESEND_REPLY_TO_EMAIL` is absent; application mail falls back to
-  `sales@rivetjo.com`. The current candidate applies that Reply-To to every operational kind; monitored mailbox acceptance remains unverified.
+  `hello@rivetjo.com`. The current candidate applies that Reply-To to every operational kind; monitored mailbox acceptance remains unverified.
 - **Current candidate repairs:** persistent hard-bounce/complaint address suppression, signature-verified callback replay/order handling, terminal provider suppression, and strict recipient-level allowlist checks. These are local code/test results until the candidate is deployed and provider callbacks are configured.
 - **Allowlist:** subscribed-gym trust no longer bypasses explicit addresses/domains in the candidate. Inspect the configured pilot list before releasing this stricter behavior. Sandbox still redirects to its configured RIVET catch-all.
 
@@ -499,7 +499,7 @@ RIVET's registered facts as optional fields (`BRAND_LEGAL`: legal entity,
 commercial registration, tax number and treatment, bank and CliQ details).
 Each line is printed only once it is filled in; until then the documents
 name RIVET and Amman and say nothing bracketed. The one address RIVET prints
-anywhere is sales@rivetjo.com.
+anywhere is hello@rivetjo.com.
 
 **Agreement layout.** The PDF follows artboard P2's anatomy and flows
 without forced page breaks: 1 Parties and 2 Details (customer,

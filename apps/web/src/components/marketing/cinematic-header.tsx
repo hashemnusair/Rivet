@@ -8,7 +8,7 @@ import { SheetLink } from "@/components/motion/page-sheet";
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { usePublicViewer } from "@/lib/auth/public-viewer";
-import { LEGAL_LINKS } from "@/lib/rivet-contact";
+import { LEGAL_LINKS, RIVET_CONTACT } from "@/lib/rivet-contact";
 import { cn } from "@/lib/utils/cn";
 import { publicDestinationCopy } from "@/components/public/public-plan-copy";
 import { BetaBadge } from "@/components/shared/beta-badge";
@@ -403,7 +403,7 @@ export function CinematicHeader({
           <div className={cn(styles.menuMeta, !onLanding && styles.menuMetaDocument)}>
             <div>
               <span className={styles.metaKey}>{t("memberProfile.followUp.evidenceKind.contact")}</span>
-              <a href="mailto:hello@rivet.jo">hello@rivet.jo</a>
+              <a href={RIVET_CONTACT.emailHref}>{RIVET_CONTACT.email}</a>
             </div>
             <div>
               <span className={styles.metaKey}>{t("publicCompletion.header.basedIn")}</span>

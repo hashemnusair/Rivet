@@ -32,8 +32,6 @@ import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { cn } from "@/lib/utils/cn";
 import { paymentNoteReference } from "../../../convex/firstPayment";
 
-const SALES_EMAIL = "sales@rivetjo.com";
-
 /** Today on the gym's calendar, YYYY-MM-DD, for the latest date a payment can be. */
 function localToday(timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -287,7 +285,7 @@ function PaymentInstructions({ checkout }: { checkout: BillingCheckout }) {
         </div>
       ) : (
         <p className="mt-4 rounded-md border border-line bg-sunken px-4 py-3 text-[13.5px] leading-relaxed text-ink-2">
-          {t("commerce.checkout.detailsMissing", { phone: isolateLtr(RIVET_CONTACT.phoneDisplay), email: isolateLtr(SALES_EMAIL) })}
+          {t("commerce.checkout.detailsMissing", { phone: isolateLtr(RIVET_CONTACT.phoneDisplay), email: isolateLtr(RIVET_CONTACT.email) })}
         </p>
       )}
       {details.note ? <p className="mt-3 text-[13px] leading-relaxed text-ink-2" dir="auto">{details.note}</p> : null}
