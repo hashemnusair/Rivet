@@ -108,6 +108,9 @@ as verified merely because Clerk supports it.
 Elias explicitly removed **automated WhatsApp** from the product scope.
 Keep staff-initiated WhatsApp for contacting a member/lead. **All email
 transport is Resend**, including authentication after its separate cutover.
+**Updated 9 November 2026 (Elias):** sign-in email stays with Clerk, and RIVET
+does not use WhatsApp Business at all. Staff-initiated WhatsApp (a wa.me link
+opened on the staff member's own phone) stays.
 This supersedes the 14 September WhatsApp/Twilio plan and the earlier request
 for Meta approvals, STOP/إيقاف automation, number registration and API pilots.
 No Twilio account, paid provider setup or WhatsApp API launch is needed.

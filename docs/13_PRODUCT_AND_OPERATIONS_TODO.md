@@ -60,7 +60,7 @@ are not recorded and belong to item 3.
     notifications, member document uploads, the marketplace, statutory accounting.
     Done 9 November: an audited restore-member action; paid day passes (CliQ or
     cash at the gym) as an alternative to the free trial. Day-pass follow-ups:
-    Elias to confirm «اشتراك يومي» as the Arabic term; trial emails still say
+    Elias confirmed «اشتراك يومي» as the Arabic term (9 November); trial emails still say
     "trial request" for a day pass; an online CliQ check (RIVET only records what
     the gym saw in its bank app); refunds of a paid day pass use the normal
     payment refund.
@@ -1321,11 +1321,13 @@ Convex or mutate Production data.
   capacity is in order.
 - [x] Decide the messaging channel and the email sender: WhatsApp only from
   RIVET's business number, and every operational email from
-  `noreply@rivetjo.com` (Elias, 14 September 2026; docs/19).
+  `noreply@rivetjo.com` (Elias, 14 September 2026; docs/19). The WhatsApp part was
+  superseded on 7 October (no automated WhatsApp); Elias confirmed on 9 November
+  2026 that RIVET does not use WhatsApp Business at all.
 - [ ] Decide product policy and activation for subscription reconciliation,
   packaging and pricing, accounting, and billing (docs/19 section 4 is still
-  unsigned), plus who pays WhatsApp message costs per tier and the Friday
-  prayer window.
+  unsigned). Who pays WhatsApp message costs and the Friday prayer window no
+  longer apply: RIVET sends no automated WhatsApp (9 November 2026).
 - [ ] Resolve backups/recovery, WAF, monitoring, and operator ownership before
   pilot expansion.
 - [x] Remove the Production test gyms and start fresh, following the guarded
@@ -1393,7 +1395,8 @@ repository-hardening head is deployed to Convex or Vercel Production.
 
 - [ ] Commercially approve the implemented Starter/Growth/Pro/Enterprise packaging, prices, capacity limits, trials, and downgrade/read-only policy. The four-tier catalog and server-owned capability gates are live, but remain provisional business policy rather than a signed-off launch contract.
 - [ ] Approve membership revenue-recognition, depreciation, chart-of-accounts, inventory valuation, period-close, tax, and opening-balance policies before stronger accounting claims or historical backfill.
-- [ ] Approve WhatsApp/SMS/supplier providers, templates, consent/quiet-hour/retry policy, and accountable owners before any live delivery.
+- [ ] Approve supplier-notification providers (WhatsApp/SMS are out of scope: no
+  WhatsApp Business, confirmed 9 November 2026), templates, consent/quiet-hour/retry policy, and accountable owners before any live delivery.
 
 ### Future features
 

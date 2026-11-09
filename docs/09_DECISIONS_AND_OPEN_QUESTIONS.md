@@ -1026,7 +1026,8 @@ open to the owners):
 - **Day and time.** A day pass asks for a date only; the trial window of that day
   says when the branch takes day passes, and the booking stores its opening time.
 - **Arabic.** «اشتراك يومي» is used for "day pass" (also the plan name for a gym whose
-  default language is Arabic). It is not in the approved decisions; Elias to confirm.
+  default language is Arabic). It is not in the approved decisions; Elias confirmed it
+  on 9 November 2026.
 - **Trial booking fix.** A member's booking no longer overwrites their saved profile:
   only the name and phone typed on the booking form are taken. This also ends the
   refusal of every member trial request since the 25 October gender rule.
