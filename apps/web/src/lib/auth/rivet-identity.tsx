@@ -66,6 +66,12 @@ export interface RivetIdentity {
    * but the Convex user row is still being written on a first-ever sign-in.
    */
   status: "loading" | "anonymous" | "pending" | "ready" | "error" | "demo";
+  /**
+   * Convex already accepts this session's requests, though who the account is
+   * may still be loading. Lets a member's page ask for the member's record
+   * alongside the identity check instead of after it.
+   */
+  sessionReady?: boolean;
   errorMessage?: string;
   userId?: string;
   email?: string;
@@ -219,7 +225,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
   } else if (!clerkSignedIn) {
     value = { status: "anonymous", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
   } else if (!isAuthenticated || sync.status === "idle" || (sync.status === "syncing" && !earlyIdentity)) {
-    value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
+    value = { status: "loading", sessionReady: isAuthenticated, platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
   } else if (sync.status === "error") {
     value = {
       status: "error",
@@ -230,7 +236,7 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
       memberships: [],
     };
   } else if (result === undefined) {
-    value = { status: "loading", platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
+    value = { status: "loading", sessionReady: true, platformAdmin: false, gymAccessUnavailable: false, organizationSelectionRequired: false, memberships: [] };
   } else if (result === null) {
     value = {
       status: "error",
@@ -251,10 +257,11 @@ function ConvexIdentity({ children }: { children: ReactNode }) {
       memberships: [],
     };
   } else if (result.pending || !result.user) {
-    value = { status: "pending", platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
+    value = { status: "pending", sessionReady: true, platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
   } else {
     value = {
       status: "ready",
+      sessionReady: true,
       userId: result.user.id,
       email: result.user.email,
       fullName: result.user.fullName,

@@ -45,6 +45,17 @@ describe("the preview adapter applies the same edit contract", () => {
     }
   });
 
+  it("cannot un-archive through an edit; restoring is its own audited action", async () => {
+    const session = await api.getSession();
+    const { member } = await api.createMember({ fullName: "Restore Test", phone: "+962 79 900 0178", homeBranchId: session.branches[0]!.id, preferredLanguage: "en", gender: "male" });
+    await api.archiveMember(member.id, { reason: "Moved away" });
+    expect((await api.updateMember(member.id, { status: "active" } as UpdateMemberInput)).status).toBe("archived");
+    await rejects(api.restoreMember(member.id, { reason: " " }));
+    expect((await api.restoreMember(member.id, { reason: "Came back" })).status).toBe("active");
+    const audit = await api.listAuditEvents({ entityId: member.id, pageSize: 20 });
+    expect(audit.items.some((event) => event.action === "member.restore" && event.reason === "Came back")).toBe(true);
+  });
+
   it("ignores a plan's subscriber count and refuses values a plan cannot hold", async () => {
     const [plan] = (await api.listPlans({ pageSize: 5 })).items;
     const updated = await api.updatePlan(plan!.id, { code: " mon2 ", activeSubscribers: 999 } as UpdatePlanInput);

@@ -19,14 +19,19 @@ are not recorded and belong to item 3.
 3. [ ] Real-account acceptance: an owner, reception, trainer and member on a test gym
    (refunds, shift close and reconciliation, PT, branch and tenant denial, the
    TODO-007/011/012 concurrency evidence), Hashem's walkthrough retests, the
-   read-only Production checks, and the 17 October batch's post-release checks.
-4. [ ] Recovery and operations: a restore rehearsal from a Production export, the
-   rollback procedure, named monitoring and incident owners, the edge/WAF controls,
-   and a capacity check at pilot load.
+   read-only Production checks, the 17 October batch's post-release checks, and
+   signed-in use of the dated classes, retention and checklist screens.
+4. [ ] Recovery and operations: a restore rehearsal from a Production export, named
+   monitoring and incident owners, an uptime monitor on `/api/health`, the edge/WAF
+   controls, and a capacity check at pilot load. The rollback, restore and incident
+   runbook is drafted at the top of docs/12 (9 November 2026) for the owners to
+   confirm.
 5. [ ] Legal and commercial: legal entity, registration, address and tax facts;
    counsel review of the documents (Terms 1.2 vs Agreement 1.2 wording); the
    commercial catalogue; the subscription-reconciliation policy and its activation;
-   the accounting-policy decisions (recognition, valuation, closing, tax).
+   the accounting-policy decisions (recognition, valuation, closing, tax); waiver
+   and document wording and retention before any signed member documents are
+   collected.
 6. [ ] Final UI acceptance: the role/state/real-device matrix and Hashem's sign-off
    (docs/20), refreshed screenshot references, and the member app on a real iPhone
    and Android phone (re-added to the home screen for the launch image; Arabic
@@ -42,14 +47,26 @@ are not recorded and belong to item 3.
 
 **After launch (each needs a product decision)**
 
-9. [ ] Speed: start the member's record alongside the identity check; cache the
-   landing at the edge (needs the language in the URL); a server region nearer
-   Jordan (Hashem).
-10. [ ] Features: a restore-member action (edits can no longer un-archive), family
-    accounts, repayment schedules, push delivery, supplier notifications, member
-    document uploads, the marketplace, statutory accounting.
-11. [ ] Housekeeping: retire `temporary-current-work.md` once its last items are
-    reconciled here.
+9. [ ] Speed: cache the landing at the edge (needs the language in the URL); a
+   server region nearer Jordan (Hashem). Done 9 November: the member's record is
+   asked for alongside the identity check.
+10. [ ] Features: family accounts, repayment schedules, push delivery, supplier
+    notifications, member document uploads, the marketplace, statutory accounting.
+    Done 9 November: an audited restore-member action.
+11. [ ] Validate maintenance with a pilot gym before building more of it: assignees,
+    recurring opening and closing checklists, photo evidence, overdue escalation.
+12. [x] Housekeeping: `temporary-current-work.md` retired on 9 November 2026; its
+    open items are folded into items 3, 5 and 11, and its ideas into the list below.
+
+**Ideas to evaluate (not committed; from the August sprint notes).** Reception mode
+(one search field, recent members, keyboard shortcuts, one dominant action); remember
+each person's branch, register, filters and last workflow on the device; one-tap call
+outcomes that ask only what each outcome needs; smart defaults that show what RIVET
+assumed; an owner exception inbox for discounts, refunds, voids, freezes, overdue
+shifts and odd stock adjustments; daily opening and closing cards that link to
+unresolved work; a reason and next step on every denied check-in or failed payment;
+drafts that survive a brief connection loss; Jordan-first contact helpers. Several are
+partly built (Today queue, checklists, WhatsApp handoff); check before starting one.
 
 ## Text field stress pass — 27 October 2026
 

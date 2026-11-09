@@ -35,6 +35,7 @@ export const activityLog = {
     memberUpdate: "Member details changed",
     memberArchive: "Member archived",
     memberDelete: "Member deleted",
+    memberRestore: "Member restored",
     memberMerge: "Members merged",
     memberDuplicateIgnore: "Marked as different people",
     memberDuplicateIdentityOverride: "Saved with a possible duplicate",

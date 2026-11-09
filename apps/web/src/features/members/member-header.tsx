@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, Trash2, WalletCards } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRightLeft, Banknote, CalendarClock, CalendarPlus, Camera, MoreHorizontal, Pencil, Phone, Snowflake, Sun, Trash2, WalletCards } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -32,7 +32,7 @@ import { CollectPaymentDialog } from "@/features/membership-actions/payment-dial
 import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
 import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
-type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "delete" | null;
+type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "restore" | "delete" | null;
 
 export function resolveMemberActionLink(
   searchParams: Pick<URLSearchParams, "get">,
@@ -91,6 +91,7 @@ export function MemberHeader({
   }));
   const handledActionLink = useRef(false);
   const [archiveReason, setArchiveReason] = useState("");
+  const [restoreReason, setRestoreReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const memberOwnsProfile = Boolean(member.customerProfileId);
@@ -105,6 +106,14 @@ export function MemberHeader({
       toast.success(t("memberProfile.archive.archived"));
       await invalidate();
       setDialog(null);
+    },
+  });
+  const restore = useApiMutation((api) => api.restoreMember(member.id, { reason: restoreReason }), {
+    onSuccess: async () => {
+      toast.success(t("memberProfile.restore.restored"));
+      setRestoreReason("");
+      setDialog(null);
+      await invalidate();
     },
   });
   const deleteMember = useApiMutation((api) => api.deleteMember(member.id, { reason: deleteReason, confirmation: deleteConfirmation }), {
@@ -297,6 +306,9 @@ export function MemberHeader({
                 {can("members.archive") && member.status === "archived" ? (
                   <>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setDialog("restore")}>
+                      <ArchiveRestore /> {t("memberProfile.header.menu.restore")}
+                    </DropdownMenuItem>
                     <DropdownMenuItem destructive onClick={() => setDialog("delete")}>
                       <Trash2 /> {t("memberProfile.header.menu.delete")}
                     </DropdownMenuItem>
@@ -412,6 +424,30 @@ export function MemberHeader({
             </Button>
             <Button variant="signal" disabled={archiveReason.trim().length < 3} loading={archive.isPending} onClick={() => archive.mutate()}>
               {t("memberProfile.archive.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog === "restore"} onOpenChange={(v) => !v && setDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("memberProfile.restore.title")}</DialogTitle>
+            <DialogDescription>
+              {t("memberProfile.restore.description", { name: isolate(member.fullName) })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            <Field label={t("common.label.reason")} required>
+              <Textarea dir="auto" value={restoreReason} onChange={(e) => setRestoreReason(e.target.value)} placeholder={t("memberProfile.restore.reasonPlaceholder")} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setDialog(null)}>
+              {t("common.action.back")}
+            </Button>
+            <Button disabled={restoreReason.trim().length < 3} loading={restore.isPending} onClick={() => restore.mutate()}>
+              <ArchiveRestore /> {t("memberProfile.restore.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

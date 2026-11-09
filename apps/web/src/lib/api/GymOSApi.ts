@@ -1232,6 +1232,8 @@ export interface GymOSApi {
   createMemberMembershipSale(input: CreateMemberMembershipSaleInput): Promise<CreateMemberMembershipSaleResult>;
   updateMember(memberId: UUID, input: UpdateMemberInput): Promise<MemberDetail>;
   archiveMember(memberId: UUID, input: { reason: string }): Promise<void>;
+  /** Brings an archived member back to the active lists; audited, and refused for a merged record or a full plan. */
+  restoreMember(memberId: UUID, input: { reason: string }): Promise<MemberDetail>;
   deleteMember(memberId: UUID, input: { reason: string; confirmation: string }): Promise<void>;
   checkMemberDuplicates(input: { phone?: string; email?: string }): Promise<DuplicateMatch[]>;
   listMemberTimeline(memberId: UUID, query?: TimelineQuery): Promise<Page<TimelineEvent>>;

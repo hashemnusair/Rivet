@@ -67,6 +67,7 @@ export const memberProfile: typeof En = {
       changePlan: "تغيير نوع الاشتراك",
       cancelMembership: "إلغاء الاشتراك…",
       archive: "أرشفة العضو…",
+      restore: "استعادة العضو…",
       delete: "حذف العضو…",
     },
   },
@@ -98,6 +99,14 @@ export const memberProfile: typeof En = {
     reasonPlaceholder: "مثال: الانتقال إلى مدينة أخرى",
     confirm: "أرشفة العضو",
     archived: "تمت أرشفة العضو.",
+  },
+
+  restore: {
+    title: "استعادة العضو",
+    description: "سيعود {name} إلى قوائم الأعضاء الفعّالين. تبقى المدفوعات والسجل كما هي.",
+    reasonPlaceholder: "مثال: العودة إلى النادي",
+    confirm: "استعادة العضو",
+    restored: "تمت استعادة العضو.",
   },
 
   delete: {

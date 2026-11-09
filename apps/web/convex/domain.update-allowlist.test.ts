@@ -135,3 +135,30 @@ describe("a membership discount is part of the price", () => {
     await expect(owner.mutation(api.domain.mutate, sale(10_000))).resolves.toBeDefined();
   });
 });
+
+describe("restoring an archived member", () => {
+  it("brings the member back with a reason and an audit entry, and refuses an active or merged member", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-allow-owner" });
+    const created = await owner.mutation(api.domain.mutate, operation("members.create", { fullName: "Hana Odeh", phone: "+962790007105", gender: "female", homeBranchId: "allow-branch" })) as { member: { id: string } };
+    const memberId = created.member.id;
+
+    await expect(owner.mutation(api.domain.mutate, operation("members.restore", { memberId, reason: "Came back" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT", messageKey: "apiErrors.memberNotArchived" }) });
+    await owner.mutation(api.domain.mutate, operation("members.archive", { memberId, reason: "Moved away" }));
+    await expect(owner.mutation(api.domain.mutate, operation("members.restore", { memberId, reason: " " }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "VALIDATION_ERROR" }) });
+
+    const restored = await owner.mutation(api.domain.mutate, operation("members.restore", { memberId, reason: "Came back" })) as { status: string };
+    expect(restored.status).toBe("active");
+    expect(await stored(t, "member", memberId)).toMatchObject({ status: "active", archivedAt: null });
+    const audit = await t.run(async (ctx) => (await ctx.db.query("auditEvents").collect()).find((event) => event.action === "member.restore"));
+    expect(audit).toMatchObject({ reason: "Came back" });
+    expect(String(audit?.entityLabel)).toContain("Hana Odeh");
+
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query("domainRecords").collect()).find((record) => record.entityType === "member" && record.publicId === memberId)!;
+      await ctx.db.patch(row._id, { data: { ...(row.data as Record<string, unknown>), status: "archived", archivedAt: "2026-11-01T00:00:00.000Z", mergedIntoMemberId: "other-member" } });
+    });
+    await expect(owner.mutation(api.domain.mutate, operation("members.restore", { memberId, reason: "Came back" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "CONFLICT", messageKey: "apiErrors.memberMerged" }) });
+  });
+});

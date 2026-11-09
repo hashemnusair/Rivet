@@ -976,3 +976,26 @@ taken (assumptions, open to the owners):
 - **Release.** The frontend deploys with the push. The server-side parts (allowlists,
   text limits, automation and calling-code limits) take effect only after the next
   guarded Convex deploy (`pnpm convex:deploy`); the frontend does not depend on them.
+
+## Restore member, early member record and a health check — 2026-11-09
+
+Elias asked for the finalisation items that need no credentials or owner decision.
+Decisions taken (assumptions, open to the owners):
+
+- **Restoring a member is its own audited action.** Whoever may archive may restore
+  (`members.archive`), with a reason, as for archiving. Only an archived member can be
+  restored; a member merged into another record cannot (the surviving record holds
+  their history). The member returns as active, plan capacity is checked as for a new
+  sale, and the private photos archiving had scheduled for deletion are kept again;
+  photos already deleted stay deleted. Memberships, payments and the timeline were
+  never changed by archiving and are not changed by restoring.
+- **The member app asks for the member record alongside the identity.** On a
+  `/customer` page the record watch starts as soon as Convex has the session. Nothing
+  from it is shown until the identity check says the account is a member; for staff
+  or an administrator it is dropped unseen (the server refuses staff anyway).
+- **Health check.** `/api/health` reports only whether the website and Convex
+  answer, so an uptime monitor can watch Production without reading data or needing
+  a key. The monitor itself is not chosen.
+- **Runbook.** The rollback, restore-rehearsal and incident steps in docs/12 are a
+  draft; the proposed owners (Hashem incident owner, Elias backup and keys) stand only
+  once both confirm.

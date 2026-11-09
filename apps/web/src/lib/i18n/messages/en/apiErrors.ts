@@ -1006,6 +1006,8 @@ export const apiErrors = {
   "wholeNumberRange": "{field} must be a whole number between {minimum} and {maximum}.",
   "textTooLong": "This text is too long. The limit is {maximum} characters.",
   "discountAbovePrice": "The discount cannot be more than the price.",
+  "memberNotArchived": "Only an archived member can be restored.",
+  "memberMerged": "This member was merged into another record and cannot be restored.",
   "classOverlap": "This time overlaps “{className}” at {time}. Pick another slot.",
   "classCapacity": "Capacity cannot drop below the {count} people already in the class.",
   "classCapacityDate": "Capacity cannot drop below the {count} people already booked for {date}.",

@@ -74,6 +74,7 @@ export const memberProfile = {
       changePlan: "Change plan…",
       cancelMembership: "Cancel membership…",
       archive: "Archive member…",
+      restore: "Restore member…",
       delete: "Delete member…",
     },
   },
@@ -105,6 +106,14 @@ export const memberProfile = {
     reasonPlaceholder: "For example: moved away",
     confirm: "Archive member",
     archived: "Member archived.",
+  },
+
+  restore: {
+    title: "Restore member",
+    description: "{name} returns to your active member lists. Their history and payments are as they were.",
+    reasonPlaceholder: "For example: came back to the gym",
+    confirm: "Restore member",
+    restored: "Member restored.",
   },
 
   delete: {

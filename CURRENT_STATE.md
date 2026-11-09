@@ -1,5 +1,42 @@
 # GymOS / RIVET current implementation state
 
+## Restore member, early member record, health check, runbook (9 November 2026)
+
+Elias asked for the finalisation items that need no credentials or owner decision.
+Decisions: docs/09 "Restore member, early member record and a health check".
+
+- **Restore member.** New `members.restore` in `convex/domain.ts` (permission
+  `members.archive`, a reason, refuses a member that is not archived
+  `apiErrors.memberNotArchived` or was merged `apiErrors.memberMerged`, re-checks plan
+  capacity through `patchRecord`, keeps the private photos that archiving scheduled
+  for deletion, audits `member.restore`). `GymOSApi.restoreMember`, Convex and preview
+  adapters. `features/members/member-header.tsx`: **Restore member…** in the ⋯ menu of
+  an archived member, with a reason dialog. Copy `memberProfile.header.menu.restore`,
+  `memberProfile.restore.*` (English and Arabic). Tests:
+  `convex/domain.update-allowlist.test.ts` (+4), `convex/planCapacity.test.ts`
+  (restore over capacity), `src/lib/domain/update-fields.test.ts` (+1). Activity
+  log label `activityLog.action.memberRestore`.
+- **Member app opens one step sooner.** `ExperienceProvider` starts the member-record
+  watch on a `/customer` page as soon as Convex has the session
+  (`RivetIdentity.sessionReady`), alongside the identity check, and holds the record
+  until the identity is confirmed as a member; staff never see it, and a refusal
+  while unconfirmed stays quiet and retries once the member is confirmed.
+  `experience-provider.test.tsx` (+4).
+- **Health check.** `GET /api/health` (`src/app/api/health/route.ts`): website plus
+  `health:check` on Convex within 5 s, `200`/`503`, no data, `no-store`.
+  `route.test.ts` (3).
+- **Runbook.** docs/12 "Rollback, restore and incidents" (draft; owners proposed).
+  docs/13 finalisation list updated; `temporary-current-work.md` retired (its open
+  items live in docs/13).
+- **Verification (9 November 2026, cloud session, Linux).** `tsc` (web and Convex);
+  ESLint and the secret-output audit; full Vitest 2,792 passed, 3 skipped (the run
+  caught a missing activity-log label for `member.restore`, added in English and
+  Arabic); Playwright on the mock dev server: `happy-path` and `workflow-pass-4`
+  32/32, plus a one-off archive → restore click-through (not kept as a spec);
+  `verify-lock.py`; `git diff --check`.
+- **Release.** Frontend on push. Convex: `members.restore` needs the guarded deploy
+  owed in docs/12; until then Restore shows an error toast.
+
 ## Discount above the price is an error (6 November 2026)
 
 Elias decided it. `createMembershipMutation` (`convex/domain.ts`) refuses a discount

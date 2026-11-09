@@ -1,13 +1,88 @@
 # 12 — System Maps and Release Runbook
 
-## Input hardening — Convex deploy owed (6 November 2026)
+## Rollback, restore and incidents — runbook (9 November 2026, draft for the owners)
+
+Written from the release evidence in this file; nothing here has been rehearsed yet.
+Names marked *proposed* are the agent's suggestion (they match the AI decision sheet
+in docs/09) and stand only once Hashem and Elias confirm them.
+
+**Owners (proposed).** Incident owner and platform stop: Hashem. Backup: Elias, who
+also holds the provider keys (Claude, Resend) and the Convex deploy. One of them is
+reachable during gym opening hours; the other knows the plan.
+
+**Watching.** `GET /api/health` on any RIVET host (for example
+`https://www.rivetjo.com/api/health`) answers `200 {"status":"ok"}` only when the
+website and Convex both answer, and `503` otherwise; it reads no data. Point an uptime
+monitor at it every minute, with an alert to both owners after two failures (the
+monitor itself is a provider choice, not yet made). Also watch: GitHub CI on `main`,
+Vercel deployment status, the Convex dashboard's function errors (server errors are
+logged as `[rivet.server.error]` with a correlation id, never with personal data),
+Clerk sign-in errors, and Resend bounces once email is live.
+
+**Rolling back a bad release**, fastest first. Each step needs no code change.
+
+1. Frontend: Vercel → `rivet-web` → Deployments → the last good Production
+   deployment → *Instant Rollback*. Vercel may then stop promoting new pushes to
+   Production on its own until the rollback is undone (not verified here); once the
+   fix is on `main`, check that its deployment is the one serving Production.
+   Roll back the frontend before the backend, never the other way round: a frontend
+   expects the backend it shipped with or a newer one.
+2. Backend, only if the frontend rollback is not enough: from a clean checkout of the
+   last good `main` commit, the guarded `pnpm convex:deploy -- --dry-run --yes`, read
+   what it would change (stop if it would delete an index or table that holds data),
+   then the deploy and `health:check --prod`. Schema changes in this project are
+   additive, so an older function set normally accepts the newer data.
+3. Data, last resort: a Convex snapshot restore replaces every table with the
+   snapshot and loses everything written since, including payments and check-ins.
+   Prefer correcting records through the product's audited actions. Never replay
+   payments or provider messages; an uncertain payment is checked before it is
+   recorded again.
+
+Record each rollback in CURRENT_STATE: what, when (UTC), who, the deployment ids, and
+how it was verified.
+
+**Restore rehearsal** (open in docs/13; run once before the pilot, then quarterly).
+
+1. Production: Convex dashboard → `descriptive-meerkat-589` → Settings → Backup &
+   Restore → export a snapshot (with file storage). Note the time and size.
+2. Restore it into a non-production deployment only (a staging or a fresh dev
+   deployment), following Convex's current import instructions; never with `--prod`.
+   The snapshot holds real personal data: restrict that deployment to the two owners
+   and delete it after the rehearsal.
+3. Point a local build at that deployment and check: sign-in as a test owner, member
+   count, a member's payments and receipts, today's dashboard numbers, and the
+   activity log, against the same screens on Production at the snapshot time.
+4. Record in CURRENT_STATE the snapshot time, how long the restore took, what was
+   checked, and anything that did not come back (for example expired files).
+
+**When something goes wrong.**
+
+1. *Assess*: one gym or all; members, staff or both; is money or entry affected.
+2. *Stop the harm*: the platform stop for the assistant; Vercel rollback for a bad
+   frontend; tell front desks to record payments on paper with receipt numbers if
+   recording payments is affected, and to enter them later in RIVET (not twice).
+3. *Tell people*: affected gym owners by phone or WhatsApp within the hour, with what
+   still works; members only through their gym unless member sign-in is down.
+4. *Fix or roll back*, then verify with `/api/health`, a sign-in, and the affected
+   screen on Production (read-only; no test payments on Production).
+5. *Record*: a short incident note in CURRENT_STATE (start, detection, impact, cause,
+   fix, follow-ups). Audit and timeline records are never edited to hide an incident.
+
+**Still open** (docs/13 finalisation list, item 4): choosing and connecting the
+uptime monitor, the edge/WAF rules in Vercel's firewall for the public forms (the
+server already rate-limits them), the first restore rehearsal, a capacity check at
+pilot load, and the owners' confirmation of this runbook.
+
+## Input hardening and member restore — Convex deploy owed (6 and 9 November 2026)
 
 The 6 November input-hardening commit (CURRENT_STATE, docs/09) changes Convex
 functions only: `members.update` / `plans.update` allowlists and value checks, the
 free-text limit on every `domain.mutate` request, automation maxima, the
-calling-code rule and the discount-above-price refusal. No schema, index or data
-change. The frontend shipped with the
-push and does not depend on these. Release them through the guarded procedure from
+calling-code rule and the discount-above-price refusal. The 9 November commit adds
+the `members.restore` operation. No schema, index or data change. The frontend
+shipped with the push and does not depend on the 6 November checks; the
+**Restore member…** item on an archived member's profile does need `members.restore`
+and shows an error until this deploy runs. Release them through the guarded procedure from
 that commit: `CONVEX_DEPLOY_KEY='' pnpm convex:env:names -- --prod` (names only),
 `pnpm convex:deploy -- --dry-run --yes` (expect no index change), then the deploy
 and `health:check --prod`. Record the SHA, deployment and time here.

@@ -4,6 +4,7 @@ import type { TKey } from "@/lib/i18n/core";
 import { isApiError, localizeApiError } from "@/lib/api/errors";
 import { useT } from "@/lib/i18n/provider";
 
+import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshCcw } from "lucide-react";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
@@ -101,6 +102,8 @@ function initialsOf(fullName: string): string {
   const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
   return (first + last).toUpperCase();
 }
+
+type MemberRecordSnapshot = { customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] };
 
 export function ExperienceProvider({ children }: { children: ReactNode }) {
   const t = useT();
@@ -278,28 +281,73 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   // only applies the identity-scoped snapshot. Entry passes stay blank until
   // the member explicitly opens the QR action so a stale code is never painted
   // as if it were valid.
+  //
+  // On a member's own pages (`/customer/…`) the watch starts as soon as Convex
+  // accepts the session, alongside the identity check rather than after it, so
+  // a returning member's app opens a round trip sooner. Until the identity
+  // confirms a member, a refusal is not shown: staff are sent on to their own
+  // area, and a first-ever sign-in is asked again once its account exists.
+  // A record that arrives first is held, not shown, until the identity says
+  // this is a member: an administrator's or a staff member's old customer
+  // profile must never paint the member app, even for a moment.
+  const pathname = usePathname();
+  const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
+  const earlyMemberRecord = identity.sessionReady === true && (identity.status === "loading" || identity.status === "pending") && Boolean(pathname?.startsWith("/customer"));
+  const watchMemberRecord = convexMode && (memberIdentity || earlyMemberRecord);
+  const memberConfirmedRef = useRef(memberIdentity);
+  const earlyRefusalRef = useRef(false);
+  const heldRecordRef = useRef<MemberRecordSnapshot | undefined>(undefined);
+  const [memberRecordAttempt, setMemberRecordAttempt] = useState(0);
+
+  const applyMemberRecord = useCallback((experience: MemberRecordSnapshot) => {
+    setMemberships(experience.memberships.map((membership) => ({ ...membership, qrValue: "" })));
+    setBookings(experience.bookings);
+    setCustomer(experience.customer);
+    setCustomerId(experience.customer?.id);
+    setExperienceError(undefined);
+    setExperienceRefreshing(false);
+    setExperienceStatus("ready");
+    setExperienceReady(true);
+    experienceHydratedRef.current = true;
+  }, []);
+
   useEffect(() => {
-    const memberIdentity = identity.status === "ready" && !identity.platformAdmin && !identity.gymAccessUnavailable && identity.memberships.length === 0;
-    if (!convexMode || !memberIdentity) return;
+    memberConfirmedRef.current = memberIdentity;
+    if (!memberIdentity) return;
+    const held = heldRecordRef.current;
+    if (held) {
+      heldRecordRef.current = undefined;
+      earlyRefusalRef.current = false;
+      applyMemberRecord(held);
+      return;
+    }
+    if (!earlyRefusalRef.current || experienceHydratedRef.current) return;
+    earlyRefusalRef.current = false;
+    setMemberRecordAttempt((attempt) => attempt + 1);
+  }, [applyMemberRecord, memberIdentity]);
+
+  useEffect(() => {
+    if (!watchMemberRecord) return;
 
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
 
-    const applySnapshot = async (experience: { customer?: CustomerPersona; memberships: CustomerMembership[]; bookings: TrialBooking[] }) => {
+    const applySnapshot = async (experience: MemberRecordSnapshot) => {
       if (cancelled) return;
-      setMemberships(experience.memberships.map((membership) => ({ ...membership, qrValue: "" })));
-      setBookings(experience.bookings);
-      setCustomer(experience.customer);
-      setCustomerId(experience.customer?.id);
-      setExperienceError(undefined);
-      setExperienceRefreshing(false);
-      setExperienceStatus("ready");
-      setExperienceReady(true);
-      experienceHydratedRef.current = true;
+      if (!memberConfirmedRef.current) {
+        heldRecordRef.current = experience;
+        return;
+      }
+      heldRecordRef.current = undefined;
+      applyMemberRecord(experience);
     };
 
     const handleSubscriptionError = (error: unknown) => {
       if (cancelled) return;
+      if (!memberConfirmedRef.current) {
+        earlyRefusalRef.current = true;
+        return;
+      }
       const failure = refreshFailureState(experienceHydratedRef.current, "");
       setExperienceError({ cause: error, key: "customerPortal.memberRefreshFailed" });
       setExperienceRefreshing(false);
@@ -316,9 +364,10 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      heldRecordRef.current = undefined;
       unsubscribe?.();
     };
-  }, [convexMode, identity.gymAccessUnavailable, identity.memberships.length, identity.platformAdmin, identity.status]);
+  }, [applyMemberRecord, watchMemberRecord, memberRecordAttempt]);
 
   // Platform operations use one live projection. Convex invalidates this
   // query whenever an application, subscription, invoice, support case, or

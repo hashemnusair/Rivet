@@ -10797,6 +10797,22 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       await insertAudit(ctx, actor, { category: "members", action: "member.archive", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member archived", reason: stringValue(input.reason), before: { status: data(record.data).status }, after: { status: "archived", privatePhotosScheduledForDeletion: photos.length, photoDeleteAfter: photos.length ? utcIso(deleteAfter) : undefined }, branchId: optionalString(updated.homeBranchId) });
       return undefined;
     }
+    case "members.restore": {
+      // The audited way back from archive: an edit cannot un-archive (update-fields.ts).
+      // A merged record stays archived; its history now belongs to the surviving member.
+      requirePermission(actor, "members.archive");
+      requireReason(input.reason, actor.correlationId);
+      const record = await recordOf(ctx, actor, "member", recordId(input.memberId));
+      const before = data(record.data);
+      if (stringValue(before.status, "active") !== "archived" && !before.archivedAt) domainError("CONFLICT", "Only an archived member can be restored.", { message: { key: "apiErrors.memberNotArchived" }, correlationId: actor.correlationId });
+      if (optionalString(before.mergedIntoMemberId)) domainError("CONFLICT", "This member was merged into another record and cannot be restored.", { message: { key: "apiErrors.memberMerged" }, correlationId: actor.correlationId });
+      // patchRecord rechecks the gym's member limit when an archived member comes back.
+      const updated = await patchRecord(ctx, actor, record, { status: "active", archivedAt: null });
+      const photos = (await ctx.db.query("mediaAssets").withIndex("by_owner", (q) => q.eq("organizationId", actor.organization._id).eq("ownerType", "member_photo").eq("ownerPublicId", record.publicId)).collect()).filter((asset) => asset.status === "scheduled_for_deletion");
+      await Promise.all(photos.map((asset) => ctx.db.patch(asset._id, { status: "active", deleteAfter: undefined, updatedAt: Date.now() })));
+      await insertAudit(ctx, actor, { category: "members", action: "member.restore", entityType: "member", entityId: record.publicId, entityLabel: `${updated.fullName} · ${updated.memberNumber}`, summary: "Member restored", reason: stringValue(input.reason), before: { status: "archived", archivedAt: optionalString(before.archivedAt) }, after: { status: "active", privatePhotosKept: photos.length }, branchId: optionalString(updated.homeBranchId) });
+      return await toMemberDetail(ctx, actor, updated);
+    }
     case "members.delete": {
       requirePermission(actor, "members.archive");
       requireReason(input.reason, actor.correlationId);

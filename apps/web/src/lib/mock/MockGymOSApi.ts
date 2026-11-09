@@ -6548,6 +6548,32 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
+  restoreMember(memberId: T.UUID, input: { reason: string }): Promise<T.MemberDetail> {
+    return this.respond(() => {
+      this.require("members.archive");
+      this.requireReason(input.reason);
+      const m = this.db.members.find((x) => x.id === memberId);
+      if (!m) throw ApiError.of(ERR.NOT_FOUND, "Member not found.");
+      if (m.status !== "archived") throw ApiError.of(ERR.CONFLICT, "Only an archived member can be restored.");
+      const archivedAt = m.archivedAt;
+      m.status = "active";
+      delete m.archivedAt;
+      this.audit({
+        category: "members",
+        action: "member.restore",
+        entityType: "member",
+        entityId: m.id,
+        entityLabel: `${m.fullName} · ${m.memberNumber}`,
+        summary: "Member restored",
+        reason: input.reason,
+        before: { status: "archived", archivedAt: archivedAt ?? null },
+        after: { status: "active" },
+        branchId: m.homeBranchId,
+      });
+      return this.toMemberDetail(m);
+    });
+  }
+
   deleteMember(memberId: T.UUID, input: { reason: string; confirmation: string }): Promise<void> {
     return this.respond(() => {
       this.require("members.archive");

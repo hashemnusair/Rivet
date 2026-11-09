@@ -35,6 +35,7 @@ export const activityLog: typeof EnglishActivityLog = {
     memberUpdate: "تعديل بيانات العضو",
     memberArchive: "أرشفة سجل العضو",
     memberDelete: "حذف سجل العضو",
+    memberRestore: "استعادة سجل العضو",
     memberMerge: "دمج سجل المشتركين",
     memberDuplicateIgnore: "تحديد السجلين لشخصين مختلفين",
     memberDuplicateIdentityOverride: "الحفظ رغم وجود سجل قد يكون مكررًا",

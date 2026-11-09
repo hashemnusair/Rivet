@@ -53,6 +53,11 @@ const state = vi.hoisted(() => ({
     memberships: [],
   } as Record<string, unknown>,
   api: undefined as unknown,
+  pathname: "/",
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => state.pathname,
 }));
 
 vi.mock("@/lib/api/ConvexGymOSApi", () => ({
@@ -340,5 +345,66 @@ describe("ExperienceProvider member sign-in", () => {
     await waitFor(() => expect(screen.getByTestId("member-signed-in")).toHaveTextContent("true"));
     expect(getCustomerExperience).toHaveBeenCalledOnce();
     expect(registerCustomer).not.toHaveBeenCalled();
+  });
+});
+
+describe("ExperienceProvider member record on a member page", () => {
+  const persona: CustomerPersona = { id: "profile-early", name: "Early Member", nameAr: "Early Member", email: "early@example.com", phone: "+962790000001", gender: "female", initials: "EM", context: "RIVET member" };
+  const record = { customer: persona, memberships: [], bookings: [] };
+  const loading = { status: "loading", sessionReady: true, platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
+  const member = { status: "ready", sessionReady: true, userId: "user-early", email: persona.email, platformAdmin: false, gymAccessUnavailable: false, memberships: [] };
+
+  function setUp(pathname: string) {
+    const catalog = createStream<unknown>();
+    const marketplace = createStream<unknown>();
+    const customer = createStream<typeof record>();
+    state.pathname = pathname;
+    state.identity = loading;
+    state.api = { ...apiFor(catalog, marketplace), subscribeCustomerExperience: customer.subscribe };
+    const view = render(<ExperienceProvider><MemberSignInProbe /></ExperienceProvider>);
+    const rerender = () => view.rerender(<ExperienceProvider><MemberSignInProbe /></ExperienceProvider>);
+    return { customer, rerender };
+  }
+
+  afterEach(() => {
+    state.pathname = "/";
+  });
+
+  it("asks for the record alongside the identity check and shows it the moment the identity confirms a member", async () => {
+    const { customer, rerender } = setUp("/customer/my-gyms");
+    expect(customer.subscribe).toHaveBeenCalledTimes(1);
+    act(() => customer.entries[0]!.onValue(record));
+    // Held until the identity says this is a member.
+    expect(screen.getByTestId("member-signed-in")).toHaveTextContent("false");
+
+    state.identity = member;
+    rerender();
+    await waitFor(() => expect(screen.getByTestId("member-signed-in")).toHaveTextContent("true"));
+    expect(customer.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("never shows a held record to an account that turns out not to be a member", async () => {
+    const { customer, rerender } = setUp("/customer/my-gyms");
+    await act(async () => { customer.resolveAll(); });
+    act(() => customer.entries[0]!.onValue(record));
+    state.identity = { ...member, memberships: [{ organizationId: "org-gym", organizationName: "Gym", role: "receptionist", branches: [] }] };
+    rerender();
+    expect(screen.getByTestId("member-signed-in")).toHaveTextContent("false");
+    await waitFor(() => expect(customer.activeCount()).toBe(0));
+  });
+
+  it("keeps an early refusal quiet and asks again once the account is a member", async () => {
+    const { customer, rerender } = setUp("/customer/my-gyms");
+    act(() => customer.entries[0]!.onError(new Error("FORBIDDEN")));
+    state.identity = member;
+    rerender();
+    await waitFor(() => expect(customer.subscribe).toHaveBeenCalledTimes(2));
+    act(() => customer.entries[1]!.onValue(record));
+    await waitFor(() => expect(screen.getByTestId("member-signed-in")).toHaveTextContent("true"));
+  });
+
+  it("waits for the identity off the member pages", () => {
+    const { customer } = setUp("/login");
+    expect(customer.subscribe).not.toHaveBeenCalled();
   });
 });
