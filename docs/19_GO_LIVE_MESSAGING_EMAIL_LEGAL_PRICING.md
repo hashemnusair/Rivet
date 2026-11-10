@@ -225,6 +225,20 @@ or indexes are removed.
 
 ### Before flipping `RIVET_EMAIL_MODE` to `live`
 
+**Switched to `live` by Elias on 10 November 2026**, before the two-week
+pilot, so real gyms' owners, staff and members get operational email. The
+open boxes below were not completed first; treat them as follow-up checks on
+live mail. Names-only check the same day: `RIVET_EMAIL_MODE`,
+`RIVET_EMAIL_ALLOWLIST`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and
+`RESEND_WEBHOOK_SECRET` are present on Production (values not read).
+
+**Switch back:** in the Convex dashboard for `descriptive-meerkat-589`,
+Settings → Environment Variables, set `RIVET_EMAIL_MODE` to `allowlist` (only
+listed addresses) or `off` (nothing sent). No deploy is needed: `routeEmail`
+reads the mode for each queued message, so the next send follows it. Check
+Platform → Email log afterwards for "allowlist mode" or "Email mode is off"
+suppression reasons.
+
 - [x] **Decided 14 September 2026:** the sending address is
   `noreply@rivetjo.com` (`RESEND_FROM_EMAIL`). **Updated 7 October:**
   authentication emails also move to Resend using the separate cutover below.
@@ -245,7 +259,7 @@ or indexes are removed.
   (Purelymail), set up and tested by Elias on 9 November 2026
 - [ ] Two weeks in `allowlist` with RIVET staff and one pilot gym, zero
   unexplained failures
-- [ ] Runbook: how to switch back to `allowlist` in under five minutes
+- [x] Runbook: how to switch back to `allowlist` in under five minutes (above, 10 November 2026)
 
 ### Authentication email cutover (separate from operational mail)
 

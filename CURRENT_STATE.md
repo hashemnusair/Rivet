@@ -19,7 +19,11 @@ release the public room page was already deleted, so its old link returned
   `requirePlatformAdmin`. The page moved back to `/platform/arabic-room` inside
   the platform console; `/arabic-room` redirects there on every host. The
   Elias/Hashem picker stays as a label within an administrator session.
-- **Production email (audit item 2): no code change, decision still open.**
+- **Production email (audit item 2): switched to `live` by Elias in the Convex
+  dashboard on 10 November 2026, after this release.** No code change. Real
+  recipients now get operational email; the switch-back steps are in docs/19.
+  The paragraph below is the state before the switch.
+- **Production email before the switch:**
   `allowlist` is strict by design (`43598bcc`) and docs/19 "Before flipping
   `RIVET_EMAIL_MODE` to `live`" still has open boxes (Resend callback and
   secret, template read, two-week pilot, switch-back runbook). Until Elias
