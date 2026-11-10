@@ -1,5 +1,19 @@
 # GymOS / RIVET current implementation state
 
+## Founder confirmations (10 November 2026, Elias)
+
+- **Arabic read:** the Arabic flagged for a founder's read on 10 November
+  (Terms 1.3 and Privacy 1.2 wording, `memberProfile.pt.refund*`, and the
+  three new `apiErrors` messages) has been read. Nothing is waiting.
+- **Pricing:** Elias believes the plan prices are confirmed. The docs/19
+  sign-off table was not edited on that basis; mark it when he or Hashem
+  states the numbers are final.
+- **WhatsApp:** restated that RIVET will not use it. Open question put to
+  Elias: whether that also removes RIVET's own WhatsApp contact link (public
+  footer, sign-in page, beta badge, legal contact rows, agreement screen) and
+  the "support on WhatsApp" wording in Terms and the subscription agreement.
+  Nothing was removed.
+
 ## Launch audit: privacy and security items (10 November 2026)
 
 Elias asked for the six "privacy and security" audit items to be fixed.
