@@ -28,12 +28,13 @@ push must go out together (backend first).
   owner (an owner has no one above them). The activity log hides Approve and
   Reject on a person's own requests. New message
   `apiErrors.youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner`
-  (Arabic for Hashem or Elias to read).
+  (Arabic read and approved by Elias on 10 November 2026).
 - **PT package refunds (item 4).** Member profile → Personal training →
   Recent packages shows Refund on a paid package for roles with `pt.refund`
   (owner, manager): sessions to refund (never more than are unused and
   unbooked), the amount to give back, and a required reason. New strings
-  `memberProfile.pt.refund*` (Arabic for Hashem or Elias to read).
+  `memberProfile.pt.refund*` (Arabic read and approved by Elias on
+  10 November 2026; not yet seen on screen in right-to-left).
 
 **Validation:** typecheck, Convex typecheck and codegen, lint and the full
 unit suite (2,845 passed) locally. New or extended tests cover each item.
