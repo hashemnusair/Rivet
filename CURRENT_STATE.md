@@ -8,11 +8,15 @@
 - **Pricing:** Elias believes the plan prices are confirmed. The docs/19
   sign-off table was not edited on that basis; mark it when he or Hashem
   states the numbers are final.
-- **WhatsApp:** restated that RIVET will not use it. Open question put to
-  Elias: whether that also removes RIVET's own WhatsApp contact link (public
-  footer, sign-in page, beta badge, legal contact rows, agreement screen) and
-  the "support on WhatsApp" wording in Terms and the subscription agreement.
-  Nothing was removed.
+- **WhatsApp (answered the same day):** people may message RIVET on WhatsApp,
+  so the contact link and the "support on WhatsApp" wording stay. RIVET sends
+  no automated WhatsApp messages. Terms 1.3 and Privacy 1.2 already say so; a
+  sweep of every remaining string found one member-facing line that still
+  implied it (`customerPortal.marketingUnknown`, now "by email" only) and the
+  unused WhatsApp provider strings on the automations page, both removed
+  (source `main` after `6a87737c`). Left on purpose: staff opening a WhatsApp
+  chat from their own phone, labels on old contact records, and the
+  unreachable automation rule editor.
 
 ## Launch audit: privacy and security items (10 November 2026)
 

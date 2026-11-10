@@ -108,16 +108,14 @@ export function automationProviderLabel(provider: Provider, t: TFunction): strin
   const keys: Record<string, Parameters<TFunction>[0]> = {
     internal_tasks: "staffTools.automations.provider.internalTasks",
     email: "staffTools.automations.provider.email",
-    sms_whatsapp: "staffTools.automations.provider.whatsapp",
   };
   return keys[provider.key] ? t(keys[provider.key]!) : provider.label;
 }
 
 export function automationProviderDetail(provider: Provider, globallyPaused: boolean, t: TFunction): string {
-  if (!Object.hasOwn({ internal_tasks: true, email: true, sms_whatsapp: true }, provider.key)) return provider.detail;
+  if (!Object.hasOwn({ internal_tasks: true, email: true }, provider.key)) return provider.detail;
   if (!provider.configured) {
     if (provider.key === "email") return provider.detail.includes("preview mode") ? t("staffTools.automations.provider.emailPreview") : t("staffTools.automations.provider.emailMissing");
-    if (provider.key === "sms_whatsapp") return provider.detail.includes("preview mode") ? t("staffTools.automations.provider.whatsappPreview") : t("staffTools.automations.provider.whatsappMissing");
     return provider.detail;
   }
   if (globallyPaused) return t("staffTools.automations.provider.heldByPause");

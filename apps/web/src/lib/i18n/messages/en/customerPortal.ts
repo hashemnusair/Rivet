@@ -141,7 +141,7 @@ export const customerPortal = {
   marketingTitle: "Offers and news",
   marketingDescription: "Offers and news from your gyms. You still get messages about your bookings, payments and entry.",
   marketingToggle: "Send me offers and news",
-  marketingUnknown: "You have not chosen yet. You will not get offers by email or WhatsApp until you turn this on.",
+  marketingUnknown: "You have not chosen yet. You will not get offers by email until you turn this on.",
   marketingHistory: "Your choices for offers and news",
   marketingHistoryHint: "This list is only about offers and news. Messages about your bookings, payments and entry are always sent when needed.",
   noChoice: "No choice yet",
