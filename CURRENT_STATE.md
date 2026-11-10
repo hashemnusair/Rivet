@@ -38,6 +38,17 @@ a dead-code scan.
 suite, production build, Arabic revision-607 lock and patch formatting passed
 locally. Not exercised in a browser.
 
+**Released 10 November 2026:** source `a9d90299`.
+[GitHub CI](https://github.com/hashemnusair/Rivet/actions/runs/42800470751)
+passed all eleven jobs. The Vercel Production deployment succeeded at
+10:38 UTC. The frontend went first because it carries the two new error
+messages; the guarded Convex dry run and deploy to `descriptive-meerkat-589`
+followed at about 10:40 UTC with schema validation and no index deletions.
+Live read-only checks: `www.rivetjo.com/robots.txt` allows the site and names
+the sitemap, `dashboard.rivetjo.com/robots.txt` disallows everything,
+`/sitemap.xml` returns 200, and `/api/health` reported web and Convex `ok` at
+10:41 UTC. No signed-in flow was exercised on Production.
+
 **Open, for a decision (most important first):**
 
 1. `convex/arabicReview.ts` `saveVote` / `approve` / `present` / `snapshot` /
