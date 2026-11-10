@@ -1804,7 +1804,7 @@ export class MockGymOSApi implements GymOSApi {
       const names = new Map(this.db.members.map((member) => [member.id, member.fullName]));
       const plans = new Map(this.db.plans.map((plan) => [plan.id, { name: plan.name, priceMinor: plan.basePrice.amount }]));
       const memberships = this.db.memberships
-        .filter((membership) => visible(branchByMember.get(membership.memberId)))
+        .filter((membership) => !membership.cancelledAt && visible(branchByMember.get(membership.memberId)))
         .map((membership) => ({ id: membership.id, memberId: membership.memberId, planId: membership.planId, startDate: membership.startDate, endDate: membership.endDate }));
       return renewalForecastReport(memberships, names, plans, todayISODate());
     });

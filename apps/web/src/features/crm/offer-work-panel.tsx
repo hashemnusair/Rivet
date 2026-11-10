@@ -19,6 +19,7 @@ import { WhatsAppHandoff } from "./whatsapp-handoff";
 import { useFormat } from "@/lib/i18n/format";
 import { latinDigits } from "@/lib/utils/text";
 import { localizeApiError } from "@/lib/api/errors";
+import { canonicalHref } from "@/lib/routing/host-routing";
 
 const OFFER_STATUS_KEYS = {
   draft: "crmCompletion.offers.draftStatus",
@@ -123,15 +124,19 @@ function OfferRow(props: OfferWorkPanelProps & { offer: Offer }) {
   const { t, locale, isolate, isolateLtr } = useLocale();
   const format = useFormat();
   const invalidate = useInvalidate();
-  const [origin, setOrigin] = useState("");
+  const [browser, setBrowser] = useState<{ origin: string; hostname: string }>();
   /** How the link was last shared from here; "Confirm sent" records that channel, not a guess. */
   const [shareChannel, setShareChannel] = useState<"whatsapp" | "manual">("manual");
   const { offer } = props;
   const recipientFirstName = props.leadName.trim().split(/\s+/)[0] || props.leadName;
   const path = offer.publicToken ? `/offers/${offer.publicToken}` : undefined;
-  const url = path && origin ? `${origin}${path}` : path;
+  // Offers are served by the member app. Staff share this link from the gym
+  // workspace, so on RIVET's own hosts it is written for the member app
+  // directly instead of relying on a redirect from the staff address.
+  const hosted = path && browser ? canonicalHref(path, browser.hostname) : undefined;
+  const url = hosted && browser ? (hosted.startsWith("/") ? `${browser.origin}${hosted}` : hosted) : path;
 
-  useEffect(() => setOrigin(window.location.origin), []);
+  useEffect(() => setBrowser({ origin: window.location.origin, hostname: window.location.hostname }), []);
 
   const confirmSent = useApiMutation((api) => api.markOfferDelivered(offer.id, { channel: shareChannel, reference: shareChannel === "whatsapp" ? "Branded public offer link · WhatsApp handoff" : "Branded public offer link · shared by hand" }), {
     onSuccess: async () => {

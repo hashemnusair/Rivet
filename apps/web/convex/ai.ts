@@ -720,7 +720,7 @@ export async function aiMutation(ctx: MutationCtx, operation: string, input: Dat
       if (isTerminalRunStatus(run.status as AiRunStatus)) return await runView(ctx, actor, run);
       const now = Date.now();
       if (run.status === "queued" && run.cursor === 0 && !run.leaseToken) {
-        await ctx.db.patch(run._id, { status: "cancelled", stage: "aiWork.stage.cancelled", cancelRequestedAt: now, cancelRequestedByUserId: actor.user._id, completedAt: now, updatedAt: now });
+        await ctx.db.patch(run._id, { status: "cancelled", stage: "aiWork.stage.stopped", cancelRequestedAt: now, cancelRequestedByUserId: actor.user._id, completedAt: now, updatedAt: now });
       } else {
         // A step that is already writing finishes atomically; nothing starts after this.
         await ctx.db.patch(run._id, { cancelRequestedAt: now, cancelRequestedByUserId: actor.user._id, updatedAt: now });

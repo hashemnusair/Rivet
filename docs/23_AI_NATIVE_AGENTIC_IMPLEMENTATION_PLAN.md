@@ -2,8 +2,9 @@
 
 Date: 24 October 2026, Asia/Amman.
 
-Status: **product direction requested by Hashem; implementation in progress on
-the unreleased feature branch `codex/ai-native-rivet`.** This document specifies the
+Status: **product direction requested by Hashem; the branch `codex/ai-native-rivet`
+is merged to `main` (released 26 October 2026; see `CURRENT_STATE.md` for what is
+live).** This document specifies the
 work. It does not claim that models, agents, provider connections, or the
 experiences below are implemented or released; the canonical backlog (docs/13
 AI-0 to AI-5) and CURRENT_STATE record actual progress and evidence.

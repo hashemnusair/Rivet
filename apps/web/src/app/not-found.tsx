@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { RIVET_HOSTS } from "@/lib/routing/host-routing";
+import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 
 /**
  * The one route-level not-found page. It cannot know which area the visitor
@@ -15,6 +16,7 @@ import { RIVET_HOSTS } from "@/lib/routing/host-routing";
 export default function NotFound() {
   const t = useT();
   const router = useRouter();
+  const publicSiteHref = usePublicSiteHref();
   const goBack = () => {
     if (window.history.length > 1) router.back();
     else router.push("/");
@@ -32,7 +34,7 @@ export default function NotFound() {
         <Button onClick={goBack}>{t("common.action.goBack")}</Button>
         <Button asChild variant="secondary"><Link href="/login">{t("marketing.actions.openRivet")}</Link></Button>
       </div>
-      <p className="mt-5 text-[12px] text-ink-3"><Link href={`https://${RIVET_HOSTS.public}`} className="underline underline-offset-4 hover:text-ink">{RIVET_HOSTS.public}</Link></p>
+      <p className="mt-5 text-[12px] text-ink-3"><Link href={publicSiteHref} className="underline underline-offset-4 hover:text-ink">{RIVET_HOSTS.public}</Link></p>
     </main>
   );
 }

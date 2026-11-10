@@ -183,7 +183,7 @@ const KIND_AUDIENCE: Readonly<Record<string, { audience: EmailAudience; path: st
   support_resolved: { audience: "gym", path: "/support" },
   trial_request_confirmation: { audience: "member", path: "/customer/my-gyms" },
   trial_status: { audience: "member", path: "/customer/my-gyms" },
-  payment_receipt: { audience: "member", path: "/customer/receipts" },
+  payment_receipt: { audience: "member", path: "/customer/finance" },
   renewal_reminder: { audience: "member", path: "/customer/my-gyms" },
   membership_expiry: { audience: "member", path: "/customer/my-gyms" },
   pt_package_paid: { audience: "member", path: "/customer/my-gyms" },

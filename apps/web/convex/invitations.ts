@@ -3,7 +3,7 @@ import { systemMessage } from "../src/lib/i18n/system-messages";
 import { action, internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { domainError, publicOrganizationId, publicUserId, requireActor, requirePermission, type OrganizationRole } from "./security";
+import { domainError, membershipInvitationAccepted, publicOrganizationId, publicUserId, requireActor, requirePermission, type OrganizationRole } from "./security";
 import { rolePermissions, toFrontendRole } from "./permissions";
 import { INVITATION_REDIRECT_PATH } from "./platformProvisioning";
 import { notifyOrganizationSupervisors } from "./notificationDelivery";
@@ -126,6 +126,13 @@ async function prepareInvitation(ctx: MutationCtx, input: Data, organizationId: 
     .query("organizationMemberships")
     .withIndex("by_organization_user", (q) => q.eq("organizationId", actor.organization._id).eq("userId", user._id))
     .unique();
+  // Someone who already works here keeps their access. Without this, a second
+  // invitation overwrote their role and branches and set them back to
+  // "pending", which locked them out until they accepted again. A pending,
+  // revoked or deactivated person can still be invited.
+  if (membership?.active && membershipInvitationAccepted(membership)) {
+    domainError("CONFLICT", "This person already has access to this gym. Change their role instead.", { correlationId });
+  }
   const plan = await effectiveOrganizationPlan(ctx, actor.organization);
   await enforceStaffCapacity(ctx, actor.organization._id, plan, staffMembershipCounts(membership), true, correlationId);
   let membershipId: Id<"organizationMemberships">;

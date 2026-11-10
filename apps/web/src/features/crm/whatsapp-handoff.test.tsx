@@ -50,7 +50,7 @@ describe("WhatsAppHandoff", () => {
 
     await user.click(screen.getByRole("button", { name: "Open WhatsApp" }));
 
-    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/wa\.me\/962791234567\?text=/), "_blank", "noopener,noreferrer");
+    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/wa\.me\/962791234567\?text=/), "_blank");
     expect(mutate).toHaveBeenCalledTimes(1);
     expect(whatsAppHandoffNotes("Hi Ahmad, see you soon")).toBe("Opened WhatsApp with this message ready: “Hi Ahmad, see you soon”. RIVET did not send it and cannot confirm delivery.");
   });
@@ -63,7 +63,7 @@ describe("WhatsAppHandoff", () => {
     await user.click(screen.getByRole("button", { name: "WhatsApp" }));
     await user.click(screen.getByRole("button", { name: "Open WhatsApp" }));
 
-    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/wa\.me\/442079460958\?text=/), "_blank", "noopener,noreferrer");
+    expect(window.open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/wa\.me\/442079460958\?text=/), "_blank");
   });
 
   it("logs nothing when the browser blocks the window and offers a manual link that logs on click", async () => {

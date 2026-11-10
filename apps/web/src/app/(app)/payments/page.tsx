@@ -79,7 +79,13 @@ function TransactionsPageInner() {
   // error instead of being told they lack permission.
   if (!can("reports.financial.read")) {
     return (
-      <ForbiddenState description={t("salesWorkspace.ledgerForbidden")} />
+      <>
+        <ForbiddenState description={t("salesWorkspace.ledgerForbidden")} />
+        {/* The "Collect payment" shortcut lands here. Collecting needs no ledger access. */}
+        {can("payments.collect") ? (
+          <CollectPaymentMemberPicker open={collectOpen} onOpenChange={(open) => replaceParams({ collect: open ? "1" : undefined }, { keepPage: true })} />
+        ) : null}
+      </>
     );
   }
 

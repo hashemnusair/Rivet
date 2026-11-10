@@ -56,7 +56,7 @@ export const salesWorkspace = {
   needMemberAccess: "Checkout needs access to members. Ask the owner or a manager.",
   needPaymentAccess: "Checkout needs access to take payments. Ask the owner or a manager.",
   planExcluded: "Checkout is not included in your plan",
-  planHint: "The Growth plan and above include stock, checkout, suppliers and purchase orders.",
+  planHint: "The Pro plan and above include stock, checkout, suppliers and purchase orders.",
   checkoutDisabled: "Checkout is turned off",
   checkoutDisabledHint: "Ask the gym owner to turn on stock and checkout.",
   sellingFrom: "Selling from",

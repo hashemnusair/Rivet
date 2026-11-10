@@ -108,7 +108,7 @@ export const stockWorkspace = {
   noWorkspaceAccess: "You don’t have access to stock and purchasing.",
   workspaceHint: "Stock, orders, suppliers, bills and machines for each branch.",
   planMissing: "Stock & purchasing is not included in your plan",
-  upgradeHint: "The Growth plan adds stock, checkout, suppliers, purchase orders and supplier bills.",
+  upgradeHint: "The Pro plan adds stock, checkout, suppliers, purchase orders and supplier bills.",
   workspaceOff: "Stock & purchasing is turned off",
   ownerEnableHint: "An owner can turn it on in Settings.",
   allBranchesHint: "Showing all branches. Choose one branch to make changes.",

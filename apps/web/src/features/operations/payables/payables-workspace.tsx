@@ -19,6 +19,7 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { downloadTextFile } from "@/lib/exports/download";
 import { getApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils/cn";
+import { todayISODate } from "@/lib/utils/dates";
 import { PageHeader } from "@/components/shared/chrome";
 import { DateText, MoneyText } from "@/components/shared/data-display";
 import { Badge } from "@/components/ui/badge";
@@ -143,7 +144,7 @@ export function PayablesWorkspace({ embedded = false, branchId: embeddedBranchId
     setExporting(true);
     try {
       const exported = await getApi().exportPayables({ ...filters, cursor: undefined, pageSize: undefined });
-      downloadTextFile({ content: buildPayablesCsv(exported, { locale, timeZone, branchLabel, supplierLabel, statusLabel, search: debouncedSearch || undefined }), fileName: `rivet-payables-${new Date().toISOString().slice(0, 10)}.csv`, mimeType: "text/csv;charset=utf-8" });
+      downloadTextFile({ content: buildPayablesCsv(exported, { locale, timeZone, branchLabel, supplierLabel, statusLabel, search: debouncedSearch || undefined }), fileName: `rivet-payables-${todayISODate(timeZone)}.csv`, mimeType: "text/csv;charset=utf-8" });
       toast.success(exported.truncated ? t("payablesWorkspace.downloadedFirst", { count: f.number(exported.rows.length) }) : t("payablesWorkspace.downloaded", { count: exported.rows.length }));
     } catch {
       toast.error(t("payablesWorkspace.downloadFailed"));

@@ -16,6 +16,7 @@ import { useApp } from "@/lib/providers/app-providers";
 import { RelatedTaskCheck } from "@/features/followup/related-task-check";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
 import { TEXT_LIMITS } from "@/lib/domain/input-limits";
+import { addDays, localDateTimeToISO, todayISODate } from "@/lib/utils/dates";
 
 /** The messages are read at validation time, so they follow the reader's language. */
 function makeTaskSchema(t: TFunction) {
@@ -47,6 +48,7 @@ export function CreateTaskDialog({
 }) {
   const { session } = useApp();
   const { t, isolate } = useLocale();
+  const timezone = session?.organization.timezone;
   const taskSchema = useMemo(() => makeTaskSchema(t), [t]);
   const invalidate = useInvalidate();
   const usersQuery = useApiQuery(qk.users({ staff: true }), (api) => api.listUsers({ status: "active", pageSize: 30 }));
@@ -56,7 +58,7 @@ export function CreateTaskDialog({
     defaultValues: {
       title: t("memberProfile.createTask.defaultTitle", { name: memberName }),
       ownerId: session?.user.id ?? "",
-      dueAt: new Date(Date.now() + 24 * 3_600_000).toISOString().slice(0, 10),
+      dueAt: addDays(todayISODate(timezone), 1),
       type: "follow_up",
     },
   });
@@ -69,7 +71,7 @@ export function CreateTaskDialog({
         type: v.type,
         title: v.title,
         ownerId: v.ownerId,
-        dueAt: new Date(`${v.dueAt}T10:00:00Z`).toISOString(),
+        dueAt: localDateTimeToISO(v.dueAt, "10:00", timezone),
         memberId,
         relatedTaskId: v.relatedTaskId,
       }),

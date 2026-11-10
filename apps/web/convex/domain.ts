@@ -7238,7 +7238,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
             key: "email",
             label: "Operational email",
             configured: emailConfigured,
-            live: !globallyPaused && emailConfigured && process.env.RIVET_OPERATIONAL_EMAIL_LIVE === "true",
+            live: !globallyPaused && emailConfigured && resolveEmailMode().mode !== "off",
             detail: emailConfigured ? "Provider credentials are configured; delivery still follows the global and operational-email gates." : "Resend credentials are not configured.",
           },
         ],
@@ -13102,6 +13102,14 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const targetPermissions = rolePermissions(role, targetDefinition?.permissions, targetDefinition?.catalogVersion);
       if (targetPermissions.some((permission) => !actor.permissions.includes(permission))) domainError("FORBIDDEN", "You cannot grant permissions your role does not possess.", { correlationId: actor.correlationId });
       const nextActive = input.status ? input.status !== "deactivated" : membership.active;
+      // A gym always keeps one owner who can sign in. Without this an owner
+      // could demote themselves, or the only other owner, and leave nobody
+      // able to manage staff, roles or the subscription.
+      if (membership.role === "owner" && (role !== "owner" || !nextActive)) {
+        const memberships = await ctx.db.query("organizationMemberships").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
+        const anotherOwner = memberships.some((item) => item._id !== membership._id && item.role === "owner" && item.active && membershipInvitationAccepted(item));
+        if (!anotherOwner) domainError("CONFLICT", "A gym needs at least one owner. Make someone else an owner first.", { correlationId: actor.correlationId });
+      }
       const plan = await effectiveOrganizationPlan(ctx, actor.organization);
       await enforceStaffCapacity(ctx, actor.organization._id, plan, staffMembershipCounts(membership), nextActive && membership.invitationStatus !== "revoked", actor.correlationId);
       const nextMembershipValues = { ...membership, role, branchIds: input.branchIds ? resolvedBranches.map((branch) => branch!._id) : membership.branchIds, branchScope, active: nextActive };

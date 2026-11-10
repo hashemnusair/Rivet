@@ -218,9 +218,11 @@ export async function analyticsQuery(ctx: ReadContext, actor: ActorContext, oper
         const value = data(row.data);
         return [str(value.id), { name: str(value.name, "—"), priceMinor: amountMinor(value.basePrice) }] as const;
       }));
+      // A cancelled membership keeps its end date. It is not due to renew, and
+      // it must not hide the member's live membership either.
       const memberships = (await allRecords(ctx, actor, "membership"))
         .map((row) => data(row.data))
-        .filter((value) => branchVisible(scope, branchByMember.get(str(value.memberId))))
+        .filter((value) => !value.cancelledAt && branchVisible(scope, branchByMember.get(str(value.memberId))))
         .map((value) => ({ id: str(value.id), memberId: str(value.memberId), planId: str(value.planId) || undefined, startDate: str(value.startDate), endDate: str(value.endDate) }));
       return renewalForecastReport(memberships, nameByMember, plans, todayIn(timezone));
     }

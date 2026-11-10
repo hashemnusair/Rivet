@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { convexTest, type TestConvex } from "convex-test";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 declare global {
@@ -145,5 +145,46 @@ describe("organization-local staff access", () => {
     expect(state.user?.status).toBe("active");
     expect(state.membershipA?.active).toBe(true);
     expect(state.membershipB?.active).toBe(true);
+  });
+
+  it("keeps at least one owner who can sign in", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-user-access-owner-a" });
+    const lastOwner = { code: "CONFLICT", message: "A gym needs at least one owner. Make someone else an owner first." };
+
+    // The only owner cannot demote themselves.
+    await expect(owner.mutation(api.domain.mutate, operation("users.update", { userId: "user-access-owner-a", role: "manager" }, "user-access-org-a"))).rejects.toMatchObject({ data: lastOwner });
+
+    // An owner whose invitation is still pending does not count as a second owner.
+    await t.run(async (ctx) => await ctx.db.patch(ids.membershipA, { role: "owner", invitationStatus: "pending" }));
+    await expect(owner.mutation(api.domain.mutate, operation("users.update", { userId: "user-access-owner-a", role: "manager" }, "user-access-org-a"))).rejects.toMatchObject({ data: lastOwner });
+
+    // With a second accepted owner the change goes through, and that owner is then the last one.
+    await t.run(async (ctx) => await ctx.db.patch(ids.membershipA, { invitationStatus: "accepted" }));
+    await expect(owner.mutation(api.domain.mutate, operation("users.update", { userId: "user-access-owner-a", role: "manager" }, "user-access-org-a"))).resolves.toMatchObject({ id: "user-access-owner-a" });
+    const second = t.withIdentity({ subject: "clerk-user-access-shared" });
+    await expect(second.mutation(api.domain.mutate, operation("users.update", { userId: "user-access-shared", role: "manager" }, "user-access-org-a"))).rejects.toMatchObject({ data: lastOwner });
+  });
+
+  it("does not reset the access of someone who already works at the gym", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await seed(t);
+    const owner = t.withIdentity({ subject: "clerk-user-access-owner-a" });
+    const invite = (email: string) => owner.mutation(internal.invitations.prepare, {
+      organizationId: "user-access-org-a",
+      correlationId: "cor-user-access-invite",
+      input: { email, name: "Shared Staff", role: "receptionist", branchScope: "selected", branchIds: ["user-access-branch-a"] },
+    });
+
+    await expect(invite("shared@user-access.example")).rejects.toMatchObject({ data: { code: "CONFLICT", message: "This person already has access to this gym. Change their role instead." } });
+    const untouched = await t.run(async (ctx) => await ctx.db.get(ids.membershipA));
+    expect(untouched).toMatchObject({ role: "manager", branchScope: "all", active: true, invitationStatus: "accepted" });
+
+    // Someone whose access was switched off can be invited back.
+    await t.run(async (ctx) => await ctx.db.patch(ids.membershipA, { active: false }));
+    await expect(invite("shared@user-access.example")).resolves.toBeTruthy();
+    const reinvited = await t.run(async (ctx) => await ctx.db.get(ids.membershipA));
+    expect(reinvited).toMatchObject({ role: "receptionist", active: true, invitationStatus: "pending" });
   });
 });

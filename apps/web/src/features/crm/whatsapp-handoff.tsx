@@ -159,7 +159,10 @@ function WhatsAppHandoffDialog({
       setError(t("memberProfile.whatsapp.numberCannotOpen", { example: isolateLtr("+962") }));
       return;
     }
-    const handoff = window.open(url, "_blank", "noopener,noreferrer");
+    // No "noopener" feature here: with it the browser returns null even when
+    // the tab opens, which read as a blocked popup on every click. The opener
+    // is cut by hand below instead.
+    const handoff = window.open(url, "_blank");
     if (!handoff) {
       // Nothing opened, so nothing is logged: a blocked popup is not a contact.
       setBlockedUrl(url);
