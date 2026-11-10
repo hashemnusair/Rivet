@@ -546,6 +546,7 @@ export const apiErrors: typeof EnApiErrors = {
   "youCannotGrantAccessToEveryBranch": "لا يمكنك منح صلاحية الوصول إلى جميع الفروع.",
   "selectAtLeastOneBranchForSelectedBranchAccess": "يرجى اختيار فرع واحد على الأقل عند تحديد صلاحية الوصول إلى فروع معيّنة.",
   "onlyAnOwnerCanGrantTheOwnerRole": "يمكن لمالك النادي فقط منح دور المالك.",
+  "youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner": "لا يمكنك اعتماد إجراء قمت به أنت أو رفضه. اطلب ذلك من مدير آخر أو من مالك النادي.",
   "aGymNeedsAtLeastOneOwnerMakeSomeoneElseAnOwnerFirst": "يحتاج النادي إلى مالك واحد على الأقل. يرجى منح دور المالك لشخص آخر أولًا.",
   "youCannotGrantPermissionsYourRoleDoesNotPossess": "لا يمكنك منح صلاحيات لا يملكها دورك.",
   "displayNameMustBeBetween2And160Characters": "يجب أن يتراوح طول اسم العرض بين 2 و160 حرفًا.",

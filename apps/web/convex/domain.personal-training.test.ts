@@ -80,6 +80,16 @@ describe("Convex personal-training lifecycle", () => {
       return experience.trainers[0]?.photoUrl;
     };
 
+    // Members see a trainer's blocked times, never the staff account id or the private reason.
+    await t.run(async (ctx) => {
+      const profile = (await ctx.db.get(assetIds.trainerId))!;
+      await ctx.db.insert("ptAvailabilityExceptions", { organizationId: profile.organizationId, publicId: "exception-private", trainerProfileId: profile._id, branchId: profile.branchIds[0]!, date: "2099-01-05", reason: "Medical appointment", createdAt: Date.now() });
+    });
+    const memberView = await t.withIdentity({ subject: "clerk-pt-customer" }).query(api.domain.query, operation("customer.pt", { membershipId: "pt-membership" })) as { trainers: Array<{ userId: string; availabilityExceptions: Array<{ date: string; reason?: string }> }> };
+    expect(memberView.trainers[0]!.userId).toBe("");
+    expect(memberView.trainers[0]!.availabilityExceptions).toEqual([expect.objectContaining({ date: "2099-01-05" })]);
+    expect(JSON.stringify(memberView)).not.toContain("Medical appointment");
+
     expect(await setPhoto("pt-photo-valid")).toEqual(expect.any(String));
     for (const photoAssetId of ["pt-photo-private", "pt-photo-wrong-owner", "pt-photo-stale", "pt-photo-foreign"]) {
       expect(await setPhoto(photoAssetId)).toBeUndefined();

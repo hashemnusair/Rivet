@@ -1,3 +1,4 @@
+import { demoSeedAllowed } from "./demoSeedGuard";
 import { ConvexError, v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -135,7 +136,9 @@ export async function ensureUserRecord(ctx: MutationCtx, suppliedFullName?: stri
       if (invited.authSubject.startsWith("invite:")) throw new Error("INVITATION_NOT_ACCEPTED");
       // An email match is not proof that the caller owns a real existing
       // Clerk identity. Refuse to create a second row or claim the first row.
-      if (!invited.authSubject.startsWith("seed:")) throw new Error("IDENTITY_EMAIL_CONFLICT");
+      // Seed fixtures can be claimed by email only where demo data is allowed;
+      // on Production a leftover `seed:` row is as unclaimable as a real account.
+      if (!invited.authSubject.startsWith("seed:") || !demoSeedAllowed()) throw new Error("IDENTITY_EMAIL_CONFLICT");
 
       const memberships = await ctx.db
         .query("organizationMemberships")

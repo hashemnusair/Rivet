@@ -20,6 +20,7 @@ import {
   type PromoTarget,
 } from "./firstPayment";
 import { notifyPlatformAdmins } from "./notificationDelivery";
+import { enforcePublicRateLimit } from "./publicAbuse";
 import { enqueueOperationalEmail, type OperationalEmailFacts } from "./operationalEmail";
 import { systemMessage } from "../src/lib/i18n/system-messages";
 
@@ -45,8 +46,9 @@ type Data = Record<string, unknown>;
 type PlatformAdmin = Awaited<ReturnType<typeof requirePlatformAdmin>>;
 type PlanName = "Basic" | "Starter" | "Growth" | "Pro" | "Enterprise";
 
-export const COMMERCE_QUERIES = ["public.websiteOffer", "public.promo.check", "platform.commerce.view", "billing.checkout", "billing.plans"] as const;
+export const COMMERCE_QUERIES = ["public.websiteOffer", "platform.commerce.view", "billing.checkout", "billing.plans"] as const;
 export const COMMERCE_MUTATIONS = [
+  "public.promo.check",
   "platform.commerce.website_offer.update",
   "platform.commerce.payment_details.update",
   "platform.promo.create",
@@ -1041,11 +1043,6 @@ async function setPromoActive(ctx: MutationCtx, input: Data, request: RequestArg
 export async function commerceQuery(ctx: QueryCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
   const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
   if (operation === "public.websiteOffer") return await websiteOfferView(ctx);
-  if (operation === "public.promo.check") {
-    const plan = planName(input.plan) ?? "Starter";
-    const result = await checkPromo(ctx, input.code, plan, Date.now());
-    return result.valid ? result : { valid: false, reason: result.reason };
-  }
   if (operation === "platform.commerce.view") {
     await requirePlatformAdmin(ctx, request.correlationId);
     return await commerceView(ctx);
@@ -1057,6 +1054,18 @@ export async function commerceQuery(ctx: QueryCtx, operation: string, input: Dat
 
 export async function commerceMutation(ctx: MutationCtx, operation: string, input: Data, requestArgs: RequestArgs): Promise<unknown> {
   const request = operation.startsWith("billing.") && typeof input.organizationId === "string" ? { ...requestArgs, organizationId: input.organizationId, activeBranchId: input.organizationId === requestArgs.organizationId ? requestArgs.activeBranchId : undefined } : requestArgs;
+  if (operation === "public.promo.check") {
+    // A mutation, not a query, so every check is counted. Convex gives no
+    // caller address, so the cap is shared by all visitors: it bounds how many
+    // codes anyone can try (20 a minute, 200 an hour) at the cost of asking a
+    // real applicant to wait during a guessing run. The application itself
+    // re-checks the code when it is submitted.
+    await enforcePublicRateLimit(ctx, { scope: "promo-check-minute", fingerprint: "all-visitors", maxRequests: 20, windowMs: 60_000, correlationId: request.correlationId });
+    await enforcePublicRateLimit(ctx, { scope: "promo-check-hour", fingerprint: "all-visitors", maxRequests: 200, windowMs: 3_600_000, correlationId: request.correlationId });
+    const plan = planName(input.plan) ?? "Starter";
+    const result = await checkPromo(ctx, input.code, plan, Date.now());
+    return result.valid ? result : { valid: false, reason: result.reason };
+  }
   if (operation === "platform.commerce.website_offer.update") return await updateWebsiteOffer(ctx, input, request);
   if (operation === "platform.commerce.payment_details.update") return await updatePaymentDetails(ctx, input, request);
   if (operation === "platform.promo.create") return await createPromo(ctx, input, request);

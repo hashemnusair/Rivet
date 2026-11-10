@@ -1,5 +1,45 @@
 # GymOS / RIVET current implementation state
 
+## Launch audit: privacy and security items (10 November 2026)
+
+Elias asked for the six "privacy and security" audit items to be fixed.
+**Not released when written:** the source is committed locally; the promo
+check moved from a query to a mutation, so the Convex deploy and the frontend
+push must go out together (backend first).
+
+- **Member receipts (audit item 5).** `customerReceiptDetail` no longer returns
+  `collectedById`, `createdById`, `shiftId`, `idempotencyKey` or retail line
+  `unitCost` (cost price). The member still sees who recorded it by name, the
+  payment reference and any refund or cancel reason, which the receipt prints.
+- **Gym discovery and member PT (item 5).** `public.marketplace` and
+  `customer.pt` use `publicPtTrainerView`: `userId` is empty and blocked times
+  come without their private reason. Staff views are unchanged.
+- **Promo code check (item 10).** `public.promo.check` is now a mutation with
+  a shared cap of 20 checks a minute and 200 an hour. **Compromise:** Convex
+  gives no caller address, so the cap is shared by all visitors; a guessing run
+  makes real applicants wait. The application still re-checks the code on submit.
+- **Demo fixtures (item 10).** `convex/demoSeedGuard.ts`: `seedDemoTenant` and
+  claiming a `seed:` account by email need `RIVET_ALLOW_DEMO_SEED=1` on the
+  deployment (fail closed; the unit-test runner is allowed). Set on the dev
+  deployment `fleet-otter-621` on 10 November; names-only check shows it is not
+  on Production. Any staging deployment that uses the seeded gym needs it too.
+- **Self-approval.** `approvals.review` and `shifts.review` refuse the person
+  who made the discount or refund, or who closed the shift, unless they are an
+  owner (an owner has no one above them). The activity log hides Approve and
+  Reject on a person's own requests. New message
+  `apiErrors.youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner`
+  (Arabic for Hashem or Elias to read).
+- **PT package refunds (item 4).** Member profile → Personal training →
+  Recent packages shows Refund on a paid package for roles with `pt.refund`
+  (owner, manager): sessions to refund (never more than are unused and
+  unbooked), the amount to give back, and a required reason. New strings
+  `memberProfile.pt.refund*` (Arabic for Hashem or Elias to read).
+
+**Validation:** typecheck, Convex typecheck and codegen, lint and the full
+unit suite (2,845 passed) locally. New or extended tests cover each item.
+The mock adapter mirrors the self-approval rule only; its member receipt and
+discovery data were not trimmed. Not exercised in a browser.
+
 ## Launch audit follow-up: five items Elias asked to fix (10 November 2026)
 
 **Released 10 November 2026:** source `828b92d0`.

@@ -4083,6 +4083,14 @@ async function customerTransactionPage(ctx: ReadContext, input: Data): Promise<D
   return page(items, input);
 }
 
+/** Staff-side bookkeeping a member has no use for: who-by ids, the cash shift, request keys and cost prices. */
+const MEMBER_HIDDEN_PAYMENT_FIELDS = ["collectedById", "createdById", "shiftId", "idempotencyKey"] as const;
+function memberPaymentView(value: Data): Data {
+  const view: Data = { ...value };
+  for (const field of MEMBER_HIDDEN_PAYMENT_FIELDS) delete view[field];
+  return view;
+}
+
 async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promise<Data> {
   const contexts = await customerFinanceContexts(ctx);
   for (const context of contexts) {
@@ -4108,11 +4116,8 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
         voidReason: retailSale.voidReason,
         receiptId,
         receiptNumber: retailSale.receiptNumber,
-        collectedById: retailSale.createdByPublicId,
         collectedByName: retailSale.createdByName,
-        shiftId: retailSale.shiftId,
         externalReference: retailSale.externalReference,
-        idempotencyKey: retailSale.idempotencyKey,
         occurredAt: utcIso(retailSale.createdAt),
       };
       return {
@@ -4130,7 +4135,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
           receiptId,
           receiptNumber: retailSale.receiptNumber,
           customer: retailSale.customer,
-          lines: retailSale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency }, unitCost: line.unitCostMinor === undefined || line.unitCostCurrency === undefined ? undefined : { amount: line.unitCostMinor, currency: line.unitCostCurrency } })),
+          lines: retailSale.lines.map((line) => ({ productId: line.productId, sku: line.sku, productName: line.productName, quantity: line.quantity, unitPrice: { amount: line.unitPriceMinor, currency: line.currency }, lineTotal: { amount: line.lineTotalMinor, currency: line.currency } })),
           subtotal: { amount: retailSale.subtotalMinor, currency: retailSale.currency },
           total: { amount: retailSale.totalMinor, currency: retailSale.currency },
           status: retailSale.status,
@@ -4141,9 +4146,6 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
           voidedAt: retailSale.voidedAt ? utcIso(retailSale.voidedAt) : undefined,
           method: retailSale.method,
           externalReference: retailSale.externalReference,
-          shiftId: retailSale.shiftId,
-          idempotencyKey: retailSale.idempotencyKey,
-          createdById: retailSale.createdByPublicId,
           createdByName: retailSale.createdByName,
           createdAt: utcIso(retailSale.createdAt),
           updatedAt: utcIso(retailSale.updatedAt),
@@ -4159,7 +4161,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
       paymentValue.chargeId ? ctx.db.query("domainRecords").withIndex("by_organization_type_public_id", (q) => q.eq("organizationId", context.organization._id).eq("entityType", "charge").eq("publicId", stringValue(paymentValue.chargeId))).unique() : Promise.resolve(null),
       recordsOfMember(ctx, context.organization._id, context.memberId, "payment"),
     ]);
-    const relatedPayments = relatedRows.map((row) => data(row.data)).filter((item) => item.originalPaymentId === paymentValue.id || (paymentValue.originalPaymentId && item.id === paymentValue.originalPaymentId));
+    const relatedPayments = relatedRows.map((row) => data(row.data)).filter((item) => item.originalPaymentId === paymentValue.id || (paymentValue.originalPaymentId && item.id === paymentValue.originalPaymentId)).map(memberPaymentView);
     return {
       gymId: publicOrganizationId(context.organization),
       receipt: receiptValue,
@@ -4167,7 +4169,7 @@ async function customerReceiptDetail(ctx: ReadContext, receiptId: string): Promi
       branch: { name: branch?.name ?? "Gym branch", code: branch?.code ?? "", address: branch?.address ?? "", phone: branch?.phone ?? "" },
       member: { fullName: stringValue(context.member.fullName), memberNumber: stringValue(context.member.memberNumber) },
       customer: { kind: "member", fullName: stringValue(context.member.fullName), phone: optionalString(context.member.phone), memberId: context.memberId, memberNumber: stringValue(context.member.memberNumber) },
-      payment: paymentValue,
+      payment: memberPaymentView(paymentValue),
       charge: charge ? data(charge.data) : undefined,
       relatedPayments,
     };
@@ -4813,6 +4815,12 @@ async function ptTrainerView(ctx: ReadContext, organization: Organization, value
   };
 }
 
+/** What a member or visitor sees of a trainer: no staff account id, and blocked times without the private reason. */
+async function publicPtTrainerView(ctx: ReadContext, organization: Organization, value: Doc<"ptTrainerProfiles">): Promise<Data> {
+  const view = await ptTrainerView(ctx, organization, value);
+  return { ...view, userId: "", availabilityExceptions: arrayValue(view.availabilityExceptions).map((exception) => ({ ...data(exception), reason: undefined })) };
+}
+
 function ptEntitlementView(organization: Organization, value: Doc<"ptEntitlements">): Data {
   const expired = value.expiresAt < Date.now();
   const notStarted = (value.startsAt ?? 0) > Date.now();
@@ -5036,7 +5044,7 @@ async function customerPtExperience(ctx: ReadContext, membershipId: string): Pro
     // Sessions that started without an outcome stay listed while they hold a credit.
     upcomingBookings: await Promise.all(bookings.filter((item) => ["reserved", "confirmed"].includes(item.status)).sort((left, right) => left.startsAt - right.startsAt).map((item) => ptBookingView(ctx, organization, item))),
     orders: await Promise.all(orders.sort((left, right) => right.createdAt - left.createdAt).map((item) => ptPackageOrderView(ctx, organization, item))),
-    trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
+    trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => publicPtTrainerView(ctx, organization, item))),
     packages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
   };
 }
@@ -6171,7 +6179,7 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         branchCount: liveBranches.length,
         fromPriceMinor: activePrices.length ? Math.min(...activePrices) : 0,
         trialOffer: publicTrialOfferOf(storedTrialOffer),
-        trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => ptTrainerView(ctx, organization, item))),
+        trainers: await Promise.all(trainers.filter((item) => item.status === "published").map((item) => publicPtTrainerView(ctx, organization, item))),
         ptPackages: await Promise.all(packages.map((item) => ptPackageView(ctx, organization, item))),
         logo,
         cover,
@@ -12747,6 +12755,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "shift", recordId(input.shiftId));
       const shift = data(record.data);
       if (shift.varianceApprovalStatus !== "pending") domainError("VALIDATION_ERROR", "This shift has no cash difference waiting for approval.", { correlationId: actor.correlationId });
+      if (optionalString(shift.closedById) === publicUserId(actor.user) && actor.role !== "owner") domainError("FORBIDDEN", "You cannot approve or reject your own action. Ask another manager or the owner.", { correlationId: actor.correlationId });
       const decision = stringValue(input.decision);
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision is invalid.", { correlationId: actor.correlationId });
       const updated = await patchRecord(ctx, actor, record, { varianceApprovalStatus: decision });
@@ -13191,6 +13200,9 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       if (decision !== "approved" && decision !== "rejected") domainError("VALIDATION_ERROR", "Approval decision must be approved or rejected.", { correlationId: actor.correlationId });
       const reviews = await recordsOf(ctx, actor, "approvalReview");
       if (reviews.some((review) => data(review.data).auditEventId === eventId)) domainError("VALIDATION_ERROR", "This approval has already been reviewed.", { correlationId: actor.correlationId });
+      // The person who did it does not sign it off. An owner has no one above
+      // them, so an owner's own action is theirs to decide.
+      if (event.actorPublicId === publicUserId(actor.user) && actor.role !== "owner") domainError("FORBIDDEN", "You cannot approve or reject your own action. Ask another manager or the owner.", { correlationId: actor.correlationId });
       const approvalPermission = approvalPermissionForAction(event.action);
       if (!approvalPermission) domainError("VALIDATION_ERROR", "This audit event does not support approval review.", { correlationId: actor.correlationId });
       requirePermission(actor, approvalPermission);

@@ -241,6 +241,11 @@ describe("TODO-006 persisted money and staff handler matrix", () => {
     if (!pending) throw new Error("missing pending discount audit");
     await expectCode(manager.mutation(api.domain.mutate, operation("approvals.review", { auditEventId: pending.publicId, decision: "approved" })), "VALIDATION_ERROR");
     await expectCode(salesA1.mutation(api.domain.mutate, operation("approvals.review", { auditEventId: pending.publicId, decision: "approved", note: "Sales cannot approve their own exception." })), "FORBIDDEN");
+    // The person who did it does not sign it off: had the manager made this sale, the manager could not decide it.
+    const realActor = pending.actorPublicId;
+    await t.run(async (ctx) => { await ctx.db.patch(pending._id, { actorPublicId: "manager-a1" }); });
+    await expectCode(manager.mutation(api.domain.mutate, operation("approvals.review", { auditEventId: pending.publicId, decision: "approved", note: "Approving my own exception." })), "FORBIDDEN");
+    await t.run(async (ctx) => { await ctx.db.patch(pending._id, { actorPublicId: realActor }); });
     await expect(manager.mutation(api.domain.mutate, operation("approvals.review", { auditEventId: pending.publicId, decision: "approved", note: "Manager reviewed the retained-member evidence." }))).resolves.toBeNull();
     const afterApproval = await factCounts(t);
     const approvalReview = afterApproval.records.filter((row) => row.entityType === "approvalReview" && (row.data as { auditEventId?: string }).auditEventId === pending.publicId);

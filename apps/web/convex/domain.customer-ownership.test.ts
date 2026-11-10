@@ -503,6 +503,12 @@ describe("exported Convex customer ownership boundaries", () => {
       payment: { id: string };
     };
     expect(receipt).toMatchObject({ member: { memberNumber: "A-100" }, payment: { id: "payment-a" } });
+    // A member's copy carries no staff-side bookkeeping, even when the stored payment has it.
+    const paymentRow = await t.run(async (ctx) => (await ctx.db.query("domainRecords").collect()).find((row) => row.entityType === "payment" && row.publicId === "payment-a")!);
+    await t.run(async (ctx) => { await ctx.db.patch(paymentRow._id, { data: { ...(paymentRow.data as Record<string, unknown>), collectedById: "staff-user", collectedByName: "Front Desk", shiftId: "shift-9", idempotencyKey: "pay-key-9" } }); });
+    const memberCopy = await customerA.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })) as { payment: Record<string, unknown> };
+    expect(memberCopy.payment).toMatchObject({ id: "payment-a", collectedByName: "Front Desk" });
+    for (const field of ["collectedById", "shiftId", "idempotencyKey", "createdById"]) expect(memberCopy.payment).not.toHaveProperty(field);
     await expectCode(customerB.query(api.domain.query, operation("customer.receipt", { receiptId: "receipt-a" })), "NOT_FOUND");
   });
 

@@ -544,6 +544,7 @@ export const apiErrors = {
   "youCannotGrantAccessToEveryBranch": "You cannot grant access to every branch.",
   "selectAtLeastOneBranchForSelectedBranchAccess": "Select at least one branch for selected branch access.",
   "onlyAnOwnerCanGrantTheOwnerRole": "Only an owner can grant the owner role.",
+  "youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner": "You cannot approve or reject your own action. Ask another manager or the owner.",
   "aGymNeedsAtLeastOneOwnerMakeSomeoneElseAnOwnerFirst": "A gym needs at least one owner. Make someone else an owner first.",
   "youCannotGrantPermissionsYourRoleDoesNotPossess": "You cannot grant permissions your role does not possess.",
   "displayNameMustBeBetween2And160Characters": "Display name must be between 2 and 160 characters.",

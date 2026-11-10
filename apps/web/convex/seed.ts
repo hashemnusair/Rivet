@@ -1,3 +1,4 @@
+import { demoSeedAllowed } from "./demoSeedGuard";
 import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -34,6 +35,7 @@ function addCalendarMonths(timestamp: number, months: number): number {
 export const seedDemoTenant = internalMutation({
   args: {},
   handler: async (ctx) => {
+    if (!demoSeedAllowed()) throw new Error("Demo seeding is switched off on this deployment. Set RIVET_ALLOW_DEMO_SEED=1 on a development or staging deployment only; never on Production.");
     const now = Date.now();
     const seedSubscriptionStartedAt = now - 12 * 86_400_000;
     const seedCurrentPeriodEndsAt = addCalendarMonths(seedSubscriptionStartedAt, 1);

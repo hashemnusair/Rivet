@@ -6,7 +6,10 @@ import { CalendarClock, CheckCircle2, Dumbbell } from "lucide-react";
 import { qk } from "@/lib/api/keys";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { CheckInSummary, MemberDetail, MembershipSummary, Task, TimelineEventType, TransactionSummary, UUID } from "@/lib/domain/types";
+import type { CheckInSummary, MemberDetail, MembershipSummary, PtEntitlement, PtPackageOrder, Task, TimelineEventType, TransactionSummary, UUID } from "@/lib/domain/types";
+import { latinDigits } from "@/lib/utils/text";
+import { Field } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/input";
 import { LogContactForm } from "@/features/crm/contact-work-panel";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { numberingLocale } from "@/lib/i18n/config";
@@ -292,6 +295,7 @@ export function PersonalTrainingTab({ membershipId, preselectTrainerId, openBook
   // branch; the operator must choose a concrete branch for this session.
   const selectedBranch = visibleBranchId(session?.branches, branchId) ?? "";
   const slots = useApiQuery(["pt", "slots", trainerId, selectedBranch, date], (api) => api.listPtAvailableSlots({ trainerProfileId: trainerId, branchId: selectedBranch, from: date, to: date }), { enabled: Boolean(trainerId && selectedBranch && date) });
+  const [refundOrder, setRefundOrder] = useState<PtPackageOrder | undefined>();
   const requestPackage = useApiMutation((api, packageId: string) => api.requestPtPackage({ membershipId: membershipId!, packageId, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success(t("memberProfile.pt.packageAdded")); await invalidate(); } });
   const book = useApiMutation((api, startsAt: string) => api.createPtBooking({ membershipId: membershipId!, trainerProfileId: trainerId, branchId: selectedBranch, startsAt, idempotencyKey: crypto.randomUUID() }), { onSuccess: async () => { toast.success(t("memberProfile.pt.sessionBooked")); setBookingOpen(false); await invalidate(); } });
 
@@ -321,7 +325,8 @@ export function PersonalTrainingTab({ membershipId, preselectTrainerId, openBook
           <DialogFooter><Button variant="secondary" onClick={() => setBookingOpen(false)}>{t("common.action.cancel")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">{t("memberProfile.pt.packages")}</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold" dir="auto">{item.name}</p><p className="mt-1 text-[12px] text-ink-3">{t("memberProfile.pt.packageTerms", { sessions: item.sessionCount, days: item.validityDays })}</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>{t("memberProfile.pt.addPackage")}</Button> : null}</div></article>) : <p className="p-5 text-[12px] text-ink-3">{t("memberProfile.pt.noPackages")}</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="context-label">{t("memberProfile.pt.recentPackages")}</p><div className="mt-2 space-y-1">{experience.orders.map((order) => <p key={order.id} className="flex justify-between gap-3 text-[12px]"><span className="text-ink-3" dir="auto">{order.packageName ?? order.packageNameSnapshot ?? t("memberProfile.pt.packageFallback")}</span><span>{t(`memberProfile.pt.orderStatus.${order.status}`)}</span></p>)}</div></div> : null}</section>
+      <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><div className="flex items-center gap-2"><Dumbbell className="size-4 text-ink-3" /><h3 className="text-[13px] font-semibold">{t("memberProfile.pt.packages")}</h3></div></header><div className="divide-y divide-line">{experience.packages.length ? experience.packages.map((item) => <article key={item.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[12px] font-semibold" dir="auto">{item.name}</p><p className="mt-1 text-[12px] text-ink-3">{t("memberProfile.pt.packageTerms", { sessions: item.sessionCount, days: item.validityDays })}</p><p className="mt-1 text-[12px]"><MoneyText money={item.totalPrice} /></p></div>{can("pt.book_for_member") ? <Button size="sm" variant="secondary" loading={requestPackage.isPending} onClick={() => requestPackage.mutate(item.id)}>{t("memberProfile.pt.addPackage")}</Button> : null}</div></article>) : <p className="p-5 text-[12px] text-ink-3">{t("memberProfile.pt.noPackages")}</p>}</div>{experience.orders.length ? <div className="border-t border-line p-4"><p className="context-label">{t("memberProfile.pt.recentPackages")}</p><div className="mt-2 space-y-1">{experience.orders.map((order) => <p key={order.id} className="flex justify-between gap-3 text-[12px]"><span className="text-ink-3" dir="auto">{order.packageName ?? order.packageNameSnapshot ?? t("memberProfile.pt.packageFallback")}</span><span className="flex items-center gap-2">{t(`memberProfile.pt.orderStatus.${order.status}`)}{can("pt.refund") && refundableSessions(order, experience.entitlements) > 0 ? <Button size="sm" variant="secondary" onClick={() => setRefundOrder(order)}>{t("memberProfile.pt.refund")}</Button> : null}</span></p>)}</div></div> : null}</section>
+      <RefundPtPackageDialog order={refundOrder} available={refundOrder ? refundableSessions(refundOrder, experience.entitlements) : 0} onOpenChange={(open) => { if (!open) setRefundOrder(undefined); }} />
     </div>
     {experience.upcomingBookings.length ? <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h3 className="text-[13px] font-semibold">{t("memberProfile.pt.upcoming")}</h3><p className="mt-0.5 text-[12px] text-ink-3">{t("memberProfile.pt.upcomingHint")}</p></header><div className="divide-y divide-line">{experience.upcomingBookings.map((booking) => { const awaiting = ptBookingAwaitsOutcome(booking); return <article key={booking.id} className="flex items-center justify-between gap-3 p-4"><div><p className="text-[12px] font-medium" dir="auto">{booking.trainerName}</p><p className="mt-1 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · <bdi>{booking.branchName}</bdi></p>{awaiting ? <p className="mt-1 text-[12px] text-warning-deep">{t("memberProfile.pt.awaitingResult")}</p> : null}</div><Badge variant={awaiting ? "warning" : "outline"}>{awaiting ? t("memberProfile.pt.needsResult") : t(`memberProfile.pt.bookingStatus.${booking.status}`)}</Badge></article>; })}</div></section> : null}
   </div>;
@@ -628,4 +633,38 @@ export function MemberDetailsPanel({ member, branchName, salespersonName }: { me
       ) : null}
     </dl>
   );
+}
+
+/** Sessions of a paid package that are neither used nor booked; only these can be refunded. */
+function refundableSessions(order: PtPackageOrder, entitlements: PtEntitlement[]): number {
+  if (order.status !== "active" && order.status !== "partially_refunded") return 0;
+  return entitlements.find((entitlement) => entitlement.id === order.entitlementId)?.available ?? 0;
+}
+
+function RefundPtPackageDialog({ order, available, onOpenChange }: { order?: PtPackageOrder; available: number; onOpenChange: (open: boolean) => void }) {
+  const { t } = useLocale();
+  const invalidate = useInvalidate();
+  const [sessions, setSessions] = useState("1");
+  const [reason, setReason] = useState("");
+  useEffect(() => { if (order) { setSessions("1"); setReason(""); } }, [order]);
+  const count = Number(latinDigits(sessions));
+  const valid = Number.isInteger(count) && count >= 1 && count <= available;
+  // The same sum the server pays back: the package price shared across its sessions, less what was refunded before.
+  const total = order?.totalPriceSnapshot;
+  const packageSessions = order?.sessionCountSnapshot ?? 0;
+  const amount = valid && total && packageSessions > 0
+    ? { amount: Math.floor((total.amount * ((order?.refundedSessions ?? 0) + count)) / packageSessions) - (order?.refundedAmount?.amount ?? 0), currency: total.currency }
+    : undefined;
+  const refund = useApiMutation((api) => api.refundPtPackage(order!.id, { sessions: count, reason: reason.trim() }), {
+    onSuccess: async () => { await invalidate([["pt"], ["members"]]); onOpenChange(false); toast.success(t("memberProfile.pt.refundDone")); },
+  });
+  return <Dialog open={Boolean(order)} onOpenChange={onOpenChange}><DialogContent>
+    <DialogHeader><DialogTitle>{t("memberProfile.pt.refundTitle")}</DialogTitle><DialogDescription>{t("memberProfile.pt.refundHint", { count: available })}</DialogDescription></DialogHeader>
+    <DialogBody className="space-y-3">
+      <Field label={t("memberProfile.pt.refundSessions")} required><Input inputMode="numeric" dir="ltr" value={sessions} onChange={(event) => setSessions(event.target.value)} /></Field>
+      {amount ? <p className="flex justify-between gap-3 text-[13px]"><span className="text-ink-3">{t("memberProfile.pt.refundAmount")}</span><MoneyText money={amount} /></p> : null}
+      <Field label={t("common.label.reason")} required><Textarea value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
+    </DialogBody>
+    <DialogFooter><Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.action.cancel")}</Button><Button variant="danger" loading={refund.isPending} disabled={!valid || reason.trim().length < 3} onClick={() => refund.mutate()}>{t("memberProfile.pt.refund")}</Button></DialogFooter>
+  </DialogContent></Dialog>;
 }

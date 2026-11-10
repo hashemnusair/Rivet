@@ -13,7 +13,7 @@ import type { AuditQuery } from "@/lib/api/GymOSApi";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
-import { usePermissions } from "@/lib/providers/app-providers";
+import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -115,6 +115,9 @@ function AuditPageInner() {
   const pageSize = Number(choiceFromParams(searchParams, "size", PAGE_SIZE_CHOICES, String(DEFAULT_ACTIVITY_PAGE_SIZE)));
   const [expanded, setExpanded] = useState<string | null>(null);
   const { can } = usePermissions();
+  const { session } = useApp();
+  // The person who did it does not sign it off; an owner has no one above them. The server enforces the same rule.
+  const mayDecide = (event: AuditEvent) => session?.roles.includes("owner") || event.actorId !== session?.user.id;
   const invalidate = useInvalidate();
   const [review, setReview] = useState<Review | null>(null);
   const [reviewNote, setReviewNote] = useState("");
@@ -218,7 +221,7 @@ function AuditPageInner() {
                 event={event}
                 expanded={expanded === event.id}
                 onToggle={() => setExpanded((x) => (x === event.id ? null : event.id))}
-                canReview={Boolean(REVIEW_PERMISSION[event.action]) && can(REVIEW_PERMISSION[event.action]!)}
+                canReview={Boolean(REVIEW_PERMISSION[event.action]) && can(REVIEW_PERMISSION[event.action]!) && mayDecide(event)}
                 canReviewCash={event.action === "shift.close_variance" && can("reconciliation.approve_variance")}
                 onReview={(decision) => setReview({ event, decision })}
               />

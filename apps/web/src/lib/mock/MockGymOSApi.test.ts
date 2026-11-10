@@ -910,7 +910,11 @@ describe("tenant/branch scoping and authorization", () => {
     await api.switchDemoRole("salesperson");
     await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
 
+    // The seeded refund was made by the manager, who cannot sign off their own action; the owner can.
     await api.switchDemoRole("manager");
+    expect((await api.getSession()).user.id).toBe(pendingRefund!.actorId);
+    await expect(api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" })).rejects.toMatchObject({ code: ERR.FORBIDDEN });
+    await api.switchDemoRole("owner");
     await api.reviewApproval(pendingRefund!.id, { decision: "approved", note: "Evidence checked" });
     const reviewed = await api.listAuditEvents({ entityId: pendingRefund!.entityId, pageSize: 20 });
     expect(reviewed.items.find((event) => event.id === pendingRefund!.id)?.approvalStatus).toBe("approved");

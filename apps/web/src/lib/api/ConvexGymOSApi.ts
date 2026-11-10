@@ -548,7 +548,7 @@ export class ConvexGymOSApi implements GymOSApi {
   listPublicSaasPlans(): Promise<PlatformSaasPlan[]> { return this.query("public.catalog"); }
   subscribePublicSaasPlans(onValue: (plans: PlatformSaasPlan[]) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.catalog", {}, onValue, onError); }
   subscribeWebsiteOffer(onValue: (offer: WebsiteOffer) => void, onError?: (error: unknown) => void): Promise<() => void> { return this.subscribeQuery("public.websiteOffer", {}, onValue, onError); }
-  checkPromoCode(input: { code: string; plan: PlatformSaasPlan["name"] }): Promise<PromoCodeCheck> { return this.query("public.promo.check", input); }
+  checkPromoCode(input: { code: string; plan: PlatformSaasPlan["name"] }): Promise<PromoCodeCheck> { return this.mutate("public.promo.check", input); }
   getPlatformCommerce(): Promise<PlatformCommerceView> { return this.query("platform.commerce.view"); }
   updateWebsiteOffer(input: { enabled: boolean; places: number; priceMinor: number; reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.commerce.website_offer.update", input); }
   updatePaymentDetails(input: PlatformPaymentDetails & { reason: string }): Promise<PlatformCommerceView> { return this.mutatePlatform("platform.commerce.payment_details.update", input); }

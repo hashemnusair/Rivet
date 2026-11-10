@@ -2231,6 +2231,7 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_OPERATIONAL_EMAIL_LIVE` | `false` | — | — | Deprecated alias: `true` means `live` only while `RIVET_EMAIL_MODE` is unset | — |
 | `RIVET_EMAIL_MODE` | Absent (`off`) | `sandbox` if email is exercised | `allowlist` until go-live, then `live` | Authoritative email go-live flag: `off`, `sandbox`, `allowlist`, `live`; unrecognised values mean `off` | `sandbox` |
 | `RIVET_EMAIL_SANDBOX_TO` | — | Catch-all inbox | — | Required in `sandbox` mode; every email is redirected here | Catch-all inbox |
+| `RIVET_ALLOW_DEMO_SEED` | `1` to use the seeded demo gym | `1` if the seeded gym is used | **Never set** | Fail-closed switch for demo fixtures (`convex/demoSeedGuard.ts`): without it `seed:seedDemoTenant` refuses to run and a `seed:` fixture account cannot be claimed by an email match | `1` |
 | `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | In `allowlist` mode only the addresses and `@domain`s on this list are sent to. A gym's subscription does not bypass it: a real gym's owner, staff and members receive nothing until they are listed here or the mode is `live`; everyone else is suppressed with a reason | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
 | `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |

@@ -9901,6 +9901,7 @@ export class MockGymOSApi implements GymOSApi {
     this.requireReason(input.note);
     const shift = this.db.shifts.find((s) => s.id === shiftId);
     if (!shift) throw ApiError.of(ERR.NOT_FOUND, "Shift not found.");
+    if (shift.closedById === this.actor().id && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "You cannot approve or reject your own action. Ask another manager or the owner.", { message: { key: "apiErrors.youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner" } });
     shift.varianceApprovalStatus = input.decision;
     const audit = this.db.audits.find((a) => a.entityType === "cash_shift" && a.entityId === shift.id && a.approvalStatus === "pending");
     if (audit) audit.approvalStatus = input.decision;
@@ -11301,6 +11302,7 @@ export class MockGymOSApi implements GymOSApi {
         throw ApiError.of(ERR.VALIDATION, "Approval decision must be approved or rejected.");
       }
       if (event.approvalStatus !== "pending") throw ApiError.of(ERR.VALIDATION, "This approval is not pending.");
+      if (event.actorId === this.actor().id && currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "You cannot approve or reject your own action. Ask another manager or the owner.", { message: { key: "apiErrors.youCannotApproveOrRejectYourOwnActionAskAnotherManagerOrTheOwner" } });
       if (event.action === "membership.discount") this.require("payments.discount");
       else if (event.action === "payment.refund") this.require("payments.refund");
       else if (event.action === "shift.close_variance") this.require("reconciliation.approve_variance");

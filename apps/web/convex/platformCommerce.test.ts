@@ -77,19 +77,28 @@ describe("first payment invoice", () => {
 });
 
 describe("promo codes", () => {
+  it("stops a guessing run: only 20 public checks pass in a minute", async () => {
+    const t = convexTest(schema, modules);
+    for (let attempt = 0; attempt < 20; attempt++) {
+      expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: `GUESS${attempt}`, plan: "Pro" }))).toEqual({ valid: false, reason: "not_found" });
+    }
+    await expect(t.mutation(api.domain.mutate, operation("public.promo.check", { code: "GUESS20", plan: "Pro" }))).rejects.toMatchObject({ data: expect.objectContaining({ code: "RATE_LIMITED" }) });
+    // The old uncounted read is gone.
+    await expect(t.query(api.domain.query, operation("public.promo.check", { code: "GUESS21", plan: "Pro" }))).rejects.toThrow();
+  });
   it("are checked publicly and explain why a code cannot be used", async () => {
     const t = convexTest(schema, modules);
     const platform = t.withIdentity({ subject: "clerk-platform" });
     await seedPendingGym(t, { slug: "seed" });
     const view = await platform.mutation(api.domain.mutate, operation("platform.promo.create", { code: "PRO20", note: "", target: "total", amountOffMinor: 20_000, plans: ["Pro"], maxRedemptions: 1, reason: "Pro campaign" })) as { promoCodes: Array<{ id: string; code: string; state: string }> };
     expect(view.promoCodes[0]).toMatchObject({ code: "PRO20", state: "active" });
-    expect(await t.query(api.domain.query, operation("public.promo.check", { code: "pro20", plan: "Pro" }))).toMatchObject({ valid: true, promo: { code: "PRO20", target: "total", amountOffMinor: 20_000 } });
-    expect(await t.query(api.domain.query, operation("public.promo.check", { code: "PRO20", plan: "Starter" }))).toEqual({ valid: false, reason: "plan" });
-    expect(await t.query(api.domain.query, operation("public.promo.check", { code: "NOPE", plan: "Pro" }))).toEqual({ valid: false, reason: "not_found" });
+    expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: "pro20", plan: "Pro" }))).toMatchObject({ valid: true, promo: { code: "PRO20", target: "total", amountOffMinor: 20_000 } });
+    expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: "PRO20", plan: "Starter" }))).toEqual({ valid: false, reason: "plan" });
+    expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: "NOPE", plan: "Pro" }))).toEqual({ valid: false, reason: "not_found" });
     await seedPendingGym(t, { slug: "used", plan: "Pro", promoCode: "PRO20" });
-    expect(await t.query(api.domain.query, operation("public.promo.check", { code: "PRO20", plan: "Pro" }))).toEqual({ valid: false, reason: "used_up" });
+    expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: "PRO20", plan: "Pro" }))).toEqual({ valid: false, reason: "used_up" });
     await platform.mutation(api.domain.mutate, operation("platform.promo.set_active", { promoId: view.promoCodes[0]!.id, active: false, reason: "Campaign over" }));
-    expect(await t.query(api.domain.query, operation("public.promo.check", { code: "PRO20", plan: "Pro" }))).toEqual({ valid: false, reason: "paused" });
+    expect(await t.mutation(api.domain.mutate, operation("public.promo.check", { code: "PRO20", plan: "Pro" }))).toEqual({ valid: false, reason: "paused" });
     const audit = await t.run((ctx) => ctx.db.query("platformAuditEvents").collect());
     expect(audit.map((event) => event.action)).toEqual(expect.arrayContaining(["promo.create", "promo.pause"]));
   });
