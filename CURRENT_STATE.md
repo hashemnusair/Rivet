@@ -2,9 +2,17 @@
 
 ## Launch audit follow-up: five items Elias asked to fix (10 November 2026)
 
-Not yet released when this was written: the Convex changes below only take
-effect after a guarded Production deploy (`pnpm convex:deploy -- --dry-run --yes`,
-then `-- --yes`).
+**Released 10 November 2026:** source `828b92d0`.
+[GitHub CI](https://github.com/hashemnusair/Rivet/actions/runs/42804199545)
+passed all eleven jobs. Vercel Production for `828b92d0` succeeded at
+11:04 UTC. The guarded Convex dry run (no index deletions, schema valid) and
+deploy to `descriptive-meerkat-589` followed at 11:08 UTC. Live read-only
+checks: anonymous `arabicReview:snapshot` and `arabicReview:present` return
+`UNAUTHENTICATED`; `www.rivetjo.com/arabic-room?card=membership` returns 308 to
+`platform.rivetjo.com/platform/arabic-room?card=membership`; `/api/health`
+reported web and Convex `ok`. Between `96078089` (13:41 Amman) and this
+release the public room page was already deleted, so its old link returned
+404 for about 25 minutes. No signed-in flow was exercised on Production.
 
 - **Arabic review room closed (audit item 1).** `convex/arabicReview.ts`
   `snapshot`, `history`, `saveVote`, `approve` and `present` call
