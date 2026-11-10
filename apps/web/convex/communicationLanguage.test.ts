@@ -38,7 +38,7 @@ describe("outgoing email language and content", () => {
     expect(arabic.text).toContain("المبلغ المتبقي: 12.500 د.أ");
     expect(arabic.text).toContain("أُرسلت هذه الرسالة من RIVET نيابةً عن Forge نادي القوة، وهو النادي المسؤول عن اشتراكك.");
     expect(arabic.text).toContain("شروط الاستخدام");
-    expect(arabic.text).toContain("عرض وصل الدفع: https://www.rivetjo.com/customer/receipts");
+    expect(arabic.text).toContain("عرض وصل الدفع: https://www.rivetjo.com/customer/finance");
     expect(arabic.html).toContain('dir="ltr" align="left"');
     const english = operationalEmailContent("payment_receipt", "en", { gymName: "Forge نادي القوة", siteUrl: "https://www.rivetjo.com", timeZone: "Asia/Amman" }, undefined, facts);
     expect(english.subject).toBe("Your RIVET payment receipt");

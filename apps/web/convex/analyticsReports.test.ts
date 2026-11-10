@@ -97,10 +97,14 @@ describe("operational analytics queries", () => {
       const day = (offset: number) => local.format(Date.now() + offset * 86_400_000);
       await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "membership", publicId: "ms-a", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "ms-a", memberId: "member-a", planId: "plan-x", startDate: day(-40), endDate: day(5) } });
       await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "plan", publicId: "plan-x", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "plan-x", name: "Monthly", basePrice: { amount: 45_000, currency: "JOD" } } });
+      // A cancelled membership keeps its later end date. It is not due to renew
+      // and must not hide the live membership above.
+      await ctx.db.insert("domainRecords", { organizationId: organization._id, entityType: "membership", publicId: "ms-cancelled", createdAt: Date.now(), updatedAt: Date.now(), data: { id: "ms-cancelled", memberId: "member-a", planId: "plan-x", startDate: day(-10), endDate: day(20), cancelledAt: new Date().toISOString() } });
     });
     const owner = t.withIdentity({ subject: "clerk-owner-analytics" });
     const forecast = await owner.query(api.domain.query, operation("analytics.renewal_forecast", {})) as { buckets: Array<{ count: number; rows: Array<{ memberName: string }> }> };
     expect(forecast.buckets[0]!.count).toBe(1);
+    expect(forecast.buckets[2]!.count).toBe(0);
     expect(forecast.buckets[0]!.rows[0]!.memberName).toBe("Aisha");
     const retention = await owner.query(api.domain.query, operation("analytics.retention", {})) as { cohorts: Array<{ size: number }> };
     expect(retention.cohorts.length).toBeGreaterThan(0);

@@ -1,5 +1,75 @@
 # GymOS / RIVET current implementation state
 
+## Launch audit: fixes and open review list (10 November 2026)
+
+Elias asked for a whole-project read before launch: fix what is certain, list
+the rest. Eight read-only area reviews plus typecheck, lint, the unit suite and
+a dead-code scan.
+
+**Fixed (source `bd0c46d3` and its follow-up on `main`):**
+
+- Unit tests run on Node 25 and later (`vitest.config.ts`); Node's own
+  `localStorage` hid jsdom's and failed 404 tests locally while CI (Node 22) passed.
+- `robots.txt` per host and `sitemap.xml` for the public site
+  (`src/lib/routing/crawler-policy.ts`). The gym workspace, the platform console
+  and non-RIVET hosts are closed to crawlers; gym discovery on the member app
+  is left open on purpose (decision below).
+- WhatsApp handoff no longer treats every click as a blocked popup.
+- New member tasks and the payables export name use the gym's timezone.
+- The "Collect payment" shortcut works for staff without ledger access.
+- Shared offer links are written for the member app host.
+- `users.update` refuses to leave a gym with no accepted, active owner.
+- `invitations.prepare` refuses to re-invite someone who already has active,
+  accepted access (it used to reset their role and set them to pending).
+- The renewal forecast leaves out cancelled memberships.
+- The email provider card follows `RIVET_EMAIL_MODE`; the receipt email button
+  opens `/customer/finance` (`/customer/receipts` has no list page); an AI run
+  cancelled while queued uses the existing `aiWork.stage.stopped` label.
+- Removed: `rivet-loop-machine.tsx`, `subscription-lifecycle.ts`,
+  `public/brand/rivet-lockup-rev.png`, the Convex template README, five unused
+  packages, five retired WhatsApp settings strings. Stock upgrade hints name Pro.
+- README, `.env.example` and docs/12 describe the current email switch and no
+  longer list `RIVET_MESSAGING_*` / `TWILIO_*`.
+- Two new error messages have new Arabic text that Hashem or Elias should read:
+  `apiErrors.aGymNeedsAtLeastOneOwnerMakeSomeoneElseAnOwnerFirst` and
+  `apiErrors.thisPersonAlreadyHasAccessToThisGymChangeTheirRoleInstead`.
+
+**Validation:** typecheck, Convex typecheck, lint, secret-output audit, full unit
+suite, production build, Arabic revision-607 lock and patch formatting passed
+locally. Not exercised in a browser.
+
+**Open, for a decision (most important first):**
+
+1. `convex/arabicReview.ts` `saveVote` / `approve` / `present` / `snapshot` /
+   `history` are public with no sign-in; the reviewer is an argument. Retire the
+   review room or require a platform administrator.
+2. Production email runs `allowlist`: a real gym's owner, staff and members get
+   no operational email until listed or the mode is `live`.
+3. `dashboardData` and `operatingBriefData` return revenue, outstanding totals,
+   the staff leaderboard and audit alerts to every role with `members.read`;
+   member and lead exports need only `members.read` / `crm.read`.
+4. No screen calls `reviewApproval`, so large refunds and over-limit discounts
+   stay pending. `refundPtPackage` is likewise unreachable.
+5. `customerReceiptDetail` returns staff-side payment fields to the member;
+   `public.marketplace` returns trainer `userId` and leave reasons.
+6. Public legal text still promises WhatsApp reminders and names Starter/Growth.
+7. Scale: `customerExperience` and `createCustomerTrial` scan trial bookings
+   across all tenants; `public.marketplace` reads every member of each listed
+   gym; `automations.evaluate`, `renewalJobs.queueRenewalJourney` and
+   `membershipJobs.queueLifecycleReminders` handle every gym in one mutation;
+   `auditPage` and `approvals` read the whole audit history.
+8. Unused code listed but left: about 761 catalogue keys, 45 `GymOSApi` methods,
+   `messagingQueue.ts` / `messagingWorker.ts`, about 40 schema indexes, the
+   automation rule editor and "coming soon" component.
+9. Arabic that departs from the approved terms (lead as «الفرص», gym-visit trial
+   as «تجربة مجانية», check-in as «تسجيل الحضور», Latin "WhatsApp").
+10. `shifts.review` and `approvals.review` are two paths for one decision;
+    `public.promo.check` is an unthrottled code oracle; `seed:` identity claiming
+    and `seedDemoTenant` have no Production guard.
+11. No `global-error.tsx`; `error.tsx` and `not-found.tsx` carry English text.
+12. Repository: 46 merged local branches, 8 unmerged, 2 August stashes, 12 extra
+    worktrees, 59 MB of `docs/ui-evidence`, and this file's own size.
+
 ## Domain and sign-in fixes released (10 November 2026)
 
 - **Source:** `cd1fadc8a03ec862b1437d58f7a803a25fe435cc`, pushed to `main` at
