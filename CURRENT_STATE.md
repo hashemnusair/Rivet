@@ -3,9 +3,17 @@
 ## Launch audit: privacy and security items (10 November 2026)
 
 Elias asked for the six "privacy and security" audit items to be fixed.
-**Not released when written:** the source is committed locally; the promo
-check moved from a query to a mutation, so the Convex deploy and the frontend
-push must go out together (backend first).
+**Released 10 November 2026:** source `bf5bf0c5`. The promo check moved from
+a query to a mutation, so the backend went first: guarded Convex dry run (no
+index deletions) and deploy to `descriptive-meerkat-589` at 11:40 UTC, then
+the push. [GitHub CI](https://github.com/hashemnusair/Rivet/actions/runs/42809382720)
+passed all eleven jobs and Vercel Production for `bf5bf0c5` succeeded at
+11:44 UTC, so "Apply code" on the signup page could fail for about four
+minutes. Live read-only checks: the `public.promo.check` mutation answers
+`not_found` for an unknown code and the old query is no longer served;
+`public.marketplace` returns one gym with no trainers, so the trainer trim
+could not be seen live; `/api/health` reported web and Convex `ok`. No
+signed-in flow was exercised on Production.
 
 - **Member receipts (audit item 5).** `customerReceiptDetail` no longer returns
   `collectedById`, `createdById`, `shiftId`, `idempotencyKey` or retail line
