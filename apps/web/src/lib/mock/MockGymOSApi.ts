@@ -6060,12 +6060,17 @@ export class MockGymOSApi implements GymOSApi {
         .filter((a) => !a.leadId)
         .slice(0, 14);
 
+      // Mirrors the server: gym-wide money and other people's results need
+      // the financial reports permission; approval alerts need the activity log.
+      const viewerPermissions = permissionsFor(this.db, currentRole(this.db));
+      const financial = viewerPermissions.includes("reports.financial.read");
+      const ownId = this.db.session.userId;
       return {
         kpis: {
-          revenueToday: money(revenueOn(today)),
-          revenueThisMonth: money(revenueBetween(monthStart, today)),
-          revenuePrevMonth: money(revenueBetween(prevMonthStart, prevMonthDate)),
-          outstandingTotal: money(outstandingTotal),
+          revenueToday: financial ? money(revenueOn(today)) : money(0),
+          revenueThisMonth: financial ? money(revenueBetween(monthStart, today)) : money(0),
+          revenuePrevMonth: financial ? money(revenueBetween(prevMonthStart, prevMonthDate)) : money(0),
+          outstandingTotal: financial ? money(outstandingTotal) : money(0),
           newMembersThisMonth: this.db.members.filter((m) => dayOf(m.createdAt) >= monthStart).length,
           renewalsDueNext7Days: renewalsDue,
           expiredUnactioned,
@@ -6073,11 +6078,11 @@ export class MockGymOSApi implements GymOSApi {
           activeLeads,
           overdueFollowUps: overdueTasks.length,
         },
-        revenueSeries,
-        branchRevenue,
+        revenueSeries: financial ? revenueSeries : [],
+        branchRevenue: financial ? branchRevenue : [],
         funnel,
-        leaderboard,
-        alerts,
+        leaderboard: financial ? leaderboard : leaderboard.filter((row) => row.userId === ownId),
+        alerts: viewerPermissions.includes("audit.read") ? alerts : [],
         todayQueue,
         recentActivity,
       };
@@ -11039,7 +11044,7 @@ export class MockGymOSApi implements GymOSApi {
     if (preview) return preview.requestExport(input);
     return this.respond(() => {
       this.requireExportAccess(input.organizationId);
-      const permission: Partial<Record<import("@/lib/domain/qol").ExportKind, Permission>> = { members: "members.read", leads: "crm.read", payments: "reports.financial.read", membership_liabilities: "reports.financial.read", personal_training: "pt.reports.read", operations: "operations.manage", audit: "audit.read" };
+      const permission: Partial<Record<import("@/lib/domain/qol").ExportKind, Permission>> = { members: "reports.financial.read", leads: "crm.assign", payments: "reports.financial.read", membership_liabilities: "reports.financial.read", personal_training: "pt.reports.read", operations: "operations.manage", audit: "audit.read" };
       const required = permission[input.kind];
       if (!required) throw ApiError.of(ERR.VALIDATION, "Choose a supported export dataset.");
       this.require(required);

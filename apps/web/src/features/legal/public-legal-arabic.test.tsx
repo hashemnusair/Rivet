@@ -15,8 +15,8 @@ const evidence = process.env.RIVET_ARABIC_DOCUMENT_EVIDENCE;
 afterEach(cleanup);
 describe("Arabic public documents", () => {
   it.each([
-    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الاستخدام", sections: 20, version: TERMS_OF_SERVICE_VERSION, published: "1.2 · 15 October 2026", number: "1.2", arabicVersion: "1.2 · 15 تشرين الأول 2026" },
-    { kind: "privacy", Component: PrivacyPolicy, target: "privacy-policy", title: "سياسة الخصوصية", sections: 15, version: PRIVACY_POLICY_VERSION, published: "1.1 · 14 September 2026", number: "1.1", arabicVersion: "1.1 · 14 أيلول 2026" },
+    { kind: "terms", Component: TermsOfService, target: "terms-of-service", title: "شروط الاستخدام", sections: 20, version: TERMS_OF_SERVICE_VERSION, published: "1.3 · 10 November 2026", number: "1.3", arabicVersion: "1.3 · 10 تشرين الثاني 2026" },
+    { kind: "privacy", Component: PrivacyPolicy, target: "privacy-policy", title: "سياسة الخصوصية", sections: 15, version: PRIVACY_POLICY_VERSION, published: "1.2 · 10 November 2026", number: "1.2", arabicVersion: "1.2 · 10 تشرين الثاني 2026" },
   ])("preserves $kind anchors, published version and complete PDF content", ({ kind, Component, target, title, sections, version, published, number, arabicVersion }) => {
     const t = createTranslator("ar");
     const { container } = render(<LocaleProvider initialLocale="ar"><Component /></LocaleProvider>);
@@ -44,7 +44,8 @@ describe("Arabic public documents", () => {
       expect(text).toContain("البيانات الواردة في القسم 20");
     } else {
       expect(text).toContain("24 لسنة 2023");
-      expect(text).toContain("STOP");
+      expect(text).toContain("لا ترسل RIVET رسائل عبر واتساب");
+      expect(text).not.toContain("STOP");
       expect(text).toContain("30 يومًا");
       expect(text).toContain("90 يومًا");
     }

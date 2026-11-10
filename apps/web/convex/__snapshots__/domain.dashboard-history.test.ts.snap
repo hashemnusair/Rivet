@@ -672,30 +672,8 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
     },
   },
   "branch-A receptionist": {
-    "alerts": [
-      {
-        "actorName": "Sami Sales",
-        "detail": "Loyal member",
-        "href": "/audit",
-        "id": "audit-discount",
-        "kind": "pending_discount",
-        "occurredAt": "2026-10-14T12:00:00.000Z",
-        "severity": "warning",
-        "title": "Discount of 20% requested",
-      },
-    ],
-    "branchRevenue": [
-      {
-        "activeMembers": 7,
-        "branchId": "dash-branch-a",
-        "branchName": "Abdoun",
-        "checkInsToday": 3,
-        "collected": {
-          "amount": 43000,
-          "currency": "JOD",
-        },
-      },
-    ],
+    "alerts": [],
+    "branchRevenue": [],
     "funnel": [
       {
         "count": 5,
@@ -744,51 +722,25 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
       "expiredUnactioned": 2,
       "newMembersThisMonth": 0,
       "outstandingTotal": {
-        "amount": 12000,
+        "amount": 0,
         "currency": "JOD",
       },
       "overdueFollowUps": 1,
       "renewalsDueNext7Days": 1,
       "revenuePrevMonth": {
-        "amount": 15000,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueThisMonth": {
-        "amount": 40000,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueToday": {
-        "amount": 14000,
+        "amount": 0,
         "currency": "JOD",
       },
     },
     "leaderboard": [
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Dana Owner",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 10000,
-          "currency": "JOD",
-        },
-        "userId": "dash-owner",
-      },
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Majd Manager",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 0,
-          "currency": "JOD",
-        },
-        "userId": "dash-manager-a",
-      },
       {
         "followUpsCompleted": 0,
         "leadsConverted": 0,
@@ -801,19 +753,6 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
           "currency": "JOD",
         },
         "userId": "dash-desk",
-      },
-      {
-        "followUpsCompleted": 1,
-        "leadsConverted": 0,
-        "name": "Sami Sales",
-        "newSales": 8,
-        "overdueFollowUps": 1,
-        "renewals": 1,
-        "revenueCollected": {
-          "amount": 30000,
-          "currency": "JOD",
-        },
-        "userId": "dash-sales",
       },
     ],
     "recentActivity": [
@@ -941,158 +880,7 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
         "type": "call_attempt",
       },
     ],
-    "revenueSeries": [
-      {
-        "collected": 0,
-        "date": "2026-09-16",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-17",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-18",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-19",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-20",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-21",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-22",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-23",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-24",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-25",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-26",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-27",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-28",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-29",
-        "refunds": 0,
-      },
-      {
-        "collected": 3000,
-        "date": "2026-09-30",
-        "refunds": 0,
-      },
-      {
-        "collected": 6000,
-        "date": "2026-10-01",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-02",
-        "refunds": 0,
-      },
-      {
-        "collected": 20000,
-        "date": "2026-10-03",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-04",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-05",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-06",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-07",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-08",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-09",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-10",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-11",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-12",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-13",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-14",
-        "refunds": 0,
-      },
-      {
-        "collected": 14000,
-        "date": "2026-10-15",
-        "refunds": 3000,
-      },
-    ],
+    "revenueSeries": [],
     "todayQueue": {
       "generatedAt": "2026-10-15T09:00:00.000Z",
       "highPriorityItems": 3,
@@ -3753,40 +3541,8 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
     },
   },
   "salesperson": {
-    "alerts": [
-      {
-        "actorName": "Sami Sales",
-        "detail": "Loyal member",
-        "href": "/audit",
-        "id": "audit-discount",
-        "kind": "pending_discount",
-        "occurredAt": "2026-10-14T12:00:00.000Z",
-        "severity": "warning",
-        "title": "Discount of 20% requested",
-      },
-    ],
-    "branchRevenue": [
-      {
-        "activeMembers": 7,
-        "branchId": "dash-branch-a",
-        "branchName": "Abdoun",
-        "checkInsToday": 3,
-        "collected": {
-          "amount": 43000,
-          "currency": "JOD",
-        },
-      },
-      {
-        "activeMembers": 4,
-        "branchId": "dash-branch-b",
-        "branchName": "Sweifieh",
-        "checkInsToday": 1,
-        "collected": {
-          "amount": 17500,
-          "currency": "JOD",
-        },
-      },
-    ],
+    "alerts": [],
+    "branchRevenue": [],
     "funnel": [
       {
         "count": 8,
@@ -3835,64 +3591,25 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
       "expiredUnactioned": 2,
       "newMembersThisMonth": 1,
       "outstandingTotal": {
-        "amount": 17000,
+        "amount": 0,
         "currency": "JOD",
       },
       "overdueFollowUps": 1,
       "renewalsDueNext7Days": 1,
       "revenuePrevMonth": {
-        "amount": 31000,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueThisMonth": {
-        "amount": 42500,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueToday": {
-        "amount": 16500,
+        "amount": 0,
         "currency": "JOD",
       },
     },
     "leaderboard": [
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Dana Owner",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 10000,
-          "currency": "JOD",
-        },
-        "userId": "dash-owner",
-      },
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Majd Manager",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 0,
-          "currency": "JOD",
-        },
-        "userId": "dash-manager-a",
-      },
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Hala Desk",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 2500,
-          "currency": "JOD",
-        },
-        "userId": "dash-desk",
-      },
       {
         "followUpsCompleted": 1,
         "leadsConverted": 2,
@@ -4029,158 +3746,7 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
         "type": "trial_completed",
       },
     ],
-    "revenueSeries": [
-      {
-        "collected": 0,
-        "date": "2026-09-16",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-17",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-18",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-19",
-        "refunds": 0,
-      },
-      {
-        "collected": 15000,
-        "date": "2026-09-20",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-21",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-22",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-23",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-24",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-25",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-26",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-27",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-28",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-29",
-        "refunds": 0,
-      },
-      {
-        "collected": 3000,
-        "date": "2026-09-30",
-        "refunds": 0,
-      },
-      {
-        "collected": 6000,
-        "date": "2026-10-01",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-02",
-        "refunds": 0,
-      },
-      {
-        "collected": 20000,
-        "date": "2026-10-03",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-04",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-05",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-06",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-07",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-08",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-09",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-10",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-11",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-12",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-13",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-14",
-        "refunds": 0,
-      },
-      {
-        "collected": 16500,
-        "date": "2026-10-15",
-        "refunds": 3000,
-      },
-    ],
+    "revenueSeries": [],
     "todayQueue": {
       "generatedAt": "2026-10-15T09:00:00.000Z",
       "highPriorityItems": 7,
@@ -4419,40 +3985,8 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
     },
   },
   "salesperson, branch B": {
-    "alerts": [
-      {
-        "actorName": "Sami Sales",
-        "detail": "Loyal member",
-        "href": "/audit",
-        "id": "audit-discount",
-        "kind": "pending_discount",
-        "occurredAt": "2026-10-14T12:00:00.000Z",
-        "severity": "warning",
-        "title": "Discount of 20% requested",
-      },
-    ],
-    "branchRevenue": [
-      {
-        "activeMembers": 0,
-        "branchId": "dash-branch-a",
-        "branchName": "Abdoun",
-        "checkInsToday": 0,
-        "collected": {
-          "amount": 0,
-          "currency": "JOD",
-        },
-      },
-      {
-        "activeMembers": 4,
-        "branchId": "dash-branch-b",
-        "branchName": "Sweifieh",
-        "checkInsToday": 1,
-        "collected": {
-          "amount": 17500,
-          "currency": "JOD",
-        },
-      },
-    ],
+    "alerts": [],
+    "branchRevenue": [],
     "funnel": [
       {
         "count": 3,
@@ -4501,64 +4035,25 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
       "expiredUnactioned": 0,
       "newMembersThisMonth": 1,
       "outstandingTotal": {
-        "amount": 5000,
+        "amount": 0,
         "currency": "JOD",
       },
       "overdueFollowUps": 0,
       "renewalsDueNext7Days": 0,
       "revenuePrevMonth": {
-        "amount": 16000,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueThisMonth": {
-        "amount": 2500,
+        "amount": 0,
         "currency": "JOD",
       },
       "revenueToday": {
-        "amount": 2500,
+        "amount": 0,
         "currency": "JOD",
       },
     },
     "leaderboard": [
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Dana Owner",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 0,
-          "currency": "JOD",
-        },
-        "userId": "dash-owner",
-      },
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Majd Manager",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 0,
-          "currency": "JOD",
-        },
-        "userId": "dash-manager-a",
-      },
-      {
-        "followUpsCompleted": 0,
-        "leadsConverted": 0,
-        "name": "Hala Desk",
-        "newSales": 0,
-        "overdueFollowUps": 0,
-        "renewals": 0,
-        "revenueCollected": {
-          "amount": 2500,
-          "currency": "JOD",
-        },
-        "userId": "dash-desk",
-      },
       {
         "followUpsCompleted": 0,
         "leadsConverted": 2,
@@ -4695,158 +4190,7 @@ exports[`dashboard over a gym with history > keeps KPIs, retention alerts and th
         "type": "trial_completed",
       },
     ],
-    "revenueSeries": [
-      {
-        "collected": 0,
-        "date": "2026-09-16",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-17",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-18",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-19",
-        "refunds": 0,
-      },
-      {
-        "collected": 15000,
-        "date": "2026-09-20",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-21",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-22",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-23",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-24",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-25",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-26",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-27",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-28",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-29",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-09-30",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-01",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-02",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-03",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-04",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-05",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-06",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-07",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-08",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-09",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-10",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-11",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-12",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-13",
-        "refunds": 0,
-      },
-      {
-        "collected": 0,
-        "date": "2026-10-14",
-        "refunds": 0,
-      },
-      {
-        "collected": 2500,
-        "date": "2026-10-15",
-        "refunds": 0,
-      },
-    ],
+    "revenueSeries": [],
     "todayQueue": {
       "generatedAt": "2026-10-15T09:00:00.000Z",
       "highPriorityItems": 2,

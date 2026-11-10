@@ -5457,8 +5457,10 @@ function staffExportKind(value: unknown, correlationId: string): StaffExportKind
 }
 
 function requireExportPermission(actor: ActorContext, kind: StaffExportKind): void {
-  if (kind === "members") return requirePermission(actor, "members.read");
-  if (kind === "leads") return requirePermission(actor, "crm.read");
+  // A whole-directory file is a supervisor's tool: reading one member or one
+  // lead on screen does not allow taking every record out of the gym.
+  if (kind === "members") { requirePermission(actor, "members.read"); return requirePermission(actor, "reports.financial.read"); }
+  if (kind === "leads") { requirePermission(actor, "crm.read"); return requirePermission(actor, "crm.assign"); }
   if (["payments", "membership_liabilities"].includes(kind)) return requirePermission(actor, "reports.financial.read");
   if (kind === "audit") return requirePermission(actor, "audit.read");
   if (kind === "personal_training") return requirePermission(actor, "pt.reports.read");
@@ -13900,7 +13902,13 @@ async function dashboardData(ctx: QueryCtx, actor: ActorContext, input: Data, op
   queueItems.push(...(await checklistTodayQueueItems(ctx, actor, queueBranchVisible)) as Array<Data & TodayQueueSortableItem>);
   const todayQueue = finalizeTodayQueue(queueItems, isoNow(), options.complete ? BRIEF_QUEUE_LIMIT : undefined);
   const timeline = await recentTimelineEvents(ctx, actor, 10);
-  return { kpis: { revenueToday: money(revenueSummary.revenueToday, actor.organization.currency), revenueThisMonth: money(revenueSummary.revenueThisMonth, actor.organization.currency), revenuePrevMonth: money(revenueSummary.revenuePrevMonth, actor.organization.currency), outstandingTotal: money(outstanding, actor.organization.currency), newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: revenueSummary.revenueSeries, branchRevenue, funnel, leaderboard, alerts, todayQueue, recentActivity: timeline };
+  // Gym-wide money and other people's results are for roles that may read
+  // financial reports. Everyone else gets zeroed totals, no revenue series and
+  // only their own leaderboard row; approval alerts need the activity log.
+  const financial = hasPermission(actor, "reports.financial.read");
+  const zero = money(0, actor.organization.currency);
+  const ownId = publicUserId(actor.user);
+  return { kpis: { revenueToday: financial ? money(revenueSummary.revenueToday, actor.organization.currency) : zero, revenueThisMonth: financial ? money(revenueSummary.revenueThisMonth, actor.organization.currency) : zero, revenuePrevMonth: financial ? money(revenueSummary.revenuePrevMonth, actor.organization.currency) : zero, outstandingTotal: financial ? money(outstanding, actor.organization.currency) : zero, newMembersThisMonth: members.filter((member) => businessDate(stringValue(member.createdAt), actor.organization.timezone || TZ_FALLBACK).slice(0, 7) === today.slice(0, 7)).length, renewalsDueNext7Days: renewals, expiredUnactioned, checkInsToday: checkinsToday, activeLeads, overdueFollowUps: overdue }, revenueSeries: financial ? revenueSummary.revenueSeries : [], branchRevenue: financial ? branchRevenue : [], funnel, leaderboard: financial ? leaderboard : leaderboard.filter((row) => row.userId === ownId), alerts: hasPermission(actor, "audit.read") ? alerts : [], todayQueue, recentActivity: timeline };
 }
 
 export const query = convexQuery({

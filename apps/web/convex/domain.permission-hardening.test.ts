@@ -111,6 +111,29 @@ describe("permission catalog compatibility and write boundaries", () => {
     await expectCode(trainer.mutation(api.domain.mutate, operation("accounting.source.post", { sourceType: "payment", sourceId: "missing", idempotencyKey: "trainer-post" })), "FORBIDDEN");
   });
 
+  it("keeps gym-wide money, other people's results and whole-list files with supervisors", async () => {
+    const { t, owner, manager } = await seeded();
+    type Dashboard = { kpis: { revenueThisMonth: { amount: number } }; revenueSeries: unknown[]; branchRevenue: unknown[]; leaderboard: Array<{ userId: string }>; alerts: unknown[] };
+    const everyone = ((await owner.query(api.domain.query, operation("dashboard"))) as Dashboard).leaderboard.map((row) => row.userId);
+    expect(everyone.length).toBeGreaterThan(1);
+    expect(((await manager.query(api.domain.query, operation("dashboard"))) as Dashboard).leaderboard).toHaveLength(everyone.length);
+    for (const role of ["sales", "receptionist", "trainer"] as const) {
+      const staff = t.withIdentity({ subject: `clerk-permission-${role}` });
+      const dashboard = (await staff.query(api.domain.query, operation("dashboard"))) as Dashboard;
+      expect(dashboard.leaderboard.map((row) => row.userId).filter((id) => id !== `permission-${role}`)).toEqual([]);
+      expect(dashboard.revenueSeries).toEqual([]);
+      expect(dashboard.branchRevenue).toEqual([]);
+      expect(dashboard.alerts).toEqual([]);
+      expect(dashboard.kpis.revenueThisMonth.amount).toBe(0);
+      for (const kind of ["members", "leads"]) {
+        await expectCode(staff.mutation(api.domain.mutate, operation("exports.request", { kind, filters: {}, locale: "en", idempotencyKey: `blocked-${role}-${kind}` })), "FORBIDDEN");
+      }
+    }
+    for (const kind of ["members", "leads"]) {
+      await expect(manager.mutation(api.domain.mutate, operation("exports.request", { kind, filters: {}, locale: "en", idempotencyKey: `manager-${kind}-export` }))).resolves.toMatchObject({ kind });
+    }
+  });
+
   it("refuses to build an actor from a retired auditor membership", async () => {
     const { t } = await seeded();
     await t.run(async (ctx) => {

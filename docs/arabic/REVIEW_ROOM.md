@@ -1,6 +1,8 @@
 # Arabic review room
 
-Route: **https://www.rivetjo.com/arabic-room**. Choose **Elias** or **Hashem** when opening the page. No account or sign-in is required. The old `/platform/arabic-room` link redirects here, preserving the selected question. This page sits outside the platform console and is not added to gym/member navigation.
+Route: **https://platform.rivetjo.com/platform/arabic-room**, inside the platform console. Sign in as a platform administrator, then choose **Elias** or **Hashem**. The old public link `https://www.rivetjo.com/arabic-room` redirects here and keeps the selected question.
+
+**Closed to the public on 10 November 2026 (launch audit).** From 1 October to 10 November 2026 the room needed no sign-in; the notes below that describe public access are history. Every review endpoint (`snapshot`, `history`, `saveVote`, `approve`, `present`) now calls `requirePlatformAdmin`, so a visitor or a gym account can neither read nor change the review. The name picker stays because the two founders share one review; it is a label inside an administrator session, not an identity check.
 
 ## How Hashem and Elias use it
 
@@ -32,7 +34,7 @@ The 247 editorial questions sample recurring and exceptional language decisions 
 - `arabicReviewHistory`: append-only answer/comment changes. UI shows latest 30 per card; older history remains stored.
 - `arabicReviewRooms`: revision and approvals tied to the two named reviewers.
 - `arabicReviewPresence`: last active question/time per selected name. No chat or third-party messaging.
-- On 1 October 2026, Hashem explicitly requested unauthenticated access with a two-name picker. All review queries and mutations are deliberately public. Anyone with the link can view the review content and choose either name to edit or approve it; the names are not authenticated identities. No gym, account, money or platform-admin API permission is granted by choosing a name.
+- On 1 October 2026, Hashem explicitly requested unauthenticated access with a two-name picker, and the review ran that way until revision 607 was approved. On 10 November 2026 Elias asked for it to be closed before launch: all review queries and mutations now require a signed-in platform administrator. Any administrator can still choose either name.
 - Only the literal reviewer keys `elias` and `hashem` are accepted. Inputs, catalog version, stale writes and approval state are still validated server-side. Mutations have bounded per-name write/presence rate limits. These are traffic controls, not identity verification.
 - Legacy account-owned review answers, comments, history and approvals can be preserved by the internal, idempotent `migrateNamedReviewers` mutation. It verifies the supplied legacy accounts, remaps only review-table ownership to stable names and refuses duplicate answer conflicts. It never modifies the accounts themselves.
 - Version `2026-09-30-v1` binds votes to the questionnaire. Bump the version whenever meanings/options change after release; never repurpose option IDs under an existing version. Prior versions remain stored and are not treated as current approvals.

@@ -4,8 +4,13 @@ test("Arabic review supports keyboard choices, filtering, saved states and mobil
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/platform/arabic-room?card=membership");
-  await expect(page).toHaveURL(/\/arabic-room\?card=membership$/);
+  // The room is closed to the public: it lives in the platform console, and
+  // the old public link lands there after an administrator signs in.
+  await page.goto("/login/admin");
+  await page.getByRole("button", { name: /Open platform console/i }).click();
+  await expect(page).toHaveURL(/\/platform$/);
+  await page.goto("/arabic-room?card=membership");
+  await expect(page).toHaveURL(/\/platform\/arabic-room\?card=membership$/);
   await expect(
     page.getByRole("heading", { name: "Who are you?" }),
   ).toBeVisible();

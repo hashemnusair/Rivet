@@ -64,7 +64,7 @@ export function exportReview(snapshot: ReviewSnapshot) {
   return {
     format: "rivet-arabic-review-v1",
     identityMode:
-      "Self-selected names; anyone with the link can edit either reviewer’s choices.",
+      "Signed-in platform administrators choose a reviewer name; the room is closed to the public.",
     exportedAt: new Date().toISOString(),
     catalogVersion: snapshot.version,
     revision: snapshot.revision,

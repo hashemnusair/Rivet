@@ -10,7 +10,13 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { AuditQuery } from "@/lib/api/GymOSApi";
-import { useApiQuery } from "@/lib/hooks/use-api";
+import { toast } from "sonner";
+import Link from "next/link";
+import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
+import { usePermissions } from "@/lib/providers/app-providers";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/input";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
 import type { AuditCategory, AuditEvent } from "@/lib/domain/types";
 import { cn } from "@/lib/utils/cn";
@@ -23,6 +29,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { EmptyState, ErrorState, ForbiddenState } from "@/components/ui/states";
 import { isApiError } from "@/lib/api/errors";
 import { auditApprovalStatusForDisplay, auditReasonMessageKey } from "@/lib/domain/audit";
+
+/** The permission a reviewer needs for each kind of pending approval; the server checks the same pair. */
+const REVIEW_PERMISSION: Record<string, string> = {
+  "membership.discount": "payments.discount",
+  "payment.refund": "payments.refund",
+};
+type Review = { event: AuditEvent; decision: "approved" | "rejected" };
 
 const CATEGORY_LABELS: Record<AuditCategory, TKey> = {
   auth: "staffTools.audit.category.auth",
@@ -101,6 +114,21 @@ function AuditPageInner() {
   const page = pageFromParams(searchParams);
   const pageSize = Number(choiceFromParams(searchParams, "size", PAGE_SIZE_CHOICES, String(DEFAULT_ACTIVITY_PAGE_SIZE)));
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { can } = usePermissions();
+  const invalidate = useInvalidate();
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewNote, setReviewNote] = useState("");
+  const closeReview = () => { setReview(null); setReviewNote(""); };
+  const reviewApproval = useApiMutation(
+    (api, input: { auditEventId: string; decision: "approved" | "rejected"; note: string }) => api.reviewApproval(input.auditEventId, { decision: input.decision, note: input.note }),
+    {
+      onSuccess: async (_data, input) => {
+        toast.success(input.decision === "approved" ? t("staffTools.audit.approved") : t("staffTools.audit.rejected"));
+        closeReview();
+        await invalidate([["audit"], qk.approvals, ["dashboard"], ["members"]]);
+      },
+    },
+  );
 
   const usersQuery = useApiQuery(qk.users({ all: true }), (api) => api.listUsers({ pageSize: 100 }));
 
@@ -190,11 +218,38 @@ function AuditPageInner() {
                 event={event}
                 expanded={expanded === event.id}
                 onToggle={() => setExpanded((x) => (x === event.id ? null : event.id))}
+                canReview={Boolean(REVIEW_PERMISSION[event.action]) && can(REVIEW_PERMISSION[event.action]!)}
+                canReviewCash={event.action === "shift.close_variance" && can("reconciliation.approve_variance")}
+                onReview={(decision) => setReview({ event, decision })}
               />
             ))}
           </ActivityLog>
         )}
       </div>
+      <Dialog open={Boolean(review)} onOpenChange={(open) => { if (!open) closeReview(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{review?.decision === "rejected" ? t("salesWorkspace.reject") : t("salesWorkspace.approve")}</DialogTitle>
+            <DialogDescription>{t("salesWorkspace.reviewReasonHint")}</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {review ? <p className="mb-3 text-[13px] text-ink-2 [overflow-wrap:anywhere]" dir="auto">{review.event.entityLabel} · {review.event.summary}</p> : null}
+            <label className="grid gap-2 text-[13px] font-medium">{t("common.label.reason")}<Textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder={t("salesWorkspace.reviewPlaceholder")} autoFocus />
+            </label>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={closeReview}>{t("common.action.cancel")}</Button>
+            <Button
+              variant={review?.decision === "rejected" ? "danger" : "primary"}
+              loading={reviewApproval.isPending}
+              disabled={!reviewNote.trim() || !review}
+              onClick={() => review && reviewApproval.mutate({ auditEventId: review.event.id, decision: review.decision, note: reviewNote.trim() })}
+            >
+              {review?.decision === "rejected" ? t("salesWorkspace.reject") : t("salesWorkspace.approve")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {data ? (
         <DataPagination
           page={data}
@@ -208,7 +263,7 @@ function AuditPageInner() {
   );
 }
 
-function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: boolean; onToggle: () => void }) {
+function AuditRow({ event, expanded, onToggle, canReview, canReviewCash, onReview }: { event: AuditEvent; expanded: boolean; onToggle: () => void; canReview: boolean; canReviewCash: boolean; onReview: (decision: "approved" | "rejected") => void }) {
   const { t, locale } = useLocale();
   const hasDetail = Boolean(event.before || event.after || event.reason);
   const reasonKey = auditReasonMessageKey(event);
@@ -243,6 +298,15 @@ function AuditRow({ event, expanded, onToggle }: { event: AuditEvent; expanded: 
       ) : (
         <div className="flex items-start gap-3 px-4 py-3 sm:px-5">{entry}</div>
       )}
+      {approvalStatus === "pending" && (canReview || canReviewCash) ? (
+        // Outside the row button: a decision is its own control, reachable without opening the detail.
+        <div className="flex flex-wrap gap-2 px-4 pb-3 sm:px-5">
+          {canReview ? <>
+            <Button size="sm" onClick={() => onReview("approved")}>{t("salesWorkspace.approve")}</Button>
+            <Button size="sm" variant="secondary" onClick={() => onReview("rejected")}>{t("salesWorkspace.reject")}</Button>
+          </> : <Button asChild size="sm" variant="secondary"><Link href="/payments/shifts">{t("salesWorkspace.shiftsCash")}</Link></Button>}
+        </div>
+      ) : null}
       {expanded && hasDetail ? (
         <div className="border-t border-line/70 bg-sunken/30 px-4 py-3 animate-fade-in sm:px-5">
           <div className="grid gap-3 md:grid-cols-2">

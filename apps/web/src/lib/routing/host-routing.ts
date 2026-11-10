@@ -39,7 +39,7 @@ export function hostnameForPath(pathname: string): string | null {
   if (under(pathname, "/customer") || under(pathname, "/login/member")) return RIVET_HOSTS.member;
   if (under(pathname, "/platform") || under(pathname, "/login/admin")) return RIVET_HOSTS.platform;
   if (under(pathname, "/login/gym") || under(pathname, "/login/accept-invitation") || GYM_ROOTS.some((root) => under(pathname, `/${root}`))) return RIVET_HOSTS.gym;
-  if (["/signup", "/terms", "/privacy", "/arabic-room"].includes(pathname)) return RIVET_HOSTS.public;
+  if (["/signup", "/terms", "/privacy"].includes(pathname)) return RIVET_HOSTS.public;
   if (under(pathname, "/offers")) return RIVET_HOSTS.member;
   return null;
 }
@@ -49,7 +49,9 @@ export function decideHostRouting(hostname: string | null | undefined, pathname:
   const host = normalizeHostname(hostname);
   if (!isRivetHost(host)) return { kind: "next" };
 
-  if (pathname === "/platform/arabic-room") return { kind: "redirect", hostname: RIVET_HOSTS.public, pathname: "/arabic-room", status: 308 };
+  // The Arabic review room needs a platform administrator, so the old public
+  // link lands on the platform console, which asks for sign-in.
+  if (pathname === "/arabic-room") return { kind: "redirect", hostname: RIVET_HOSTS.platform, pathname: "/platform/arabic-room", status: 308 };
 
   // The member signup alias must be resolved before the public gym application.
   if (host === RIVET_HOSTS.member && pathname === "/signup") {

@@ -28,9 +28,9 @@ describe("public legal documents", () => {
     expect(screen.getByRole("link", { name: "Privacy policy" })).toHaveAttribute("href", "/privacy");
   });
 
-  it("publishes version 1.2 with the beta period right after availability, and points notices at the contact section", () => {
+  it("publishes version 1.3 with the beta period right after availability, and points notices at the contact section", () => {
     render(<TermsOfService />);
-    expect(screen.getByText(/Version 1\.2 · 15 October 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Version 1\.3 · 10 November 2026/)).toBeInTheDocument();
     const titles = within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link").map((link) => link.textContent);
     expect(titles[9]).toMatch(/Availability and support/);
     expect(titles[10]).toMatch(/Beta period/);
@@ -39,5 +39,17 @@ describe("public legal documents", () => {
     expect(screen.getByText(/unavailable for longer than the aim in section 10 allows/)).toBeInTheDocument();
     expect(screen.getByText(/check important records, such as payments, unpaid amounts and membership dates/)).toBeInTheDocument();
     expect(screen.getByText(/to RIVET at the details in section 20\./)).toBeInTheDocument();
+  });
+
+  it("names the plans RIVET sells and promises email, never WhatsApp reminders", () => {
+    const { unmount } = render(<TermsOfService />);
+    expect(screen.getByText(/Basic or Pro, as described on the website/)).toBeInTheDocument();
+    expect(screen.queryByText(/Starter|Growth|WhatsApp reminders/)).not.toBeInTheDocument();
+    unmount();
+    render(<PrivacyPolicy />);
+    expect(screen.getByText(/Version 1\.2 · 10 November 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/send operational email to their own members/)).toBeInTheDocument();
+    expect(screen.getByText(/RIVET does not send WhatsApp or SMS messages/)).toBeInTheDocument();
+    expect(screen.queryByText(/over WhatsApp|WhatsApp delivery providers|replying STOP/)).not.toBeInTheDocument();
   });
 });

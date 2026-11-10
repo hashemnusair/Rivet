@@ -8,6 +8,16 @@ import {
   cardStatus,
 } from "./arabicReviewModel";
 const modules = import.meta.glob("./**/*.ts");
+/** The room is closed to the public: every call below is a signed-in platform administrator. */
+function room() {
+  const base = convexTest(schema, modules);
+  const admin = base.withIdentity({ subject: "clerk-arabic-review-admin" });
+  const ready = base.run(async (ctx) => {
+    await ctx.db.insert("users", { publicId: "arabic-review-admin", authSubject: "clerk-arabic-review-admin", email: "admin@review.example", fullName: "Review Admin", platformAdmin: true, status: "active", createdAt: 1, updatedAt: 1 });
+    await ctx.db.insert("users", { publicId: "arabic-review-staff", authSubject: "clerk-arabic-review-staff", email: "staff@review.example", fullName: "Gym Staff", platformAdmin: false, status: "active", createdAt: 1, updatedAt: 1 });
+  });
+  return { base, admin, ready };
+}
 const answer = {
   reviewer: "hashem" as const,
   version,
@@ -18,10 +28,19 @@ const answer = {
   expectedUpdatedAt: 0,
 };
 const membership = cards.find((card) => card.id === "membership")!;
-describe("public Arabic review", () => {
-  it("opens without an account and only accepts the two explicit reviewer names", async () => {
-    const t = convexTest(schema, modules);
-    const result = await t.query(api.arabicReview.snapshot, {
+describe("Arabic review room", () => {
+  it("refuses visitors and gym accounts, and only accepts the two reviewer names from an administrator", async () => {
+    const { base, admin, ready } = room();
+    await ready;
+    const staff = base.withIdentity({ subject: "clerk-arabic-review-staff" });
+    for (const caller of [base, staff]) {
+      await expect(caller.query(api.arabicReview.snapshot, { reviewer: "hashem" })).rejects.toThrow();
+      await expect(caller.query(api.arabicReview.history, { cardId: "membership" })).rejects.toThrow();
+      await expect(caller.mutation(api.arabicReview.saveVote, answer)).rejects.toThrow();
+      await expect(caller.mutation(api.arabicReview.approve, { reviewer: "hashem", version, revision: 0 })).rejects.toThrow();
+      await expect(caller.mutation(api.arabicReview.present, { reviewer: "hashem", cardId: "membership" })).rejects.toThrow();
+    }
+    const result = await admin.query(api.arabicReview.snapshot, {
       reviewer: "hashem",
     });
     expect(result.reviewers).toEqual([
@@ -29,25 +48,20 @@ describe("public Arabic review", () => {
       { id: "hashem", name: "Hashem" },
     ]);
     expect(result.me).toBe("hashem");
+    expect(result.votes).toEqual([]);
     await expect(
-      t.query(api.arabicReview.snapshot, { reviewer: "owner" as never }),
+      admin.query(api.arabicReview.snapshot, { reviewer: "owner" as never }),
     ).rejects.toThrow();
     await expect(
-      t.mutation(api.arabicReview.saveVote, {
+      admin.mutation(api.arabicReview.saveVote, {
         ...answer,
         reviewer: "owner" as never,
       }),
     ).rejects.toThrow();
-    await expect(
-      t.query(api.domain.query, {
-        operation: "platform.snapshot",
-        input: {},
-        correlationId: "public-review-test",
-      }),
-    ).rejects.toThrow();
   });
   it("stores separate named answers, exposes both on fresh reads, and keeps history", async () => {
-    const t = convexTest(schema, modules);
+    const { base, admin: t, ready } = room();
+    await ready;
     const time = await t.mutation(api.arabicReview.saveVote, answer);
     await t.mutation(api.arabicReview.saveVote, {
       ...answer,
@@ -67,7 +81,7 @@ describe("public Arabic review", () => {
     expect(
       await t.query(api.arabicReview.history, { cardId: "membership" }),
     ).toHaveLength(3);
-    const exported = await t.query(
+    const exported = await base.query(
       internal.arabicReview.exportForImplementation,
       {},
     );
@@ -75,10 +89,11 @@ describe("public Arabic review", () => {
     expect(
       exported.decisions.find((card) => card.id === "membership")?.agreedText,
     ).toBe("عضوية");
-    expect(exported.identityMode).toContain("Self-selected");
+    expect(exported.identityMode).toContain("platform administrators");
   });
   it("rejects stale tabs, stale catalogs and invalid answers without overwriting", async () => {
-    const t = convexTest(schema, modules);
+    const { admin: t, ready } = room();
+    await ready;
     await t.mutation(api.arabicReview.saveVote, answer);
     await expect(
       t.mutation(api.arabicReview.saveVote, { ...answer, choice: "b" }),
@@ -105,7 +120,8 @@ describe("public Arabic review", () => {
     ).toBe("a");
   });
   it("never agrees two rejections and accepts matching custom wording", async () => {
-    const t = convexTest(schema, modules);
+    const { admin: t, ready } = room();
+    await ready;
     const a = await t.mutation(api.arabicReview.saveVote, {
       ...answer,
       choice: "reject",
@@ -132,7 +148,8 @@ describe("public Arabic review", () => {
     expect(cardStatus(membership, s.votes, s.reviewers)).toBe("agreed");
   });
   it("requires complete agreement and both approvals and clears approval after edits", async () => {
-    const t = convexTest(schema, modules);
+    const { base, admin: t, ready } = room();
+    await ready;
     await expect(
       t.mutation(api.arabicReview.approve, {
         reviewer: "hashem",
@@ -140,7 +157,7 @@ describe("public Arabic review", () => {
         revision: 0,
       }),
     ).rejects.toThrow(/Every question/);
-    await t.run(async (ctx) => {
+    await base.run(async (ctx) => {
       for (const card of cards)
         for (const userId of ["elias", "hashem"])
           await ctx.db.insert("arabicReviewVotes", {
@@ -174,7 +191,7 @@ describe("public Arabic review", () => {
       revision: 494,
     });
     expect(
-      (await t.query(internal.arabicReview.exportForImplementation, {}))
+      (await base.query(internal.arabicReview.exportForImplementation, {}))
         .readyForImplementation,
     ).toBe(true);
     await t.mutation(api.arabicReview.saveVote, {
@@ -196,8 +213,9 @@ describe("public Arabic review", () => {
     ).rejects.toThrow(/Answers changed/);
   });
   it("migrates existing answers, comments, history and approvals without losing content; rerunning is safe", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await t.run(async (ctx) => {
+    const { base, admin: t, ready } = room();
+    await ready;
+    const ids = await base.run(async (ctx) => {
       const make = (name: string) =>
         ctx.db.insert("users", {
           authSubject: name,
@@ -230,11 +248,11 @@ describe("public Arabic review", () => {
       return { hashemUserId, eliasUserId };
     });
     expect(
-      (await t.mutation(internal.arabicReview.migrateNamedReviewers, ids))
+      (await base.mutation(internal.arabicReview.migrateNamedReviewers, ids))
         .migratedAnswersAndHistory,
     ).toBe(2);
     expect(
-      (await t.mutation(internal.arabicReview.migrateNamedReviewers, ids))
+      (await base.mutation(internal.arabicReview.migrateNamedReviewers, ids))
         .migratedAnswersAndHistory,
     ).toBe(0);
     const s = await t.query(api.arabicReview.snapshot, { reviewer: "hashem" });
@@ -251,7 +269,8 @@ describe("public Arabic review", () => {
     ).toBe("hashem");
   });
   it("updates live presence without changing answers and bounds public write traffic", async () => {
-    const t = convexTest(schema, modules);
+    const { base, admin: t, ready } = room();
+    await ready;
     await t.mutation(api.arabicReview.present, {
       reviewer: "hashem",
       cardId: "membership",
@@ -264,7 +283,7 @@ describe("public Arabic review", () => {
     expect(s.presence).toHaveLength(1);
     expect(s.presence[0]?.cardId).toBe("renew");
     expect(s.revision).toBe(0);
-    await t.run(async (ctx) => {
+    await base.run(async (ctx) => {
       await ctx.db.insert("publicRequestGuards", {
         scope: "arabic-review-write",
         fingerprint: "hashem",

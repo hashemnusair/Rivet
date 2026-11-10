@@ -74,7 +74,7 @@ describe("route ownership", () => {
     ["/customer/my-gyms", "member"], ["/customer/pt", "member"],
     ["/login/member/create", "member"], ["/offers/offer-token", "member"],
     ["/platform/gyms", "platform"], ["/login/admin", "platform"],
-    ["/arabic-room", "public"], ["/signup", "public"], ["/terms", "public"], ["/privacy", "public"],
+    ["/signup", "public"], ["/terms", "public"], ["/privacy", "public"],
   ] as const;
 
   for (const [path, area] of cases) {
@@ -128,6 +128,7 @@ describe("route ownership", () => {
   });
 });
 
-it("moves the old Arabic room directly to the standalone public page", () => {
-  expect(decideHostRouting("platform.rivetjo.com", "/platform/arabic-room")).toEqual({ kind: "redirect", hostname: "www.rivetjo.com", pathname: "/arabic-room", status: 308 });
+it("moves the old public Arabic room link into the platform console", () => {
+  expect(decideHostRouting("www.rivetjo.com", "/arabic-room")).toEqual({ kind: "redirect", hostname: "platform.rivetjo.com", pathname: "/platform/arabic-room", status: 308 });
+  expect(decideHostRouting("platform.rivetjo.com", "/platform/arabic-room")).toEqual({ kind: "next" });
 });

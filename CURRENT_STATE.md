@@ -1,5 +1,62 @@
 # GymOS / RIVET current implementation state
 
+## Launch audit follow-up: five items Elias asked to fix (10 November 2026)
+
+Not yet released when this was written: the Convex changes below only take
+effect after a guarded Production deploy (`pnpm convex:deploy -- --dry-run --yes`,
+then `-- --yes`).
+
+- **Arabic review room closed (audit item 1).** `convex/arabicReview.ts`
+  `snapshot`, `history`, `saveVote`, `approve` and `present` call
+  `requirePlatformAdmin`. The page moved back to `/platform/arabic-room` inside
+  the platform console; `/arabic-room` redirects there on every host. The
+  Elias/Hashem picker stays as a label within an administrator session.
+- **Production email (audit item 2): no code change, decision still open.**
+  `allowlist` is strict by design (`43598bcc`) and docs/19 "Before flipping
+  `RIVET_EMAIL_MODE` to `live`" still has open boxes (Resend callback and
+  secret, template read, two-week pilot, switch-back runbook). Until Elias
+  decides, each onboarded gym must be added to `RIVET_EMAIL_ALLOWLIST` (its
+  `@domain` or addresses) in the Convex dashboard, or it receives nothing.
+- **Role limits on money and whole-list files (audit item 3).** `dashboardData`
+  (and so `operatingBriefData`) returns revenue totals, the unpaid total, the
+  revenue series and branch revenue only with `reports.financial.read`; other
+  roles get zero amounts and empty lists. The leaderboard is cut to the
+  caller's own row without that permission (the sales dashboard reads its own
+  row). Approval alerts need `audit.read`. The member directory export needs
+  `members.read` plus `reports.financial.read`; the leads export needs
+  `crm.read` plus `crm.assign`. With default roles that is owner and manager
+  only. **Assumption:** no new permission was added (it would need a catalogue
+  version bump and a stored-role migration); an owner who wants a custom role
+  to export members grants it financial reports. The mock adapter and the
+  export centre mirror the rule.
+- **Approvals can be decided (audit item 4).** Activity log rows waiting for
+  approval show Approve and Reject for over-limit discounts
+  (`payments.discount`) and large refunds (`payments.refund`); a reason is
+  required and `approvals.review` records it. Cash differences keep their one
+  path: the row links to Shifts & cash. The Today queue already links to
+  `/audit?approval=pending`. Not changed: the person who made a refund can
+  approve it if their role allows; `refundPtPackage` is still unreachable.
+- **Legal text (audit item 6).** Terms 1.3 and Privacy 1.2, both dated
+  10 November 2026 and still awaiting the Jordanian lawyer: plans are named
+  Basic or Pro; WhatsApp reminders, message costs, quiet hours and the
+  STOP reply are gone; the documents now describe member email, say RIVET
+  sends no WhatsApp or SMS, and drop WhatsApp delivery providers from the
+  processors list. WhatsApp stays as a way to contact RIVET. The subscription
+  agreement text (`convex/legalAgreementText.ts`) was not edited. **Arabic for
+  Hashem or Elias to read:** `publicTerms.text018`, `text031`, `text065`;
+  `publicPrivacy.text048`, `text070`, `text072`, `text073`, `text074`, `text077`.
+
+**Validation:** typecheck, Convex typecheck, lint, the Arabic revision-607
+lock and the full unit suite passed locally (the dashboard-history snapshot
+was updated for the receptionist and salesperson views; `convex/ai.chat.test.ts`
+failed once under the full parallel run and passes alone). New tests:
+`convex/arabicReview.test.ts` (visitors and gym accounts refused),
+`convex/domain.permission-hardening.test.ts` (role limits),
+`src/app/(app)/audit/page.test.tsx` (approve with a reason),
+`src/features/legal/legal-pages.test.tsx`. Not exercised in a browser: the
+local preview pane stayed on "Loading your gym"; `e2e/arabic-review.spec.ts`
+was updated and is left to CI.
+
 ## Launch audit: fixes and open review list (10 November 2026)
 
 Elias asked for a whole-project read before launch: fix what is certain, list

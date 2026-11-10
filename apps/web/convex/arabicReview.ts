@@ -6,7 +6,7 @@ import {
   internalMutation,
 } from "./_generated/server";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
-import { domainError } from "./security";
+import { domainError, requirePlatformAdmin } from "./security";
 import { enforcePublicRateLimit } from "./publicAbuse";
 import {
   ARABIC_REVIEWERS,
@@ -16,6 +16,9 @@ import {
   exportReview,
 } from "./arabicReviewModel";
 
+// The room is closed to the public: every browser-callable function below
+// requires a signed-in platform administrator. The name is still chosen in
+// the room because the two founders share one review, not one account.
 const reviewer = v.union(v.literal("elias"), v.literal("hashem"));
 
 async function state(ctx: QueryCtx | MutationCtx, me: string) {
@@ -63,6 +66,7 @@ async function state(ctx: QueryCtx | MutationCtx, me: string) {
 export const snapshot = query({
   args: { reviewer },
   handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
     return state(ctx, args.reviewer);
   },
 });
@@ -77,6 +81,7 @@ export const saveVote = mutation({
     expectedUpdatedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
     await enforcePublicRateLimit(ctx, {
       scope: "arabic-review-write",
       fingerprint: args.reviewer,
@@ -158,6 +163,7 @@ export const saveVote = mutation({
 export const approve = mutation({
   args: { reviewer, version: v.string(), revision: v.number() },
   handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
     await enforcePublicRateLimit(ctx, {
       scope: "arabic-review-write",
       fingerprint: args.reviewer,
@@ -190,6 +196,7 @@ export const approve = mutation({
 export const history = query({
   args: { cardId: v.string() },
   handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
     return ctx.db
       .query("arabicReviewHistory")
       .withIndex("by_card", (q) =>
@@ -202,6 +209,7 @@ export const history = query({
 export const present = mutation({
   args: { reviewer, cardId: v.string() },
   handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
     await enforcePublicRateLimit(ctx, {
       scope: "arabic-review-presence",
       fingerprint: args.reviewer,

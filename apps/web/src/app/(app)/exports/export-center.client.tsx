@@ -24,8 +24,8 @@ import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { exportBranchScopePresentation, exportFailurePresentation, exportJobPresentation } from "./export-job-presentation";
 
 const EXPORTS: Array<{ kind: ExportKind; permission: string }> = [
-  { kind: "members", permission: "members.read" },
-  { kind: "leads", permission: "crm.read" },
+  { kind: "members", permission: "reports.financial.read" },
+  { kind: "leads", permission: "crm.assign" },
   { kind: "payments", permission: "reports.financial.read" },
   { kind: "membership_liabilities", permission: "reports.financial.read" },
   { kind: "personal_training", permission: "pt.reports.read" },

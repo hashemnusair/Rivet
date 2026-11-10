@@ -23,8 +23,6 @@ const AUTH_CALLS = [
 /** Public on purpose. Each delegates to an internal function that enforces its own gate, or exposes nothing tenant-owned. */
 const INTENTIONALLY_PUBLIC: Record<string, string> = {
   "aiActions.ts:prepare": "runs internal prepareContext, which calls requireActor, checks the record's scope and the assistance gates before any model call; it writes only a safe usage trace",
-  "arabicReview.ts:snapshot": "Owner-authorized public review room, only the two self-selected review identities and their wording decisions; no tenant/account data",
-  "arabicReview.ts:history": "Owner-authorized public history of wording choices; no tenant/account data",
   "domain.ts:query": "dispatcher: queryData calls requireActor/requireMember/requirePlatformAdmin before every operation",
   "domain.ts:mutate": "dispatcher: mutationData calls requireActor/requireMember/requirePlatformAdmin before every operation",
   "health.ts:check": "returns only an ok status and the server time",
@@ -66,7 +64,7 @@ describe("public Convex surface", () => {
     const reason = INTENTIONALLY_PUBLIC[key];
     if (reason) {
       // Listed functions must still be what the reason describes: a delegating action or a data-free query.
-      expect((key.startsWith("arabicReview.ts:") && !entry.source.includes('query("users")')) || entry.source.includes("runMutation(internal.") || entry.source.includes("runQuery(internal.") || entry.source.includes("ctx.db") === false || guarded, `${key}: ${reason}`).toBe(true);
+      expect(entry.source.includes("runMutation(internal.") || entry.source.includes("runQuery(internal.") || entry.source.includes("ctx.db") === false || guarded, `${key}: ${reason}`).toBe(true);
       return;
     }
     expect(guarded, `${key} has no requireActor/requireAuthenticated/requirePlatformAdmin/requireMember/getUserIdentity/enforcePublicRateLimit call and is not listed as intentionally public`).toBe(true);
