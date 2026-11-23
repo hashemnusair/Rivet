@@ -166,7 +166,7 @@ export function CustomerFinanceClient() {
           <>
             {transactions.isBackgroundError ? <div className="p-3"><ErrorState layout="inline" title={t("customerPortal.listRefreshFailed")} description={t("customerPortal.previousPayments")} onRetry={() => transactions.refetch()} /></div> : null}
             {transactions.data?.items.length ? (
-              <div className="divide-y divide-line">{transactions.data.items.map((item) => <TransactionRow key={`${item.gymId}-${item.id}`} item={item} />)}</div>
+              <div className="animate-settle divide-y divide-line">{transactions.data.items.map((item) => <TransactionRow key={`${item.gymId}-${item.id}`} item={item} />)}</div>
             ) : (
               <EmptyState layout="section" className="m-4" title={hasFilters ? t("customerPortal.noMatchingPayments") : t("members.tabs.payments.noPayments")} description={hasFilters ? t("customerPortal.clearPaymentFilter") : t("customerPortal.paymentsEmpty")} icon={ReceiptText} action={hasFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}><FilterX />{" "}{t("common.action.clearFilters")}</Button> : undefined} />
             )}
@@ -189,7 +189,7 @@ function FinanceSummary({ loading, error, data, onRetry }: { loading: boolean; e
   const outstanding = data.outstanding.amount > 0;
   const gymCount = data.gyms.length;
   return (
-    <section className="panel mt-5 grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:rtl:divide-x-reverse sm:divide-y-0" aria-label={t("customerPortal.financialSummary")}>
+    <section className="panel animate-settle mt-5 grid divide-y divide-line sm:grid-cols-3 sm:divide-x sm:rtl:divide-x-reverse sm:divide-y-0" aria-label={t("customerPortal.financialSummary")}>
       <SummaryFact label={t("domain.paymentStatus.unpaid")} value={<MoneyText money={data.outstanding} className={outstanding ? "text-warning-deep" : undefined} />} detail={outstanding ? t("customerPortal.howToPay") : t("customerPortal.nothingToPay")} />
       <SummaryFact label={t("customerPortal.paidToGyms")} value={<MoneyText money={data.paidLifetime} />} detail={data.lastPaymentAt ? <>{t("customerPortal.lastPayment")}{" "}<DateTimeText iso={data.lastPaymentAt} /></> : t("customerPortal.noPayments")} />
       <SummaryFact label={t("palette.groups.receipts")} value={<span className="tabular">{f.number(data.receiptCount)}</span>} detail={t("customerPortal.fromGyms", { count: gymCount })} />

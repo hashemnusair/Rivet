@@ -6,7 +6,8 @@ import type { CommunicationLanguage } from "@/lib/i18n/communication";
 import { tabListClassName, tabTriggerClassName } from "@/components/ui/tabs";
 
 import { Activity, ArrowUpRight, Banknote, CalendarClock, PhoneCall, RefreshCw, RotateCcw, Search, UserPlus, X } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
+import { atRiskQuery } from "@/lib/navigation/route-reads";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -102,7 +103,7 @@ function AtRiskQueuePage() {
   const setSearch = (value: string) => update({ q: value || undefined, page: undefined, member: undefined });
   const setSelectedId = (value: string | undefined) => update({ member: value });
   const panelRef = useRef<HTMLElement | null>(null);
-  const query = useMemo(() => ({ branchId: session?.activeBranchId, reason, search: searchKey(search) || undefined, page, pageSize: 25 }), [reason, search, page, session?.activeBranchId]);
+  const query = useMemo(() => atRiskQuery({ branchId: session?.activeBranchId, reason, search: searchKey(search), page }), [reason, search, page, session?.activeBranchId]);
   const risks = useRealtimeApiQuery({
     queryKey: qk.atRisk(query),
     query: (api) => api.listAtRiskMembers(query),
@@ -136,7 +137,7 @@ function AtRiskQueuePage() {
       <section className="panel min-h-[420px] overflow-hidden self-start" aria-labelledby="risk-results-title">
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-3"><div><h2 id="risk-results-title" className="mt-1 text-[15px] font-semibold">{t("crmCompletion.queues.membersToContact")}</h2><p className="mt-0.5 text-[12px] text-ink-3">{t("crmCompletion.queues.urgentFirst")}</p></div><div className="flex shrink-0 items-center gap-2"><span className="text-[12px] tabular text-ink-3">{risks.data?.totalItems ?? "…"}</span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void risks.refetch()} aria-label={t("crmCompletion.queues.refreshAtRisk")}><RefreshCw className="size-3.5" /></Button></div></header>
         {risks.isBackgroundError ? <ErrorState layout="inline" title={t("crmCompletion.queues.listRefreshFailed")} onRetry={() => void risks.refetch()} /> : null}
-        {risks.isLoading && !risks.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError && !risks.data ? <ErrorState className="m-4" title={t("crmCompletion.queues.atRiskLoadFailed")} onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title={t("crmCompletion.queues.noMembers")} description={t("crmCompletion.queues.noMembersHint")} compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { update({ q: undefined, reason: undefined, page: undefined, member: undefined }); }}>{t("common.action.clearFilters")}</Button> : undefined} /> : <ul className="divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
+        {risks.isLoading && !risks.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-full" />)}</div> : risks.isError && !risks.data ? <ErrorState className="m-4" title={t("crmCompletion.queues.atRiskLoadFailed")} onRetry={() => void risks.refetch()} /> : items.length === 0 ? <EmptyState title={t("crmCompletion.queues.noMembers")} description={t("crmCompletion.queues.noMembersHint")} compact className="m-4" icon={Activity} action={(search || reason !== "all") ? <Button type="button" variant="secondary" size="sm" onClick={() => { update({ q: undefined, reason: undefined, page: undefined, member: undefined }); }}>{t("common.action.clearFilters")}</Button> : undefined} /> : <ul className="animate-settle divide-y divide-line">{items.map((item) => <AtRiskRow key={item.member.id} item={item} selected={selectedItem?.member.id === item.member.id} onClick={() => setSelectedId(item.member.id)} />)}</ul>}
         {risks.data && risks.data.totalPages > 1 ? <DataPagination page={risks.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
       </section>
       {selectedItem ? <AtRiskPanel ref={panelRef} item={selectedItem} onClose={() => setSelectedId(undefined)} /> : null}
@@ -151,7 +152,7 @@ function AtRiskQueuePage() {
  */
 function MissingSelectionNotice({ memberId, onClear }: { memberId: string; onClear: () => void }) {
   const t = useT();
-  return <aside className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 animate-fade-in" data-testid="at-risk-missing-selection" aria-label={t("crmCompletion.queues.missingSelectionLabel")}>
+  return <aside className="panel flex flex-wrap items-center justify-between gap-3 px-4 py-3 animate-settle" data-testid="at-risk-missing-selection" aria-label={t("crmCompletion.queues.missingSelectionLabel")}>
     <div className="min-w-0">
       <p className="text-[13px] font-medium">{t("crmCompletion.queues.missingSelectionTitle")}</p>
       <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-3">{t("crmCompletion.queues.missingSelectionDescription")}</p>
@@ -185,7 +186,7 @@ function AtRiskPanel({ item, onClose, ref }: { item: AtRiskMemberItem; onClose: 
       : "crmCompletion.queues.inactiveMessage";
   // Written in the member's language, which the handoff resolves and loads.
   const initialMessage = (recipientT: TFunction, recipientLanguage: CommunicationLanguage) => recipientT(messageKey, { name: recipientLanguage === "ar" ? isolate(firstName) : firstName });
-  return <aside ref={ref} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="at-risk-panel">
+  return <aside ref={ref} className="panel self-start overflow-hidden animate-settle scroll-mt-16" data-testid="at-risk-panel">
     <FollowUpHeader member={item.member} onClose={onClose} />
     <div className="space-y-4 px-4 py-4">
       <div className="space-y-1">{item.reasons.map((reason) => <p key={reason.kind} className="text-[13px] font-medium">{retentionReasonLabel(t, reason, Boolean(item.lastVisitAt))}</p>)}</div>
@@ -335,11 +336,11 @@ function RenewalQueuePage() {
             </div>
           </header>
           {renewals.isBackgroundError ? <ErrorState layout="inline" title={t("crmCompletion.queues.renewalsRefreshFailed")} onRetry={() => void renewals.refetch()} /> : null}
-          {renewals.isLoading && !renewals.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError && !renewals.data ? <ErrorState className="m-4" title={t("crmCompletion.queues.renewalsLoadFailed")} onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={t(bucket === "expiring" ? "crmCompletion.queues.noExpiringMemberships" : "crmCompletion.queues.noExpiredMemberships")} description={t("crmCompletion.queues.tryWiderRange")} onReset={reset} /> : <ul className="divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} headline={headlines.get(item.member.id)} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
+          {renewals.isLoading && !renewals.data ? <div className="space-y-3 p-4">{[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}</div> : renewals.isError && !renewals.data ? <ErrorState className="m-4" title={t("crmCompletion.queues.renewalsLoadFailed")} onRetry={() => { void renewals.refetch(); }} /> : items.length === 0 ? <EmptyQueue text={t(bucket === "expiring" ? "crmCompletion.queues.noExpiringMemberships" : "crmCompletion.queues.noExpiredMemberships")} description={t("crmCompletion.queues.tryWiderRange")} onReset={reset} /> : <ul className="animate-settle divide-y divide-line">{items.map((item) => <RenewalRow key={item.membership.id} item={item} headline={headlines.get(item.member.id)} selected={selectedItem?.membership.id === item.membership.id} onClick={() => setSelectedId(item.membership.id)} />)}</ul>}
           {renewals.data && renewals.data.totalPages > 1 ? <DataPagination page={renewals.data} onPage={(next) => update({ page: String(next), member: undefined })} className="border-t border-line p-4" /> : null}
         </section>
 
-        {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-fade-in scroll-mt-16" data-testid="follow-up-panel">
+        {selectedItem ? <aside ref={panelRef} className="panel self-start overflow-hidden animate-settle scroll-mt-16" data-testid="follow-up-panel">
         <FollowUpHeader member={selectedItem.member} onClose={() => setSelectedId(undefined)} />
         <div className="px-4 py-4"><RenewalContext item={selectedItem} /></div>
         <SelectedMemberBrief memberId={selectedItem.member.id} />

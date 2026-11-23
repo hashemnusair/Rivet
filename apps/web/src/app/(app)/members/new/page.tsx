@@ -235,7 +235,7 @@ export default function NewMemberPage() {
       ) : (
       <>
       {duplicates.length > 0 ? (
-        <div className="flex flex-col items-start gap-3 rounded-lg border border-warning/50 bg-warning-bg/60 p-4 sm:flex-row" role="alert">
+        <div className="flex animate-settle flex-col items-start gap-3 rounded-lg border border-warning/50 bg-warning-bg/60 p-4 sm:flex-row" role="alert">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-warning-deep" aria-hidden />
           <div className="flex-1">
             <p className="text-[13.5px] font-semibold text-warning-deep">{t("memberEnrollment.possibleDuplicate")}</p>
@@ -488,7 +488,7 @@ function SaleComplete({ result, onReset }: { result: CreateMemberMembershipSaleR
   const f = useFormat();
   const remaining = result.sale.charge.outstandingAmount;
   return (
-    <section className="panel overflow-hidden" aria-live="polite">
+    <section className="panel animate-settle overflow-hidden" aria-live="polite">
       <div className="grid gap-5 bg-success-bg/55 p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center">
         <span className="grid size-12 place-items-center rounded-full bg-success text-white"><CheckCircle2 className="size-6" /></span>
         <div>
@@ -567,7 +567,7 @@ function ReferrerSearch({ value, onChange }: { value?: string; onChange: (value?
       {lookup.isLoading ? <p className="mt-1.5 text-[12px] text-ink-3" role="status">{t("memberEnrollment.searchingMembers")}</p> : lookup.isError ? (
         <div className="mt-1.5 flex items-center justify-between gap-3 border border-danger/30 bg-danger-bg px-3 py-2 text-[12px] text-danger" role="alert"><span>{t("memberEnrollment.searchMembersFailed")}</span><Button type="button" size="sm" variant="ghost" onClick={() => lookup.refetch()}>{t("common.action.retry")}</Button></div>
       ) : results.length > 0 ? (
-        <div className="absolute z-10 mt-1 w-full divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
+        <div className="absolute z-10 mt-1 w-full origin-top animate-scale-in divide-y divide-line rounded-md border border-line bg-surface shadow-dialog">
           {results.map((member) => (
             <button key={member.id} type="button" className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-start text-[12px] hover:bg-sunken" onClick={() => { onChange(member.id); setSelectedLabel(`${member.fullName} · ${member.memberNumber}`); }}>
               <span className="truncate">{member.fullName}</span>

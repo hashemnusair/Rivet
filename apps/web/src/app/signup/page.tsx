@@ -283,7 +283,7 @@ export default function GymApplicationPage() {
                 <div className={cn(ROW, "mt-10 border-t border-line pt-8 lg:mt-12 lg:pt-10")}>
                   <div aria-hidden className="hidden lg:block" />
                   <div>
-                    {formError ? <p className="mb-5 border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
+                    {formError ? <p className="mb-5 animate-settle border border-danger/30 bg-danger-bg px-3 py-2.5 text-[12.5px] text-danger" role="alert">{formError}</p> : null}
                     <div className="flex flex-wrap items-center gap-x-8 gap-y-5">
                       <Button type="submit" size="lg" loading={submitting || !hydrated} disabled={!hydrated || plans.length === 0} className="w-full sm:w-auto sm:min-w-64">{t("marketing.actions.applyShort")}{" "}<ArrowRight /></Button>
                       <p className="text-[12.5px] text-ink-3">{t("publicCompletion.signup.existingAccess")} <Link href="/login/gym" className="font-medium text-ink-2 underline underline-offset-4 hover:text-ink">{t("common.action.signIn")}</Link></p>
@@ -332,7 +332,7 @@ function ApplicationReceived({ result, gymName, email }: { result: SubmitGymAppl
     titleRef.current?.focus({ preventScroll: true });
   }, []);
   return (
-    <div className={cn(ROW, "min-h-[52svh] content-start lg:items-baseline")} role="status">
+    <div className={cn(ROW, "min-h-[52svh] animate-settle content-start lg:items-baseline")} role="status">
       <h1 ref={titleRef} tabIndex={-1} className={cn(TITLE, "outline-none")}>{t("publicCompletion.signup.receivedTitle")}</h1>
       <div className="max-w-[62ch]">
         <p className="flex items-center gap-2 text-[13px] font-medium text-success-deep"><CheckCircle2 className="size-4" aria-hidden />{t("publicCompletion.signup.received")}</p>

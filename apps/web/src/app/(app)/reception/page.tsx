@@ -18,7 +18,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { qk } from "@/lib/api/keys";
 import type { CheckInPreview, CheckInResult, CheckInSummary, MemberSummary, MembershipSummary, Session } from "@/lib/domain/types";
@@ -27,6 +27,7 @@ import { useDebouncedValue } from "@/lib/hooks/use-debounced";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { todayISODate } from "@/lib/utils/dates";
+import { receptionVisitsInput } from "@/lib/navigation/route-reads";
 import { useFormat } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils/cn";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
@@ -91,7 +92,7 @@ export default function ReceptionPage() {
   });
 
   const today = todayISODate(session?.organization.timezone ?? "Asia/Amman");
-  const recentInput = { branchId, date: today, acceptedOnly: true, page: recentPage, pageSize: 25 } as const;
+  const recentInput = receptionVisitsInput(branchId, session?.organization.timezone, recentPage);
   const recentQuery = useRealtimeApiQuery({
     queryKey: qk.checkIns(recentInput),
     query: (api) => api.listRecentCheckIns(recentInput),
@@ -701,7 +702,7 @@ function IdleState() {
 function LookupErrorState({ onRetry }: { onRetry: () => void }) {
   const t = useT();
   return (
-    <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center" role="alert">
+    <div className="rounded-lg border border-warning/35 bg-night-2 px-6 py-8 text-center animate-settle" role="alert">
       <AlertTriangle className="mx-auto size-5 text-warning" aria-hidden />
       <p className="mt-3 font-display text-[16px] font-medium text-night-ink">{t("deskCompletion.reception.lookup.lookupFailedTitle")}</p>
       <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-night-ink-3">{t("deskCompletion.reception.lookup.lookupFailedDescription")}</p>
@@ -719,7 +720,7 @@ function NoMatchState({ message, query, canCreate }: { message: string; query: s
     ? `/members/new?phone=${encodeURIComponent(query.trim())}`
     : `/members/new?name=${encodeURIComponent(query.trim())}`;
   return (
-    <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center">
+    <div className="rounded-lg border border-night-line bg-night-2 px-6 py-8 text-center animate-settle">
       <p className="font-display text-[16px] font-medium text-night-ink">{localizedMessage}</p>
       <p className="mt-1 text-[12.5px] text-night-ink-3">{t("reception.lookup.checkSpelling")}</p>
       {canCreate ? (
@@ -754,7 +755,7 @@ function CandidatesState({
   const f = useFormat();
   const localizedMessage = lookupMessage({ message, query, candidateCount: candidates.length, locale, t, isolate });
   return (
-    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up" data-testid="checkin-candidates" role="region" aria-label={t("deskCompletion.reception.lookup.chooseMember")}>
+    <div className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-settle" data-testid="checkin-candidates" role="region" aria-label={t("deskCompletion.reception.lookup.chooseMember")}>
       <div className="border-b border-night-line px-5 py-3">
         <p className="font-display text-[16px] font-medium text-night-ink">{localizedMessage}</p>
         <p className="mt-0.5 text-[12.5px] text-night-ink-3">{t("deskCompletion.reception.lookup.skipCandidates")}</p>
@@ -884,7 +885,7 @@ function VerdictPanel({
 
   return (
     <div
-      className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-fade-up"
+      className="overflow-hidden rounded-lg border border-night-line bg-night-2 animate-settle"
       role="status"
       aria-live="polite"
       data-testid="checkin-verdict"

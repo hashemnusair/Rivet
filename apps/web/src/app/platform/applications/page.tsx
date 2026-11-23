@@ -357,7 +357,7 @@ export default function PlatformApplicationsPage() {
               </div>
               <aside ref={listRef} className="min-h-0 flex-1 lg:overflow-y-auto" aria-label={t("platformConsole.applications.listLabel")}>
                 {loading ? <LoadingState label={t("platformConsole.applications.loading")} /> : visibleApplications.length === 0 ? <div className="p-4"><StatePanel layout="section" title={t("platformConsole.applications.noApplications")} description={search || filter !== "all" ? t("platformConsole.applications.trySearchOrStatus") : t("platformConsole.applications.newApplications")} /></div> : (
-                  <div className="divide-y divide-line">
+                  <div className="animate-settle divide-y divide-line">
                     {visibleApplications.map((application) => (
                       <button key={application.id} type="button" data-application-id={application.id} aria-pressed={selected?.id === application.id} disabled={busy || refreshing} onClick={() => openApplication(application.id)} className={cn("w-full px-4 py-3.5 text-start transition-colors hover:bg-sunken/60 disabled:cursor-not-allowed disabled:opacity-60", selected?.id === application.id && "bg-sunken")}>
                         <div className="flex items-start justify-between gap-3">

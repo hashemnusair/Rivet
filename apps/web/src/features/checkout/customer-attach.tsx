@@ -29,7 +29,7 @@ function MemberSearch({ branchId, onPick, onCancel }: { branchId: string; onPick
       {query.isLoading ? <div className="space-y-2">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-12 w-full" />)}</div>
         : query.isError ? <QueryErrorState error={query.error} onRetry={() => void query.refetch()} />
           : query.data?.items.length ? (
-            <ul className="divide-y divide-line rounded-md border border-line" aria-label={t("salesWorkspace.memberResults")}>
+            <ul className="animate-settle divide-y divide-line rounded-md border border-line" aria-label={t("salesWorkspace.memberResults")}>
               {query.data.items.map((item) => (
                 <li key={item.id}>
                   <button type="button" className="flex min-h-11 w-full items-center gap-3 px-3 py-2 text-start hover:bg-sunken/50" onClick={() => onPick(item)}>

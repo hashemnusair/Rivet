@@ -3,7 +3,7 @@ import { useLocale } from "@/lib/i18n/provider";
 
 
 import { ArrowRight, CalendarClock, CheckCircle2, Clock3, UserRound, XCircle } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/chrome";
 import { DateTimeText } from "@/components/shared/data-display";
@@ -80,7 +80,7 @@ export function TrainerDashboard() {
     <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <section className="panel overflow-hidden">
         <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">{overdueCount > 0 ? t("ptWorkspace.earlierSessions", { count: overdueCount }) : t("dashboard.trainer.today")}</p><h2 className="mt-1 text-[14px] font-semibold">{t("ptWorkspace.markSessions")}</h2></div><Clock3 className="size-4 text-ink-3" /></header>
-        {workspace.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div> : outcomes.length ? <div className="divide-y divide-line">{outcomes.map((booking) => {
+        {workspace.isLoading ? <div className="space-y-3 p-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div> : outcomes.length ? <div className="animate-settle divide-y divide-line">{outcomes.map((booking) => {
           const started = Date.parse(booking.startsAt) <= now;
           const earlierDay = started && dateKey(Date.parse(booking.startsAt), timezone) !== today;
           return <article key={booking.id} className="flex flex-wrap items-center gap-3 p-4">
@@ -93,17 +93,17 @@ export function TrainerDashboard() {
 
       <section className="panel overflow-hidden">
         <header className="flex items-center justify-between border-b border-line px-4 py-3"><div><p className="context-label">{t("dashboard.trainer.next")}</p><h2 className="mt-1 text-[14px] font-semibold">{t("ptWorkspace.comingUp")}</h2></div><CalendarClock className="size-4 text-ink-3" /></header>
-        {workspace.isLoading ? <div className="p-4"><Skeleton className="h-28 w-full" /></div> : upcoming.length ? <div className="divide-y divide-line">{upcoming.map((booking) => <article key={booking.id} className="flex items-center gap-3 px-4 py-3"><span className="flex size-8 items-center justify-center rounded-full bg-sunken"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium">{booking.memberName}</p><p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div></article>)}</div> : <p className="p-8 text-center text-[12px] text-ink-3">{t("dashboard.trainer.noUpcoming")}</p>}
+        {workspace.isLoading ? <div className="p-4"><Skeleton className="h-28 w-full" /></div> : upcoming.length ? <div className="animate-settle divide-y divide-line">{upcoming.map((booking) => <article key={booking.id} className="flex items-center gap-3 px-4 py-3"><span className="flex size-8 items-center justify-center rounded-full bg-sunken"><UserRound className="size-3.5" /></span><div className="min-w-0 flex-1"><p className="truncate text-[12px] font-medium">{booking.memberName}</p><p className="mt-0.5 text-[12px] text-ink-3"><DateTimeText iso={booking.startsAt} /> · {booking.branchName}</p></div></article>)}</div> : <p className="p-8 text-center text-[12px] text-ink-3">{t("dashboard.trainer.noUpcoming")}</p>}
       </section>
     </div>
 
-    <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h2 className="text-[14px] font-semibold">{t("ptWorkspace.yourMembers")}</h2></header>{workspace.isLoading ? <div className="p-4"><Skeleton className="h-14 w-full" /></div> : members.length ? <div className="grid divide-y divide-line sm:grid-cols-2 sm:divide-x rtl:sm:divide-x-reverse sm:divide-y-0">{members.map((member) => <Link key={member.id} href={`/members/${member.id}`} className="flex items-center gap-3 p-4 hover:bg-sunken"><span className="flex size-9 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-paper">{initials(member.name)}</span><span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{member.name}</span><ArrowRight className="size-3.5 text-ink-3 rtl:rotate-180" /></Link>)}</div> : <p className="p-8 text-center text-[12px] text-ink-3">{t("dashboard.trainer.membersAppear")}</p>}</section>
+    <section className="panel overflow-hidden"><header className="border-b border-line px-4 py-3"><h2 className="text-[14px] font-semibold">{t("ptWorkspace.yourMembers")}</h2></header>{workspace.isLoading ? <div className="p-4"><Skeleton className="h-14 w-full" /></div> : members.length ? <div className="animate-settle grid divide-y divide-line sm:grid-cols-2 sm:divide-x rtl:sm:divide-x-reverse sm:divide-y-0">{members.map((member) => <Link key={member.id} href={`/members/${member.id}`} className="flex items-center gap-3 p-4 hover:bg-sunken"><span className="flex size-9 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-paper">{initials(member.name)}</span><span className="min-w-0 flex-1 truncate text-[12.5px] font-medium">{member.name}</span><ArrowRight className="size-3.5 text-ink-3 rtl:rotate-180" /></Link>)}</div> : <p className="p-8 text-center text-[12px] text-ink-3">{t("dashboard.trainer.membersAppear")}</p>}</section>
     <BookingOutcomeConfirmation booking={bookingAction?.booking} action={bookingAction?.action} open={Boolean(bookingAction)} pending={outcome.isPending} onOpenChange={(open) => { if (!open) setBookingAction(undefined); }} onConfirm={({ booking, action, reason }) => outcome.mutate({ booking, result: action as "completed" | "no_show", reason })} />
   </div>;
 }
 
 function Metric({ label, value, loading }: { label: string; value: number; loading: boolean }) {
-  return <div className="p-4"><p className="context-label">{label}</p>{loading ? <Skeleton className="mt-2 h-7 w-12" /> : <p className="mt-2 text-[22px] font-semibold tabular-nums">{value}</p>}</div>;
+  return <div className="p-4"><p className="context-label">{label}</p>{loading ? <Skeleton className="mt-2 h-[32px] w-12" /> : <p className="mt-2 animate-settle text-[22px] font-semibold tabular-nums">{value}</p>}</div>;
 }
 
 function dateKey(timestamp: number, timezone: string): string {

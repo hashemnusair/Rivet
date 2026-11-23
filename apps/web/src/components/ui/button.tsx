@@ -5,7 +5,10 @@ import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils/cn";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-colors duration-150 select-none disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 cursor-pointer",
+  // Press answers at once: a 0.98 dip through the individual `scale` property
+  // (it composes with any translate and settles back to none), colour easing
+  // with it. No hover lift.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-[color,background-color,border-color,text-decoration-color,fill,stroke,scale] duration-[120ms] ease-out active:scale-[0.98] select-none disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 cursor-pointer",
   {
     variants: {
       variant: {
@@ -17,7 +20,7 @@ const buttonVariants = cva(
         night: "bg-night-ink text-night hover:bg-white",
         "night-ghost": "text-night-ink-2 hover:bg-night-3 hover:text-night-ink",
         "night-outline": "border border-night-line text-night-ink hover:bg-night-3",
-        link: "text-ink underline underline-offset-4 decoration-line-3 hover:decoration-ink px-0",
+        link: "text-ink underline underline-offset-4 decoration-line-3 hover:decoration-ink active:scale-none px-0",
       },
       size: {
         xs: "h-7 px-2.5 text-xs rounded-sm [&_svg]:size-3.5",

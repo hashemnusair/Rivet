@@ -68,9 +68,25 @@
   --shadow-pop: 0 1px 2px rgb(27 26 21 / 0.06), 0 12px 32px -8px rgb(27 26 21 / 0.18);
   --shadow-dialog: 0 2px 4px rgb(27 26 21 / 0.08), 0 24px 64px -12px rgb(27 26 21 / 0.28);
 
-  --animate-fade-up: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-fade-in: fade-in 0.25s ease-out both;
-  --animate-scale-in: scale-in 0.18s ease-out both;
+  /* Product motion vocabulary. Opacity and the individual `scale` property
+     only, so a keyframe never replaces a surface's own `translate` (the
+     centred dialog) and nothing is left transformed once it settles. Opening
+     uses the house curve; closing is shorter and gets out of the way. */
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fade-up: fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Content appearing in place: data replacing its placeholder, a revealed
+     panel, a tab panel, a wizard step. Opacity only, no movement. */
+  --animate-settle: settle 0.16s ease-out both;
+  /* Scrims and tooltips. */
+  --animate-fade-in: fade-in 0.18s ease-out both;
+  --animate-fade-out: fade-out 0.12s ease-in both;
+  /* Floating surfaces: menus, popovers, selects, dialogs. They grow from the
+     side of the trigger they open from when the surface sets
+     `transform-origin` (the shared ui components do, from Radix). */
+  --animate-scale-in: scale-in 0.17s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-scale-out: scale-out 0.11s ease-in both;
+  /* Loading placeholders: a slow, shallow breath, never a shimmer. */
+  --animate-skeleton: skeleton-breathe 1.8s ease-in-out infinite;
   /* Dwell indicator for the loop machine — duration matches DWELL_MS. */
   --animate-stage-fill: stage-fill 5s linear both;
   /* The selector pin "clicks" into a plate; the hero phone drifts idly. */
@@ -95,23 +111,44 @@
   --animate-ledger-fill: ledger-fill 1.2s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-ledger-draw: ledger-draw 0.45s ease-out both;
 
+  /* Ends at transform:none: with `both` a settled translateY(0) would stay on
+     the element and turn its fixed-position children into offset ones. */
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  /* Route transition. Ends at transform:none so the settled page never keeps
-     a transform (which would turn fixed-position children into offset ones). */
-  @keyframes page-enter {
-    from { opacity: 0; transform: translateY(7px); }
     to { opacity: 1; transform: none; }
+  }
+  /* Route change. Opacity only and from partly visible: the old rise read as
+     a jolt and a wait. No fill mode, so the settled page keeps no opacity or
+     transform of its own. */
+  @keyframes page-enter {
+    from { opacity: 0.6; }
+    to { opacity: 1; }
+  }
+  @keyframes settle {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
   @keyframes fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
   }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  /* `scale: none` at rest, never `scale(1)`: a lingering scale would make the
+     surface a containing block for its fixed-position children. */
   @keyframes scale-in {
-    from { opacity: 0; transform: scale(0.97); }
-    to { opacity: 1; transform: scale(1); }
+    from { opacity: 0; scale: 0.97; }
+    to { opacity: 1; scale: none; }
+  }
+  @keyframes scale-out {
+    from { opacity: 1; scale: none; }
+    to { opacity: 0; scale: 0.97; }
+  }
+  @keyframes skeleton-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
   }
   @keyframes stage-fill {
     from { transform: scaleX(0); }
@@ -444,6 +481,45 @@ html.landing-motion-ready [data-experience-notice] {
     transform: scaleX(-1);
   }
 
+  /*
+    Hover and press ease instead of snapping, from one place. Colour
+    properties only: outline and box-shadow are left out so a keyboard focus
+    ring appears at once, and opacity, transform and layout never move here.
+    The list also catches any element that changes colour on hover (or with
+    its `group`), so a hover state written without `transition-colors` still
+    eases. This sits in the base layer: any `transition-*`, `duration-*` or
+    `ease-*` utility on the element wins.
+  */
+  :where(
+    a[href],
+    button,
+    summary,
+    label[for],
+    input,
+    select,
+    textarea,
+    [role="button"],
+    [role="tab"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="link"],
+    [class*="hover:bg-"],
+    [class*="hover:text-"],
+    [class*="hover:border-"],
+    [class*="hover:decoration-"],
+    [class*="hover:fill-"],
+    [class*="hover:stroke-"]
+  ) {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
+  }
+
   /* Focus ring — one consistent treatment */
   :focus-visible {
     outline: 2px solid var(--tenant-brand-focus);
@@ -632,9 +708,11 @@ label[for] {
   cursor: pointer;
 }
 
-/* Route transition wrapper rendered by each shell's template.tsx. */
+/* Route transition wrapper rendered by each shell's template.tsx: a short
+   opacity settle, no rise. Without a fill mode the wrapper ends with no
+   opacity or transform of its own. */
 .page-transition {
-  animation: page-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: page-enter 0.14s cubic-bezier(0.2, 0, 0, 1);
 }
 
 /* ---------------------------------------------------------------------------
@@ -852,6 +930,8 @@ html[data-ask-rivet="cover"] [data-sonner-toaster][data-y-position="bottom"] {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    /* 0.01ms, not none: it still fires animationend, so Radix unmounts a
+       closing overlay at once instead of waiting on an event. */
     transition-duration: 0.01ms !important;
   }
 }

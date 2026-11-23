@@ -7,9 +7,9 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { LeadListQuery } from "@/lib/api/GymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
+import { dashboardInput as dashboardRange, salesOpenLeadsInput } from "@/lib/navigation/route-reads";
 import { money } from "@/lib/utils/money";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
@@ -20,6 +20,7 @@ import { ErrorState } from "@/components/ui/states";
 import { cn } from "@/lib/utils/cn";
 import { TodayQueue } from "./today-queue";
 import { useIsPhone } from "@/components/shell/phone-page-boundary";
+import { IntentPrefetchLink } from "@/components/shell/intent-prefetch-link";
 import { useGreeting } from "./dashboard-scope";
 
 /**
@@ -34,9 +35,9 @@ export function SalesDashboard() {
   const today = todayISODate(session?.organization.timezone);
   const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
 
-  const leadInput: LeadListQuery = { ownerId: session?.user.id, stage: ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent"], pageSize: 8, sort: "nextFollowUpAt" };
+  const leadInput = salesOpenLeadsInput(session?.user.id);
   const leadsQuery = useRealtimeApiQuery({ queryKey: qk.leads({ mine: true, open: true }), query: (api) => api.listLeads(leadInput), subscribe: (api, onValue, onError) => api.subscribeLeads(leadInput, onValue, onError), enabled: Boolean(session) });
-  const dashboardInput = { branchId: session?.activeBranchId, from: addDays(today, -29), to: today };
+  const dashboardInput = dashboardRange(session?.organization.timezone, session?.activeBranchId);
   const dashQuery = useRealtimeApiQuery({ queryKey: qk.dashboard(session?.activeBranchId), query: (api) => api.getDashboard(dashboardInput), subscribe: (api, onValue, onError) => api.subscribeDashboard(dashboardInput, onValue, onError), enabled: Boolean(session) });
 
   if (dashQuery.isError) return <ErrorState onRetry={() => dashQuery.refetch()} />;
@@ -70,7 +71,7 @@ export function SalesDashboard() {
           <div key={cell.label} className="px-4 py-3.5">
             <p className="context-label">{cell.label}</p>
             <div className={cn("mt-1 text-[22px] font-medium leading-none tabular", cell.danger && "text-danger")}>
-              {dashQuery.isLoading ? <Skeleton className="h-6 w-10" /> : cell.value}
+              {dashQuery.isLoading ? <Skeleton className="h-[22px] w-10" /> : <span className="animate-settle">{cell.value}</span>}
             </div>
           </div>
         ))}
@@ -95,12 +96,12 @@ export function SalesDashboard() {
               ))}
             </div>
           ) : (leadsQuery.data?.items.length ?? 0) === 0 ? (
-            <p className="px-4 py-8 text-center text-[13px] text-ink-3">{t("dashboard.sales.noOpenLeads")}</p>
+            <p className="animate-settle px-4 py-8 text-center text-[13px] text-ink-3">{t("dashboard.sales.noOpenLeads")}</p>
           ) : (
-            <ul className="divide-y divide-line">
+            <ul className="animate-settle divide-y divide-line">
               {leadsQuery.data!.items.map((lead) => (
                 <li key={lead.id}>
-                  <Link href={`/crm/leads/${lead.id}`} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunken/40">
+                  <IntentPrefetchLink href={`/crm/leads/${lead.id}`} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-sunken/40">
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium">{lead.fullName}</span>
                       <span className="block font-mono text-[11.5px] text-ink-3">{lead.phone}</span>
@@ -110,7 +111,7 @@ export function SalesDashboard() {
                     <span className={cn("w-16 shrink-0 text-end text-[12px]", lead.overdue ? "font-medium text-danger" : "text-ink-3")}>
                       {lead.nextFollowUpAt ? <RelativeText iso={lead.nextFollowUpAt} /> : "—"}
                     </span>
-                  </Link>
+                  </IntentPrefetchLink>
                 </li>
               ))}
             </ul>

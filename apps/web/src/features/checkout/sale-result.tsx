@@ -18,7 +18,7 @@ export function SaleResult({ result, canAdjust, onNextSale }: { result: RetailCh
   const customer = sale.customer;
   const units = sale.lines.reduce((sum, line) => sum + line.quantity, 0);
   return (
-    <section className="panel mx-auto max-w-xl overflow-hidden" data-testid="sale-result" aria-labelledby="sale-result-heading">
+    <section className="panel mx-auto max-w-xl animate-settle overflow-hidden" data-testid="sale-result" aria-labelledby="sale-result-heading">
       <div className="flex items-start gap-3 border-b border-line bg-success-bg/40 px-5 py-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white" aria-hidden><CheckCircle2 className="size-5" /></span>
         <div>

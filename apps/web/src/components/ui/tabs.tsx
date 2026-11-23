@@ -63,7 +63,8 @@ const TabsContent = forwardRef<
   ComponentRef<typeof TabsPrimitive.Content>,
   ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
 >(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content ref={ref} className={cn("mt-4 outline-none", className)} {...props} />
+  // The chosen panel settles in (opacity only) rather than popping.
+  <TabsPrimitive.Content ref={ref} className={cn("mt-4 outline-none data-[state=active]:animate-settle", className)} {...props} />
 ));
 TabsContent.displayName = "TabsContent";
 

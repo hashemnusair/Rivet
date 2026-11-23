@@ -43,7 +43,8 @@ const SelectContent = forwardRef<
       ref={ref}
       position={position}
       className={cn(
-        "relative z-[70] max-h-72 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-md border border-line bg-surface shadow-pop data-[state=open]:animate-scale-in",
+        // Grows out of its trigger and shrinks back into it on close.
+        "relative z-[70] max-h-72 min-w-[var(--radix-select-trigger-width)] origin-[var(--radix-select-content-transform-origin)] overflow-hidden rounded-md border border-line bg-surface shadow-pop data-[state=open]:animate-scale-in data-[state=closed]:animate-scale-out data-[state=closed]:pointer-events-none!",
         position === "popper" && "data-[side=bottom]:translate-y-1",
         className,
       )}

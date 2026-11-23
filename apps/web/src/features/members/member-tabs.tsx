@@ -71,7 +71,9 @@ export function OverviewTab({ member }: { member: MemberDetail }) {
           {timelineQuery.isLoading ? (
             <Skeleton className="h-40 w-full" />
           ) : (
-            <TimelineFeed events={timelineQuery.data?.items ?? []} dense empty={t("memberProfile.overview.emptyActivity")} />
+            <div className="animate-settle">
+              <TimelineFeed events={timelineQuery.data?.items ?? []} dense empty={t("memberProfile.overview.emptyActivity")} />
+            </div>
           )}
         </div>
       </section>
@@ -137,7 +139,7 @@ export function TimelineTab({ memberId }: { memberId: UUID }) {
           <QueryErrorState error={query.error} onRetry={() => query.refetch()} />
         ) : (
           <>
-            <div data-testid="member-timeline">
+            <div className="animate-settle" data-testid="member-timeline">
               <TimelineFeed events={query.data?.items ?? []} empty={t("memberProfile.timeline.empty")} />
             </div>
             {query.data ? <DataPagination page={query.data} onPage={setPage} /> : null}
@@ -166,7 +168,7 @@ export function MembershipsTab({ memberId }: { memberId: UUID }) {
   }
 
   return (
-    <div className="panel overflow-hidden">
+    <div className="panel animate-settle overflow-hidden">
       <ul className="divide-y divide-line lg:hidden" aria-label={t("memberProfile.memberships.historyLabel")}>
         {items.map((membership) => <MembershipRecordRow key={membership.id} membership={membership} />)}
       </ul>
@@ -305,7 +307,7 @@ export function PersonalTrainingTab({ membershipId, preselectTrainerId, openBook
   const experience = query.data;
   if (!experience) return <Skeleton className="h-56 w-full" />;
   const nextBooking = ptNextBooking(experience.upcomingBookings);
-  return <div className="space-y-4">
+  return <div className="animate-settle space-y-4">
     {query.isBackgroundError ? <ErrorState layout="inline" title={t("memberProfile.pt.refreshFailed")} onRetry={() => query.refetch()} /> : null}
     <section className="grid border border-line bg-surface sm:grid-cols-3"><StatCell label={t("memberProfile.pt.availableSessions")} value={experience.availableSessions} /><StatCell label={t("memberProfile.pt.booked")} value={experience.reservedSessions} /><StatCell label={t("memberProfile.pt.nextBooking")} value={nextBooking ? <DateTimeText iso={nextBooking.startsAt} /> : "—"} /></section>
     <div className="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
@@ -351,7 +353,7 @@ export function PaymentsTab({ memberId }: { memberId: UUID }) {
   }
 
   return (
-    <div className="panel overflow-hidden">
+    <div className="panel animate-settle overflow-hidden">
       <ul className="divide-y divide-line lg:hidden" aria-label={t("memberProfile.payments.historyLabel")}>
         {items.map((transaction) => <PaymentRecordRow key={transaction.id} transaction={transaction} />)}
       </ul>
@@ -445,7 +447,7 @@ export function CheckInsTab({ memberId }: { memberId: UUID }) {
   }
 
   return (
-    <div>
+    <div className="animate-settle">
       <div className="panel overflow-hidden">
         <ul className="divide-y divide-line md:hidden" aria-label={t("memberProfile.checkIns.historyLabel")}>
           {items.map((checkIn) => <CheckInRecordRow key={checkIn.id} checkIn={checkIn} />)}
@@ -525,11 +527,11 @@ export function MemberTasksPanel({ memberId }: { memberId: UUID }) {
   const tasks = (query.data?.items ?? []).filter((task) => task.memberId === memberId);
   if (query.isLoading) return <Skeleton className="h-20 w-full" />;
   if (query.isError) return <ErrorState layout="inline" title={t("memberProfile.tasks.loadFailed")} description={t("memberProfile.tasks.loadFailedDescription")} onRetry={() => query.refetch()} />;
-  if (tasks.length === 0) return <p className="text-[12.5px] text-ink-3">{t("memberProfile.tasks.empty")}</p>;
+  if (tasks.length === 0) return <p className="animate-settle text-[12.5px] text-ink-3">{t("memberProfile.tasks.empty")}</p>;
 
   return (
     <>
-    <ul className="space-y-2">
+    <ul className="animate-settle space-y-2">
       {tasks.map((task) => (
         <li key={task.id} className="flex items-start gap-2 text-[12.5px]">
           <button

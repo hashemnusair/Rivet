@@ -209,7 +209,7 @@ export function SettingsSaveBar({
 
   return (
     <div
-      className="sticky bottom-3 z-20 mt-5 flex min-h-16 flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-lg border border-line bg-surface px-4 py-3 text-ink shadow-pop"
+      className="sticky bottom-3 z-20 mt-5 flex min-h-16 animate-settle flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-lg border border-line bg-surface px-4 py-3 text-ink shadow-pop"
       role="status"
       aria-live="polite"
       data-testid="settings-save-bar"

@@ -348,7 +348,7 @@ export function AskRivetPanel() {
             <Composer ref={composer} screen={context.screen} working={working} onSend={send} onStop={stop} request={context.request} onEscape={close} />
           </div>
           {dragging ? (
-            <div className="pointer-events-none absolute inset-2 z-20 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-3 bg-paper/95 text-[13px] font-medium text-ink-2" data-testid="ask-drop">
+            <div className="pointer-events-none absolute inset-2 z-20 flex animate-fade-in flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-ink-3 bg-paper/95 text-[13px] font-medium text-ink-2" data-testid="ask-drop">
               <ImageUp className="size-5 text-ink-3" aria-hidden />
               {t("askRivet.composer.dropFiles")}
             </div>

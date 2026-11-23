@@ -21,7 +21,8 @@ const DropdownMenuContent = forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-[70] min-w-44 overflow-hidden rounded-md border border-line bg-surface p-1 shadow-pop data-[state=open]:animate-scale-in",
+        // Grows out of its trigger and shrinks back into it on close.
+        "z-[70] min-w-44 origin-[var(--radix-dropdown-menu-content-transform-origin)] overflow-hidden rounded-md border border-line bg-surface p-1 shadow-pop data-[state=open]:animate-scale-in data-[state=closed]:animate-scale-out data-[state=closed]:pointer-events-none!",
         className,
       )}
       {...props}

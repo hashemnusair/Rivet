@@ -89,7 +89,7 @@ export default function SubscriptionsPage() {
           <p className="text-[12.5px] text-ink-3">{t("platformFinance.plans.monthlyJod")}</p>
         </div>
         <p className="mt-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] leading-relaxed text-warning-deep" role="note" data-testid="pricing-provisional-notice">{t("platformFinance.plans.provisional")}</p>
-        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">{t("platformFinance.plans.loading")}</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">{t("platformFinance.plans.empty")}</p> : <div className="mt-4 grid gap-4 md:grid-cols-2">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
+        {loading ? <p className="px-5 py-10 text-center text-[12.5px] text-ink-3" role="status">{t("platformFinance.plans.loading")}</p> : plans.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-line-2 px-4 py-10 text-center text-[12.5px] text-ink-3">{t("platformFinance.plans.empty")}</p> : <div className="mt-4 grid animate-settle gap-4 md:grid-cols-2">{plans.map((plan) => <PlanCard key={plan.name} plan={plan} onEdit={() => { updatePlan.reset(); setEditingPlan(plan); }} />)}</div>}
       </section>
 
       {editingPlan ? <PlanDialog plan={editingPlan} open saving={updatePlan.isPending} error={updatePlan.error} onOpenChange={(open) => { if (!open && !updatePlan.isPending) setEditingPlan(null); }} onSave={(input) => updatePlan.mutate(input)} /> : null}

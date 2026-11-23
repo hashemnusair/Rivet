@@ -163,7 +163,7 @@ export function PasswordChangeFields({
     errors[field] ? `${idPrefix}-${field}-error` : hint ? `${idPrefix}-${field}-hint` : undefined;
 
   return (
-    <form noValidate onSubmit={(event) => void submit(event)} className="max-w-md space-y-4" data-testid="change-password-form">
+    <form noValidate onSubmit={(event) => void submit(event)} className="max-w-md animate-settle space-y-4" data-testid="change-password-form">
       {username ? <input type="email" name="username" autoComplete="username" value={username} readOnly hidden /> : null}
       {hasPassword ? null : <p className="text-[13px] leading-relaxed text-ink-2">{t("auth.changePassword.noPasswordYet")}</p>}
       {hasPassword ? (
@@ -223,13 +223,13 @@ export function PasswordChangeFields({
           <p id={`${idPrefix}-sign-out-others-hint`} className="mt-0.5 text-[12px] text-ink-3">{t("auth.changePassword.signOutOthersHint")}</p>
         </div>
       </div>
-      {formError ? <p role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{renderAuthMessage(formError, t)}</p> : null}
+      {formError ? <p role="alert" className="animate-settle rounded-md border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px] text-danger">{renderAuthMessage(formError, t)}</p> : null}
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" loading={saving} className="w-full sm:w-auto">
           {hasPassword ? t("auth.changePassword.submit") : t("auth.changePassword.submitFirst")}
         </Button>
         {saved ? (
-          <span role="status" className="inline-flex items-center gap-1.5 text-[13px] text-success-deep">
+          <span role="status" className="inline-flex animate-settle items-center gap-1.5 text-[13px] text-success-deep">
             <Check className="size-4 shrink-0" aria-hidden /> {t(`auth.changePassword.${saved}`)}
           </span>
         ) : null}

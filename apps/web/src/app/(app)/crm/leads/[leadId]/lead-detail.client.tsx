@@ -184,7 +184,7 @@ export default function LeadDetailPageClient() {
   const trialAgreedOnCall = progressFacts.hasTrialBooking && !lead.trialBooking;
 
   return (
-    <div className="space-y-4">
+    <div className="animate-settle space-y-4">
       {leadQuery.isBackgroundError ? <ErrorState layout="inline" title={t("crmCompletion.lead.leadRefreshFailed")} onRetry={() => leadQuery.refetch()} /> : null}
       <Breadcrumbs items={[{ label: t("crm.pipeline.title"), href: "/crm/pipeline" }, { label: lead.fullName }]} />
 

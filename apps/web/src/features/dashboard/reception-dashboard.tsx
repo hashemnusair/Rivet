@@ -15,7 +15,8 @@ import { useLocale } from "@/lib/i18n/provider";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
+import { dashboardInput as dashboardRange } from "@/lib/navigation/route-reads";
 import { money } from "@/lib/utils/money";
 import { visibleBranchId } from "@/lib/domain/branch-scope";
 
@@ -30,7 +31,7 @@ export function ReceptionDashboard() {
   const format = useFormat(session?.organization.timezone);
   const branchId = visibleBranchId(session?.branches, session?.activeBranchId);
   const today = todayISODate(session?.organization.timezone);
-  const dashboardInput = { branchId, from: addDays(today, -29), to: today };
+  const dashboardInput = dashboardRange(session?.organization.timezone, branchId);
   const dashboard = useRealtimeApiQuery({
     queryKey: qk.dashboard(branchId),
     query: (api) => api.getDashboard(dashboardInput),
@@ -134,12 +135,17 @@ export function ReceptionDashboard() {
               </Link>
             </Button>
           </header>
-          {(checkIns.data?.items.length ?? 0) === 0 ? (
-            <p className="px-5 py-12 text-center text-[12px] text-ink-3">
+          {checkIns.isLoading ? (
+            <div className="space-y-2 p-4" aria-hidden>
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : (checkIns.data?.items.length ?? 0) === 0 ? (
+            <p className="animate-settle px-5 py-12 text-center text-[12px] text-ink-3">
               {t("deskCompletion.dashboard.reception.checkInsEmpty")}
             </p>
           ) : (
-            <ul className="divide-y divide-line">
+            <ul className="animate-settle divide-y divide-line">
               {checkIns.data?.items.map((checkIn) => (
                 <li key={checkIn.id} className="flex items-center gap-3 px-4 py-3">
                   <span
@@ -219,9 +225,10 @@ function Metric({
     <div className="px-4 py-3.5">
       <p className="context-label">{label}</p>
       {loading ? (
-        <Skeleton className="mt-2 h-6 w-14" />
+        // The figure's own line box (21px at 1.45), so the strip keeps its height when figures arrive.
+        <Skeleton className="mt-1 h-[30px] w-14" />
       ) : (
-        <p className={warning ? "mt-1 text-[21px] font-medium text-warning" : "mt-1 text-[21px] font-medium"}>
+        <p className={warning ? "mt-1 animate-settle text-[21px] font-medium text-warning" : "mt-1 animate-settle text-[21px] font-medium"}>
           {children}
         </p>
       )}

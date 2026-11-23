@@ -117,7 +117,7 @@ export function QuickMembershipStep({
   });
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} className="animate-settle space-y-5">
       <div className="flex items-center gap-2 text-[12px] text-ink-3" aria-label={t("memberEnrollment.steps")}>
         <span className="inline-flex items-center gap-1.5"><span className="grid size-5 place-items-center rounded-full bg-success text-[12px] text-white"><Check className="size-3" /></span> {" "}{t("memberEnrollment.memberDetails")}</span>
         <span aria-hidden className="h-px w-8 bg-line-2" />

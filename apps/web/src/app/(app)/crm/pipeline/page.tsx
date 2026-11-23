@@ -3,7 +3,7 @@ import { useLocale, useT, type TKey } from "@/lib/i18n/provider";
 
 
 import { Ellipsis, FilterX, GripVertical, LayoutList, PhoneCall, Plus, UsersRound } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { qk } from "@/lib/api/keys";
@@ -11,8 +11,8 @@ import { deriveLeadProgressFacts } from "@/lib/crm/lead-progression";
 import { LEAD_STATUS_LABEL_KEYS, leadStatusKey } from "@/lib/crm/lead-status";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
-import type { LeadListQuery } from "@/lib/api/GymOSApi";
-import type { LeadStage, LeadSummary } from "@/lib/domain/types";
+import type { LeadSummary } from "@/lib/domain/types";
+import { PIPELINE_STAFF_QUERY, pipelineLeadQuery } from "@/lib/navigation/route-reads";
 import { useApp } from "@/lib/providers/app-providers";
 import { cn } from "@/lib/utils/cn";
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
@@ -59,8 +59,6 @@ function leadStatus(lead: LeadSummary, column: PipelineColumn, t: ReturnType<typ
   if (column !== "open") return columnLabel(column, t);
   return t(LEAD_STATUS_LABEL_KEYS[leadStatusKey(lead.progressFacts ?? deriveLeadProgressFacts(lead), lead.lastContactOutcome)]);
 }
-
-const PIPELINE_LEAD_STAGES: LeadStage[] = ["new", "attempted", "contacted", "trial_booked", "trial_completed", "offer_sent", "won", "lost"];
 
 function columnLabel(column: PipelineColumn, t: ReturnType<typeof useT>): string {
   const item = PIPELINE_COLUMNS.find((entry) => entry.column === column);
@@ -112,11 +110,10 @@ function PipelinePageInner() {
     replaceParams({ view: next });
   };
 
-  const query = useMemo(
-    () => ({ branchId: session?.activeBranchId, search: searchKey(debounced) || undefined, page, pageSize: 100, sort: "nextFollowUpAt" as const }),
+  const leadQuery = useMemo(
+    () => pipelineLeadQuery({ branchId: session?.activeBranchId, search: searchKey(debounced), page }),
     [session?.activeBranchId, debounced, page],
   );
-  const leadQuery = useMemo<LeadListQuery>(() => ({ ...query, stage: PIPELINE_LEAD_STAGES }), [query]);
   useLeadsScreen({ search: searchKey(debounced) || undefined });
   const leadQueryKey = useMemo(() => qk.leads(leadQuery), [leadQuery]);
   const { data, isLoading, isError, isBackgroundError, error, refetch } = useRealtimeApiQuery({
@@ -127,7 +124,7 @@ function PipelinePageInner() {
   });
 
   const leads = useMemo(() => data?.items ?? [], [data]);
-  const users = useApiQuery(qk.users({ status: "active" }), (api) => api.listUsers({ status: "active", pageSize: 100 }));
+  const users = useApiQuery(qk.users(PIPELINE_STAFF_QUERY), (api) => api.listUsers(PIPELINE_STAFF_QUERY));
   const byStage = useMemo(() => {
     const map = new Map<PipelineColumn, LeadSummary[]>();
     for (const stage of PIPELINE_COLUMNS) map.set(stage.column, []);
@@ -255,15 +252,18 @@ function PipelinePageInner() {
         {data && debounced ? <span className="text-[12px] tabular text-ink-3" role="status">{t("crmCompletion.pipeline.matchCount", { count: data.totalItems })}</span> : null}
       </div>
 
-      {selected.size ? <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{t("crmCompletion.pipeline.selected", { count: selected.size })}</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> {t("crmCompletion.pipeline.changeSelected")}</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>{t("members.list.clearSelection")}</button></div> : null}
+      {selected.size ? <div className="flex animate-settle flex-wrap items-center gap-3 rounded-lg border border-ink bg-ink px-3 py-2 text-paper"><span className="text-[12.5px] font-semibold">{t("crmCompletion.pipeline.selected", { count: selected.size })}</span><Button size="sm" variant="secondary" onClick={() => setBulkOpen(true)}><UsersRound /> {t("crmCompletion.pipeline.changeSelected")}</Button><button type="button" className="text-[12px] underline underline-offset-4" onClick={() => setSelected(new Set())}>{t("members.list.clearSelection")}</button></div> : null}
 
       {isBackgroundError ? <ErrorState layout="inline" title={t("crmCompletion.pipeline.backgroundError")} onRetry={() => refetch()} /> : null}
       {isLoading && !data ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {PIPELINE_COLUMNS.map(({ column }) => (
-            <Skeleton key={column} className="h-64 w-full" />
-          ))}
-        </div>
+        // Shaped like the view that is coming (a row of 16rem columns, or one list panel) so nothing reflows when leads arrive.
+        view === "list" ? <Skeleton className="h-64 w-full" /> : (
+          <div className="flex min-w-0 gap-3 overflow-hidden pb-4">
+            {PIPELINE_COLUMNS.map(({ column }) => (
+              <Skeleton key={column} className="h-64 w-64 shrink-0" />
+            ))}
+          </div>
+        )
       ) : isError && !data ? (
         // A role without CRM access lands here by direct URL; say so instead
         // of offering a retry that can never succeed.
@@ -280,7 +280,7 @@ function PipelinePageInner() {
           onSelectedChange={setSelected}
         />
       ) : (
-        <div className="flex min-w-0 gap-3 overflow-x-auto pb-4" data-testid="pipeline-board">
+        <div className="flex min-w-0 animate-settle gap-3 overflow-x-auto pb-4" data-testid="pipeline-board">
           {PIPELINE_COLUMNS.map(({ column, labelKey, hintKey }) => {
             const label = t(labelKey);
             const hint = t(hintKey);
@@ -485,7 +485,7 @@ function LeadListView({ leads, filtered, onClearSearch, onNewLead, onNoAnswer, o
     );
   }
   return (
-    <div className="panel overflow-hidden">
+    <div className="panel animate-settle overflow-hidden">
       <ul className="divide-y divide-line xl:hidden" aria-label={t("crm.pipeline.title")}>
         {leads.map((lead) => <li key={lead.id} className="flex items-start gap-3 px-4 pt-3.5" data-testid="lead-compact-row">
           <Checkbox className="mt-1" checked={selected.has(lead.id)} onCheckedChange={(checked) => { const next = new Set(selected); if (checked) next.add(lead.id); else next.delete(lead.id); onSelectedChange(next); }} aria-label={t("crmCompletion.pipeline.card.selectLead", { name: lead.fullName })} />

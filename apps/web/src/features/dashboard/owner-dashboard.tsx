@@ -9,7 +9,8 @@ import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
 import { useFormat } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
-import { addDays, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
+import { dashboardInput } from "@/lib/navigation/route-reads";
 import { money } from "@/lib/utils/money";
 import { MoneyText } from "@/components/shared/data-display";
 import { PageHeader } from "@/components/shared/chrome";
@@ -43,7 +44,7 @@ export function OwnerDashboard() {
   const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
   const scopeText = useDashboardScopeText(session?.branches ?? [], branchId);
 
-  const dashboardQuery = { branchId, from: addDays(today, -29), to: today };
+  const dashboardQuery = dashboardInput(session?.organization.timezone, branchId);
   const { data, isLoading, isError, refetch } = useRealtimeApiQuery({
     queryKey: qk.dashboard(branchId),
     query: (api) => api.getDashboard(dashboardQuery),
@@ -113,11 +114,12 @@ export function OwnerDashboard() {
       {/* Revenue + branch context */}
       <div className="grid gap-5 xl:grid-cols-[3fr_2fr]">
         <section className="panel p-4">
-          {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <Suspense fallback={<Skeleton className="h-[220px] w-full" />}><RevenueChart data={data.revenueSeries} currency={session?.organization.currency} /></Suspense>}
+          {/* 244px is the loaded chart's height (label, total line, 180px plot), so the panel does not grow when the chart arrives. */}
+          {isLoading || !data ? <Skeleton className="h-[244px] w-full" /> : <Suspense fallback={<Skeleton className="h-[244px] w-full" />}><RevenueChart data={data.revenueSeries} currency={session?.organization.currency} /></Suspense>}
         </section>
         <section className="panel p-4">
           <ContextLabel className="mb-3">{t("dashboard.owner.collectedByBranch")}</ContextLabel>
-          {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <BranchRevenueBars data={data.branchRevenue} />}
+          {isLoading || !data ? <Skeleton className="h-[90px] w-full" /> : <div className="animate-settle"><BranchRevenueBars data={data.branchRevenue} /></div>}
         </section>
       </div>
 
@@ -135,7 +137,7 @@ export function OwnerDashboard() {
               <Skeleton className="h-[160px] w-full" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto animate-settle">
               <table className="w-full text-[13px]" aria-label={t("dashboard.owner.salesTeam")}>
                 <thead>
                   <tr className="border-b border-line text-start">
@@ -176,7 +178,7 @@ export function OwnerDashboard() {
             <h2 className="text-[13px] font-semibold">{t("dashboard.owner.recentActivity")}</h2>
           </header>
           <div className="max-h-[380px] overflow-y-auto px-4 py-3">
-            {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <TimelineFeed events={data.recentActivity} dense />}
+            {isLoading || !data ? <Skeleton className="h-[220px] w-full" /> : <div className="animate-settle"><TimelineFeed events={data.recentActivity} dense /></div>}
           </div>
         </section>
       </div>
@@ -205,7 +207,7 @@ function KpiCell({
         // The same box as the figure (22px line), so the strip keeps its height when figures arrive.
         <Skeleton className="mt-1 h-[22px] w-20" />
       ) : (
-        <div className={cn("mt-1 text-[22px] font-medium leading-none tabular tracking-tight", tone === "warning" && "text-warning-deep")}>
+        <div className={cn("mt-1 animate-settle text-[22px] font-medium leading-none tabular tracking-tight", tone === "warning" && "text-warning-deep")}>
           {children}
         </div>
       )}

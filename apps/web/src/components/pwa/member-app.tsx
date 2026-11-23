@@ -95,7 +95,7 @@ export function MemberAppReminder() {
   if (!show) return null;
 
   return (
-    <section className="border-b border-line bg-surface px-4 py-2.5 sm:px-6 lg:px-8" aria-labelledby="member-app-reminder-title" data-member-app-reminder>
+    <section className="animate-settle border-b border-line bg-surface px-4 py-2.5 sm:px-6 lg:px-8" aria-labelledby="member-app-reminder-title" data-member-app-reminder>
       <div className="mx-auto flex max-w-[1280px] items-center gap-3">
         <Image src="/icons/member-192.png" alt="" width={36} height={36} className="size-9 shrink-0 rounded-md" />
         <div className="min-w-0 flex-1">

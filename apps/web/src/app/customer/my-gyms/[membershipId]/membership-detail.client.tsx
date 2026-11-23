@@ -164,7 +164,7 @@ function MembershipDetail({ membershipId }: { membershipId: string }) {
       />
 
       {section === "membership" ? (
-        <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("memberProfile.followUp.membershipFallback")}>
+        <div className="mt-4 animate-settle space-y-4" role="tabpanel" aria-label={t("memberProfile.followUp.membershipFallback")}>
           <MembershipSummary membership={membership} gym={gym} branchName={branch?.name ?? membership.branchName} status={status} />
           <FreezeRequestCard membershipId={membership.id} />
           {membership.referral?.enabled ? <ReferralCard initialProgram={membership.referral} gymName={gym.name} /> : null}
@@ -290,7 +290,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const value = experience.data!;
   if (!value.policy.enabled) {
     return (
-      <section className="panel mt-4 p-6 text-center" role="tabpanel" aria-label={t("nav.item.classes")}>
+      <section className="panel mt-4 animate-settle p-6 text-center" role="tabpanel" aria-label={t("nav.item.classes")}>
         <CalendarDays className="mx-auto size-6 text-ink-3" aria-hidden />
         <h2 className="mt-3 text-[16px] font-semibold">{t("memberExperience.bookAtReception")}</h2>
         <p className="mt-1 text-[13px] text-ink-2">{t("memberExperience.noAppBooking", { gym: isolate(value.gymName) })}</p>
@@ -307,7 +307,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
   const attendedCount = value.history.filter((occurrence) => occurrence.booking?.status === "attended").length;
 
   return (
-    <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("nav.item.classes")}>
+    <div className="mt-4 animate-settle space-y-4" role="tabpanel" aria-label={t("nav.item.classes")}>
       {experience.isBackgroundError ? <ErrorState layout="inline" title={t("memberExperience.classesRefreshError")} description={t("memberExperience.staleClasses")} onRetry={() => experience.refetch()} /> : null}
       {value.profileCorrectionRequired ? (
         <div className="rounded-md border border-warning/30 bg-warning-bg px-4 py-3 text-[13px] text-warning-deep" role="status">
@@ -337,7 +337,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
             </div>
             <Button variant="secondary" size="icon" aria-label={t("memberExperience.nextDay")} disabled={date >= weekEnd} onClick={() => setSelectedDate(addDays(date, 1))}><ChevronRight className="rtl:rotate-180" /></Button>
           </div>
-          <div key={date} className="mt-3">
+          <div key={date} className="mt-3 animate-settle">
             {dayOccurrences.length ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {dayOccurrences.map((occurrence) => (
@@ -361,7 +361,7 @@ function CustomerClassesPanel({ membershipId }: { membershipId: string }) {
           </div>
         </section>
       ) : (
-        <section aria-label={t("memberExperience.classHistory")} className="panel overflow-hidden">
+        <section aria-label={t("memberExperience.classHistory")} className="panel animate-settle overflow-hidden">
           {value.history.length ? (
             <div className="divide-y divide-line">
               {value.history.map((occurrence) => {
@@ -682,7 +682,7 @@ function CustomerPtPanel({ membershipId, gymName, branchNames }: { membershipId:
   const nextBooking = ptNextBooking(value.upcomingBookings);
   const canPickSlot = (value.availableSessions > 0 || Boolean(rescheduleBookingId)) && Boolean(trainerId && selectedBranchId);
   return (
-    <div className="mt-4 space-y-4" role="tabpanel" aria-label={t("palette.notificationGroups.family.pt")}>
+    <div className="mt-4 animate-settle space-y-4" role="tabpanel" aria-label={t("palette.notificationGroups.family.pt")}>
       {experience.isBackgroundError ? <ErrorState layout="inline" title={t("memberExperience.ptRefreshError")} description={t("memberExperience.staleData")} onRetry={() => experience.refetch()} /> : null}
       <dl className="grid grid-cols-3 divide-x rtl:divide-x-reverse divide-line rounded-lg border border-line bg-surface">
         <PtStat label={t("memberExperience.available")} value={String(value.availableSessions)} />

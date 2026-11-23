@@ -65,7 +65,7 @@ export function ProductPicker({ products, inventory, currency, cart, search, onS
       ) : visible.length === 0 ? (
         <EmptyState compact title={search ? t("salesWorkspace.noMatches") : t("salesWorkspace.noItems")} description={search ? t("salesWorkspace.trySearch") : t("salesWorkspace.addStockHint")} className="m-4" />
       ) : (
-        <ul className="divide-y divide-line" aria-label={t("salesWorkspace.itemsForSale")}>
+        <ul className="animate-settle divide-y divide-line" aria-label={t("salesWorkspace.itemsForSale")}>
           {visible.map((product) => {
             const available = availableFor(product.id, inventory);
             const price = retailPriceOf(product, currency);

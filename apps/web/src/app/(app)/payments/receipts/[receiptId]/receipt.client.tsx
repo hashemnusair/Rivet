@@ -45,7 +45,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
 
   if (query.isLoading) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4">
+      <div className="mx-auto max-w-5xl space-y-4">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-[480px] w-full" />
       </div>
@@ -88,7 +88,7 @@ export default function ReceiptPageClient({ receiptId: receiptIdProp }: { receip
   const canRetailVoid = can("payments.void") && retailSale?.status === "completed" && retailSameDay;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-5xl animate-settle space-y-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/payments">

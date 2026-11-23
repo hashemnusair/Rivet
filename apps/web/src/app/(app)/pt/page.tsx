@@ -29,7 +29,7 @@ import { visibleBranchId } from "@/lib/domain/branch-scope";
 import { exponentFor, money, readMoneyInput, toMajorString } from "@/lib/utils/money";
 import { BookingOutcomeConfirmation } from "@/features/personal-training/booking-outcome-confirmation";
 import { TrainerSetupNotice } from "@/features/personal-training/trainer-setup-notice";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
 
 const WEEKDAYS = [
@@ -116,12 +116,12 @@ export default function PersonalTrainingPage() {
           <div className="divide-y divide-line border-b border-line">{awaitingOutcome.map((booking) => renderBooking(booking, true))}</div>
         </section> : null}
         <header className="flex items-center justify-between border-b border-line px-5 py-4"><div><h2 className="mt-1 text-[15px] font-semibold">{t("ptWorkspace.upcoming")}</h2></div><CalendarClock className="size-5 text-ink-3" /></header>
-        {!data ? <Skeleton className="m-4 h-32" /> : upcomingBookings.length === 0 ? <EmptyState layout="section" className="m-4" title={t("ptWorkspace.noUpcoming")} description={canBook ? t("ptWorkspace.noUpcomingBookHint") : t("ptWorkspace.noUpcomingTrainerHint")} /> : <div className="divide-y divide-line">{upcomingBookings.map((booking) => renderBooking(booking, false))}</div>}
+        {!data ? <Skeleton className="m-4 h-32" /> : upcomingBookings.length === 0 ? <EmptyState layout="section" className="m-4" title={t("ptWorkspace.noUpcoming")} description={canBook ? t("ptWorkspace.noUpcomingBookHint") : t("ptWorkspace.noUpcomingTrainerHint")} /> : <div className="animate-settle divide-y divide-line">{upcomingBookings.map((booking) => renderBooking(booking, false))}</div>}
       </div>
 
       {can("payments.collect") && canSeeCatalogue ? <div className="panel overflow-hidden">
         <header className="border-b border-line px-5 py-4"><h2 className="mt-1 text-[15px] font-semibold">{t("ptWorkspace.unpaidOrders")}</h2></header>
-        {!data ? <Skeleton className="m-4 h-32" /> : data.pendingOrders.length === 0 ? <EmptyState layout="section" className="m-4" title={t("ptWorkspace.noUnpaidOrders")} description={t("ptWorkspace.noUnpaidHint")} /> : <div className="divide-y divide-line">{data.pendingOrders.map((order) => <article key={order.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{order.packageName ?? data.packages.find((pkg) => pkg.id === order.packageId)?.name ?? t("ptWorkspace.packageFallback")}</p><p className="mt-1 text-[12px] text-ink-3"><Link className="font-medium text-ink hover:underline" href={`/members/${order.memberId}`}>{order.memberName ?? t("ptWorkspace.openMember")}</Link> · {order.paymentReference ?? t("ptWorkspace.paymentRequest")}</p></div><Badge variant="warning">{t("domain.paymentStatus.unpaid")}</Badge></div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => setPaymentOrder(order)}><WalletCards />{" "}{t("renewFlow.payment.collectPlain")}</Button>{can("pt.refund") ? <Button size="sm" variant="ghost" onClick={() => setCancelOrder(order)}>{t("ptWorkspace.cancelOrder")}</Button> : null}</div></article>)}</div>}
+        {!data ? <Skeleton className="m-4 h-32" /> : data.pendingOrders.length === 0 ? <EmptyState layout="section" className="m-4" title={t("ptWorkspace.noUnpaidOrders")} description={t("ptWorkspace.noUnpaidHint")} /> : <div className="animate-settle divide-y divide-line">{data.pendingOrders.map((order) => <article key={order.id} className="p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[13px] font-medium">{order.packageName ?? data.packages.find((pkg) => pkg.id === order.packageId)?.name ?? t("ptWorkspace.packageFallback")}</p><p className="mt-1 text-[12px] text-ink-3"><Link className="font-medium text-ink hover:underline" href={`/members/${order.memberId}`}>{order.memberName ?? t("ptWorkspace.openMember")}</Link> · {order.paymentReference ?? t("ptWorkspace.paymentRequest")}</p></div><Badge variant="warning">{t("domain.paymentStatus.unpaid")}</Badge></div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" onClick={() => setPaymentOrder(order)}><WalletCards />{" "}{t("renewFlow.payment.collectPlain")}</Button>{can("pt.refund") ? <Button size="sm" variant="ghost" onClick={() => setCancelOrder(order)}>{t("ptWorkspace.cancelOrder")}</Button> : null}</div></article>)}</div>}
       </div> : null}
     </section>
 

@@ -17,6 +17,7 @@ import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { UI_PREFERENCE_COOKIE } from "@/lib/i18n/preference";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import { PageSheet } from "@/components/motion/page-sheet";
+import { NavigationHoldGate } from "@/lib/navigation/navigation-hold";
 import { SHEET_ENTRY_PRE_PAINT } from "@/components/motion/sheet-entry";
 import { PAPER_CHROME } from "@/lib/ui/chrome-colors";
 import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
@@ -134,6 +135,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ExperienceProvider>
                   {children}
                 </ExperienceProvider>
+                {/* After the route tree on purpose: it renders once the next
+                    screen has started its reads, and keeps the current
+                    screen until they are in (at most 260 ms). */}
+                <NavigationHoldGate />
                 <LocalizedToaster />
               </AppProviders>
             </RivetIdentityProvider>

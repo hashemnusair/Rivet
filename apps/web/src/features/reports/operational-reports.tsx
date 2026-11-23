@@ -105,7 +105,8 @@ export function OperationalReports({ view, scope, branches, onScopeChange }: { v
       {active.isLoading ? <Skeleton className="h-72 w-full" /> : null}
       {active.isError ? <ErrorState onRetry={() => void active.refetch()} /> : null}
 
-      {!active.isLoading && !active.isError ? (
+      {/* Keyed by report so each report fades in once when it arrives or is chosen; every report is its own component, so nothing extra remounts. */}
+      {!active.isLoading && !active.isError ? <div key={view} className="animate-settle">{
         view === "peak-hours" && peakQuery.data ? <PeakHoursView report={peakQuery.data} from={from} to={to} />
         : view === "classes" && classesQuery.data ? <ClassesView report={classesQuery.data} from={from} to={to} />
         : view === "retention" && retentionQuery.data ? <RetentionView report={retentionQuery.data} />
@@ -114,7 +115,7 @@ export function OperationalReports({ view, scope, branches, onScopeChange }: { v
         : view === "crm" && crmQuery.data ? <CrmView report={crmQuery.data} from={from} to={to} />
         : view === "controls" && controlsQuery.data ? <ControlsView report={controlsQuery.data} from={from} to={to} currency={currency} />
         : null
-      ) : null}
+      }</div> : null}
     </div>
   );
 }

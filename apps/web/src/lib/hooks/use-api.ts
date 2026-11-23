@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  hashKey,
   useMutation,
   useQuery,
   useQueryClient,
@@ -14,6 +15,9 @@ import { getApi } from "@/lib/api/client";
 import { useLocale } from "@/lib/i18n/provider";
 import { ERR, isApiError, localizeApiError } from "@/lib/api/errors";
 import { INVALIDATE_ALL } from "@/lib/api/keys";
+import { currentApiScopeEpoch } from "@/lib/api/scope";
+import { useNavigationHoldRead } from "@/lib/navigation/navigation-hold";
+import { QUERY_GC_TIME_MS } from "@/lib/providers/query-policy";
 
 /**
  * A denied or signed-out answer is final for this session: the server has
@@ -25,27 +29,75 @@ export function isAccessDenied(error: unknown): boolean {
   return isApiError(error) && (error.code === ERR.FORBIDDEN || error.code === ERR.UNAUTHENTICATED);
 }
 
+export type ApiQueryOptions<TData> = Omit<UseQueryOptions<TData, Error>, "queryKey" | "queryFn"> & {
+  /**
+   * Keep the last result on screen while this query's arguments change, but
+   * only while these values stay the same. Pass what identifies the record or
+   * scope (branch, member, lead), never the filters: a search, sort, filter or
+   * page change keeps the previous list visible until the new one arrives; a
+   * change of branch, record or signed-in scope shows the loading state
+   * instead, so one branch's or member's data never appears under another.
+   */
+  keepPreviousWithin?: readonly unknown[];
+};
+
+/**
+ * The scope each cached result was read under, by query hash, recorded when
+ * the read starts (or a live value arrives). Kept outside the query's options
+ * because those are rewritten on every render: a result read under one scope
+ * must not be relabelled with the next one by a re-render after a switch.
+ */
+const readScopes = new Map<string, string>();
+
+/**
+ * placeholderData that reuses the previous key's data only when that data was
+ * read under the same scope. The API scope epoch (sign-in, organization and
+ * branch switches) is always part of the scope. `record` must be called when
+ * a read for `key` starts or a live value for it arrives.
+ */
+export function scopedPlaceholder<TData>(scope: readonly unknown[] | undefined) {
+  if (!scope) return undefined;
+  const scopeHash = hashKey([currentApiScopeEpoch(), ...scope]);
+  return {
+    record: (key: QueryKey) => { readScopes.set(hashKey(key), hashKey([currentApiScopeEpoch(), ...scope])); },
+    // TanStack types placeholder data as NonFunctionGuard<TData>; query data
+    // here is never a function, so the previous result passes through as is.
+    placeholderData: ((previousData: TData | undefined, previousQuery?: { queryHash: string }) =>
+      previousQuery && readScopes.get(previousQuery.queryHash) === scopeHash ? previousData : undefined) as UseQueryOptions<TData, Error>["placeholderData"],
+  };
+}
+
 export function useApiQuery<TData>(
   key: QueryKey,
   fn: (api: ReturnType<typeof getApi>) => Promise<TData>,
-  options?: Omit<UseQueryOptions<TData, Error>, "queryKey" | "queryFn">,
+  options?: ApiQueryOptions<TData>,
 ) {
   const { locale } = useLocale();
-  const query = useQuery<TData, Error>({
+  const { keepPreviousWithin, ...callerOptions } = options ?? {};
+  const scoped = scopedPlaceholder<TData>(keepPreviousWithin);
+  const queryOptions: UseQueryOptions<TData, Error> = {
     queryKey: key,
-    queryFn: () => fn(getApi()),
+    queryFn: () => {
+      scoped?.record(key);
+      return fn(getApi());
+    },
     // Most operational mutations invalidate their affected prefixes. A short
     // freshness window avoids refetching the same expensive projection on
     // every navigation, focus event, and component remount while preserving
     // immediate updates after a mutation.
     staleTime: 10_000,
-    gcTime: 5 * 60_000,
+    gcTime: QUERY_GC_TIME_MS,
     // Refresh one-shot screens when an operator returns to them. Realtime
     // screens use useRealtimeApiQuery and intentionally keep their websocket
     // as the primary source of updates.
     refetchOnWindowFocus: true,
-    ...options,
-  });
+    ...callerOptions,
+    ...(scoped ? { placeholderData: scoped.placeholderData } : {}),
+  };
+  const query = useQuery<TData, Error>(queryOptions);
+  // While a navigation to this screen is pending, start this read now and let
+  // the current screen stay until it is in (see navigation-hold.tsx).
+  useNavigationHoldRead(queryOptions, query);
 
   // TanStack Query can retain a useful snapshot while a background refetch
   // fails. Treat that as a stale-data warning rather than replacing a working

@@ -191,7 +191,7 @@ export function CollectPaymentDialog({
         </DialogHeader>
         {collected && collectedPayment ? (
           <>
-            <DialogBody className="space-y-4" data-testid="payment-collected">
+            <DialogBody className="animate-settle space-y-4" data-testid="payment-collected">
               <div className="flex items-start gap-3 rounded-md border border-success/30 bg-success-bg/40 px-3 py-3">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-success text-white" aria-hidden><CheckCircle2 className="size-4" /></span>
                 <div className="min-w-0">

@@ -281,9 +281,12 @@ export function SettingsPageInner() {
             </div>
           </nav>
           <div className="min-w-0 scroll-mt-20" role="tabpanel" aria-label={active.label}>
-            {allowed
-              ? <ActiveComponent />
-              : <ForbiddenState layout="page" description={active.permission ? PERMISSION_COPY[active.permission] ?? t("settingsCore.text200") : t("settingsCore.text200")} />}
+            {/* Keyed by section so a new section fades in; each section is its own component, so nothing remounts that did not already. */}
+            <div key={active.id} className="animate-settle">
+              {allowed
+                ? <ActiveComponent />
+                : <ForbiddenState layout="page" description={active.permission ? PERMISSION_COPY[active.permission] ?? t("settingsCore.text200") : t("settingsCore.text200")} />}
+            </div>
           </div>
         </div>
       </div>

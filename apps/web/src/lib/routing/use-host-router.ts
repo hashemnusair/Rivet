@@ -2,12 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import { useRouteDataPrefetch } from "@/lib/navigation/use-route-data-prefetch";
 import { canonicalHref } from "./host-routing";
 
 /** A cross-subdomain transition must load a new document so Clerk can establish
  * the destination session and providers initialize in the correct origin. */
 export function useHostRouter() {
   const router = useRouter();
+  // A screen opened from code (a row, a form's success) starts its first
+  // reads with the navigation, as a link does on intent.
+  const prefetchData = useRouteDataPrefetch();
   return useMemo(() => ({
     ...router,
     replace(href: string) {
@@ -18,7 +22,10 @@ export function useHostRouter() {
     push(href: string) {
       const target = canonicalHref(href, window.location.hostname);
       if (target !== href) window.location.assign(target);
-      else router.push(href);
+      else {
+        prefetchData(href);
+        router.push(href);
+      }
     },
-  }), [router]);
+  }), [prefetchData, router]);
 }

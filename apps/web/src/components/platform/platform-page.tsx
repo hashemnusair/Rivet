@@ -80,7 +80,7 @@ export function FilterPills<T extends string>({ label, value, items, onChange, c
 export function StaleNotice({ children, onRetry, retrying = false }: { children: ReactNode; onRetry?: () => void; retrying?: boolean }) {
   const t = useT();
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] text-warning-deep" role="status" aria-live="polite">
+    <div className="flex animate-settle flex-wrap items-center justify-between gap-3 rounded-md border border-warning/30 bg-warning-bg px-4 py-2.5 text-[12.5px] text-warning-deep" role="status" aria-live="polite">
       <span>{children}</span>
       {onRetry ? (
         <button type="button" onClick={onRetry} disabled={retrying} className="font-medium underline underline-offset-4 disabled:opacity-60" data-touch-target>

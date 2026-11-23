@@ -17,7 +17,7 @@ import {
   UserRoundSearch,
   type LucideIcon,
 } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { MoneyText, RelativeText } from "@/components/shared/data-display";
@@ -159,7 +159,7 @@ export function TodayQueue({
         {loading ? (
           <Skeleton className="h-8 w-24" />
         ) : (
-          <div className="text-end" aria-live="polite">
+          <div className="animate-settle text-end" aria-live="polite">
             <p className="text-[18px] font-semibold leading-none tabular">{format.number(data?.totalItems ?? 0)}</p>
             <p className="mt-1 text-[12px] text-ink-3">
               {(data?.urgentItems ?? 0) > 0 ? t("dashboard.today.urgent", { count: data?.urgentItems ?? 0 }) : t("dashboard.today.itemsLeft")}
@@ -173,7 +173,7 @@ export function TodayQueue({
           {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}
         </div>
       ) : items.length === 0 ? (
-        <div className="px-5 py-12 text-center">
+        <div className="animate-settle px-5 py-12 text-center">
           <CheckCircle2 className="mx-auto size-5 text-success" aria-hidden />
           <p className="mt-3 text-[13px] font-semibold">{t("dashboard.today.emptyTitle")}</p>
           <p className="mx-auto mt-1 max-w-[42ch] text-[12.5px] leading-relaxed text-ink-3">
@@ -182,7 +182,7 @@ export function TodayQueue({
         </div>
       ) : (
         <>
-          <ol className="divide-y divide-line" aria-label={t("dashboard.today.listAria")}>
+          <ol className="animate-settle divide-y divide-line" aria-label={t("dashboard.today.listAria")}>
             {visibleItems.map((item, index) => (
               <TodayQueueRow
                 key={item.id}

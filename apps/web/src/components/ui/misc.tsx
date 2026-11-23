@@ -21,7 +21,9 @@ const TooltipContent = forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-[80] max-w-64 rounded-sm bg-night px-2.5 py-1.5 text-xs text-night-ink shadow-pop animate-fade-in",
+        // Grows from the side of the control it explains; fades away on close
+        // without holding the pointer.
+        "z-[80] max-w-64 origin-[var(--radix-tooltip-content-transform-origin)] rounded-sm bg-night px-2.5 py-1.5 text-xs text-night-ink shadow-pop animate-scale-in data-[state=closed]:animate-scale-out data-[state=closed]:pointer-events-none!",
         className,
       )}
       {...props}
@@ -33,8 +35,9 @@ TooltipContent.displayName = "TooltipContent";
 // ---------------------------------------------------------------------------
 // Skeleton
 // ---------------------------------------------------------------------------
+/** A slow, shallow breath in unison: waiting reads as calm, never busy. */
 function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("animate-pulse rounded-sm bg-sunken-2/70", className)} {...props} />;
+  return <div className={cn("animate-skeleton rounded-sm bg-sunken-2/70", className)} {...props} />;
 }
 
 function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: number }) {
@@ -49,7 +52,7 @@ function TableSkeleton({ rows = 8, cols = 5 }: { rows?: number; cols?: number })
       {Array.from({ length: rows }).map((_, r) => (
         <div key={r} className="flex gap-3 border-b border-line/70 py-3.5">
           {Array.from({ length: cols }).map((_, c) => (
-            <Skeleton key={c} className="h-3.5 flex-1" style={{ animationDelay: `${(r * cols + c) * 40}ms` }} />
+            <Skeleton key={c} className="h-3.5 flex-1" />
           ))}
         </div>
       ))}

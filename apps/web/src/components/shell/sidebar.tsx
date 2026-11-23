@@ -153,7 +153,7 @@ export function Sidebar() {
           className="flex h-8 min-w-0 w-full items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink-2 cursor-pointer"
         >
           <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-            {sidebarCollapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
+            {sidebarCollapsed ? <ChevronsRight className="size-4 rtl:-scale-x-100" /> : <ChevronsLeft className="size-4 rtl:-scale-x-100" />}
           </span>
           {!sidebarCollapsed ? <span className="min-w-0 flex-1 truncate">{t("nav.sidebar.collapse")}</span> : null}
         </button>

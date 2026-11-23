@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { RefreshCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -27,6 +26,7 @@ import type { RoleKey, Session, UUID } from "@/lib/domain/types";
 import { useRivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { UnsavedChangesProvider } from "@/lib/providers/unsaved-changes-provider";
 import { getAppQueryDefaults } from "@/lib/providers/query-policy";
+import { AppContext } from "@/lib/providers/app-context";
 
 /** Error codes where retrying cannot change the outcome. */
 const TERMINAL_ERROR_CODES: string[] = [
@@ -40,7 +40,7 @@ const TERMINAL_ERROR_CODES: string[] = [
   ERR.IDENTITY_EMAIL_CONFLICT,
 ];
 
-interface AppContextValue {
+export interface AppContextValue {
   session: Session | undefined;
   organizations: RivetMembership[];
   sessionLoading: boolean;
@@ -65,7 +65,6 @@ interface AppContextValue {
   toggleSidebar: () => void;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
 
 const STORAGE_KEYS = {
   persona: "rivet.demo.persona",
@@ -352,6 +351,11 @@ function SessionProvider({ children }: { children: ReactNode }) {
       if (branchId) window.sessionStorage.setItem(STORAGE_KEYS.branch, branchId);
       else window.sessionStorage.removeItem(STORAGE_KEYS.branch);
       setSession(s);
+      // Screens not on display drop what they read under the previous branch,
+      // so a return visit cannot draw it before its refresh lands (cached
+      // screens are kept for QUERY_GC_TIME_MS). The screen on display keeps
+      // its rows until its refresh replaces them, as before.
+      queryClient.removeQueries({ type: "inactive" });
       queryClient.invalidateQueries();
       bumpApiScope();
     },

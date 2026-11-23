@@ -311,7 +311,7 @@ function AuditRow({ event, expanded, onToggle, canReview, canReviewCash, onRevie
         </div>
       ) : null}
       {expanded && hasDetail ? (
-        <div className="border-t border-line/70 bg-sunken/30 px-4 py-3 animate-fade-in sm:px-5">
+        <div className="border-t border-line/70 bg-sunken/30 px-4 py-3 animate-settle sm:px-5">
           <div className="grid gap-3 md:grid-cols-2">
             {event.reason ? (
               <div className="rounded-md border border-line bg-surface p-3 md:col-span-2">

@@ -79,17 +79,18 @@ export function EntryPassDialog({
         </DialogHeader>
         <DialogBody className="text-center">
           {loading ? (
-            <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-[13px] text-ink-3" role="status">
+            <div className="flex min-h-96 flex-col items-center justify-center gap-3 text-[13px] text-ink-3" role="status">
               <span className="h-1 w-32 overflow-hidden rounded-full bg-sunken-2"><span className="block h-full w-1/2 animate-pulse rounded-full bg-ink" /></span>
               {t("memberExperience.entryLoading")}
             </div>
           ) : error ? (
-            <div role="alert" className="rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-start text-[13px] text-danger">
+            <div role="alert" className="animate-settle rounded-md border border-danger/30 bg-danger-bg px-3 py-4 text-start text-[13px] text-danger">
               <p>{localizeApiError(error, locale).message}</p>
               <Button className="mt-3" size="sm" variant="secondary" onClick={() => void load()}>{t("common.action.retry")}</Button>
             </div>
           ) : token ? (
-            <>
+            // Each pass is new, so it settles in over the loading space it replaces.
+            <div className="animate-settle">
               <div className={expired ? "relative mx-auto w-fit rounded-lg border border-line bg-white p-4 opacity-30" : "mx-auto w-fit rounded-lg border border-line bg-white p-4"} aria-hidden={expired || undefined}>
                 <QRCodeSVG value={token} size={232} level="H" bgColor="#ffffff" fgColor="#15140f" aria-label={t("memberExperience.entryQr")} className="block h-auto w-full max-w-[232px]" />
               </div>
@@ -102,7 +103,7 @@ export function EntryPassDialog({
               <Button className="mt-4" size="sm" variant={expired ? "primary" : "secondary"} onClick={() => void load()}>
                 <RefreshCcw /> {t("memberExperience.entryRefresh")}
               </Button>
-            </>
+            </div>
           ) : null}
         </DialogBody>
       </DialogContent>

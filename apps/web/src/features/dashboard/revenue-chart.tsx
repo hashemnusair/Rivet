@@ -33,7 +33,7 @@ export function RevenueChart({ data, currency = "JOD" }: { data: DashboardData["
   const avg = data.length ? Math.round(total / data.length) : 0;
 
   return (
-    <div role="img" aria-label={t("deskCompletion.dashboard.charts.revenueAria")}>
+    <div role="img" aria-label={t("deskCompletion.dashboard.charts.revenueAria")} className="animate-settle">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <div>
           <p className="context-label">{t("dashboard.chart.collectedLast30")}</p>
@@ -58,6 +58,7 @@ export function RevenueChart({ data, currency = "JOD" }: { data: DashboardData["
               reversed={rtl}
             />
             <Tooltip
+              animationDuration={120}
               cursor={{ fill: "rgba(27,26,21,0.05)" }}
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
@@ -73,7 +74,8 @@ export function RevenueChart({ data, currency = "JOD" }: { data: DashboardData["
                 );
               }}
             />
-            <Bar dataKey="collected" radius={[2, 2, 0, 0]} maxBarSize={18}>
+            {/* No bar-growing entrance: the panel fades in once and the numbers hold still. */}
+            <Bar dataKey="collected" radius={[2, 2, 0, 0]} maxBarSize={18} isAnimationActive={false}>
               {chartData.map((entry) => (
                 <Cell key={entry.date} fill={entry.date === today ? "#d9232b" : "#1b1a15"} />
               ))}

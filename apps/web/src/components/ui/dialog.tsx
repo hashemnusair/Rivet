@@ -39,7 +39,8 @@ const DialogOverlay = forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in",
+      // A closing scrim fades out but never holds the click that comes next.
+      "fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out data-[state=closed]:pointer-events-none!",
       className,
     )}
     {...props}
@@ -62,7 +63,9 @@ const DialogContent = forwardRef<
         // dvh, not vh: on phones vh is the toolbar-hidden height, so a tall
         // dialog sized by vh keeps its footer (Cancel/Submit) below the fold
         // while the browser chrome or the keyboard is showing.
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-line bg-surface shadow-dialog max-h-[calc(100dvh-3rem)] overflow-y-auto data-[state=open]:animate-scale-in",
+        // The centring uses `translate` and the scale keyframes use `scale`,
+        // so opening and closing never shift the dialog off centre.
+        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-0 rounded-lg border border-line bg-surface shadow-dialog max-h-[calc(100dvh-3rem)] overflow-y-auto data-[state=open]:animate-scale-in data-[state=closed]:animate-scale-out data-[state=closed]:pointer-events-none!",
         className,
       )}
       onOpenAutoFocus={(event) => {

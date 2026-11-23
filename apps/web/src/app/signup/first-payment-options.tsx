@@ -143,9 +143,9 @@ export function FirstPaymentOptions({
           )}
         </div>
         {promo ? (
-          <p id="application-promo-status" role="status" className="mt-2 text-[12.5px] font-medium text-success">{t("commerce.offer.promoApplied", { code: isolateLtr(promo.code), discount: describePromo(promo) })}</p>
+          <p id="application-promo-status" role="status" className="mt-2 animate-settle text-[12.5px] font-medium text-success">{t("commerce.offer.promoApplied", { code: isolateLtr(promo.code), discount: describePromo(promo) })}</p>
         ) : shownError ? (
-          <p id="application-promo-status" role="alert" className="mt-2 text-[12.5px] text-danger">{t(`commerce.offer.promoErrors.${shownError}`)}</p>
+          <p id="application-promo-status" role="alert" className="mt-2 animate-settle text-[12.5px] text-danger">{t(`commerce.offer.promoErrors.${shownError}`)}</p>
         ) : null}
       </div>
 
@@ -156,12 +156,12 @@ export function FirstPaymentOptions({
             <div className="flex justify-between gap-4 py-2"><dt className="text-ink-2">{t("commerce.lines.subscription", { plan: plan.name, cadence: t(interval === "annual" ? "commerce.lines.annual" : "commerce.lines.monthly") })}</dt><dd className="tabular">{jod(quote.subscriptionMinor)}</dd></div>
             {quote.onboardingFeeMinor > 0 ? <div className="flex justify-between gap-4 py-2"><dt className="text-ink-2">{t("commerce.lines.onboarding")}</dt><dd className="tabular">{jod(quote.onboardingFeeMinor)}</dd></div> : null}
             {quote.websiteRequested ? (
-              <div className="flex justify-between gap-4 py-2">
+              <div className="flex animate-settle justify-between gap-4 py-2">
                 <dt className="text-ink-2">{t("commerce.lines.website")}</dt>
                 <dd className="tabular">{quote.websiteFree ? <span className="font-medium text-success">{t("commerce.lines.websiteFree")}</span> : jod(quote.websiteMinor)}</dd>
               </div>
             ) : null}
-            {quote.discountMinor > 0 && quote.promo ? <div className="flex justify-between gap-4 py-2"><dt className="text-ink-2">{t("commerce.lines.promo", { code: isolateLtr(quote.promo.code) })}</dt><dd className="tabular text-success">{isolateLtr(`−${formatPublicJod(quote.discountMinor, f, locale)}`)}</dd></div> : null}
+            {quote.discountMinor > 0 && quote.promo ? <div className="flex animate-settle justify-between gap-4 py-2"><dt className="text-ink-2">{t("commerce.lines.promo", { code: isolateLtr(quote.promo.code) })}</dt><dd className="tabular text-success">{isolateLtr(`−${formatPublicJod(quote.discountMinor, f, locale)}`)}</dd></div> : null}
             <div className="flex justify-between gap-4 pt-3"><dt className="font-semibold">{t("commerce.lines.total")}</dt><dd className="tabular text-[16px] font-semibold">{jod(quote.totalMinor)}</dd></div>
           </dl>
           <p className="mt-3 text-[12px] leading-relaxed text-ink-3">{t("commerce.offer.summaryNote")}</p>

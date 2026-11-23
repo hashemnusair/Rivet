@@ -13,7 +13,8 @@ import { ErrorState } from "@/components/ui/states";
 import { qk } from "@/lib/api/keys";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp } from "@/lib/providers/app-providers";
-import { addDays, todayISODate } from "@/lib/utils/dates";
+import { todayISODate } from "@/lib/utils/dates";
+import { dashboardInput as dashboardRange } from "@/lib/navigation/route-reads";
 import { money } from "@/lib/utils/money";
 import { NeedsAttention } from "@/features/brief/needs-attention";
 import { useDashboardScopeText, useGreeting } from "./dashboard-scope";
@@ -30,7 +31,7 @@ export function ManagerDashboard() {
   const today = todayISODate(session?.organization.timezone);
   const greeting = useGreeting(session?.user.name.split(" ")[0] ?? "", undefined, session?.organization.timezone);
   const scopeText = useDashboardScopeText(session?.branches ?? [], branchId);
-  const dashboardInput = { branchId, from: addDays(today, -29), to: today };
+  const dashboardInput = dashboardRange(session?.organization.timezone, branchId);
   const dashboard = useRealtimeApiQuery({ queryKey: qk.dashboard(branchId), query: (api) => api.getDashboard(dashboardInput), subscribe: (api, onValue, onError) => api.subscribeDashboard(dashboardInput, onValue, onError), enabled: Boolean(session) });
   if (dashboard.isError) return <ErrorState onRetry={() => dashboard.refetch()} />;
 
@@ -47,4 +48,4 @@ export function ManagerDashboard() {
   </div>;
 }
 
-function Metric({ label, children, loading, warning }: { label: string; children: React.ReactNode; loading: boolean; warning?: boolean }) { return <div className="px-4 py-3.5"><ContextLabel>{label}</ContextLabel>{loading ? <Skeleton className="mt-2 h-6 w-14" /> : <p className={warning ? "mt-1 text-[22px] font-medium tabular text-warning-deep" : "mt-1 text-[22px] font-medium tabular"}>{children}</p>}</div>; }
+function Metric({ label, children, loading, warning }: { label: string; children: React.ReactNode; loading: boolean; warning?: boolean }) { return <div className="px-4 py-3.5"><ContextLabel>{label}</ContextLabel>{loading ? <Skeleton className="mt-1 h-[32px] w-14" /> : <p className={warning ? "mt-1 animate-settle text-[22px] font-medium tabular text-warning-deep" : "mt-1 animate-settle text-[22px] font-medium tabular"}>{children}</p>}</div>; }

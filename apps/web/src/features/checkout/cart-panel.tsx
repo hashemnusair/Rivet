@@ -144,9 +144,9 @@ export function MobileCart({ lines, total, open, onOpenChange, children, ...prop
       </div>
       <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 data-[state=open]:animate-fade-in" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out" />
           <DialogPrimitive.Content
-            className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-lg bg-surface pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-dialog outline-none data-[state=open]:animate-fade-up"
+            className="fixed inset-x-0 bottom-0 z-50 max-h-[88dvh] overflow-y-auto rounded-t-lg bg-surface pb-[max(env(safe-area-inset-bottom),0.75rem)] shadow-dialog outline-none data-[state=open]:animate-fade-up data-[state=closed]:animate-fade-out"
             data-testid="mobile-cart-sheet"
             aria-describedby="mobile-cart-description"
           >

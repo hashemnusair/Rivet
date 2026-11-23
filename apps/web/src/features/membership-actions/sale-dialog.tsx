@@ -363,7 +363,7 @@ export function MembershipSaleDialog({
               </FieldGrid>
 
               {needsOverrideReason ? (
-                <Field label={t("renewFlow.sale.changeReason")} required error={form.formState.errors.overrideReason?.message}>
+                <Field className="animate-settle" label={t("renewFlow.sale.changeReason")} required error={form.formState.errors.overrideReason?.message}>
                   <Input dir="auto" placeholder={t("renewFlow.sale.changeReasonPlaceholder")} {...form.register("overrideReason")} />
                 </Field>
               ) : null}
@@ -378,7 +378,7 @@ export function MembershipSaleDialog({
               </FieldGrid>
 
               {needsApproval ? (
-                <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
+                <div className="flex animate-settle items-start gap-2 rounded-md border border-warning/40 bg-warning-bg/60 px-3 py-2 text-[12.5px] text-warning-deep">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   {t("renewFlow.sale.needsApproval")}
                 </div>
@@ -394,7 +394,7 @@ export function MembershipSaleDialog({
                   />
                 </label>
                 {watchPayNow ? (
-                  <FieldGrid alignFrom="base" className="mt-3 grid-cols-2">
+                  <FieldGrid alignFrom="base" className="mt-3 animate-settle grid-cols-2">
                     <Field label={t("renewFlow.shared.amountWithCurrency", { currency: isolateLtr(currency) })} error={form.formState.errors.payAmount?.message ?? (showProblem("payAmount") ? payAmountProblem : undefined)} hint={t("renewFlow.sale.payAmountHint")}>
                       <Input inputMode="decimal" dir="ltr" placeholder={toMajorString(total)} {...form.register("payAmount")} />
                     </Field>
@@ -420,7 +420,7 @@ export function MembershipSaleDialog({
                       />
                     </Field>
                     {paymentReferenceRequired ? (
-                      <Field className="col-span-2" label={t("renewFlow.shared.referenceNumber")} required error={form.formState.errors.paymentReference?.message} hint={t("renewFlow.shared.referenceHint")}>
+                      <Field className="col-span-2 animate-settle" label={t("renewFlow.shared.referenceNumber")} required error={form.formState.errors.paymentReference?.message} hint={t("renewFlow.shared.referenceHint")}>
                         <Input dir="ltr" {...form.register("paymentReference")} placeholder={t("renewFlow.shared.referencePlaceholder")} />
                       </Field>
                     ) : null}

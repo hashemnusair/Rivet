@@ -115,7 +115,7 @@ function StepHeader({ step, progress }: { step: Step; progress: number }) {
       </div>
       {step === "read" ? (
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-sunken-2" role="progressbar" aria-label={t("agreementFlow.progress")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
-          <div className="h-full rounded-full bg-ink transition-[width] duration-150" style={{ width: `${Math.round(progress * 100)}%` }} />
+          <div className="h-full rounded-full bg-ink" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
       ) : null}
     </header>

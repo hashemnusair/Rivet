@@ -3,7 +3,7 @@ import { useT } from "@/lib/i18n/provider";
 
 
 import { FilterX, Plus, Search } from "lucide-react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/shell/intent-prefetch-link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo } from "react";
 import { qk } from "@/lib/api/keys";
@@ -12,7 +12,7 @@ import type { TransactionSummary } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
 import { choiceFromParams, pageFromParams, useReplaceSearchParams, useUrlSearchText } from "@/lib/hooks/use-url-state";
-import { todayISODate, addDays } from "@/lib/utils/dates";
+import { transactionListQuery } from "@/lib/navigation/route-reads";
 import { DateTimeText, MoneyText } from "@/components/shared/data-display";
 import { DataPagination, PageHeader } from "@/components/shared/chrome";
 import { PAYMENT_METHOD_LABELS, TransactionStatusChip } from "@/components/shared/status-chip";
@@ -53,19 +53,13 @@ function TransactionsPageInner() {
   const collectOpen = params.get("collect") === "1";
 
   const query: TransactionListQuery = useMemo(
-    () => ({
-      search: debounced || undefined,
-      method: method === "all" ? undefined : (method as TransactionListQuery["method"]),
-      type: type === "all" ? undefined : (type as TransactionListQuery["type"]),
-      branchId: session?.activeBranchId,
-      from: range === "all" ? undefined : addDays(todayISODate(session?.organization.timezone), -(Number(range) - 1)),
-      page,
-      pageSize: 20,
-    }),
+    () => transactionListQuery({ search: debounced, method, type, range, page, branchId: session?.activeBranchId, timezone: session?.organization.timezone }),
     [debounced, method, type, session?.activeBranchId, session?.organization.timezone, range, page],
   );
 
-  const { data, isLoading, isError, refetch } = useApiQuery(qk.transactions(query), (api) => api.listTransactions(query));
+  // A search, filter or page change keeps the current rows until the new ones
+  // arrive; a branch change shows the loading rows instead.
+  const { data, isLoading, isError, refetch } = useApiQuery(qk.transactions(query), (api) => api.listTransactions(query), { keepPreviousWithin: [session?.activeBranchId] });
   usePaymentsScreen({ from: query.from, method: query.method });
 
   const pageTotal = useMemo(
@@ -163,10 +157,10 @@ function TransactionsPageInner() {
           <EmptyState title={t("salesWorkspace.noPayments")} description={t("salesWorkspace.widenFilters")} className="border-0" />
         ) : (
           <>
-          <ul className="divide-y divide-line lg:hidden" aria-label={t("nav.item.payments")}>
+          <ul className="animate-settle divide-y divide-line lg:hidden" aria-label={t("nav.item.payments")}>
             {data.items.map((transaction) => <TransactionCompactRow key={transaction.id} transaction={transaction} />)}
           </ul>
-          <Table className="hidden lg:table">
+          <Table className="hidden animate-settle lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("members.tabs.payments.receipt")}</TableHead>

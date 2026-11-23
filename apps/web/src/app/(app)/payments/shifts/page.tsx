@@ -191,7 +191,7 @@ function ShiftsWorkspace() {
             <ErrorState layout="section" title={t("salesWorkspace.drawerCheckFailed")} description={t("salesWorkspace.drawerCheckHint")} onRetry={() => currentShiftQuery.refetch()} />
           </div>
         ) : currentShift ? (
-          <div className="grid grid-cols-2 sm:grid-cols-5 [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line sm:[&>*:not(:first-child)]:border-s sm:[&>*:nth-child(n+3)]:border-t-0">
+          <div className="grid animate-settle grid-cols-2 sm:grid-cols-5 [&>*:nth-child(2n)]:border-s [&>*:nth-child(n+3)]:border-t [&>*]:border-line sm:[&>*:not(:first-child)]:border-s sm:[&>*:nth-child(n+3)]:border-t-0">
             <Cell label={t("salesWorkspace.opened")} value={f.dateTime(currentShift.openedAt)} sub={currentShift.openedByName} />
             <Cell label={t("salesWorkspace.startingCash")} value={<MoneyText money={currentShift.openingFloat} />} />
             {totalsQuery.isLoading ? (
@@ -235,7 +235,7 @@ function ShiftsWorkspace() {
               <ErrorState onRetry={() => reconQuery.refetch()} />
             </div>
           ) : recon ? (
-            <div className="grid gap-0 lg:grid-cols-[1fr_260px]">
+            <div className="grid animate-settle gap-0 lg:grid-cols-[1fr_260px]">
               <div className="divide-y divide-line md:hidden">
                 {recon.totalsByMethod.length === 0 ? <p className="px-4 py-8 text-center text-[13px] text-ink-3">{t("salesWorkspace.noPaymentsDate")}</p> : recon.totalsByMethod.map((row) => (
                   <article key={row.method} className="space-y-3 px-4 py-3.5">
@@ -309,7 +309,7 @@ function ShiftsWorkspace() {
           <EmptyState compact title={t("salesWorkspace.noShifts")} className="border-0" />
         ) : (
           <>
-          <ul className="divide-y divide-line lg:hidden" aria-label={t("reception.shift.history")}>
+          <ul className="animate-settle divide-y divide-line lg:hidden" aria-label={t("reception.shift.history")}>
             {historyQuery.data!.items.map((shift) => {
               const historyStatus = cashShiftHistoryStatus(shift);
               return <li key={shift.id} className="space-y-3 px-4 py-3.5">
@@ -320,7 +320,7 @@ function ShiftsWorkspace() {
               </li>;
             })}
           </ul>
-          <Table className="hidden lg:table">
+          <Table className="hidden animate-settle lg:table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("common.label.date")}</TableHead>

@@ -18,7 +18,8 @@ const PopoverContent = forwardRef<
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        "z-[70] w-72 rounded-md border border-line bg-surface p-0 shadow-pop outline-none data-[state=open]:animate-scale-in",
+        // Grows out of its trigger and shrinks back into it on close.
+        "z-[70] w-72 origin-[var(--radix-popover-content-transform-origin)] rounded-md border border-line bg-surface p-0 shadow-pop outline-none data-[state=open]:animate-scale-in data-[state=closed]:animate-scale-out data-[state=closed]:pointer-events-none!",
         className,
       )}
       {...props}

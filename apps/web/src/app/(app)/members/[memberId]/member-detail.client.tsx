@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { qk } from "@/lib/api/keys";
+import { memberMembershipsQuery } from "@/lib/navigation/route-reads";
 import { useApiMutation, useApiQuery, useInvalidate } from "@/lib/hooks/use-api";
 import { useRealtimeApiQuery } from "@/lib/hooks/use-realtime-api";
 import { useApp, usePermissions } from "@/lib/providers/app-providers";
@@ -64,7 +65,7 @@ export default function MemberDetailPageClient() {
 
   const memberQuery = useRealtimeApiQuery({ queryKey: qk.member(memberId), query: (api) => api.getMember(memberId), subscribe: (api, onValue, onError) => api.subscribeMember(memberId, onValue, onError) });
   const membershipsQuery = useApiQuery(qk.memberships({ memberId }), (api) =>
-    api.listMemberships({ memberId, pageSize: 20, sort: "-startDate" }),
+    api.listMemberships(memberMembershipsQuery(memberId)),
   );
   const usersQuery = useApiQuery(qk.users({ role: "salesperson" }), (api) => api.listUsers({ role: "salesperson", pageSize: 20 }));
   useMemberScreen(memberQuery.data ? { id: memberQuery.data.id, fullName: memberQuery.data.fullName } : undefined);
@@ -109,7 +110,7 @@ export default function MemberDetailPageClient() {
   const salesperson = usersQuery.data?.items.find((u) => u.id === member.assignedSalespersonId);
 
   return (
-    <div className="space-y-4">
+    <div className="animate-settle space-y-4">
       <Breadcrumbs items={[{ label: t("nav.item.members"), href: "/members" }, { label: isolate(member.fullName) }]} />
 
       <MemberHeader
@@ -152,29 +153,29 @@ export default function MemberDetailPageClient() {
               ))}
             </TabsList>
           </div>
-          <TabsContent value="overview">
+          <TabsContent value="overview" className="animate-settle">
             <OverviewTab member={member} />
           </TabsContent>
-          <TabsContent value="timeline">
+          <TabsContent value="timeline" className="animate-settle">
             <TimelineTab memberId={member.id} />
           </TabsContent>
-          <TabsContent value="memberships">
+          <TabsContent value="memberships" className="animate-settle">
             <MembershipsTab memberId={member.id} />
           </TabsContent>
-          <TabsContent value="payments">
+          <TabsContent value="payments" className="animate-settle">
             {paymentsBlocked ? (
               <ForbiddenState layout="section" description={t("memberProfile.payments.forbiddenDescription")} />
             ) : (
               <PaymentsTab memberId={member.id} />
             )}
           </TabsContent>
-          <TabsContent value="checkins">
+          <TabsContent value="checkins" className="animate-settle">
             <CheckInsTab memberId={member.id} />
           </TabsContent>
-          <TabsContent value="classes">
+          <TabsContent value="classes" className="animate-settle">
             {classFinder ? <ClassFinder memberId={member.id} /> : null}
           </TabsContent>
-          <TabsContent value="pt">
+          <TabsContent value="pt" className="animate-settle">
             {/* Keyed by the preselect so a "Book with" link works while the tab is already open. */}
             <PersonalTrainingTab key={`${searchParams.get("trainer") ?? ""}:${searchParams.get("book") ?? ""}`} membershipId={currentMembership?.id} preselectTrainerId={searchParams.get("trainer") ?? undefined} openBookingOnMount={searchParams.get("book") === "1"} />
           </TabsContent>

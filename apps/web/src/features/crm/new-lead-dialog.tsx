@@ -52,7 +52,9 @@ export function NewLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   // Lead ownership is not limited to salespeople: owners and managers may
   // legitimately carry a queue, and the current actor must remain visible
   // when their role is not salesperson.
-  const usersQuery = useApiQuery(qk.users({ status: "active" }), (api) => api.listUsers({ status: "active", pageSize: 50 }));
+  // The key carries the page size: the pipeline lists up to 100 staff under
+  // its own key, and the two reads must not fill each other's cache entry.
+  const usersQuery = useApiQuery(qk.users({ status: "active", pageSize: 50 }), (api) => api.listUsers({ status: "active", pageSize: 50 }));
   const ownerOptions = useMemo(() => {
     const candidates = [
       ...(session?.user ? [{ id: session.user.id, name: session.user.name, role: session.roles[0] }] : []),

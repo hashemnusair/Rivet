@@ -29,7 +29,7 @@ export function PaymentSection({ method, onMethod, enabledMethods, reference, on
         {CHECKOUT_PAYMENT_METHODS.map((value) => {
           const enabled = enabledMethods.has(value);
           return (
-            <label key={value} className={cn("flex min-h-11 items-center gap-2 rounded-md border px-3 py-2.5 text-[13px]", enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50", method === value ? "border-ink bg-sunken/60" : enabled ? "border-line-2 hover:border-line-3" : "border-line-2")}>
+            <label key={value} className={cn("flex min-h-11 items-center gap-2 rounded-md border px-3 py-2.5 text-[13px] transition-colors", enabled ? "cursor-pointer" : "cursor-not-allowed opacity-50", method === value ? "border-ink bg-sunken/60" : enabled ? "border-line-2 hover:border-line-3" : "border-line-2")}>
               <input type="radio" name="checkout-payment-method" value={value} checked={method === value} disabled={!enabled} onChange={() => onMethod(value)} className="size-4" />
               {checkoutPaymentMethodLabel(t, value)}
             </label>

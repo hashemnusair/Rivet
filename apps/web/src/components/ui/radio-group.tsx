@@ -28,7 +28,7 @@ const RadioGroupItem = forwardRef<
     )}
     {...props}
   >
-    <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-ink" />
+    <RadioGroupPrimitive.Indicator className="size-2 rounded-full bg-ink animate-settle" />
   </RadioGroupPrimitive.Item>
 ));
 RadioGroupItem.displayName = "RadioGroupItem";

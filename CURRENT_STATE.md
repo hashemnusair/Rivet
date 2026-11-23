@@ -1,5 +1,105 @@
 # GymOS / RIVET current implementation state
 
+## Smooth motion and held page changes (23 November 2026)
+
+Elias asked for hover and motion that is subtle and useful with no jolts or
+delays, pages that do not pop in, and page changes as swift as the dynasty
+app. Frontend only; nothing under `convex/` changed, so no backend deploy.
+
+**Motion (see DESIGN.md "Motion", rewritten):**
+
+- One base rule in `globals.css` eases colour on every interactive element
+  and on anything with a `hover:` colour class (120ms), so a hover written
+  without `transition-colors` no longer snaps. Focus rings still appear at
+  once.
+- Menus, popovers, selects, tooltips and dialogs grow from their trigger
+  (Radix transform-origin) and now close with a short fade (about 110ms)
+  instead of vanishing. A closing surface or scrim passes clicks through
+  (`pointer-events-none!`; the `!` is needed because Radix sets an inline
+  style).
+- Buttons dip to `scale: 0.98` when pressed. No hover lift anywhere.
+- Page changes in all three shells: the new page goes from 60% to 100%
+  opacity in 140ms, no movement. The gym workspace had no entrance since 29
+  October (the 240ms rise read as a wait); platform and member pages lose
+  the rise. The member dock tabs still switch instantly.
+- New `animate-settle` (160ms opacity) for content that appears in place; it
+  replaces `animate-fade-up` on routine content such as the reception
+  verdict. `animate-fade-out` and `animate-scale-out` are new;
+  `animate-skeleton` is a slow, unstaggered breath.
+- Phone drawers (workspace and platform) slide from the inline-start edge
+  and back, mirrored in Arabic. The platform drawer moved onto Radix Dialog
+  (focus trap, scroll lock). The command palette fades out on close.
+- Loading placeholders were resized to match the loaded content on the
+  dashboards, revenue chart, pipeline, receipt and entry pass, so those
+  screens no longer shift when data arrives. Chart bars and the lead funnel
+  no longer grow in.
+
+**Speed (`apps/web/src/lib/navigation/`):**
+
+- **Held page change.** A click keeps the current page on screen until the
+  next page's reads are in, for at most 260ms (`navigation-hold.tsx`); a
+  slower page then appears with its placeholders as before. The query hooks
+  register and start their reads while the navigation is still pending, and
+  one `<NavigationHoldGate />` at the end of the root layout suspends on
+  them. Pages do not suspend themselves: several wrap their content in a new
+  `<Suspense>`, which would show a blank fallback instead of holding. Reads
+  with `staleTime: 0` (the check-in lookup) are never held.
+- **Reads start on intent.** `route-reads.ts` lists the first reads of the
+  dashboards, reception, members, member detail, payments, pipeline,
+  follow-up queues, lead detail, classes and personal training. They start
+  when the pointer rests 90ms on a link or row, or at once on press or
+  touch; never with Save-Data, in a hidden tab, or for a scope the session
+  is not in. Pages import their query inputs from the same file, and
+  `route-reads.test.tsx` fails if a page and the registry drift apart.
+  Platform and member-app screens have no registry entries yet (the hold
+  still covers them). Nothing is warmed at idle beyond the routes.
+- **Cache.** Unused query data is kept 15 minutes instead of 5
+  (`QUERY_GC_TIME_MS`). A branch switch now drops cached data for screens
+  not on display. Nothing is written to browser storage.
+- **Keep the last list while filters change.** `useApiQuery` takes
+  `keepPreviousWithin: [branchId]` (members and payments use it), and
+  `useRealtimeApiQuery` now keeps its previous snapshot only within the same
+  sign-in, organization and branch; a scope change shows loading instead of
+  the previous scope's figures.
+- The pipeline and the new-lead dialog shared one users key with different
+  page sizes; they now have separate keys.
+
+**Measured** on a built mock bundle, headless Chromium, 4x CPU, 200ms per
+read, median of 5 alternating runs against the same tree with the hold,
+intent reads and longer cache switched off:
+
+| Scenario | Before | After | Skeleton frames |
+| --- | --- | --- | --- |
+| First visit to Members, en desktop | 583ms | 561ms | 57 → 0 |
+| First visit to Members, ar desktop | 580ms | 655ms | 54 → 0 |
+| Hover 300ms then click Payments, en desktop | 379ms | 201ms | 61 → 0 |
+| Hover 300ms then click Payments, ar desktop | 401ms | 237ms | 60 → 0 |
+| Tap Classes, en 390px | 384ms | 345ms | 62 → 0 |
+| Return visit to Members, en desktop | 207ms | 227ms | 0 → 0 |
+
+First visits are not faster to complete; the change is that the old page
+stays and the new one arrives whole instead of as skeletons. Hovering before
+the click is 40–47% faster on desktop. With 1,500ms reads the page appears
+at about 330ms with placeholders and completes no later than before.
+
+**Checks:** typecheck, lint and the full unit suite pass. On the built
+bundle: 104 of 105 journeys in ten specs (the one failure was a socket hang
+up on a test-only request; that spec passed 13/13 alone) and 75/75 in six
+more. A headless frame check confirmed overlays close in about 150ms, the
+route fade, hover easing, centred dialogs and the drawer in both directions.
+
+**Not verified:** live Convex timing, a real phone, Back/Forward after the
+cache has expired, and the Linux 390px screenshot references (CI only). On
+the member dock one tap measured 40–75ms later than before with no reads
+held; unexplained, possibly noise. Two unit tests
+(`termination-access.test.tsx`, `customer-communication-preferences.test.tsx`)
+each failed once under a loaded machine and pass alone.
+
+**Open:** `FilterPills`, the onboarding "Required" tag and the member
+timeline filter chips are still fully round, against the no-pills rule; this
+pass did not change radii. `next build` prints a Next.js security notice for
+16.4.2 and suggests an upgrade; not acted on here.
+
 ## Founder confirmations (10 November 2026, Elias)
 
 - **Arabic read:** the Arabic flagged for a founder's read on 10 November

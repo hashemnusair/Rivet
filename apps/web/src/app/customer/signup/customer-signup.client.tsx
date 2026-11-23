@@ -539,7 +539,7 @@ export function CustomerSignupClient() {
               <PasswordInput id="customer-signup-confirm" value={values.confirmPassword} onChange={(event) => updateValue("confirmPassword", event.target.value)} autoComplete="new-password" aria-invalid={Boolean(fieldErrors.confirmPassword)} aria-describedby={fieldErrors.confirmPassword ? "customer-signup-confirm-error" : undefined} />
             </Field>
           </div>
-          {formError ? <p className="text-[12px] leading-relaxed text-danger" role="alert">{present(formError)}</p> : null}
+          {formError ? <p className="animate-settle text-[12px] leading-relaxed text-danger" role="alert">{present(formError)}</p> : null}
           {existingAccount ? <p className="text-[12px] text-ink-2">{t("authErrors.alreadyAccount")}{" "}<Link href={signInHref(context.returnTo)} className="font-semibold underline underline-offset-4">{t("common.action.signIn")}</Link>{t("members.bulk.toast.end")}</p> : null}
           <Button type="submit" size="lg" className="w-full" loading={busy} disabled={!signUp || !authLoaded}>{t("marketing.actions.createAccount")}{" "}<ArrowRight className="rtl:rotate-180" /></Button>
           <div id="clerk-captcha" role="group" aria-label={t("authErrors.securityCheck")} />
@@ -549,7 +549,7 @@ export function CustomerSignupClient() {
       ) : null}
 
       {step === "verify-email" ? (
-        <div className="mt-7 rounded-lg border border-line-2 bg-surface px-5 py-6 sm:px-7">
+        <div className="mt-7 animate-settle rounded-lg border border-line-2 bg-surface px-5 py-6 sm:px-7">
           <div className="text-center">
             <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-sunken text-ink"><MailCheck className="size-5" /></span>
             <h2 className="mt-4 font-display text-[21px] font-semibold tracking-tight">{t(verificationKind === "email" ? "authErrors.checkEmail" : "authErrors.checkPhone")}</h2>
@@ -569,7 +569,7 @@ export function CustomerSignupClient() {
       ) : null}
 
       {step === "profile-pending" ? (
-        <div className="mt-7 rounded-lg border border-warning/30 bg-warning-bg p-5">
+        <div className="mt-7 animate-settle rounded-lg border border-warning/30 bg-warning-bg p-5">
           <p className="flex items-center gap-2 text-[13px] font-semibold text-warning-deep"><ShieldCheck className="size-4" />{" "}{t("authErrors.created")}</p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-warning-deep">{t("authErrors.finishSetup")}</p>
           {profileError ? <p className="mt-3 text-[12px] text-danger" role="alert">{present(profileError)}</p> : null}

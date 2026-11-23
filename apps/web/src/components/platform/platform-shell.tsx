@@ -6,6 +6,8 @@ import { loginHref } from "@/lib/routing/host-routing";
 import { LANDING_VIEW_QUERY } from "@/lib/routing/signed-in-routing";
 import { usePublicSiteHref } from "@/lib/routing/use-public-site-href";
 import { useAuth, useClerk } from "@clerk/nextjs";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { BadgeDollarSign, Building2, CircleHelp, ClipboardList, CreditCard, FileSignature, Globe, Handshake, LayoutDashboard, LogOut, Mail, Menu, Search, TicketPercent, X } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -22,6 +24,8 @@ import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IntentPrefetchLink } from "@/components/shell/intent-prefetch-link";
 import { NotificationCenter } from "@/components/shell/notification-center";
+import { usePendingNavigation } from "@/components/shell/instant-navigation";
+import motion from "@/components/shell/shell-motion.module.css";
 import { ContextLabel } from "@/components/ui/typography";
 import { applicationStatusLabel, invoiceStatusLabel, subscriptionStatusLabel, supportStatusLabel } from "@/components/platform/platform-status";
 
@@ -71,14 +75,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
       router.replace(DEMO_AUTH_BYPASS ? "/login" : loginHref(`${window.location.pathname}${window.location.search}${window.location.hash}`));
   }, [authorized, experienceReady, identityReady, identitySignedIn, platformAdminSignedIn, previewSessionReady, router]);
 
-  // The phone drawer closes on Escape and whenever the route changes.
+  // The phone drawer closes whenever the route changes (Escape is the dialog's own).
   useEffect(() => { setOpen(false); }, [pathname]);
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
 
   const signOut = async () => {
     if (signingOut) return;
@@ -114,24 +112,30 @@ export function PlatformShell({ children }: { children: ReactNode }) {
         <PlatformSidebar pathname={pathname} onNavigate={() => setOpen(false)} />
       </aside>
 
-      {open ? (
-        <div className="fixed inset-0 z-50 bg-black/45 lg:hidden" onClick={() => setOpen(false)}>
-          <aside
-            role="dialog"
-            aria-modal="true"
+      {/* Phone drawer: slides in from the inline-start edge over a fading
+          scrim and slides back out, rather than appearing and vanishing. */}
+      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45 data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out data-[state=closed]:pointer-events-none! lg:hidden" />
+          <DialogPrimitive.Content
             aria-label={t("platformConsole.navigation.label")}
-            className="night-surface flex h-full w-[278px] max-w-[85vw] flex-col bg-night text-night-ink"
-            onClick={(event) => event.stopPropagation()}
+            aria-describedby={undefined}
+            className={cn("night-surface fixed inset-y-0 start-0 z-50 flex w-[278px] max-w-[85vw] flex-col bg-night text-night-ink outline-none lg:hidden", motion.drawer)}
           >
+            <VisuallyHidden>
+              <DialogPrimitive.Title>{t("platformConsole.navigation.label")}</DialogPrimitive.Title>
+            </VisuallyHidden>
             <div className="flex justify-end p-3">
-              <Button variant="night-ghost" size="icon" onClick={() => setOpen(false)} aria-label={t("nav.chrome.closeNavigation")}>
-                <X />
-              </Button>
+              <DialogPrimitive.Close asChild>
+                <Button variant="night-ghost" size="icon" aria-label={t("nav.chrome.closeNavigation")}>
+                  <X />
+                </Button>
+              </DialogPrimitive.Close>
             </div>
             <PlatformSidebar pathname={pathname} onNavigate={() => setOpen(false)} />
-          </aside>
-        </div>
-      ) : null}
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
 
       <div className="lg:col-start-2">
         <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-paper/90 px-3 backdrop-blur-sm sm:gap-3 sm:px-4 lg:h-16 lg:px-8">
@@ -177,6 +181,8 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
   const t = useT();
   // The landing on www, opened on purpose so a signed-in admin is not sent back here.
   const publicSite = usePublicSiteHref();
+  // The clicked item lights up in the same frame, before its page renders.
+  const { pendingHref, onNavigate: markPending } = usePendingNavigation(pathname);
   return (
     <>
       <div className="px-5 pb-6 pt-5">
@@ -189,17 +195,18 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
         <ContextLabel tone="night" className="px-3.5 pb-2">{t("platformConsole.navigation.network")}</ContextLabel>
         <div className="grid gap-0.5">
           {NAVIGATION.map((item) => {
-            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            const current = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+            const active = pendingHref ? pendingHref === item.href : current;
             return (
               <IntentPrefetchLink
                 key={item.href}
                 href={item.href}
-                onClick={onNavigate}
-                aria-current={active ? "page" : undefined}
+                onClick={(event) => { markPending(item.href, event); onNavigate(); }}
+                aria-current={current ? "page" : undefined}
                 data-touch-target
                 className={cn(
-                  "flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] text-night-ink-2 transition-colors duration-100 hover:bg-night-3 hover:text-night-ink",
-                  active && "bg-night-3 font-medium text-night-ink",
+                  "flex h-8 min-w-0 items-center gap-2.5 rounded-md px-3.5 text-[13px] transition-colors duration-100",
+                  active ? "bg-night-3 font-medium text-night-ink" : "text-night-ink-2 hover:bg-night-2 hover:text-night-ink",
                 )}
               >
                 <item.icon className={cn("size-4 shrink-0", active ? "text-night-ink" : "text-night-ink-3")} aria-hidden />
@@ -214,7 +221,7 @@ function PlatformSidebar({ pathname, onNavigate }: { pathname: string; onNavigat
           href={`${publicSite}?${LANDING_VIEW_QUERY}`}
           onClick={onNavigate}
           data-touch-target
-          className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-3 hover:text-night-ink"
+          className="flex h-8 items-center gap-2.5 rounded-md px-3.5 text-[12px] text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink"
         >
           <Globe className="size-4" aria-hidden /> {t("platformConsole.navigation.landingPage")}
         </IntentPrefetchLink>
@@ -354,7 +361,7 @@ function PlatformSearch() {
         aria-activedescendant={activeResult ? platformSearchOptionId(activeResult.id) : undefined}
       />
       {open && normalized ? (
-        <div id="platform-search-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-md border border-line bg-surface p-1 shadow-pop">
+        <div id="platform-search-results" role="listbox" className="absolute inset-x-0 top-[calc(100%+6px)] z-50 origin-top animate-scale-in overflow-hidden rounded-md border border-line bg-surface p-1 shadow-pop">
           {platformSnapshot ? results.length ? results.map((result, index) => (
             <button
               key={result.id}

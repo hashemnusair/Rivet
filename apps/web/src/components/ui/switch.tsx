@@ -19,7 +19,7 @@ const Switch = forwardRef<
   >
     <SwitchPrimitive.Thumb
       className={cn(
-        "pointer-events-none block size-4 rounded-full bg-surface shadow-sm ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0.5 rtl:data-[state=checked]:-translate-x-4",
+        "pointer-events-none block size-4 rounded-full bg-surface shadow-sm ring-0 transition-transform duration-150 ease-settle data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0.5 rtl:data-[state=checked]:-translate-x-4",
       )}
     />
   </SwitchPrimitive.Root>
@@ -38,7 +38,7 @@ const Checkbox = forwardRef<
     )}
     {...props}
   >
-    <CheckboxPrimitive.Indicator>
+    <CheckboxPrimitive.Indicator className="animate-settle">
       <svg viewBox="0 0 10 8" className="size-2.5 fill-none stroke-current" strokeWidth="1.8" aria-hidden>
         <path d="M1 4l2.5 2.5L9 1" />
       </svg>

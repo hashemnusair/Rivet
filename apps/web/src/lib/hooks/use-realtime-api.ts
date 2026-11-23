@@ -1,13 +1,15 @@
 "use client";
 
-import { keepPreviousData, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryKey, type UseQueryOptions } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeApiError } from "@/lib/api/errors";
 import { getApi } from "@/lib/api/client";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApiScopeEpoch } from "@/lib/api/scope";
-import { isAccessDenied } from "@/lib/hooks/use-api";
+import { isAccessDenied, scopedPlaceholder } from "@/lib/hooks/use-api";
+import { useNavigationHoldRead } from "@/lib/navigation/navigation-hold";
+import { QUERY_GC_TIME_MS } from "@/lib/providers/query-policy";
 
 type StreamState = "connecting" | "live" | "fallback";
 
@@ -45,9 +47,13 @@ export function useRealtimeApiQuery<T>(options: {
     queryRef.current = options.query;
   }, [options.query, options.subscribe]);
 
-  const query = useQuery<T, Error>({
+  const placeholder = scopedPlaceholder<T>([])!;
+  const queryOptions: UseQueryOptions<T, Error> = {
     queryKey: options.queryKey,
-    queryFn: () => queryRef.current(getApi()),
+    queryFn: () => {
+      placeholder.record(options.queryKey);
+      return queryRef.current(getApi());
+    },
     // Keep the ordinary query enabled until the watch has delivered its first
     // value. A native Convex watch can remain in its connecting state without
     // immediately exposing a local snapshot; disabling the query during that
@@ -55,13 +61,23 @@ export function useRealtimeApiQuery<T>(options: {
     // live it owns updates, and the ordinary query is only re-enabled for the
     // failure-only polling fallback.
     enabled: enabled && (!convexMode || streamState !== "live"),
-    placeholderData: keepPreviousData,
+    // While a filter, search or page changes, the last list stays on screen
+    // until the new one arrives, but never across a sign-in, organization or
+    // branch change: those show the loading state instead of the previous
+    // scope's figures. Reconnects keep the same key, so the last snapshot
+    // simply stays.
+    placeholderData: placeholder.placeholderData,
     staleTime: 10_000,
-    gcTime: 5 * 60_000,
+    gcTime: QUERY_GC_TIME_MS,
     refetchOnWindowFocus: false,
     refetchInterval: streamState === "fallback" ? fallbackIntervalMs : false,
     refetchIntervalInBackground: false,
-  });
+  };
+  const query = useQuery<T, Error>(queryOptions);
+  // While a navigation to this screen is pending, read the first snapshot now
+  // and keep the current screen until it is in (see navigation-hold.tsx). The
+  // watch itself still opens after mount, as before.
+  useNavigationHoldRead(queryOptions, query);
 
   useEffect(() => {
     if (!enabled) return;
@@ -95,6 +111,7 @@ export function useRealtimeApiQuery<T>(options: {
           getApi(),
           (value) => {
             if (disposed) return;
+            placeholder.record(options.queryKey);
             queryClient.setQueryData(options.queryKey, value);
             setStreamState("live");
           },

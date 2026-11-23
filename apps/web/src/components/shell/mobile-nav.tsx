@@ -17,6 +17,7 @@ import { usePhoneAllows } from "./phone-page-boundary";
 import { usePendingNavigation } from "./instant-navigation";
 import { ContextLabel } from "@/components/ui/typography";
 import { BetaBadge, BetaNote } from "@/components/shared/beta-badge";
+import motion from "./shell-motion.module.css";
 
 /**
  * Off-canvas primary navigation for viewports below lg, where the fixed
@@ -47,9 +48,9 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in lg:hidden" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-night/45 backdrop-blur-[2px] data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out data-[state=closed]:pointer-events-none! lg:hidden" />
         <DialogPrimitive.Content
-          className="night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none data-[state=open]:animate-fade-in lg:hidden"
+          className={cn("night-surface fixed inset-y-0 start-0 z-50 flex w-[280px] max-w-[85vw] flex-col bg-night text-night-ink shadow-dialog outline-none lg:hidden", motion.drawer)}
           aria-label={t("nav.drawer.menu")}
         >
           <VisuallyHidden>
@@ -71,7 +72,7 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
               ) : null}
             </div>
             <DialogPrimitive.Close
-              className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink cursor-pointer"
+              className="rounded-sm p-1.5 text-night-ink-3 transition-colors hover:bg-night-2 hover:text-night-ink active:bg-night-3 cursor-pointer"
               aria-label={t("nav.drawer.closeMenu")}
             >
               <X className="size-4" />

@@ -297,7 +297,7 @@ export const Composer = forwardRef<ComposerHandle, {
       ) : null}
 
       {mentionOpen ? (
-        <div className="absolute inset-x-3 bottom-full z-10 mb-1 overflow-hidden rounded-md border border-line bg-surface shadow-pop sm:inset-x-4" data-testid="ask-mentions">
+        <div className="absolute inset-x-3 bottom-full z-10 mb-1 origin-bottom animate-scale-in overflow-hidden rounded-md border border-line bg-surface shadow-pop sm:inset-x-4" data-testid="ask-mentions">
           <p className="border-b border-line px-3 py-2 text-[12px] font-medium text-ink-3">{t("askRivet.mention.title")}</p>
           <ul id={listboxId} role="listbox" aria-label={t("askRivet.mention.title")} className="max-h-60 overflow-y-auto py-1">
             {mentionOptions.loading && !mentionOptions.options.length ? <li className="flex items-center gap-2 px-3 py-2 text-[12.5px] text-ink-3"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t("askRivet.mention.searching")}</li> : null}
