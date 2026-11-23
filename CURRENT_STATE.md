@@ -1,5 +1,34 @@
 # GymOS / RIVET current implementation state
 
+## Next.js 16.4.6 for the November security advisories (23 November 2026)
+
+CI's `pnpm audit --prod` failed on `82a1187c` with seven moderate advisories
+against `next` 16.4.2, published after the previous CI run (10 November) and
+all fixed in 16.4.5. `next`, `eslint-config-next` and
+`@next/eslint-plugin-next` moved to 16.4.6, the current patch release
+(published 9 November); only `apps/web/package.json` and `pnpm-lock.yaml`
+changed. The app does not use the features most of the advisories concern:
+no `use cache` or `unstable_cache`, no edge-runtime routes, image
+optimisation is off, and hosting is Vercel, not self-hosted.
+
+**Checks on 16.4.6:** `pnpm audit --prod` reports no known vulnerabilities;
+typecheck, lint and the full unit suite (2,879 tests) pass; the mock
+production build succeeds without the security notice; 72 of 72 journeys
+pass on that build (`page-motion`, `role-routing`, `happy-path`,
+`phone-pages`, `workflow-pass-7`). The Next internals this code imports
+(`PathnameContext` from `hooks-client-context.shared-runtime`,
+`PrefetchKind`) still exist, and on the built bundle the held page change
+behaves as before: with 200ms reads the old page stays and the new one
+arrives whole at about 270ms; with 1,500ms reads it releases at about 350ms
+with placeholders; hover-then-click opens in about 110ms against 260–290ms;
+Back restores the scroll position.
+
+Release notes for 16.4.3–16.4.6 list nothing that changes prefetching or the
+router cache. Two items touch this app's surface: 16.4.3 stops loading the
+app-page runtime in `proxy.ts`, and 16.4.6 compresses route handler
+responses that are not already compressed. Neither was checked beyond the
+suites above.
+
 ## Smooth motion and held page changes (23 November 2026)
 
 Elias asked for hover and motion that is subtle and useful with no jolts or
