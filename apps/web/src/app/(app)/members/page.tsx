@@ -138,7 +138,7 @@ function MembersPageInner() {
         filtersActive ? (
           <EmptyState layout="section" title={t("members.list.empty.noMatchTitle")} description={debounced ? t("members.list.empty.noMatchSearch", { query: isolate(debounced) }) : t("members.list.empty.noMatchFilters")} className="m-4 animate-settle" action={<Button variant="secondary" size="sm" onClick={clearFilters}>{t("common.action.clearFilters")}</Button>} />
         ) : (
-          <EmptyState layout="section" title={t("members.list.empty.noneTitle")} description={session?.activeBranchId ? t("members.list.empty.noneBranch") : t("members.list.empty.noneAll")} className="m-4 animate-settle" action={<Gate permission="members.write"><Button asChild size="sm"><Link href="/members/new"><Plus /> {t("members.list.actions.add")}</Link></Button></Gate>} />
+          <EmptyState layout="section" title={t("members.list.empty.noneTitle")} description={session?.activeBranchId ? t("members.list.empty.noneBranch") : t("members.list.empty.noneAll")} className="m-4 animate-settle" />
         )
       ) : (
         <>

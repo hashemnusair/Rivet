@@ -26,6 +26,17 @@ describe("members list", () => {
     await waitFor(() => expect(screen.getAllByTestId("member-card").length).toBeGreaterThan(0));
   });
 
+  it("shows one Add member button when the gym has no members", async () => {
+    await renderWithApp(<MembersPage />, {
+      prepare: async (api) => {
+        const listMembers = api.listMembers.bind(api);
+        vi.spyOn(api, "listMembers").mockImplementation((query) => listMembers({ ...query, search: "no-such-member-zzzz" }));
+      },
+    });
+    expect(await screen.findByText("No members yet")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Add member/ })).toHaveLength(1);
+  });
+
   it("renders the page, filters and rows in Arabic with LTR phone numbers", async () => {
     await renderWithApp(<LocaleProvider initialLocale="ar"><MembersPage /></LocaleProvider>);
     expect(screen.getByRole("heading", { name: "الأعضاء" })).toBeInTheDocument();
