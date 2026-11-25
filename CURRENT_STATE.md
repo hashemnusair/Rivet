@@ -248,8 +248,18 @@ yet.
   gym" and shows "Signing you in…" once the page runs; without the marker it
   says "Loading your gym" as before.
 
-**Not verified: a real Clerk sign-in.** It needs a person to type their own
-password and code, which an agent must not do. That leaves unproven, on
+**Real sign-in on Production: confirmed once by Elias (25 November 2026).**
+After the Production 500 fix was live (`9214ed48`), Elias was asked to sign in
+once at `dashboard.rivetjo.com` and answered "Looks right". That is one gym
+sign-in by a person; he did not say which browser, and no agent watched it.
+Still not reported by anyone: Safari or an iPhone (release check step 2), a
+member account at the gym door (step 3), a two-branch staff account (step 4),
+and the member and platform doors (step 5). The steps are at the top of
+`docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
+
+**What an agent could not verify, as written before that sign-in.** A real
+sign-in needs a person to type their own
+password and code, which an agent must not do. That left unproven, on
 Production: the form staying on its door after `finalize` (it relies on
 Clerk reporting the session to the page, which the old flow also relied on
 outside Safari; if it does not within 4 seconds the door reloads as it used

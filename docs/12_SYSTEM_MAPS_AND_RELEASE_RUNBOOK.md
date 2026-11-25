@@ -55,6 +55,10 @@ sign-in still completes, but report it. If sign-in stalls, the cover gives
 the page back after 15 seconds. Reverting the commit restores the previous
 flow with no data change.
 
+**Checked so far:** on 25 November 2026, after the Production 500 fix, Elias
+signed in once at `dashboard.rivetjo.com` and reported "Looks right" (step 1;
+browser not stated). Steps 2 to 5 have not been reported by anyone.
+
 **Open at the time of this release, fixed later the same day:** every
 Production page answered HTTP 500 with an empty server render. See the next
 section.
