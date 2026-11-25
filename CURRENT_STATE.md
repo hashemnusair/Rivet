@@ -97,6 +97,16 @@ account deactivated, gym unavailable, and any sign-in error.
 Member and platform sign-in use the same components and get the same result.
 No authorization or session check was removed or reordered.
 
+**Released:** `786fc5a4`, pushed to `main` on 25 November 2026. Vercel
+Production `dpl_EPpbA2TpiCtKzUrsPxuie7dwVdP5` was serving it by about 14:45
+UTC. [CI run 45636349353](https://github.com/hashemnusair/Rivet/actions/runs/45636349353)
+passed all 11 jobs, including all six credential-free Playwright shards.
+Live read-only check, signed out: `dashboard.rivetjo.com/login/gym` shows its
+form with no cover and carries the new pre-paint script; `/api/health` is
+200. The documents still answer 500 (the separate finding below, unchanged
+by this release). Nobody has signed in through the new flow on Production
+yet.
+
 **Checks (25 November 2026, this machine):**
 
 - `tsc --noEmit`, `pnpm lint` (ESLint, whole app, and the secret-output
