@@ -20,6 +20,7 @@ import { PageSheet } from "@/components/motion/page-sheet";
 import { SigningInCover } from "@/components/auth/signing-in-cover";
 import { SIGNING_IN_PRE_PAINT } from "@/lib/auth/signing-in-marker";
 import { NavigationHoldGate } from "@/lib/navigation/navigation-hold";
+import { NavigationHoldPathname } from "@/lib/navigation/navigation-hold-pathname";
 import { SHEET_ENTRY_PRE_PAINT } from "@/components/motion/sheet-entry";
 import { PAPER_CHROME } from "@/lib/ui/chrome-colors";
 import { SIGN_IN_ART_PRE_PAINT } from "./login/sign-in-art-pre-paint";
@@ -134,6 +135,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <HostRouteGuard />
           <ConvexClientProvider>
             <RivetIdentityProvider>
+              <NavigationHoldPathname>
               <AppProviders>
                 <ExperienceProvider>
                   {children}
@@ -144,6 +146,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <NavigationHoldGate />
                 <LocalizedToaster />
               </AppProviders>
+              </NavigationHoldPathname>
             </RivetIdentityProvider>
           </ConvexClientProvider>
         </ClerkProvider>

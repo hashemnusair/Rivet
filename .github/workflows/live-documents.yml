@@ -1,0 +1,40 @@
+name: Live document check
+
+# Asks the live site for its main pages after every Production deployment,
+# once a day, and on request. It fails when a page answers with a server
+# error or with Next's error document: a failed server render still loads in
+# a browser, so nothing else notices (Production answered HTTP 500 on every
+# page from 23 to 25 November 2026). Signed out and read-only.
+on:
+  deployment_status:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-documents
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Live pages answer without a server error
+    # Vercel reports each deployment to GitHub; only a finished Production
+    # one is checked. Scheduled and manual runs always check.
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # The domains can take a moment to point at a new deployment.
+      - name: Check the live documents
+        run: node apps/web/scripts/check-live-documents.mjs --attempts 4 --wait 20

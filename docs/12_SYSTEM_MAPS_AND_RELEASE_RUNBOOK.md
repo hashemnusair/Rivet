@@ -1,5 +1,31 @@
 # 12 — System Maps and Release Runbook
 
+## A page can load and still be failing — 25 November 2026
+
+From 23 to 25 November 2026 every Production page answered HTTP 500 with
+Next's error document while looking normal in a browser, because the browser
+rebuilds a page whose server render failed. Cause and fix are in
+`CURRENT_STATE.md` (an application import of a Next.js internal file that
+Vercel's functions cannot load). Three things now guard it:
+
+1. `pnpm build` ends with `scripts/check-server-bundle.mjs`; a build with
+   that fault fails on Vercel instead of going live.
+2. After every successful Production deployment, and once a day, the GitHub
+   workflow **Live document check** asks the live site for nine pages on the
+   four hosts and fails on a server error or Next's error document. A red
+   run of that workflow means the live site is serving broken documents:
+   treat it as an incident.
+3. **Every release smoke check includes this command**, signed out, and it
+   must pass:
+
+   ```bash
+   pnpm --filter web check:live
+   ```
+
+"The page opened" and "`/api/health` is ok" do not show this failure. Never
+import `next/dist/...` at run time in application code; a unit test enforces
+it.
+
 ## One "Signing you in…" screen — 25 November 2026
 
 Frontend only (no Convex deploy, no Clerk setting). After the password, and a
@@ -29,11 +55,9 @@ sign-in still completes, but report it. If sign-in stalls, the cover gives
 the page back after 15 seconds. Reverting the commit restores the previous
 flow with no data change.
 
-**Open at the time of this release:** every Production page answered HTTP 500
-with an empty server render (the browser rebuilds the page). See the
-"Separate finding" in `CURRENT_STATE.md`. Add a status-code check for `/`,
-`/login/gym` and `/dashboard` to the smoke steps below once it is fixed;
-"the page loads" is not enough to catch it.
+**Open at the time of this release, fixed later the same day:** every
+Production page answered HTTP 500 with an empty server render. See the next
+section.
 
 ## Domain and sign-in production release — 10 November 2026
 

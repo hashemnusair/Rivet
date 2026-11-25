@@ -1,10 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
-import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
 import { Suspense, startTransition, useLayoutEffect, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useApiQuery } from "@/lib/hooks/use-api";
-import { NAVIGATION_HOLD_CAP_MS, NavigationHoldGate, resetNavigationHoldForTests } from "./navigation-hold";
+import { NAVIGATION_HOLD_CAP_MS, NavigationHoldGate, NavigationHoldPathnameContext, resetNavigationHoldForTests } from "./navigation-hold";
 
 /*
  * A small App Router stand-in: the pathname context and the keyed page change
@@ -55,11 +54,11 @@ function Router({ pages, client }: { pages: Record<string, ReactNode>; client: Q
   }, []);
   return (
     <QueryClientProvider client={client}>
-      <PathnameContext.Provider value={path}>
+      <NavigationHoldPathnameContext.Provider value={path}>
         <div key={path}>{pages[path]}</div>
         {dialog ? <Screen name="dialog" /> : null}
         <NavigationHoldGate />
-      </PathnameContext.Provider>
+      </NavigationHoldPathnameContext.Provider>
     </QueryClientProvider>
   );
 }

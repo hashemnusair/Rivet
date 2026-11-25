@@ -1,15 +1,24 @@
 "use client";
 
 import { hashKey, useQueryClient, type FetchQueryOptions, type QueryClient, type QueryKey } from "@tanstack/react-query";
-// usePathname() is not used here on purpose: most unit tests replace
-// `next/navigation` with a partial mock, and the query hooks below run in all
-// of them. Reading the same context Next's own usePathname() reads gives the
-// pathname of the tree being rendered (null outside the App Router) without
-// depending on that module. It is the same module instance Next's navigation
-// hooks import (next/dist/client/components/navigation.js requires
-// ../../shared/lib/hooks-client-context.shared-runtime).
-import { PathnameContext } from "next/dist/shared/lib/hooks-client-context.shared-runtime";
-import { use, useContext, useLayoutEffect } from "react";
+import { createContext, use, useContext, useLayoutEffect } from "react";
+
+/**
+ * The pathname of the tree being rendered, or null outside the App Router
+ * (unit tests). `NavigationHoldPathname` (navigation-hold-pathname.tsx) fills
+ * it from Next's own `usePathname()` in the root layout.
+ *
+ * It is our own context on purpose. This file is imported by every query
+ * hook, and most unit tests replace `next/navigation` with a partial mock,
+ * so it must not import that module. It must not import Next's internal
+ * context either: `next/dist/shared/lib/hooks-client-context.shared-runtime`
+ * works in the browser and under `next start`, but on the server Next's
+ * require hook swaps any `*.shared-runtime` request for the Pages Router
+ * bundle, which Vercel does not ship with this app's functions. That import
+ * made every page's server render throw on Production from 23 to 25
+ * November 2026 (HTTP 500 with an empty document; see CURRENT_STATE.md).
+ */
+export const NavigationHoldPathnameContext = createContext<string | null>(null);
 
 /**
  * Navigation hold: the screen someone is on stays until the next one has its
@@ -22,8 +31,8 @@ export const NAVIGATION_HOLD_CAP_MS = 260;
  * How it works
  *
  * An App Router navigation is a React transition: the router state, and with
- * it the pathname context and the page tree, change together inside it
- * (next/dist/client/components/app-router-instance.js dispatchAction and
+ * it the pathname (`usePathname()`) and the page tree, change together inside
+ * it (next/dist/client/components/app-router-instance.js dispatchAction and
  * app-router.js Router, which derives the pathname from the same state as the
  * tree). Without a loading.tsx, Next adds no Suspense boundary per segment
  * (layout-router.js LoadingBoundary renders a bare fragment), so if anything
@@ -139,7 +148,7 @@ function registerRead(navigationKey: string, queryClient: QueryClient, options: 
  */
 export function useNavigationHoldRead(options: HoldableQueryOptions, state: HoldableQueryState) {
   const queryClient = useQueryClient();
-  const pathname = useContext(PathnameContext);
+  const pathname = useContext(NavigationHoldPathnameContext);
   const navigationKey = pendingNavigationKey(pathname);
   if (navigationKey === null) return;
   if (!state.isEnabled || state.status !== "pending" || state.data !== undefined) return;
@@ -179,7 +188,7 @@ function holdFor(pathname: string | null): Promise<void> | null {
  * navigation's reads so React keeps the current screen meanwhile.
  */
 export function NavigationHoldGate() {
-  const pathname = useContext(PathnameContext);
+  const pathname = useContext(NavigationHoldPathnameContext);
   useLayoutEffect(() => { recordCommit(pathname); }, [pathname]);
   const hold = holdFor(pathname);
   if (hold) use(hold);

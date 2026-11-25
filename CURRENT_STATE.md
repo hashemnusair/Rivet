@@ -1,5 +1,101 @@
 # GymOS / RIVET current implementation state
 
+## Production answered HTTP 500 on every page: cause and fix (25 November 2026)
+
+From the `82a1187c` deployment on 23 November until this fix, every HTML page
+on Production (`/`, `/terms`, `/signup`, `/login`, the three sign-in doors,
+`/dashboard`, `/customer/discover`) returned status 500 with Next's error
+document (`<html id="__next_error__">`, empty body). The browser then built
+the page itself, so the site looked fine to people and to the browser
+journeys, but every full page load started blank and search engines and link
+previews were given an error. `/api/health` and data requests were not
+affected. Frontend only; nothing under `convex/` changed.
+
+**Cause.** `src/lib/navigation/navigation-hold.tsx` (held page changes, 23
+November) imported Next's internal pathname context directly:
+`next/dist/shared/lib/hooks-client-context.shared-runtime`.
+
+1. Webpack leaves that import for Node to load: the built page files contain
+   `require("next/dist/shared/lib/hooks-client-context.shared-runtime")`
+   (83 page files).
+2. Next's server patches `require` (`next/dist/server/require-hook.js`): any
+   request ending in `.shared-runtime` is answered with the **Pages Router**
+   copy, `next/dist/server/route-modules/pages/vendored/contexts/...`, which
+   loads `next/dist/compiled/next-server/pages.runtime.prod.js`.
+3. This app has no Pages Router pages, so the files Vercel packs into each
+   function (`.next/next-minimal-server.js.nft.json` plus the page's own
+   trace) do not include that bundle. The swap happens at run time, where
+   file tracing cannot see it.
+4. The gate is in the root layout, so the server render of every page threw
+   "Cannot find module". The server-component pass does not load client
+   modules, which is why requests with `rsc: 1` still returned 200.
+
+`next dev`, `next start` on a laptop and CI all have the whole of
+`node_modules`, so the file is found there and nothing fails. That is why
+local production builds answered 200 and all checks were green. Reproduced
+here without Vercel by loading that module with `require` restricted to the
+files in the two traces: it throws `Cannot find module
+'next/dist/compiled/next-server/pages.runtime.prod.js'`. Vercel's own log
+line was not read (the local CLI cannot reach the project); the live result
+after the fix is the confirmation. The Next 16.4.6 upgrade (`f7f01531`) was
+not the cause.
+
+**Fix.** The hold now reads its own context,
+`NavigationHoldPathnameContext`, filled by a new client component in the
+root layout (`src/lib/navigation/navigation-hold-pathname.tsx`) from the
+public `usePathname()`. Behaviour is the same: during a navigation
+`usePathname()` already returns the page being rendered. No application code
+loads a `next/dist/...` file at run time any more (one type-only import in
+`instant-navigation.ts` remains; types are erased).
+
+**Checks added so it cannot come back unseen:**
+
+- `src/lib/navigation/next-internals.test.ts` fails if any source file
+  imports `next/dist/...` at run time.
+- `scripts/check-server-bundle.mjs` runs at the end of `pnpm build` (so on
+  Vercel and in CI's production build job) and fails the build if the server
+  bundle asks Node for a `*.shared-runtime` file. On the broken build it
+  lists all 83 page files. A deployment with this fault now fails to build
+  instead of going live.
+- `scripts/check-live-documents.mjs` (`pnpm --filter web check:live`) asks
+  the live site for nine pages on the four hosts and fails on a 5xx, a 4xx
+  or Next's error document. `.github/workflows/live-documents.yml` runs it
+  after every successful Production deployment, once a day, and on request.
+  It needs no credentials and sends no cookies.
+
+**Checks before the push (this machine):**
+
+- On the build made before the fix, `check-server-bundle.mjs` fails and
+  lists the page files; the restricted `require` throws as described above;
+  `check:live` against Production reported all nine pages answering 500.
+- After the fix: `tsc --noEmit` and `pnpm lint` pass; `pnpm test` passes
+  (24 script tests, 2,903 unit tests, 3 skipped). New: the two tests in
+  `next-internals.test.ts`, two in `navigation-hold-pathname.test.tsx`, four
+  in `scripts/check-server-bundle.test.mjs`, six in
+  `scripts/check-live-documents.test.mjs`. The existing hold tests
+  (`navigation-hold.test.tsx`) pass unchanged against the new context.
+- A real-auth production build (Clerk development keys, Convex dev,
+  `NEXT_PUBLIC_RIVET_ARABIC=1`) and a mock production build both pass
+  `check-server-bundle.mjs`: no server file requires a `*.shared-runtime`
+  module any more. Both answer 200 with server-rendered HTML on the nine
+  pages.
+- Held page changes still work on the built mock bundle: a click with no
+  hover opens Members, Payments and Leads in 175–200 ms (reads take 120 ms)
+  with no loading placeholder on arrival; back to the cached Dashboard in
+  about 50 ms.
+- Browser journeys on that bundle: 75 of 75 pass (`sign-in-single-wait`,
+  `page-motion`, `role-routing`, `happy-path`, `phone-pages`,
+  `workflow-pass-7`).
+- `check-live-documents.mjs` cannot be pointed at a local real-auth build:
+  Clerk's development instance answers a signed-out document request with
+  its handshake redirect, which a client without cookies follows in a loop.
+  Production keys do not do that; the script ran normally against the live
+  site.
+
+Read first: `apps/web/src/lib/navigation/navigation-hold.tsx` (the comment
+on the context), `apps/web/scripts/check-server-bundle.mjs`,
+`apps/web/scripts/check-live-documents.mjs`.
+
 ## One "Signing you in…" screen after sign-in (25 November 2026)
 
 Elias: logging in feels like a string of redirects. He wants: email and
@@ -166,8 +262,8 @@ check is at the top of `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
   the identity is ready, and `AutomaticGymEntry`). Not visible; left alone
   because the second read carries the branch for selected-branch staff.
 
-**Separate finding, not fixed here: Production answers HTTP 500 on every
-page.** Checked signed out on 25 November 2026 at about 13:50 UTC,
+**Separate finding, fixed later the same day (see the entry above):
+Production answers HTTP 500 on every page.** Checked signed out on 25 November 2026 at about 13:50 UTC,
 deployment `dpl_3udJDS4LA1oa1JffqQJLuphqkXpC` (`77d61b2e`): `/`, `/terms`,
 `/signup`, `/login`, `/login/gym`, `/login/member`, `/login/admin`,
 `/dashboard` and `/customer/discover` return status 500 with Next's error
