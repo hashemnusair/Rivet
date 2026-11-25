@@ -36,6 +36,7 @@ export const commerce = {
     invoiceTitle: "Invoice {id}",
     due: "Due {date}",
     accessEnds: "If this stays unpaid, your gym's access stops on {date}.",
+    accessEndsPassed: "This invoice is late. Your gym's access can stop at any time.",
     firstTerm: "Your first {cadence} starts on the day we confirm your payment.",
     quoteValidUntil: "Quote valid until {date}. Refresh it before transferring if this time has passed.",
     activationSummary: "Activation: {funded} funds the new service term, including {credit} of still-unused credit. {used} of the original quoted credit was used on the old plan. The original invoice and transfer amount are unchanged.",
@@ -108,12 +109,11 @@ export const commerce = {
     lastDay: {
       title: "Your RIVET subscription ends today",
       body: "Pay invoice {id} ({amount}) today so your team keeps access.",
-      bodyNoInvoice: "Pay today so your team keeps access.",
     },
     overdue: {
       title: "Your RIVET payment is late",
       body: "Pay invoice {id} ({amount}). If it stays unpaid, access stops on {date}.",
-      bodyNoInvoice: "Pay now. If it stays unpaid, access stops on {date}.",
+      bodyStopPassed: "Pay invoice {id} ({amount}) now. Your access can stop at any time.",
     },
     paymentSent: {
       title: "Payment sent",

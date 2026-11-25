@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ForbiddenState, QueryErrorState, StatePanel } from "@/components/ui/states";
 import { FacilityTaskWorkspace } from "./facility-task-workspace";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { AiRunPanel } from "@/features/assist/run-panel";
 
 /**
  * Maintenance has its own page: cleaning, inspections and incidents by gym
@@ -41,6 +42,8 @@ export function MaintenanceWorkspace() {
 
   return (
     <div className="space-y-4" data-testid="maintenance-workspace">
+      {/* Notices about prepared maintenance work link here with ?run=. */}
+      {searchParams.get("run") ? <AiRunPanel runId={searchParams.get("run")!} onClose={() => { const next = new URLSearchParams(searchParams.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `/maintenance?${next}` : "/maintenance"); }} /> : null}
       <PageHeader title={t("palette.pages.maintenance")} description={branchId ? t("operationsWorkspace.branchMaintenance", { branch: branchLabel }) : t("operationsWorkspace.chooseMaintenanceBranch")} actions={<div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2"><label htmlFor="maintenance-branch" className="sr-only">{t("common.label.branch")}</label><Select value={branchId ?? "all"} onValueChange={(value) => { void setBranch(value === "all" ? undefined : value);
             const next = new URLSearchParams(searchParams.toString());
             if (value === "all") next.delete("branch"); else next.set("branch", value);

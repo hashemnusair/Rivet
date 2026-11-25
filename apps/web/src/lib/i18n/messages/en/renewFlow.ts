@@ -196,6 +196,13 @@ export const renewFlow = {
       submit: "Cancel membership",
       reasonRequired: "Add a reason",
       saveFailed: "The cancellation was not saved. Try again.",
+      owedQuestion: "This member owes {amount}. Has it been paid?",
+      owedPaid: "Yes, it has been paid",
+      owedHint: "Ticking this does not record a payment. If it is not paid, you can collect it after you cancel.",
+      afterTitle: "Membership cancelled",
+      afterBody: "{name} still owes {amount}. Collect it now?",
+      afterBodyNoCollect: "{name} still owes {amount}. Ask someone who can take payments to collect it.",
+      afterLater: "Not now",
     },
 
     unfreeze: {

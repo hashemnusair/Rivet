@@ -70,6 +70,13 @@ export const staffTools = {
       email: "Email",
       phone: "Phone",
       enabled: "Enabled",
+      owedMinor: "Money owed",
+      owedMoneyPaid: "Staff said it was paid",
+    },
+    value: {
+      yes: "Yes",
+      no: "No",
+      notAsked: "Not asked",
     },
   },
   checklists: {

@@ -29,6 +29,7 @@ import { getApi } from "@/lib/api/client";
 import { addDays, todayISODate } from "@/lib/utils/dates";
 import { classWeek } from "@/lib/navigation/route-reads";
 import { replaceQueryInPlace } from "@/lib/routing/replace-query";
+import { AiRunPanel } from "@/features/assist/run-panel";
 import { useClassesScreen } from "@/features/ask-rivet/screens";
 
 // Default visible day; the window stretches automatically when a class is
@@ -309,6 +310,8 @@ function ClassesWorkspace() {
 
   return (
     <div className="space-y-5" data-print-root>
+      {/* Notices about prepared class work link here with ?run=. */}
+      {params.get("run") ? <div className="print:hidden"><AiRunPanel runId={params.get("run")!} onClose={() => { const next = new URLSearchParams(params.toString()); next.delete("run"); replaceQueryInPlace(router, next.size ? `${pathname}?${next}` : pathname); }} /></div> : null}
       <div className="print:hidden">
         <PageHeader
           title={t("nav.item.classes")}

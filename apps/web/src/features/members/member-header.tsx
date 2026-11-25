@@ -29,10 +29,10 @@ import {
 import { Monogram } from "@/components/ui/misc";
 import { MembershipSaleDialog } from "@/features/membership-actions/sale-dialog";
 import { CollectPaymentDialog } from "@/features/membership-actions/payment-dialog";
-import { CancelMembershipDialog, ChangeMembershipPlanDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
+import { CancelMembershipDialog, ChangeMembershipPlanDialog, CollectAfterCancelDialog, ExtendDialog, FreezeDialog, TransferMembershipDialog, UnfreezeDialog } from "@/features/membership-actions/adjustment-dialogs";
 import { TEXT_LIMITS } from "@/lib/domain/input-limits";
 
-type DialogKind = "edit" | "sell" | "renew" | "collect" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "restore" | "delete" | null;
+type DialogKind = "edit" | "sell" | "renew" | "collect" | "collect-after-cancel" | "freeze" | "unfreeze" | "extend" | "transfer" | "plan-change" | "cancel" | "archive" | "restore" | "delete" | null;
 
 export function resolveMemberActionLink(
   searchParams: Pick<URLSearchParams, "get">,
@@ -344,6 +344,15 @@ export function MemberHeader({
         member={member}
         branchId={operatingBranchId}
       />
+      {/* Outside the membership block: once cancelled, the member may have no current membership left. */}
+      <CollectAfterCancelDialog
+        open={dialog === "collect-after-cancel" && outstanding.amount > 0}
+        onOpenChange={(v) => !v && setDialog(null)}
+        memberName={member.fullName}
+        owed={outstanding}
+        canCollect={canCollect}
+        onCollect={() => setDialog("collect")}
+      />
       {currentMembership ? (
         <>
           <FreezeDialog
@@ -356,7 +365,17 @@ export function MemberHeader({
           <UnfreezeDialog open={dialog === "unfreeze"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("memberProfile.toast.freezeEnded"))} />
           <ExtendDialog open={dialog === "extend"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("memberProfile.toast.extended"))} />
           <TransferMembershipDialog open={dialog === "transfer"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} branches={session?.branches ?? []} onDone={() => toast.success(t("memberProfile.toast.transferred"))} />
-          <CancelMembershipDialog open={dialog === "cancel"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} onDone={() => toast.success(t("memberProfile.toast.cancelled"))} />
+          <CancelMembershipDialog
+            open={dialog === "cancel"}
+            onOpenChange={(v) => !v && setDialog(null)}
+            membership={currentMembership}
+            owed={outstanding}
+            onDone={({ owedLeftUnpaid }) => {
+              toast.success(t("memberProfile.toast.cancelled"));
+              // Money still owed and not said to be paid: ask to collect it now.
+              if (owedLeftUnpaid) setDialog("collect-after-cancel");
+            }}
+          />
           <ChangeMembershipPlanDialog open={dialog === "plan-change"} onOpenChange={(v) => !v && setDialog(null)} membership={currentMembership} allowImmediate={can("memberships.override_dates")} onDone={() => toast.success(t("memberProfile.toast.planChanged"))} />
         </>
       ) : null}

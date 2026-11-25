@@ -836,19 +836,26 @@ export async function settlePaymentRequest(ctx: MutationCtx, invoice: Data, conf
 export type BillingNotice = {
   state: "last_day" | "overdue" | "payment_sent";
   periodEndsAt: string;
-  invoiceId?: string;
+  /** The invoice to pay. There is no notice without one. */
+  invoiceId: string;
   amountMinor?: number;
   currency?: string;
-  /** When access stops if the invoice stays unpaid. */
+  /** The first day access may stop if the invoice stays unpaid. It can already have passed. */
   accessEndsAt?: string;
   /** RIVET sent the last payment details back. */
   paymentReturned?: boolean;
 };
 
 /**
- * What the workspace warns about: the last day of a paid term with nothing
- * paid for the next one, a term that has run out, or payment details RIVET
- * is still checking. Earlier reminders go by email.
+ * What the workspace warns about: the last day of a paid term with the next
+ * invoice unpaid, a term that has run out with that invoice still unpaid, or
+ * payment details RIVET is still checking. Earlier reminders go by email.
+ *
+ * A gym is only asked to pay an invoice that exists. When no renewal invoice
+ * has been raised (the reconciliation job is off, or an operator voided the
+ * cycle) the gym owes nothing yet, so there is nothing to warn about: the
+ * old "payment is late, access stops on <a date already past>" notice led to
+ * a payment page with nothing to pay.
  */
 export async function billingNotice(ctx: ReadContext, organization: Doc<"organizations">, now: number): Promise<BillingNotice | undefined> {
   if (organization.status !== "active" && organization.status !== "past_due") return undefined;
@@ -864,13 +871,16 @@ export async function billingNotice(ctx: ReadContext, organization: Doc<"organiz
   const lastDay = now < end && localDay(now, timeZone) === localDay(end - 1, timeZone);
   if (!lastDay && now < end) return undefined;
   const unpaid = nextUnpaidInvoice(rows);
-  const invoice = unpaid ? record(unpaid.data) : undefined;
-  const claim = record(invoice?.paymentClaim);
-  const dueAt = timestamp(invoice?.dueAt);
+  if (!unpaid) return undefined;
+  const invoice = record(unpaid.data);
+  const claim = record(invoice.paymentClaim);
+  const dueAt = timestamp(invoice.dueAt);
   return {
     state: claim.status === "submitted" ? "payment_sent" : lastDay ? "last_day" : "overdue",
     periodEndsAt: iso(end),
-    ...(unpaid && invoice ? { invoiceId: unpaid.publicId, amountMinor: typeof invoice.amountMinor === "number" ? invoice.amountMinor : undefined, currency: text(invoice.currency) || "JOD" } : {}),
+    invoiceId: unpaid.publicId,
+    amountMinor: typeof invoice.amountMinor === "number" ? invoice.amountMinor : undefined,
+    currency: text(invoice.currency) || "JOD",
     accessEndsAt: iso((dueAt ?? end) + SUSPENSION_AFTER_DUE_DAYS * DAY_MS),
     ...(claim.status === "rejected" ? { paymentReturned: true } : {}),
   };

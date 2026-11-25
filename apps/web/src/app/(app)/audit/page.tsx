@@ -88,6 +88,13 @@ const FIELD_LABELS: Record<string, TKey> = {
   email: "staffTools.audit.field.email",
   phone: "staffTools.audit.field.phone",
   enabled: "staffTools.audit.field.enabled",
+  owedMinor: "staffTools.audit.field.owedMinor",
+  owedMoneyPaid: "staffTools.audit.field.owedMoneyPaid",
+};
+
+/** Fixed answers stored on an event, shown in the reader's language. */
+const VALUE_LABELS: Record<string, Record<string, TKey>> = {
+  owedMoneyPaid: { yes: "staffTools.audit.value.yes", no: "staffTools.audit.value.no", not_asked: "staffTools.audit.value.notAsked" },
 };
 
 function fieldLabel(field: string, t: ReturnType<typeof useT>): string {
@@ -343,7 +350,7 @@ function DiffPanel({ label, values, highlight, t }: { label: string; values: Rec
         {Object.entries(values).map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-2 text-[12px]">
             <dt className="shrink-0 text-ink-3">{fieldLabel(k, t)}</dt>
-            <dd className="min-w-0 text-end tabular [overflow-wrap:anywhere]"><ActivityText text={auditValueLabel(k, v, typeof values.currency === "string" ? values.currency : undefined, format)} /></dd>
+            <dd className="min-w-0 text-end tabular [overflow-wrap:anywhere]"><ActivityText text={typeof v === "string" && VALUE_LABELS[k]?.[v] ? t(VALUE_LABELS[k][v]) : auditValueLabel(k, v, typeof values.currency === "string" ? values.currency : undefined, format)} /></dd>
           </div>
         ))}
       </dl>
@@ -353,7 +360,7 @@ function DiffPanel({ label, values, highlight, t }: { label: string; values: Rec
 
 function auditValueLabel(key: string, value: string | number | null, currency: string | undefined, format: ReturnType<typeof useFormat>): string {
   if (value == null) return "—";
-  if ((key === "priceMinor" || key === "amountMinor" || key === "discountMinor") && typeof value === "number") {
+  if ((key === "priceMinor" || key === "amountMinor" || key === "discountMinor" || key === "owedMinor") && typeof value === "number") {
     return format.money({ amount: value, currency: currency ?? "JOD" });
   }
   if ((key === "startDate" || key === "endDate" || key === "effectiveDate" || key === "date") && typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {

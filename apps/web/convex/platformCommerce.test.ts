@@ -373,8 +373,12 @@ describe("renewal warnings", () => {
     const organizationId = await activeGym(t, end);
     const notice = (now: number) => t.run(async (ctx) => billingNotice(ctx, (await ctx.db.get(organizationId))!, now));
     expect(await notice(Date.parse("2026-10-30T09:00:00Z"))).toBeFalsy();
-    expect(await notice(Date.parse("2026-11-01T08:00:00Z"))).toMatchObject({ state: "last_day" });
+    // No renewal invoice has been raised: the gym owes nothing yet, so it is
+    // not told to pay, on the last day or weeks after the term ended.
+    expect(await notice(Date.parse("2026-11-01T08:00:00Z"))).toBeFalsy();
+    expect(await notice(Date.parse("2026-11-30T08:00:00Z"))).toBeFalsy();
     const invoiceId = await t.run((ctx) => ctx.db.insert("domainRecords", { organizationId, entityType: "platformInvoice", publicId: "INV-renew", createdAt: 1, updatedAt: 1, data: { status: "open", amountMinor: 39_000, currency: "JOD", dueAt: "2026-11-01T21:00:00.000Z", periodEnd: "2026-12-01T21:00:00.000Z" } }));
+    expect(await notice(Date.parse("2026-11-01T08:00:00Z"))).toMatchObject({ state: "last_day", invoiceId: "INV-renew", amountMinor: 39_000 });
     expect(await notice(Date.parse("2026-11-03T08:00:00Z"))).toMatchObject({ state: "overdue", invoiceId: "INV-renew", amountMinor: 39_000, accessEndsAt: new Date(end + 21 * DAY_MS).toISOString() });
     await t.run((ctx) => ctx.db.patch(invoiceId, { data: { status: "open", amountMinor: 39_000, currency: "JOD", dueAt: "2026-11-01T21:00:00.000Z", periodEnd: "2026-12-01T21:00:00.000Z", paymentClaim: { status: "submitted" } } }));
     expect(await notice(Date.parse("2026-11-03T08:00:00Z"))).toMatchObject({ state: "payment_sent" });

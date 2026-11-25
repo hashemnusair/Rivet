@@ -191,6 +191,27 @@ describe("session and role switching", () => {
   });
 });
 
+describe("the workspace billing warning", () => {
+  it("only asks a gym to pay an invoice that exists", async () => {
+    const internals = api as unknown as { db: MockDb; platformInvoices: Array<Record<string, unknown>> };
+    const ended = new Date(Date.now() - 29 * 86_400_000).toISOString();
+    internals.db.organization.status = "active";
+    internals.db.organization.currentPeriodEndsAt = ended;
+    // Leave the gym with no unpaid invoice and nothing paid past the ended month.
+    internals.platformInvoices = internals.platformInvoices.filter((invoice) => invoice.gymId !== "forge-fitness");
+    // The paid month ended 29 days ago and RIVET never raised the next
+    // invoice: nothing is owed yet, so nobody is told a payment is late.
+    expect((await api.getSession()).organization.subscription?.billingNotice).toBeUndefined();
+    expect((await api.getBillingCheckout()).invoice).toBeUndefined();
+
+    internals.platformInvoices.push({ id: "INV-late", gymId: "forge-fitness", gym: "Forge Fitness Club", amountMinor: 39_000, currency: "JOD", status: "open", date: ended, issuedAt: ended, dueAt: ended, periodStart: ended, periodEnd: new Date(Date.now() + 86_400_000).toISOString() });
+    const notice = (await api.getSession()).organization.subscription?.billingNotice;
+    expect(notice).toMatchObject({ state: "overdue", invoiceId: "INV-late", amountMinor: 39_000 });
+    // The warning and the payment page now name the same invoice.
+    expect((await api.getBillingCheckout()).invoice?.id).toBe("INV-late");
+  });
+});
+
 describe("Brand Kit persistence", () => {
   it("applies palette and logo updates to settings and the authenticated session", async () => {
     const session = await api.getSession();
@@ -1508,6 +1529,30 @@ describe("membership adjustments", () => {
 
     expect(detail.status).toBe("cancelled");
     expect(detail.cancellationReason).toBe("Member relocated to Dubai");
+  });
+
+  it("records what a member owed and staff's answer on cancellation without marking it paid", async () => {
+    const owing = (await api.listMembers({ membershipStatus: "outstanding", pageSize: 50 })).items;
+    const memberships = (await api.listMemberships({ pageSize: 500 })).items.filter((membership) => !membership.cancelledAt);
+    const pairs = owing.flatMap((member) => {
+      const membership = memberships.find((candidate) => candidate.memberId === member.id);
+      return membership ? [{ member, membership }] : [];
+    });
+    expect(pairs.length).toBeGreaterThanOrEqual(2);
+    const cancelAudit = async (membershipId: string) => (await api.listAuditEvents({ pageSize: 100 })).items.find((event) => event.action === "membership.cancel" && event.entityId === membershipId);
+
+    const [unpaid, saidPaid] = pairs as [typeof pairs[number], typeof pairs[number]];
+    await api.cancelMembership(unpaid.membership.id, { reason: "Member moved abroad", owedMoneyPaid: false });
+    expect((await cancelAudit(unpaid.membership.id))?.after).toMatchObject({ status: "cancelled", owedMinor: unpaid.member.outstanding.amount, owedMoneyPaid: "no" });
+
+    await api.cancelMembership(saidPaid.membership.id, { reason: "Member paid at the desk", owedMoneyPaid: true });
+    expect((await cancelAudit(saidPaid.membership.id))?.after).toMatchObject({ owedMinor: saidPaid.member.outstanding.amount, owedMoneyPaid: "yes" });
+    // The answer changes no balance: only a payment does.
+    expect((await api.getMember(saidPaid.member.id)).outstanding.amount).toBe(saidPaid.member.outstanding.amount);
+
+    const settled = (await api.listMemberships({ status: "active", pageSize: 200 })).items.find((membership) => !owing.some((member) => member.id === membership.memberId))!;
+    await api.cancelMembership(settled.id, { reason: "Member asked to stop", owedMoneyPaid: true });
+    expect((await cancelAudit(settled.id))?.after).toEqual({ status: "cancelled" });
   });
 });
 

@@ -718,7 +718,7 @@ export class MockAiEngine {
     if (!enabled || !target || classExclusion(target, new Date().toISOString())) return this.finish(run, "failed", "source_changed");
     const status = this.host.bookClass(params.occurrenceKey, params.memberId);
     if (status !== "booked") return this.finish(run, "failed", "source_changed");
-    const ref: AiRunResultRef = { kind: "class_booking", id: params.occurrenceKey, label: target.name, href: `/classes?date=${target.date}`, subjectName: target.branchName };
+    const ref: AiRunResultRef = { kind: "class_booking", id: params.occurrenceKey, label: target.name, href: `/classes?from=${target.date}`, subjectName: target.branchName };
     run.steps.push({ id: mockUuid(), seq: 1, capability: "class.book", subjectId: params.memberId, status: "verified", resultRef: ref, updatedAt: new Date().toISOString() });
     run.results.push(ref);
     run.counts.created += 1;
@@ -1022,7 +1022,7 @@ export class MockAiEngine {
     if (!facts) return exclude("outside_scope");
     const decision = evaluateRenewalCandidate(facts, { today, now: new Date().toISOString(), revisions: run.revisions.map((revision) => revision.interpreted), latestUsefulDate: params.bucket === "expired" ? addDays(today, 14) : facts.membershipEndDate });
     const key = renewalOperationKey(this.host.db.organization.id, subject.id, facts.membershipId, facts.membershipEndDate);
-    const memberHref = `/members/${subject.id}?tab=tasks`;
+    const memberHref = `/members/${subject.id}`;
     if (decision.decision === "exclude") return exclude(decision.reason);
     const priorId = this.operationKeys.get(key);
     const prior = priorId ? this.host.db.tasks.find((task) => task.id === priorId) : undefined;

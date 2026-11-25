@@ -127,7 +127,7 @@ async function renewalFollowupsStep(ctx: MutationCtx, env: PlaybookStepEnv): Pro
   const revisions = run.revisions.map((revision) => revision.interpreted as AiRunRevision);
   const decision = evaluateRenewalCandidate(facts, { today, now: new Date(now).toISOString(), revisions, latestUsefulDate: params.bucket === "expired" ? addDays(today, 14) : facts.membershipEndDate });
   const operationKey = renewalOperationKey(publicOrganizationId(actor.organization), subject.id, facts.membershipId, facts.membershipEndDate);
-  const memberHref = `/members/${subject.id}?tab=tasks`;
+  const memberHref = `/members/${subject.id}`;
 
   if (decision.decision === "exclude") return await exclude(decision.reason, [{ kind: "member", id: subject.id, href: `/members/${subject.id}` }]);
 
@@ -326,7 +326,7 @@ async function classFinderStep(ctx: MutationCtx, env: PlaybookStepEnv): Promise<
   await env.executeMutation("classes.occurrence.roster.add", { occurrenceId: params.occurrenceKey, memberId: params.memberId }, env.toolRequest("class.book", 1));
   const status = await env.classBookingStatus(params.occurrenceKey, params.memberId);
   if (status !== "booked") throw new Error("Saved class booking did not match what was requested.");
-  const ref = resultRef("class_booking", params.occurrenceKey, target!.name, { href: `/classes?date=${target!.date}`, subjectName: target!.branchName });
+  const ref = resultRef("class_booking", params.occurrenceKey, target!.name, { href: `/classes?from=${target!.date}`, subjectName: target!.branchName });
   await recordStep(ctx, run, { seq: 1, tool: "class.book", subjectId: params.memberId, status: "verified", resultRef: ref });
   await ctx.db.patch(run._id, { stage: "aiWork.stage.done", resultRefs: [...run.resultRefs, ref], counts: { ...run.counts, created: run.counts.created + 1 }, budget: { ...run.budget, writes: run.budget.writes + 1 }, updatedAt: Date.now() });
   await env.finish("completed");

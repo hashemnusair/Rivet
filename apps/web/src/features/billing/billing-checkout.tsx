@@ -150,6 +150,9 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
   const kind = upgradeTo ? "upgrade" : gym.status === "pending_payment" ? "pending" : gym.status === "suspended" ? "suspended" : "renewal";
   const cadence = t(gym.billingInterval === "annual" ? "commerce.lines.year" : "commerce.lines.month");
   const outcome: PaymentOutcome = upgradeTo ? { kind: "upgrade", plan: upgradeTo } : kind === "pending" ? { kind: "workspace" } : { kind: "paid" };
+  // The stop date is the first day access may stop; never promise a day already past.
+  const [openedAt] = useState(() => Date.now());
+  const stopPassed = checkout.accessEndsAt !== undefined && Date.parse(checkout.accessEndsAt) <= openedAt;
 
   if (!invoice) {
     return (
@@ -196,7 +199,7 @@ function Checkout({ checkout, fullAccess }: { checkout: BillingCheckout; fullAcc
           {invoice.firstPayment ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.firstTerm", { cadence })}</p> : null}
           {upgradeTo ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.upgradeTerm", { plan: isolate(upgradeTo) })}</p> : null}
           {upgradeTo && (invoice.creditMinor ?? 0) > 0 ? <p className="mt-4 text-[12.5px] leading-relaxed text-ink-3">{t("commerce.checkout.creditTiming")}</p> : null}
-          {checkout.accessEndsAt ? <p className="mt-4 text-[12.5px] leading-relaxed text-warning-deep">{t("commerce.checkout.accessEnds", { date: f.date(checkout.accessEndsAt) })}</p> : null}
+          {checkout.accessEndsAt ? <p className="mt-4 text-[12.5px] leading-relaxed text-warning-deep">{stopPassed ? t("commerce.checkout.accessEndsPassed") : t("commerce.checkout.accessEnds", { date: f.date(checkout.accessEndsAt) })}</p> : null}
         </aside>
       </div>
     </div>

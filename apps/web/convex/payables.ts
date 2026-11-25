@@ -334,7 +334,7 @@ async function projectReconciliationItems(ctx: ReadContext, actor: ActorContext,
     if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
     const amountMinor = movement.totalCostMinor ?? (movement.unitCostMinor === undefined ? undefined : movement.unitCostMinor * movement.quantity);
     if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-    push({ sourceType: "stock_receive", sourceId: movement.publicId, sourceLabel: truncateLabel(`Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`), branchId: movement.branchId, recordedAt: movement.occurredAt, amountMinor, currency: (movement.totalCostCurrency ?? movement.unitCostCurrency ?? currency).toUpperCase(), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.publicId)}` });
+    push({ sourceType: "stock_receive", sourceId: movement.publicId, sourceLabel: truncateLabel(`Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`), branchId: movement.branchId, recordedAt: movement.occurredAt, amountMinor, currency: (movement.totalCostCurrency ?? movement.unitCostCurrency ?? currency).toUpperCase(), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: movement.financialPostingStatus, href: "/operations?tab=inventory" });
   }
   const tasks = await ctx.db.query("facilityTasks").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const task of tasks) {
@@ -345,7 +345,7 @@ async function projectReconciliationItems(ctx: ReadContext, actor: ActorContext,
   for (const asset of assets) {
     if (asset.purchaseCostMinor === undefined || asset.purchaseCostMinor <= 0) continue;
     const purchaseTimestamp = asset.purchaseDate ? Date.parse(`${asset.purchaseDate}T12:00:00.000Z`) : Number.NaN;
-    push({ sourceType: "equipment_acquisition", sourceId: asset.publicId, sourceLabel: truncateLabel(`Equipment purchase · ${asset.code} ${asset.name}`), vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: Number.isFinite(purchaseTimestamp) ? purchaseTimestamp : asset.createdAt, amountMinor: asset.purchaseCostMinor, currency: (asset.purchaseCostCurrency ?? currency).toUpperCase(), reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.publicId)}` });
+    push({ sourceType: "equipment_acquisition", sourceId: asset.publicId, sourceLabel: truncateLabel(`Equipment purchase · ${asset.code} ${asset.name}`), vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: Number.isFinite(purchaseTimestamp) ? purchaseTimestamp : asset.createdAt, amountMinor: asset.purchaseCostMinor, currency: (asset.purchaseCostCurrency ?? currency).toUpperCase(), reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: "not_posted", href: "/operations?tab=equipment" });
   }
   const workOrders = await ctx.db.query("equipmentWorkOrders").withIndex("by_organization", (q) => q.eq("organizationId", actor.organization._id)).collect();
   for (const order of workOrders) {
@@ -353,7 +353,7 @@ async function projectReconciliationItems(ctx: ReadContext, actor: ActorContext,
     const combined = (order.partsCostMinor ?? 0) + (order.laborCostMinor ?? 0);
     const amountMinor = order.totalCostMinor ?? (Number.isSafeInteger(combined) ? combined : undefined);
     if (amountMinor === undefined || amountMinor <= 0) continue;
-    push({ sourceType: "equipment_repair", sourceId: order.publicId, sourceLabel: truncateLabel(`Equipment repair · ${order.description}`), vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amountMinor, currency: (order.costCurrency ?? currency).toUpperCase(), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: order.financialPostingStatus, href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.publicId)}` });
+    push({ sourceType: "equipment_repair", sourceId: order.publicId, sourceLabel: truncateLabel(`Equipment repair · ${order.description}`), vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amountMinor, currency: (order.costCurrency ?? currency).toUpperCase(), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: order.financialPostingStatus, href: "/operations?tab=equipment" });
   }
   items.sort((left, right) => right.recordedAt - left.recordedAt || left.id.localeCompare(right.id));
   return items;

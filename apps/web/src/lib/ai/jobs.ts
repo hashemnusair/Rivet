@@ -45,13 +45,24 @@ export function ledgerTotals(rows: readonly Data[]): { collectedMinor: number; r
   return { collectedMinor, refundedMinor };
 }
 
+/**
+ * A link to a report for the dates a run covered. The Reports page reads an
+ * end date and a length of 7, 30 or 90 days; other lengths keep the end date
+ * and the page's own default length.
+ */
+function reportHref(view: string, params: { from: string; to: string }): string {
+  const days = Math.round((Date.parse(params.to) - Date.parse(params.from)) / 86_400_000) + 1;
+  const range = [7, 30, 90].includes(days) ? `&range=${days}` : "";
+  return `/reports?view=${view}${range}&to=${params.to}`;
+}
+
 export function composeManagementReport(inputs: ReportInputs, params: { from: string; to: string }, currency: string): Composed {
   const sections: AiArtifactSection[] = [];
   const checks: Composed["verification"]["checks"] = [];
   const coverage: Composed["coverage"] = [];
   if (inputs.collections) {
     const c = inputs.collections;
-    const href = `/reports?view=collections&from=${params.from}&to=${params.to}`;
+    const href = reportHref("collections", params);
     const source = [{ kind: "report" as const, id: "collections", href }];
     sections.push({ key: "money", titleKey: "aiWork.report.money", items: [
       { key: "charged", message: { key: "aiWork.report.charged", params: { count: num(c.chargedCount), amount: money(num(c.chargedMinor), currency) } }, sources: source },
@@ -123,7 +134,7 @@ export function composeHandover(inputs: HandoverInputs, params: { date: string; 
       for (const item of (Array.isArray(run.items) ? run.items : []).map(record)) {
         const status = text(item.status);
         if (status === "completed" || (status === "pending" && !item.required)) continue;
-        items.push({ key: `${text(run.templateId)}-${text(run.localDate)}-${text(item.itemId)}`, message: { key: status === "failed" ? "aiWork.handover.checkFailed" : status === "skipped" ? "aiWork.handover.checkSkipped" : "aiWork.handover.checkPending", params: { item: text(item.label), list: text(run.name), date: { date: text(run.localDate) } } }, sources: [{ kind: "checklist", id: text(run.templateId), href: `/checklists?date=${text(run.localDate)}` }], tone: status === "failed" ? "attention" : "neutral" });
+        items.push({ key: `${text(run.templateId)}-${text(run.localDate)}-${text(item.itemId)}`, message: { key: status === "failed" ? "aiWork.handover.checkFailed" : status === "skipped" ? "aiWork.handover.checkSkipped" : "aiWork.handover.checkPending", params: { item: text(item.label), list: text(run.name), date: { date: text(run.localDate) } } }, sources: [{ kind: "checklist", id: text(run.templateId), href: "/checklists" }], tone: status === "failed" ? "attention" : "neutral" });
       }
     }
     sections.push({ key: "checks", titleKey: "aiWork.handover.checks", items });
@@ -140,7 +151,7 @@ export function composeHandover(inputs: HandoverInputs, params: { date: string; 
   }
   coverage.push({ key: "machines", complete: Boolean(inputs.equipmentIssues), message: { key: inputs.equipmentIssues ? "aiWork.handover.coverageMachines" : "aiWork.handover.gapMachines" } });
   if (inputs.followUps) {
-    sections.push({ key: "followUps", titleKey: "aiWork.handover.followUps", items: inputs.followUps.slice(0, 50).map((task) => ({ key: text(task.id), message: { key: "aiWork.handover.followUpDue", params: { title: text(task.title), owner: text(task.ownerName), at: { at: text(task.dueAt) } } }, sources: [{ kind: "task" as const, id: text(task.id), href: text(task.memberId) ? `/members/${text(task.memberId)}?tab=tasks` : "/crm/queues" }] })) });
+    sections.push({ key: "followUps", titleKey: "aiWork.handover.followUps", items: inputs.followUps.slice(0, 50).map((task) => ({ key: text(task.id), message: { key: "aiWork.handover.followUpDue", params: { title: text(task.title), owner: text(task.ownerName), at: { at: text(task.dueAt) } } }, sources: [{ kind: "task" as const, id: text(task.id), href: text(task.memberId) ? `/members/${text(task.memberId)}` : "/crm/queues" }] })) });
   }
   coverage.push({ key: "followUps", complete: Boolean(inputs.followUps), message: { key: inputs.followUps ? "aiWork.handover.coverageFollowUps" : "aiWork.handover.gapFollowUps" } });
   if (inputs.shift !== undefined) {

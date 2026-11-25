@@ -72,6 +72,13 @@ export const staffTools: typeof EnglishStaffTools = {
       email: "البريد الإلكتروني",
       phone: "الهاتف",
       enabled: "مفعّل",
+      owedMinor: "المبلغ المتبقي",
+      owedMoneyPaid: "أفاد الموظف بأنه مدفوع",
+    },
+    value: {
+      yes: "نعم",
+      no: "لا",
+      notAsked: "لم يُسأل",
     },
   },
   checklists: {

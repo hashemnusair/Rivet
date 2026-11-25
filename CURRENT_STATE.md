@@ -1,5 +1,158 @@
 # GymOS / RIVET current implementation state
 
+## Late-payment banner, cancel-with-money-owed, and dead deep links (25 November 2026)
+
+Elias's list from the gym-owner view of Production (member page of Test Gym,
+red banner "Your RIVET payment is late — Pay now. If it stays unpaid, access
+stops on 17 Nov 2026"). Frontend and `convex/` both changed; Convex is
+released first.
+
+### 1. "Pay now" and the late-payment banner
+
+**What was wrong.** `/billing` is a real page: it is the gym's own "pay
+RIVET" screen (`src/app/billing/page.tsx`, the invoice, CliQ and bank
+details, and the "tell us you paid" form). It answers 200 on all four hosts,
+for a document request and for a client navigation. The fault was the banner,
+not the link:
+
+- Test Gym's paid month ended on 27 October and **no renewal invoice was
+  ever raised**, because `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` is not
+  set on Production (names-only check, 25 November). That job is what raises
+  renewal invoices, sends reminders, marks invoices past due and suspends.
+- `billingNotice` still showed "payment is late" with no invoice (the
+  `bodyNoInvoice` wording), and "Pay now" opened `/billing`, which correctly
+  said "Nothing to pay right now". The gym was told to pay and given nothing
+  to pay.
+- "Access stops on 17 Nov 2026" was the end of the paid month plus 21 days.
+  Suspension needs an unpaid invoice and the job above, so the date passed
+  and nothing happened. It was shown eight days after it had passed.
+
+**What changed.**
+
+- `convex/platformCommerce.ts` `billingNotice` (and its mock twin) now
+  returns no notice unless an unpaid subscription invoice exists. A gym is
+  not late until RIVET has billed it (agreement: payable within 14 days of
+  the invoice). `invoiceId` is now required on `BillingNotice`.
+- When the invoice exists, "Pay now" still opens `/billing`, which shows that
+  invoice and the pay form in one click. The warning and the page now always
+  name the same invoice.
+- A stop date that has passed is never printed. The banner says "Pay invoice
+  {id} ({amount}) now. Your access can stop at any time." and the payment
+  page says "This invoice is late. Your gym's access can stop at any time."
+  (`commerce.notice.overdue.bodyStopPassed`, `commerce.checkout.accessEndsPassed`,
+  English and Arabic). The unused `bodyNoInvoice` strings were removed.
+
+**Not changed, needs Elias or Hashem.** With the job off, no gym on
+Production is ever sent a renewal invoice, so no gym can renew from inside
+the product; RIVET has to issue the invoice from the platform console. Two
+ways forward, neither done here because both change how gyms are billed:
+set `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1` (invoices 14 days before
+the term ends, reminders, past due, suspension after 21 days), or add a
+"Renew" step that lets the owner raise the next invoice from `/billing`.
+After this release Test Gym shows no banner until it has an invoice.
+
+### 2. How a gym cancels its RIVET subscription (answer, nothing built)
+
+There is no way to do it inside the gym workspace today. Only RIVET staff
+can cancel a gym: platform console → Billing → Gyms → menu → Cancel
+(`platform.gyms.update`, reason required, platform audit event). The Terms
+say the subscription renews unless either side gives written notice at least
+30 days before the term ends, and that a gym ending early still owes the
+rest of the term (`publicTerms` text035–036); the signed agreement prints
+"either party may end it with 30 days' written notice". Once cancelled,
+every staff account loses the workspace and the payment page, the owner
+keeps `/exports` for 30 days (`terminationExportDeadline`), and deletion
+after that is a manual RIVET step. Settings → Subscription only says to
+message RIVET on the Support page for a smaller plan.
+
+Proposed, not built (billing and agreement terms need a yes): a "Cancel
+RIVET subscription" action on Settings → Subscription, owner only, with a
+reason, that sends RIVET a cancellation request (a support case) and shows
+the end date and the 30-day export window. It does not cancel on the spot,
+because the notice period and the fees for the rest of the term are in the
+agreement.
+
+### 3. Cancelling a member's membership asks about money owed
+
+- `CancelMembershipDialog` (`src/features/membership-actions/adjustment-dialogs.tsx`)
+  takes the member's collectible balance. When it is more than zero it shows
+  "This member owes {amount}. Has it been paid?" with one checkbox, "Yes, it
+  has been paid", and the line "Ticking this does not record a payment. If
+  it is not paid, you can collect it after you cancel." A member who owes
+  nothing sees the dialog as before.
+- Not ticked: the cancellation goes through, then `CollectAfterCancelDialog`
+  says "{name} still owes {amount}. Collect it now?" with **Collect payment**
+  (opens the existing `CollectPaymentDialog`) and **Not now**. Someone without
+  `payments.collect` is told to ask a person who can take payments. The
+  prompt lives outside the current-membership block of `MemberHeader`,
+  because the member may have no current membership once it is cancelled.
+- The answer travels as `owedMoneyPaid` on `memberships.cancel`. The server
+  works out what is owed itself and adds `owedMinor`, `currency` and
+  `owedMoneyPaid` (`yes` / `no` / `not_asked`) to the `after` of the
+  `membership.cancel` audit event; the activity log labels them "Money owed"
+  and "Staff said it was paid". Reason, the `memberships.freeze` permission
+  check and the timeline event are unchanged.
+- **Assumption (Elias to confirm):** the checkbox never changes a balance.
+  If staff tick "paid" while RIVET still shows the amount, the member page
+  keeps showing it until a payment is recorded through Collect payment. The
+  tick is evidence in the audit event, not a payment.
+
+### 4. Links that went nowhere
+
+Every path written in `src/` and `convex/` was checked against the route
+tree, plus `next.config.mjs` (no redirects), `src/proxy.ts` and
+`host-routing.ts`. No link pointed at a missing page, and no in-app link
+points at one of the six legacy redirect pages. The dead ends were deep
+links whose query the page ignored:
+
+| Link | Was | Now |
+| --- | --- | --- |
+| `/classes?date=` (class finder result, Convex and mock) | page reads `from`; opened this week | `/classes?from=` |
+| `/members/<id>?tab=tasks` (handover and follow-up jobs) | no such tab; fell back silently | `/members/<id>` (open tasks are on the first tab) |
+| `/checklists?date=` (handover job) | page always shows today | `/checklists` |
+| `/reports?view=collections&from=&to=` (management report) | `from` ignored, so other dates were shown | `range=` (7, 30 or 90 days) with `to=` |
+| `/operations?tab=inventory&movement=`, `?tab=equipment&asset=`, `&workOrder=` (costs without a supplier) | ids never read | the tab alone |
+| `/maintenance?run=`, `/classes?run=` (prepared-work notices) | run panel never shown | both pages now show `AiRunPanel` for `?run=` |
+| `/pt?booking=` (PT booking notices) | ignored | the session's row is scrolled into view and marked |
+
+Left as is: `/login?reason=organization-selection` (the reason is a label;
+the resolver picks the screen from the account).
+
+`src/lib/routing/internal-links.test.ts` now fails when a link, router call
+or redirect names a page that is not in `src/app`, or when any path under a
+real route tree is misspelled.
+
+Also: Settings → Subscription no longer says an ended term "Renews on" a
+past day; it says "Paid until {date}".
+
+### Checks
+
+- `pnpm --filter web typecheck`, `convex:typecheck` and `lint`: clean.
+- `pnpm --filter web test`: 447 files, 2,919 tests passed (3 skipped), run
+  before the one-line "Paid until" change; the settings, billing, routing
+  and AI job tests were rerun after it (183 tests, 182 passed, 1 skipped).
+- New tests: `convex/domain.membership-cancel-owed.test.ts` (answer and
+  amount in the audit event for yes / no / not asked, nothing recorded when
+  nothing is owed, charges untouched, permission and reason still required);
+  `adjustment-dialogs.test.tsx` (question shown only when money is owed, both
+  answers, the collect prompt with and without `payments.collect`);
+  `MockGymOSApi.test.ts` (mock parity for the audit event and for the
+  notice); `billing-notice.test.tsx` and `platformCommerce.test.ts` (no
+  notice without an invoice, no stop date once it has passed);
+  `internal-links.test.ts`.
+- **Mock preview only** (`web-mock`, owner persona): member who owes
+  JOD 85.500 → More actions → Cancel membership → the question shows →
+  cancelled without ticking → "Ibrahim Al-Masri still owes JOD 85.500.
+  Collect it now?" → Collect payment opens the collect dialog on that
+  charge.
+- **Not checked in a browser:** the banner states (the mock gym has no
+  ended term; covered by unit and Convex tests), the Arabic rendering of the
+  new strings, the activity-log labels for the new audit fields, the run
+  panel on Maintenance and Classes, and the PT session highlight.
+- **Not checked on real data:** nothing here was exercised against
+  Production data beyond the read-only probes of `/billing` and the
+  names-only environment check.
+
 ## Production answered HTTP 500 on every page: cause and fix (25 November 2026)
 
 From the `82a1187c` deployment on 23 November until this fix, every HTML page

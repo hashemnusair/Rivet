@@ -7,7 +7,7 @@ import { useMoneyProblemText } from "@/features/membership-actions/renew-flow-fo
 /* eslint-disable @next/next/no-img-element -- Convex file URLs are runtime-scoped and cannot be declared as static Next image hosts. */
 
 import { CalendarClock, CheckCircle2, Clock3, Dumbbell, Pencil, Plus, Trash2, UserRound, WalletCards, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/shared/chrome";
 import { MoneyText } from "@/components/shared/data-display";
@@ -50,6 +50,11 @@ export default function PersonalTrainingPage() {
   const { session } = useApp();
   const { can } = usePermissions();
   const invalidate = useInvalidate();
+  // Notices about a session link here with ?booking=<id>: bring that session
+  // into view and mark it, so the link lands on the session it names.
+  const [linkedBookingId, setLinkedBookingId] = useState<string>();
+  useEffect(() => { setLinkedBookingId(new URLSearchParams(window.location.search).get("booking") ?? undefined); }, []);
+  const linkedBookingRow = useCallback((node: HTMLElement | null) => { node?.scrollIntoView?.({ block: "center" }); }, []);
   const [bookOpen, setBookOpen] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const settledMemberSearch = useDebouncedValue(memberSearch, 250);
@@ -90,7 +95,7 @@ export default function PersonalTrainingPage() {
   // so those panels would only ever show an empty state for it.
   const canSeeCatalogue = can("pt.reports.read") || can("pt.manage");
   const trainerOnly = !canSeeCatalogue && can("pt.schedule.self");
-  const renderBooking = (booking: PtBooking, started: boolean) => <article key={booking.id} className="flex flex-wrap items-center gap-4 p-4" data-testid="pt-booking-row">
+  const renderBooking = (booking: PtBooking, started: boolean) => <article key={booking.id} ref={booking.id === linkedBookingId ? linkedBookingRow : undefined} aria-current={booking.id === linkedBookingId ? "true" : undefined} className={`flex flex-wrap items-center gap-4 p-4 ${booking.id === linkedBookingId ? "bg-sunken" : ""}`} data-testid="pt-booking-row">
     <div className="min-w-0 flex-1"><p className="text-[13px] font-semibold">{booking.memberName} <span className="font-normal text-ink-3">{t("ptWorkspace.withTrainer", { name: isolate(booking.trainerName) })}</span></p><p className="mt-1 text-[12px] text-ink-3"><span dir="ltr">{f.dateTime(booking.startsAt)}</span> · {booking.branchName}</p>{!started && canRecordOutcome ? <p className="mt-1 text-[12px] text-ink-3">{t("ptWorkspace.markAfterStart")}</p> : null}</div>
     <Badge variant={started ? "warning" : "outline"}>{started ? t("ptWorkspace.needsMarking") : t(`memberProfile.pt.bookingStatus.${booking.status}`)}</Badge>
     <div className="flex gap-1">{canRecordOutcome && started ? <><Button size="sm" variant="secondary" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "completed" })}><CheckCircle2 />{" "}{t("dashboard.trainer.complete")}</Button><Button size="sm" variant="ghost" disabled={finish.isPending} onClick={() => setBookingAction({ booking, action: "no_show" })}><XCircle />{" "}{t("memberProfile.pt.bookingStatus.no_show")}</Button></> : null}{canCancelBooking(booking) ? <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => setBookingAction({ booking, action: "cancelled" })}>{t("common.action.cancel")}</Button> : null}</div>

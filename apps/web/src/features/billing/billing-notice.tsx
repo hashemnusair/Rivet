@@ -15,13 +15,17 @@ function useNoticeCopy(notice: BillingNotice) {
   const { t, isolateLtr } = useLocale();
   const f = useFormat();
   const amount = notice.amountMinor === undefined ? "" : isolateLtr(f.money({ amount: notice.amountMinor, currency: notice.currency ?? "JOD" }));
-  const id = notice.invoiceId ? isolateLtr(notice.invoiceId) : "";
-  const date = f.date(notice.accessEndsAt);
+  const id = isolateLtr(notice.invoiceId);
+  const [shownAt] = useState(() => Date.now());
   if (notice.state === "payment_sent") return { title: t("commerce.notice.paymentSent.title"), body: t("commerce.notice.paymentSent.body", { id }) };
-  if (notice.state === "last_day") {
-    return { title: t("commerce.notice.lastDay.title"), body: notice.invoiceId ? t("commerce.notice.lastDay.body", { id, amount }) : t("commerce.notice.lastDay.bodyNoInvoice") };
-  }
-  return { title: t("commerce.notice.overdue.title"), body: notice.invoiceId ? t("commerce.notice.overdue.body", { id, amount, date }) : t("commerce.notice.overdue.bodyNoInvoice", { date }) };
+  if (notice.state === "last_day") return { title: t("commerce.notice.lastDay.title"), body: t("commerce.notice.lastDay.body", { id, amount }) };
+  // The stop date is the first day RIVET may stop access. Once it has passed
+  // the warning must not promise a day that is already behind us.
+  const stopPassed = notice.accessEndsAt === undefined || Date.parse(notice.accessEndsAt) <= shownAt;
+  return {
+    title: t("commerce.notice.overdue.title"),
+    body: stopPassed ? t("commerce.notice.overdue.bodyStopPassed", { id, amount }) : t("commerce.notice.overdue.body", { id, amount, date: f.date(notice.accessEndsAt) }),
+  };
 }
 
 /**

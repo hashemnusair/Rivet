@@ -44,6 +44,7 @@ function SubscriptionSummary() {
   const plansQuery = useApiQuery(qk.billingPlans, (api) => api.getBillingPlans());
   const plans = plansQuery.data;
   const [changeOpen, setChangeOpen] = useState(false);
+  const [openedAt] = useState(() => Date.now());
   // The Support page's "Change plan" lands here with ?change=plan.
   const changeRequested = searchParams.get("change") === "plan";
   useEffect(() => {
@@ -71,7 +72,8 @@ function SubscriptionSummary() {
     ? undefined
     : subscription.status === "trial"
       ? `${t("settingsDetails.text132")} ${termDate}`
-      : subscription.status === "active"
+      // A term that has already ended does not "renew on" a past day.
+      : subscription.status === "active" && term && Date.parse(term) > openedAt
         ? t("commerce.plans.renews", { date: termDate })
         : `${t("settingsDetails.text133")} ${termDate}`;
   const pending = plans?.pending;

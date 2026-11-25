@@ -1378,10 +1378,11 @@ export interface Session {
 export interface BillingNotice {
   state: "last_day" | "overdue" | "payment_sent";
   periodEndsAt: string;
-  invoiceId?: string;
+  /** The invoice to pay. There is no notice without one. */
+  invoiceId: string;
   amountMinor?: number;
   currency?: string;
-  /** When access stops if the invoice stays unpaid. */
+  /** The first day access may stop if the invoice stays unpaid. It can already have passed. */
   accessEndsAt?: string;
   /** RIVET sent the last payment details back. */
   paymentReturned?: boolean;
@@ -1772,6 +1773,12 @@ export interface ExtendMembershipInput {
 
 export interface CancelMembershipInput {
   reason: string;
+  /**
+   * Staff's answer to "has the money they owe been paid?", asked only when
+   * the member owes money. It is written to the audit event and changes no
+   * balance: money only moves through the collect-payment flow.
+   */
+  owedMoneyPaid?: boolean;
 }
 
 export interface TransferMembershipInput {

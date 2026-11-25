@@ -229,6 +229,13 @@ export const renewFlow: typeof En = {
       submit: "إلغاء الاشتراك",
       reasonRequired: "يرجى كتابة السبب",
       saveFailed: "لم يُحفظ الإلغاء. حاولوا مرة أخرى.",
+      owedQuestion: "المبلغ المتبقي على هذا العضو: {amount}. هل تم دفعه؟",
+      owedPaid: "نعم، تم دفعه",
+      owedHint: "تحديد هذا الخيار لا يسجّل أي دفعة. إذا لم يُدفع المبلغ، يمكنكم استلامه بعد الإلغاء.",
+      afterTitle: "تم إلغاء الاشتراك",
+      afterBody: "المبلغ المتبقي على {name}: {amount}. هل تريدون استلامه الآن؟",
+      afterBodyNoCollect: "المبلغ المتبقي على {name}: {amount}. اطلبوا ممن لديه صلاحية استلام الدفعات أن يستلمه.",
+      afterLater: "ليس الآن",
     },
 
     unfreeze: {

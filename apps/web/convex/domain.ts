@@ -11842,6 +11842,13 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       const record = await recordOf(ctx, actor, "membership", recordId(input.membershipId));
       const value = data(record.data);
       if (value.cancelledAt) domainError("VALIDATION_ERROR", "Membership is already cancelled.", { correlationId: actor.correlationId });
+      // What the member owes at this moment, and what staff answered when
+      // asked whether it was paid. The answer is evidence for the audit
+      // event only: it never changes a charge. Money moves through payments.
+      const owedAtCancellation = amountOf(await outstandingForMember(ctx, actor, stringValue(value.memberId)));
+      const owedEvidence = owedAtCancellation > 0
+        ? { owedMinor: owedAtCancellation, currency: actor.organization.currency, owedMoneyPaid: input.owedMoneyPaid === true ? "yes" : input.owedMoneyPaid === false ? "no" : "not_asked" }
+        : {};
       const adjustment = { id: newPublicId(), membershipId: record.publicId, type: "cancellation", reason: stringValue(input.reason), actorId: publicUserId(actor.user), before: { status: value.status ?? "active" }, after: { status: "cancelled" }, approvalStatus: "not_required", createdAt: isoNow() };
       const updated = await patchRecord(ctx, actor, record, { cancelledAt: isoNow(), cancellationReason: stringValue(input.reason), activeFreeze: undefined, adjustments: [...arrayValue(value.adjustments), adjustment] });
       if (statusOfMembership(value, todayIn(actor.organization.timezone || TZ_FALLBACK)) === "scheduled") {
@@ -11851,7 +11858,7 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
         }
       }
       await insertTimeline(ctx, actor, { memberId: value.memberId, type: "membership_cancelled", title: "Membership cancelled", titleMessage: systemMessage("communicationCompletion.timeline.membershipCancelled"), body: stringValue(input.reason), actorId: publicUserId(actor.user), actorName: actor.user.fullName, meta: { membershipId: record.publicId } });
-      await insertAudit(ctx, actor, { category: "memberships", action: "membership.cancel", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Membership cancelled", reason: stringValue(input.reason), before: { status: value.status ?? "active" }, after: { status: "cancelled" }, branchId: stringValue(value.homeBranchId) });
+      await insertAudit(ctx, actor, { category: "memberships", action: "membership.cancel", entityType: "membership", entityId: record.publicId, entityLabel: stringValue(value.memberId), summary: "Membership cancelled", reason: stringValue(input.reason), before: { status: value.status ?? "active" }, after: { status: "cancelled", ...owedEvidence }, branchId: stringValue(value.homeBranchId) });
       return await toMembershipDetail(ctx, actor, updated);
     }
     case "memberships.transfer": {

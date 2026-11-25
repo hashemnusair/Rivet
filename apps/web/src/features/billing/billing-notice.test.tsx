@@ -44,13 +44,23 @@ describe("the workspace billing warning", () => {
 
   it("tells staff to ask the owner, says when access stops, and calms down once the payment is sent", () => {
     state.role = "receptionist";
-    state.notice = { ...LAST_DAY, state: "overdue" };
+    state.notice = { ...LAST_DAY, state: "overdue", accessEndsAt: "2099-11-22T21:00:00.000Z" };
     const { rerender } = render(<LocaleProvider initialLocale="en"><BillingNoticeBanner /></LocaleProvider>);
-    expect(screen.getByRole("alert")).toHaveTextContent(/If it stays unpaid, access stops on 23 Nov 2026/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Pay invoice INV-77 \(JOD 39\.000\)\. If it stays unpaid, access stops on 23 Nov 2099/);
     expect(screen.getByText("Ask your gym owner to pay.")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Pay now" })).not.toBeInTheDocument();
     state.notice = { ...LAST_DAY, state: "payment_sent" };
     rerender(<LocaleProvider initialLocale="en"><BillingNoticeBanner /></LocaleProvider>);
     expect(screen.getByRole("status")).toHaveTextContent("We are checking your payment for invoice INV-77.");
+  });
+
+  it("never promises a stop date that has already passed", () => {
+    // 17 Nov 2026 was shown on 25 Nov 2026: the gym still had access, so the date was wrong.
+    state.notice = { ...LAST_DAY, state: "overdue", accessEndsAt: "2020-11-16T21:00:00.000Z" };
+    render(<LocaleProvider initialLocale="en"><BillingNoticeBanner /></LocaleProvider>);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Pay invoice INV-77 (JOD 39.000) now. Your access can stop at any time.");
+    expect(alert).not.toHaveTextContent(/access stops on/);
+    expect(screen.getByRole("link", { name: "Pay now" })).toHaveAttribute("href", "/billing");
   });
 });

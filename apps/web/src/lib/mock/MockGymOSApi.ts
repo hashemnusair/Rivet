@@ -3330,7 +3330,7 @@ export class MockGymOSApi implements GymOSApi {
     });
   }
 
-  /** Parity with Convex: the workspace warning for the last day of a paid term and after it. */
+  /** Parity with Convex: the workspace warning for an unpaid renewal invoice on the last day of a paid term and after it. */
   private billingNotice(): T.BillingNotice | undefined {
     const org = this.db.organization;
     if (org.status !== "active" && org.status !== "past_due") return undefined;
@@ -3343,13 +3343,17 @@ export class MockGymOSApi implements GymOSApi {
     const lastDay = now < end && day(now) === day(end - 1);
     if (!lastDay && now < end) return undefined;
     const unpaid = invoices.filter((invoice) => !invoice.planChange && ["open", "past_due", "failed"].includes(invoice.status)).sort((left, right) => (left.dueAt ?? "").localeCompare(right.dueAt ?? ""))[0];
-    const dueAt = unpaid?.dueAt ? Date.parse(unpaid.dueAt) : end;
+    // No invoice, nothing to pay: the gym is not late until RIVET has billed it.
+    if (!unpaid) return undefined;
+    const dueAt = unpaid.dueAt ? Date.parse(unpaid.dueAt) : end;
     return {
-      state: unpaid?.paymentClaim?.status === "submitted" ? "payment_sent" : lastDay ? "last_day" : "overdue",
+      state: unpaid.paymentClaim?.status === "submitted" ? "payment_sent" : lastDay ? "last_day" : "overdue",
       periodEndsAt: new Date(end).toISOString(),
-      ...(unpaid ? { invoiceId: unpaid.id, amountMinor: unpaid.amountMinor, currency: unpaid.currency ?? "JOD" } : {}),
+      invoiceId: unpaid.id,
+      amountMinor: unpaid.amountMinor,
+      currency: unpaid.currency ?? "JOD",
       accessEndsAt: new Date(dueAt + SUSPENSION_AFTER_DUE_DAYS * DAY_MS).toISOString(),
-      ...(unpaid?.paymentClaim?.status === "rejected" ? { paymentReturned: true } : {}),
+      ...(unpaid.paymentClaim?.status === "rejected" ? { paymentReturned: true } : {}),
     };
   }
 
@@ -7821,6 +7825,12 @@ export class MockGymOSApi implements GymOSApi {
       if (!record) throw ApiError.of(ERR.NOT_FOUND, "Membership not found.");
       if (record.cancelledAt) throw ApiError.of(ERR.VALIDATION, "Membership is already cancelled.");
       const wasScheduled = this.membershipStatusOf(record) === "scheduled";
+      // Parity with Convex: the amount owed and staff's answer go to the
+      // audit event. Nothing is marked paid here.
+      const owedAtCancellation = this.outstandingForMember(record.memberId);
+      const owedEvidence: Record<string, string | number> = owedAtCancellation.amount > 0
+        ? { owedMinor: owedAtCancellation.amount, currency: owedAtCancellation.currency, owedMoneyPaid: input.owedMoneyPaid === true ? "yes" : input.owedMoneyPaid === false ? "no" : "not_asked" }
+        : {};
       record.cancelledAt = nowISO();
       record.cancellationReason = input.reason;
       record.activeFreeze = undefined;
@@ -7862,7 +7872,7 @@ export class MockGymOSApi implements GymOSApi {
         summary: "Membership cancelled",
         reason: input.reason,
         before: { endDate: record.endDate },
-        after: { status: "cancelled" },
+        after: { status: "cancelled", ...owedEvidence },
         branchId: record.homeBranchId,
       });
       return this.getMembershipSync(record);
@@ -12264,7 +12274,7 @@ export class MockGymOSApi implements GymOSApi {
       if (movement.type !== "receive" || movement.referenceType === "purchase_order") continue;
       const amountMinor = movement.totalCost?.amount ?? (movement.unitCost ? movement.unitCost.amount * movement.quantity : undefined);
       if (amountMinor === undefined || !Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: `/operations?tab=inventory&movement=${encodeURIComponent(movement.id)}` });
+      push({ sourceType: "stock_receive", sourceId: movement.id, sourceLabel: `Stock received · ${movement.productName ?? movement.productSku ?? "item"} × ${movement.quantity}`, branchId: movement.branchId, recordedAt: movement.occurredAt, amount: money(amountMinor, movement.totalCost?.currency ?? movement.unitCost?.currency ?? currency), reason: "Stock was received without an order. No supplier was recorded.", ledgerPostingStatus: this.immutableAccountingStatus("stock_movement", movement.id) ?? movement.financialPostingStatus, href: "/operations?tab=inventory" });
     }
     for (const task of this.db.facilityTasks) {
       if (task.status !== "completed" || !task.suppliesCost || task.suppliesCost.amount <= 0) continue;
@@ -12272,13 +12282,13 @@ export class MockGymOSApi implements GymOSApi {
     }
     for (const asset of this.db.equipmentAssets) {
       if (!asset.purchaseCost || asset.purchaseCost.amount <= 0) continue;
-      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: `/operations?tab=equipment&asset=${encodeURIComponent(asset.id)}` });
+      push({ sourceType: "equipment_acquisition", sourceId: asset.id, sourceLabel: `Equipment purchase · ${asset.code} ${asset.name}`, vendorHint: asset.manufacturer, branchId: asset.branchId, recordedAt: asset.purchaseDate ? tenantDateIso(asset.purchaseDate, this.db.organization.timezone) : asset.createdAt, amount: { ...asset.purchaseCost }, reason: "This machine has a purchase cost. Its maker’s name does not identify the supplier.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_acquisition", asset.id) ?? "not_posted", href: "/operations?tab=equipment" });
     }
     for (const order of this.db.equipmentWorkOrders) {
       if (order.status !== "completed") continue;
       const amountMinor = order.totalCost?.amount ?? (order.partsCost?.amount ?? 0) + (order.laborCost?.amount ?? 0);
       if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) continue;
-      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: `/operations?tab=equipment&workOrder=${encodeURIComponent(order.id)}` });
+      push({ sourceType: "equipment_repair", sourceId: order.id, sourceLabel: `Equipment repair · ${order.description}`, vendorHint: order.vendorName, branchId: order.branchId, recordedAt: order.completedAt ?? order.updatedAt, amount: money(amountMinor, order.totalCost?.currency ?? currency), reason: "This repair cost has no linked supplier bill. The repairer’s name is saved as a note.", ledgerPostingStatus: this.immutableAccountingStatus("equipment_repair", order.id) ?? order.financialPostingStatus ?? "not_posted", href: "/operations?tab=equipment" });
     }
     return items.sort((left, right) => right.recordedAt.localeCompare(left.recordedAt) || left.id.localeCompare(right.id));
   }

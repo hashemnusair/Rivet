@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { isApiError } from "@/lib/api/errors";
 import { useApiMutation, useInvalidate } from "@/lib/hooks/use-api";
-import type { MembershipSummary } from "@/lib/domain/types";
+import type { MembershipSummary, Money } from "@/lib/domain/types";
 import { useApiQuery } from "@/lib/hooks/use-api";
 import { qk } from "@/lib/api/keys";
 import { useFormat } from "@/lib/i18n/format";
@@ -25,6 +25,7 @@ import {
 import { Field, FieldGrid } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/switch";
 import { emphasize, useReadableDate } from "./renew-flow-format";
 
 const makeTransferSchema = (t: TFunction) => z.object({
@@ -304,36 +305,53 @@ export function ExtendDialog({
 const makeReasonSchema = (message: string) => z.object({ reason: z.string().trim().min(3, message) });
 type ReasonValues = z.infer<ReturnType<typeof makeReasonSchema>>;
 
+/** What the cancel dialog learned about money the member still owes. */
+export interface CancelMembershipOutcome {
+  /** The member owed money and staff did not say it was paid: offer to collect it. */
+  owedLeftUnpaid: boolean;
+}
+
 export function CancelMembershipDialog({
   open,
   onOpenChange,
   membership,
+  owed,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   membership: MembershipSummary;
-  onDone?: () => void;
+  /** What the member owes today. The dialog asks about it only when it is more than zero. */
+  owed?: Money;
+  onDone?: (outcome: CancelMembershipOutcome) => void;
 }) {
-  const { t, isolate } = useLocale();
+  const { t, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
   const readableDate = useReadableDate();
   const reasonSchema = useMemo(() => makeReasonSchema(t("renewFlow.adjust.cancel.reasonRequired")), [t]);
   const invalidate = useInvalidate();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [owedPaid, setOwedPaid] = useState(false);
+  const owes = Boolean(owed && owed.amount > 0);
   const form = useForm<ReasonValues>({ resolver: zodResolver(reasonSchema), defaultValues: { reason: "" } });
   useEffect(() => {
     if (open) {
       form.reset({ reason: "" });
+      setOwedPaid(false);
       setServerError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const mutation = useApiMutation((api, v: ReasonValues) => api.cancelMembership(membership.id, { reason: v.reason }), {
+  // The answer is recorded with the cancellation. It never marks money as
+  // paid: the balance only changes through the collect-payment flow.
+  const mutation = useApiMutation((api, v: ReasonValues) => api.cancelMembership(membership.id, { reason: v.reason, ...(owes ? { owedMoneyPaid: owedPaid } : {}) }), {
     onSuccess: async () => {
+      // Read the answer before the refresh below re-renders this dialog.
+      const outcome: CancelMembershipOutcome = { owedLeftUnpaid: owes && !owedPaid };
       await invalidate();
       onOpenChange(false);
-      onDone?.();
+      onDone?.(outcome);
     },
     onError: (e) => setServerError(isApiError(e) ? e.message : t("renewFlow.adjust.cancel.saveFailed")),
   });
@@ -352,6 +370,16 @@ export function CancelMembershipDialog({
             <div className="rounded-md border border-danger/30 bg-danger-bg/50 px-3 py-2.5 text-[13px] text-danger">
               {t("renewFlow.adjust.cancel.warning")}
             </div>
+            {owes && owed ? (
+              <div className="rounded-md border border-warning/40 bg-warning-bg/50 px-3 py-3" data-testid="cancel-owed-question">
+                <p className="text-[13.5px] font-medium text-ink">{t("renewFlow.adjust.cancel.owedQuestion", { amount: isolateLtr(format.money(owed)) })}</p>
+                <label className="mt-2.5 flex min-h-9 cursor-pointer items-center gap-2.5 text-[13.5px] text-ink" data-touch-target>
+                  <Checkbox checked={owedPaid} onCheckedChange={(value) => setOwedPaid(value === true)} />
+                  {t("renewFlow.adjust.cancel.owedPaid")}
+                </label>
+                <p className="mt-1.5 text-[12.5px] leading-5 text-ink-2">{t("renewFlow.adjust.cancel.owedHint")}</p>
+              </div>
+            ) : null}
             <Field label={t("renewFlow.adjust.reason")} required error={form.formState.errors.reason?.message}>
               <Textarea dir="auto" placeholder={t("renewFlow.adjust.cancel.reasonPlaceholder")} {...form.register("reason")} />
             </Field>
@@ -362,6 +390,47 @@ export function CancelMembershipDialog({
             <Button type="submit" variant="signal" loading={mutation.isPending}>{t("renewFlow.adjust.cancel.submit")}</Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Shown right after a membership is cancelled while the member still owes
+ * money and staff did not say it was paid. It leads to the collect-payment
+ * flow; it never changes the balance itself.
+ */
+export function CollectAfterCancelDialog({
+  open,
+  onOpenChange,
+  memberName,
+  owed,
+  canCollect,
+  onCollect,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  memberName: string;
+  owed: Money;
+  /** Only people who can take payments get the button. */
+  canCollect: boolean;
+  onCollect: () => void;
+}) {
+  const { t, isolate, isolateLtr } = useLocale();
+  const format = useFormat();
+  const values = { name: isolate(memberName), amount: isolateLtr(format.money(owed)) };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("renewFlow.adjust.cancel.afterTitle")}</DialogTitle>
+          <DialogDescription>{t(canCollect ? "renewFlow.adjust.cancel.afterBody" : "renewFlow.adjust.cancel.afterBodyNoCollect", values)}</DialogDescription>
+        </DialogHeader>
+        <DialogBody />
+        <DialogFooter>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{t(canCollect ? "renewFlow.adjust.cancel.afterLater" : "common.action.close")}</Button>
+          {canCollect ? <Button type="button" onClick={onCollect} data-testid="collect-after-cancel">{t("memberProfile.header.collectPayment")}</Button> : null}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
