@@ -63,6 +63,16 @@ loads a `next/dist/...` file at run time any more (one type-only import in
   after every successful Production deployment, once a day, and on request.
   It needs no credentials and sends no cookies.
 
+**Released and confirmed:** `9214ed48`, pushed to `main` on 25 November
+2026. Vercel Production `dpl_3agGc4ytianSjDE3DHWZbq8WiFSs` was serving it by
+about 15:10 UTC. `pnpm --filter web check:live` then passed: all nine pages
+on the four hosts answer 200, and `dashboard.rivetjo.com/login/gym` arrives
+with its form in the server's HTML. That live result is what confirms the
+diagnosis. [CI run 45641171907](https://github.com/hashemnusair/Rivet/actions/runs/45641171907)
+passed all 11 jobs (its build job now includes the server bundle check), and
+the new workflow ran by itself on the deployment and passed
+([run 45641539398](https://github.com/hashemnusair/Rivet/actions/runs/45641539398)).
+
 **Checks before the push (this machine):**
 
 - On the build made before the fix, `check-server-bundle.mjs` fails and
