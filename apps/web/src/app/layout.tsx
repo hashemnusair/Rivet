@@ -17,6 +17,8 @@ import { getRequestLocale, getRequestUiPreference } from "@/lib/i18n/server";
 import { UI_PREFERENCE_COOKIE } from "@/lib/i18n/preference";
 import { LocalizedToaster } from "@/components/shared/localized-toaster";
 import { PageSheet } from "@/components/motion/page-sheet";
+import { SigningInCover } from "@/components/auth/signing-in-cover";
+import { SIGNING_IN_PRE_PAINT } from "@/lib/auth/signing-in-marker";
 import { NavigationHoldGate } from "@/lib/navigation/navigation-hold";
 import { SHEET_ENTRY_PRE_PAINT } from "@/components/motion/sheet-entry";
 import { PAPER_CHROME } from "@/lib/ui/chrome-colors";
@@ -124,6 +126,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {PRE_PAINT_SIGNED_IN_GUARD ? <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SIGNED_IN_GUARD }} /> : null}
         <script dangerouslySetInnerHTML={{ __html: SIGN_IN_ART_PRE_PAINT }} />
         <script dangerouslySetInnerHTML={{ __html: SHEET_ENTRY_PRE_PAINT }} />
+        <script dangerouslySetInnerHTML={{ __html: SIGNING_IN_PRE_PAINT }} />
         {/* Arabic readers get the Arabic catalogue with the page; English readers never download it. */}
         {locale === "ar" ? <ArabicCatalogue /> : null}
         <LocaleProvider initialLocale={locale} initialOwner={preference.owner} initialPending={preference.pending}>
@@ -145,6 +148,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </ConvexClientProvider>
         </ClerkProvider>
         <PageSheet />
+        {/* After every route, so one "Signing you in…" screen stays in place
+            from the sign-in page to the page that account lands on. */}
+        <SigningInCover />
         </LocaleProvider>
       </body>
     </html>

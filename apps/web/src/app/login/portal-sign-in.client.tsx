@@ -26,6 +26,8 @@ import { useLocale, useT } from "@/lib/i18n/provider";
 import { roleLabel } from "@/lib/i18n/labels";
 import type { RoleKey } from "@/lib/domain/types";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
+import { useSigningInHold } from "@/lib/auth/signing-in";
+import { preloadSigningInCover } from "@/components/auth/signing-in-cover";
 import { CONVEX_ENABLED } from "@/lib/providers/convex-client-provider";
 import { useApp } from "@/lib/providers/app-providers";
 import { useExperience } from "@/lib/providers/experience-provider";
@@ -115,6 +117,14 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
   const { signIn, sessionLoading } = useApp();
   const { customers, experienceReady, signInCustomer, signInPlatformAdmin } = useExperience();
   const [loading, setLoading] = useState(false);
+  // A preview gym account loads its session behind the same "Signing you in…"
+  // cover a real sign-in uses, and the workspace keeps that cover until it is
+  // ready. The member and platform previews have nothing to wait for.
+  useSigningInHold(loading);
+  // Have the cover ready before anyone presses Sign in.
+  useEffect(() => {
+    preloadSigningInCover();
+  }, []);
   const unavailablePreview = DEMO_AUTH_BYPASS && audience === "staff" && searchParams.get("preview") === "unavailable-gym";
 
   // Preview controls must not be interactive before the client providers have
@@ -140,11 +150,11 @@ function PortalSignInContent({ audience, mode = "sign-in" }: { audience: Audienc
     setLoading(true);
     try {
       await signIn(role);
+      // Still loading on purpose: this page is about to be replaced.
       router.push(role === "receptionist" ? "/reception" : "/dashboard");
     } catch {
-      toast.error(t("auth.preview.couldNotSignIn"));
-    } finally {
       setLoading(false);
+      toast.error(t("auth.preview.couldNotSignIn"));
     }
   };
 

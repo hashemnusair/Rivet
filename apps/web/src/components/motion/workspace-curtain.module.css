@@ -22,6 +22,16 @@
   will-change: opacity;
 }
 
+/* The sign-in cover comes down over a page that was on screen. Declared
+   before the lift so that leaving always wins. */
+.arrives .cover {
+  animation: curtain-arrive 160ms ease-out both;
+}
+
+.arrives .center {
+  animation: curtain-arrive 200ms ease-out 60ms both;
+}
+
 /* With its delay, matches LIFT_MS in workspace-curtain.tsx. */
 .lifting .cover {
   animation: curtain-fade 420ms cubic-bezier(0.4, 0, 0.2, 1) 60ms both;
@@ -50,6 +60,22 @@
   animation: curtain-label 300ms ease 700ms both;
 }
 
+/* The sign-in cover says what it is doing straight away, as the one thing
+   to read on the screen. */
+.arrives .label {
+  font-size: 14px;
+  color: var(--color-ink-2);
+  animation: none;
+}
+
+/* A page loaded as part of a sign-in (`signing-in-marker.ts` marks the
+   document before the first paint): the server drew this cover with its
+   usual words, so they stay hidden until the page has put the sign-in
+   words in and cleared the mark. */
+:global(html[data-signing-in]) .label {
+  visibility: hidden;
+}
+
 /* Opening the member app: the mark alone holds the middle (half of its 3.5rem
    height above, half below) and the words hang beneath it. */
 .launch .label {
@@ -71,8 +97,17 @@
   from { opacity: 0; }
 }
 
+@keyframes curtain-arrive {
+  from { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .label {
+    animation: none;
+  }
+
+  .arrives .cover,
+  .arrives .center {
     animation: none;
   }
 

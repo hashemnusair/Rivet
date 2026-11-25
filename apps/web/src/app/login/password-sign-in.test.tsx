@@ -3,7 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PasswordSignIn } from "./password-sign-in.client";
+import { DOOR_TAKEOVER_FALLBACK_MS, PasswordSignIn } from "./password-sign-in.client";
+import { openSignedInPage, resetSigningInForTests, SIGNING_IN_MAX_COVER_MS, useSigningInCover } from "@/lib/auth/signing-in";
 
 const clerk = vi.hoisted(() => ({
   loaded: true,
@@ -88,6 +89,12 @@ async function requestResetCode(email = "admin@rivetjo.com") {
 }
 
 describe("PasswordSignIn", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetSigningInForTests();
+    window.history.replaceState({}, "", "/");
+  });
+
   beforeEach(() => {
     navigation.router.replace.mockReset();
     clerk.loaded = true;
@@ -227,6 +234,91 @@ describe("PasswordSignIn", () => {
 
     await waitFor(() => expect(navigation.router.replace).toHaveBeenCalledWith(expected));
     expect(decorateUrl).toHaveBeenCalledWith(expected);
+  });
+
+  it("stays on its door once Clerk accepts: no navigation, one cover, and Clerk's address decorator kept for the page it opens", async () => {
+    window.history.replaceState({}, "", "/login/gym?next=%2Fmembers");
+    const decorateUrl = vi.fn((path: string) => `https://clerk.rivetjo.com/v1/client/touch?redirect_url=${encodeURIComponent(`https://dashboard.rivetjo.com${path}`)}`);
+    const finalize = vi.fn(async ({ navigate }: { navigate: (args: { decorateUrl: (path: string) => string }) => Promise<void> }) => {
+      await navigate({ decorateUrl });
+      return { error: null };
+    });
+    clerk.hook = {
+      signIn: { status: "complete", password: vi.fn().mockResolvedValue({ error: null }), finalize },
+      errors: NO_FIELD_ERRORS,
+      fetchStatus: "idle",
+    };
+    function Cover() {
+      return <span data-testid="cover">{useSigningInCover() ? "covering" : "clear"}</span>;
+    }
+    render(<><PasswordSignIn audience="staff" redirectUrl="/members" /><Cover /></>);
+    expect(screen.getByTestId("cover")).toHaveTextContent("clear");
+    fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(finalize).toHaveBeenCalled());
+    // The door reads the account in place, so the sign-in page is not loaded again.
+    expect(navigation.router.replace).not.toHaveBeenCalled();
+    expect(decorateUrl).not.toHaveBeenCalled();
+    // The wait continues behind the one cover until the door takes over.
+    await waitFor(() => expect(screen.getByTestId("cover")).toHaveTextContent("covering"));
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // The decorator is spent on the page the account lands on.
+    const location = { replace: vi.fn(), hostname: "dashboard.rivetjo.com", protocol: "https:" };
+    vi.stubGlobal("window", new Proxy(window, { get: (target, key) => (key === "location" ? location : Reflect.get(target, key)) }));
+    openSignedInPage(navigation.router, "/members");
+    expect(decorateUrl).toHaveBeenCalledWith("/members");
+    expect(location.replace).toHaveBeenCalledWith("https://clerk.rivetjo.com/v1/client/touch?redirect_url=https%3A%2F%2Fdashboard.rivetjo.com%2Fmembers");
+    expect(navigation.router.replace).not.toHaveBeenCalled();
+  });
+
+  it("loads the door again if it has not taken over, and gives the form back if even that fails", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      window.history.replaceState({}, "", "/login/gym");
+      const decorateUrl = vi.fn((path: string) => `https://clerk.rivetjo.com/v1/client/touch?redirect_url=${encodeURIComponent(`https://dashboard.rivetjo.com${path}`)}`);
+      const finalize = vi.fn(async ({ navigate }: { navigate: (args: { decorateUrl: (path: string) => string }) => Promise<void> }) => {
+        await navigate({ decorateUrl });
+        return { error: null };
+      });
+      clerk.hook = {
+        signIn: { status: "complete", password: vi.fn().mockResolvedValue({ error: null }), finalize },
+        errors: NO_FIELD_ERRORS,
+        fetchStatus: "idle",
+      };
+      render(<PasswordSignIn audience="staff" redirectUrl="/login/gym" />);
+      fireEvent.change(screen.getByLabelText(/Email address/), { target: { value: "owner@example.com" } });
+      fireEvent.change(screen.getByLabelText(/Password/), { target: { value: "test-password" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+      });
+      expect(screen.queryByRole("alert")).toBeNull();
+
+      const location = { replace: vi.fn(), pathname: "/login/gym", search: "", hostname: "dashboard.rivetjo.com", protocol: "https:" };
+      vi.stubGlobal("window", new Proxy(window, { get: (target, key) => (key === "location" ? location : Reflect.get(target, key)) }));
+
+      // Normally the door has replaced the form long before this.
+      await act(async () => {
+        vi.advanceTimersByTime(DOOR_TAKEOVER_FALLBACK_MS - 100);
+      });
+      expect(location.replace).not.toHaveBeenCalled();
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
+      // The old behaviour: the door loads again, signed in, through Clerk's renewal.
+      expect(location.replace).toHaveBeenCalledWith("https://clerk.rivetjo.com/v1/client/touch?redirect_url=https%3A%2F%2Fdashboard.rivetjo.com%2Flogin%2Fgym");
+      expect(location.replace).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(SIGNING_IN_MAX_COVER_MS);
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("Sign-in is not finished yet. Try again.");
+      expect(screen.getByRole("button", { name: "Sign in" })).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a Clerk rejection when finalizing throws and re-enables sign in", async () => {

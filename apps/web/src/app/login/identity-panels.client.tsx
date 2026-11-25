@@ -9,7 +9,6 @@ import { useHostRouter as useRouter } from "@/lib/routing/use-host-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { RivetMarkLoader } from "@/components/motion/rivet-mark-loader";
 import { destinationFor, INVITATION_CLAIMED_EVENT, useRivetIdentity, type RivetIdentity, type RivetMembership } from "@/lib/auth/rivet-identity";
 import { roleLabel } from "@/lib/i18n/labels";
 import { useLocale } from "@/lib/i18n/provider";
@@ -21,21 +20,26 @@ import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import { MemberProfileCompletion } from "./member-profile-completion";
 import { getApi } from "@/lib/api/client";
 import { clearMemberSignupDraft, readMemberSignupDraft, type MemberSignupDraft } from "@/lib/auth/member-signup-draft";
-
-const ENTRY_TRANSITION_MS = 900;
-const holdTransition = () => new Promise<void>((resolve) => window.setTimeout(resolve, ENTRY_TRANSITION_MS));
+import { openSignedInPage, useSigningInHold } from "@/lib/auth/signing-in";
+import { SigningInWait } from "./signing-in-wait";
 
 /**
  * Clerk authenticates the account; Convex determines its permitted roles.
  * Explicit portals check that role before entering any area. Only the generic
  * account resolver may choose a different host from the account's role.
+ *
+ * Every automatic step here renders the same `SigningInWait`, which holds the
+ * one full-screen "Signing you in…" cover: reading the account, opening the
+ * gym and changing to the dashboard all happen behind it. A screen that
+ * needs the person (wrong door, choose a branch, finish a profile) holds
+ * nothing, so the cover lifts off it.
  */
 export function IdentityPanel({ audience = "account" }: { audience?: Audience }) {
   const identity = useRivetIdentity();
   const { t } = useLocale();
 
   if (identity.status === "loading" || identity.status === "pending") {
-    return <AutomaticEntry label={t("auth.identity.gettingReady")} />;
+    return <SigningInWait />;
   }
 
   // Only a confirmed synchronization/query failure becomes an error. Normal
@@ -77,7 +81,6 @@ export function directEntryPath(identity: RivetIdentity): string | null {
  * An account arriving from another host (the landing, an old link) opens its
  * page there in one hop rather than through a second sign-in screen. */
 function IdentityHostGate({ identity, children }: { identity: RivetIdentity; children: ReactNode }) {
-  const { t } = useLocale();
   const [ready, setReady] = useState(false);
   const destination = destinationFor(identity);
   const host = destination.area === "platform" ? RIVET_HOSTS.platform
@@ -92,7 +95,7 @@ function IdentityHostGate({ identity, children }: { identity: RivetIdentity; chi
     }
     setReady(true);
   }, [host, identity]);
-  return ready ? children : <AutomaticEntry label={t("auth.identity.openingAccount")} />;
+  return ready ? children : <SigningInWait />;
 }
 
 function IdentityEntries({ identity, audience }: { identity: RivetIdentity; audience: Audience }) {
@@ -153,7 +156,7 @@ function StaffInvitationRecovery() {
       .catch(() => setState("failed"));
   }, [claimInvitation]);
 
-  if (state === "checking" || state === "claimed") return <AutomaticEntry label={state === "claimed" ? t("auth.identity.confirmingInvitation") : t("auth.identity.checkingInvitation")} />;
+  if (state === "checking" || state === "claimed") return <SigningInWait />;
   return (
     <NotEntitled
       title={t("auth.identity.invitationFailedTitle")}
@@ -188,6 +191,8 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState(false);
+  // Once a gym is chosen the rest is the same wait as any other sign-in.
+  useSigningInHold(Boolean(busy));
 
   const choose = async (organizationId: string) => {
     if (busy) return;
@@ -196,7 +201,7 @@ function OrganizationSelection({ identity }: { identity: RivetIdentity }) {
     try {
       await selectOrganization(organizationId);
       const selected = identity.memberships.find((membership) => membership.organizationId === organizationId);
-      if (selected) router.replace(postSignInPath(selected.role === "receptionist" ? "/reception" : "/dashboard", window.location.search));
+      if (selected) openSignedInPage(router, postSignInPath(selected.role === "receptionist" ? "/reception" : "/dashboard", window.location.search));
     } catch {
       setBusy(undefined);
       setError(true);
@@ -272,20 +277,19 @@ function BranchSelection({ identity, membership }: { identity: RivetIdentity; me
   const [busy, setBusy] = useState<string>();
   const [failed, setFailed] = useState(false);
   const destination = destinationFor(identity);
+  // Once a branch is chosen the rest is the same wait as any other sign-in.
+  useSigningInHold(Boolean(busy));
 
   const choose = async (branchId: string) => {
     if (busy) return;
     setBusy(branchId);
     setFailed(false);
     try {
-      await Promise.all([
-        signIn(membership.role, branchId, {
-          name: identity.fullName || identity.email || "RIVET user",
-          email: identity.email || "",
-        }),
-        holdTransition(),
-      ]);
-      router.replace(postSignInPath(destination.href, window.location.search));
+      await signIn(membership.role, branchId, {
+        name: identity.fullName || identity.email || "RIVET user",
+        email: identity.email || "",
+      });
+      openSignedInPage(router, postSignInPath(destination.href, window.location.search));
     } catch {
       setBusy(undefined);
       setFailed(true);
@@ -324,14 +328,11 @@ function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; 
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void Promise.all([
-      signIn(membership.role, branchId, {
-        name: identity.fullName || identity.email || "RIVET user",
-        email: identity.email || "",
-      }),
-      holdTransition(),
-    ])
-      .then(() => router.replace(postSignInPath(destination.href, window.location.search)))
+    void signIn(membership.role, branchId, {
+      name: identity.fullName || identity.email || "RIVET user",
+      email: identity.email || "",
+    })
+      .then(() => openSignedInPage(router, postSignInPath(destination.href, window.location.search)))
       .catch(() => {
         setFailed(true);
         toast.error(t("auth.identity.gymToast"));
@@ -347,7 +348,7 @@ function AutomaticGymEntry({ identity, membership }: { identity: RivetIdentity; 
     );
   }
 
-  return <AutomaticEntry label={t("auth.identity.openingGym")} />;
+  return <SigningInWait />;
 }
 
 function MemberEntry({ identity }: { identity: RivetIdentity }) {
@@ -384,8 +385,8 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
         }
       }
     };
-    void Promise.all([enter(), holdTransition()])
-      .then(([fallback]) => router.replace(postSignInPath(fallback, window.location.search)))
+    void enter()
+      .then((fallback) => openSignedInPage(router, postSignInPath(fallback, window.location.search)))
       .catch((error: unknown) => {
         if (error instanceof MemberProfileMissingError) setNeedsProfile(true);
         else setFailed(true);
@@ -396,7 +397,7 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
     return <MemberProfileCompletion identity={identity} initial={draft} onComplete={async () => {
       clearMemberSignupDraft();
       await signInAsIdentity({ email: identity.email ?? "", fullName: identity.fullName ?? "" });
-      router.replace(postSignInPath(draft?.returnTo ?? "/customer/my-gyms", window.location.search));
+      openSignedInPage(router, postSignInPath(draft?.returnTo ?? "/customer/my-gyms", window.location.search));
     }} />;
   }
 
@@ -409,7 +410,7 @@ function MemberEntry({ identity }: { identity: RivetIdentity }) {
     );
   }
 
-  return <AutomaticEntry label={t("auth.identity.openingMemberships")} />;
+  return <SigningInWait />;
 }
 
 function AdminEntry({ identity }: { identity: RivetIdentity }) {
@@ -427,8 +428,7 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
     if (!identity.platformAdmin || started.current) return;
     started.current = true;
     signInPlatformAdminRef.current();
-    const timer = window.setTimeout(() => router.replace(postSignInPath("/platform", window.location.search)), ENTRY_TRANSITION_MS);
-    return () => window.clearTimeout(timer);
+    openSignedInPage(router, postSignInPath("/platform", window.location.search));
   }, [identity.platformAdmin, router]);
 
   if (!identity.platformAdmin) {
@@ -440,28 +440,16 @@ function AdminEntry({ identity }: { identity: RivetIdentity }) {
     );
   }
 
-  return <AutomaticEntry label={t("auth.identity.openingConsole")} />;
+  return <SigningInWait />;
 }
 
 /** An owner whose gym is waiting for payment goes straight to the payment page. */
 function BillingEntry() {
   const router = useRouter();
-  const { t } = useLocale();
   useEffect(() => {
-    router.replace("/billing");
+    openSignedInPage(router, "/billing");
   }, [router]);
-  return <AutomaticEntry label={t("auth.identity.openingPayment")} />;
-}
-
-function AutomaticEntry({ label }: { label: string }) {
-  const { t } = useLocale();
-  return (
-    <div className="mt-7 flex min-h-56 flex-col items-center justify-center" role="status" aria-live="polite">
-      <RivetMarkLoader className="h-14 w-auto text-ink" />
-      <p className="mt-6 font-display text-[18px] font-semibold tracking-tight">{t("auth.identity.signedIn")}</p>
-      <p className="mt-1.5 text-center text-[12.5px] text-ink-3">{label}…</p>
-    </div>
-  );
+  return <SigningInWait />;
 }
 
 function NotEntitled({

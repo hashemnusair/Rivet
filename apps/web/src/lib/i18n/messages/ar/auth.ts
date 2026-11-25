@@ -166,14 +166,7 @@ export const auth: typeof En = {
 
   identity: {
     signedIn: "تم تسجيل دخولكم",
-    gettingReady: "نجهّز حسابكم",
-    openingAccount: "نفتح حسابكم",
-    confirmingInvitation: "نؤكد دعوة النادي",
-    checkingInvitation: "نتحقق من دعوة النادي",
-    openingGym: "نفتح ناديكم",
-    openingMemberships: "نفتح اشتراكاتكم",
-    openingConsole: "نفتح لوحة إدارة المنصة",
-    openingPayment: "نفتح صفحة الدفع",
+    signingIn: "جارٍ تسجيل الدخول…",
 
     deactivatedTitle: "تم إيقاف هذا الحساب",
     deactivatedBody: "أوقف ناديكم حساب RIVET هذا. اطلبوا من مالك النادي أو المدير استعادة صلاحية الدخول، أو سجّلوا الخروج واستخدموا حسابًا آخر.",

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IdentityPanel } from "./identity-panels.client";
 import { MemberProfileMissingError } from "@/lib/auth/member-profile";
 import { saveMemberSignupDraft } from "@/lib/auth/member-signup-draft";
+import { resetSigningInForTests } from "@/lib/auth/signing-in";
 
 const state = vi.hoisted(() => ({
   identity: {
@@ -103,7 +104,10 @@ describe("IdentityPanel", () => {
     expect(screen.getByText("Your member account could not be opened")).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Finish your member profile" })).not.toBeInTheDocument();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetSigningInForTests();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     state.replace.mockReset();
@@ -177,15 +181,35 @@ describe("IdentityPanel", () => {
     expect(state.signInPlatformAdmin).not.toHaveBeenCalled();
   });
 
-  it("finishes the platform handoff after the branded transition", () => {
+  it("opens the platform console behind the one sign-in wait, with no fixed pause", () => {
     render(<IdentityPanel />);
 
-    expect(screen.getByText("Opening the platform console…")).toBeVisible();
+    expect(screen.getByText("Signing you in…")).toBeInTheDocument();
     expect(state.signInPlatformAdmin).toHaveBeenCalledOnce();
-
-    act(() => vi.advanceTimersByTime(900));
-
+    // No timer has run: the old 900 ms hold is gone.
     expect(state.replace).toHaveBeenCalledWith("/platform");
+  });
+
+  it("opens a gym without waiting out a fixed pause", async () => {
+    state.identity = {
+      status: "ready",
+      userId: "user-staff",
+      email: "staff@rivetjo.com",
+      fullName: "Gym Staff",
+      platformAdmin: false,
+      gymAccessUnavailable: false,
+      memberships: [{ organizationId: "org-1", organizationName: "QA Gym", organizationSlug: "qa-gym", role: "owner", branchScope: "all", branches: [] }],
+    };
+    state.signIn.mockResolvedValue(undefined);
+
+    render(<IdentityPanel audience="staff" />);
+    // Promises only; no timers are advanced.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(state.replace).toHaveBeenCalledWith("/dashboard");
   });
 
   it("keeps an unavailable gym owner out of member bootstrap and signs the account out", async () => {

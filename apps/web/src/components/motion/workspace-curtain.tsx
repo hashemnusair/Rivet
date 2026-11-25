@@ -22,8 +22,24 @@ type Phase = "covering" | "ready" | "lifting" | "gone";
  * `launch` is the member app opening from the home screen: the finished mark
  * sits exactly in the middle, where the phone's launch image drew it, so the
  * hand-over from the phone to the page does not move or redraw it.
+ *
+ * `arrives` is the sign-in cover: it comes down over a page someone was
+ * looking at, so it fades in (the shells' covers are there from the first
+ * paint) and names the wait at once instead of after a pause.
  */
-export function WorkspaceCurtain({ ready, label, launch = false }: { ready: boolean; label: string; launch?: boolean }) {
+export function WorkspaceCurtain({
+  ready,
+  label,
+  launch = false,
+  arrives = false,
+  testId = "workspace-curtain",
+}: {
+  ready: boolean;
+  label: string;
+  launch?: boolean;
+  arrives?: boolean;
+  testId?: string;
+}) {
   const [phase, setPhase] = useState<Phase>(ready ? "gone" : "covering");
 
   // Before paint, so the curtain never claims to be loading over a shell that is ready.
@@ -56,11 +72,11 @@ export function WorkspaceCurtain({ ready, label, launch = false }: { ready: bool
   const waiting = phase === "covering";
   return (
     <div
-      className={cn(styles.curtain, launch && styles.launch, !waiting && styles.done, phase === "lifting" && styles.lifting)}
+      className={cn(styles.curtain, launch && styles.launch, arrives && styles.arrives, !waiting && styles.done, phase === "lifting" && styles.lifting)}
       role={waiting ? "status" : undefined}
       aria-label={waiting ? label : undefined}
       aria-hidden={waiting ? undefined : true}
-      data-testid="workspace-curtain"
+      data-testid={testId}
     >
       <div className={styles.cover} />
       <div className={styles.center}>

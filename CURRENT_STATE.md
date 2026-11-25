@@ -1,5 +1,183 @@
 # GymOS / RIVET current implementation state
 
+## One "Signing you in…" screen after sign-in (25 November 2026)
+
+Elias: logging in feels like a string of redirects. He wants: email and
+password, a code only if one is needed, one loading screen that says
+"Signing you in…", then the dashboard. Frontend only; nothing under `convex/`
+changed, so no backend deploy. No Clerk dashboard setting was changed or is
+needed.
+
+**Before (gym staff, real Clerk, after pressing Sign in):**
+
+1. The button spins while Clerk checks the password. *Kept.*
+2. A code card, only when Clerk asks for one. *Kept.*
+3. The form navigated to the sign-in page it was already on. In Safari and on
+   every iPhone browser Clerk turns that navigation into a full-page hop
+   through its own host (`/v1/client/touch`, which renews its cookie past
+   Safari's 7-day cap) and back to `/login/gym`, so the sign-in page loaded
+   again from nothing and showed the form until Clerk's script was back.
+   (Taken from Clerk's own documentation of `decorateUrl`; not observed.)
+4. The form was replaced by a "Signed in as … / Sign out" card and a loader.
+5. "You’re signed in — Getting your account ready…" (Convex reads the account).
+6. "You’re signed in — Opening your gym…", held for a fixed 900 ms on top of
+   the gym session load.
+7. The address changed to `/dashboard` and the dark sign-in page cut to the
+   light app.
+8. Sometimes a second, light loader: "Loading your gym".
+
+**After:**
+
+1. The button spins while Clerk checks the password.
+2. A code card, only when Clerk asks for one.
+3. One light full-screen cover, "Signing you in…" (`جارٍ تسجيل الدخول…`),
+   from the moment Clerk accepts until the workspace is ready. The address
+   changes once, from `/login/gym` to `/dashboard` (or `/reception`). In
+   Safari that one change goes through Clerk's renewal hop, which shows no
+   page, straight to the dashboard.
+4. The dashboard.
+
+Screens that still appear when they must, with the cover lifting off them:
+wrong door for this account, choose a branch, choose a gym, finish your name,
+account deactivated, gym unavailable, and any sign-in error.
+
+**How it works:**
+
+- `src/lib/auth/signing-in.ts` is a small store. Anything that is waiting
+  *holds* the cover (`useSigningInHold`); the shell someone lands in keeps it
+  until it is ready (`useSignInArrival`). When nothing holds it, it comes
+  down 60 ms later. It has one 15-second limit for the whole sign-in, after
+  which the page underneath shows its own wait, next to its sign-out, so a
+  wait that never ends cannot hide the page for good.
+- `src/components/auth/signing-in-cover.tsx` renders the cover once, in the
+  root layout, after every route. That is why it is one element from the
+  sign-in page to the dashboard instead of a loader per page. Its body
+  (`signing-in-cover-body.tsx`) is a separate chunk fetched when a sign-in
+  door opens, so the landing page does not carry it. It is loaded with a
+  plain `import()`, not `next/dynamic` or `React.lazy`: those go through
+  Suspense, and React holds back content that resolves right after a
+  fallback for about 300 ms, which showed the page under the cover for that
+  long (measured: 355 ms from click to cover before, see the checks below).
+  It reuses `WorkspaceCurtain` with a new `arrives` variant (fades in, shows
+  its words at once).
+- `src/app/login/signing-in-wait.tsx` replaces the old `AutomaticEntry` and
+  its eight different labels. Every automatic step in
+  `identity-panels.client.tsx` renders it. The fixed 900 ms
+  `holdTransition()` is gone.
+- `password-sign-in.client.tsx`: on a door the form no longer navigates after
+  `signIn.finalize`. The door reads the account in place and checks it
+  belongs there, exactly as before (the 10 November audience fix is
+  untouched). Clerk's `decorateUrl` is kept (`rememberSignInUrlDecorator`)
+  and used for the one navigation to the account's page
+  (`openSignedInPage`). Safety net: if the door has not replaced the form
+  4 seconds after Clerk accepts (`DOOR_TAKEOVER_FALLBACK_MS`), the door is
+  loaded again through that decorator, which is what every sign-in did
+  before this change (`reloadSignedInDoor`). If even that leaves the form on
+  screen, it comes back after 15 seconds with "Sign-in is not finished yet.
+  Try again."
+- The gym, member and platform shells (`src/app/(app)/layout.tsx`,
+  `public-shell.tsx`, `platform-shell.tsx`) do not draw their own cover while
+  the sign-in cover is up.
+- A full page load can fall inside a sign-in (Safari's hop; an account
+  arriving on another host). The store leaves a 30-second marker cookie,
+  `rivet_signing_in` (a timestamp only; the server never reads it;
+  `src/lib/auth/signing-in-marker.ts`). A script in the root layout marks the
+  document before the first paint, the shell's server-drawn words stay hidden
+  (`workspace-curtain.module.css`), and the shell's cover says "Signing you
+  in…" once the page is running. The marker is cleared when the shell opens.
+- Wording: one new key `auth.identity.signingIn` in English and Arabic; eight
+  keys removed (`gettingReady`, `openingAccount`, `confirmingInvitation`,
+  `checkingInvitation`, `openingGym`, `openingMemberships`, `openingConsole`,
+  `openingPayment`). The Arabic follows the approved `تسجيل الدخول` and the
+  shell's existing `جارٍ تسجيل الخروج`; `python3 docs/arabic/verify-lock.py`
+  passes.
+- Preview accounts (mock): the gym preview sign-in holds the same cover. The
+  member and platform previews open at once, so they hold nothing.
+
+Member and platform sign-in use the same components and get the same result.
+No authorization or session check was removed or reordered.
+
+**Checks (25 November 2026, this machine):**
+
+- `tsc --noEmit`, `pnpm lint` (ESLint, whole app, and the secret-output
+  audit) pass. Full unit suite: 2,899 passed, 3 skipped. New tests:
+  `src/lib/auth/signing-in.test.tsx` (13: the cover stays up without a gap
+  while one waiting screen hands over to the next, the 15-second limit, the
+  shell keeping it, the marker, Clerk's decorator used once and only for an
+  https address), `src/app/login/signing-in-flow.test.tsx` (3: one
+  "Signing you in…" status, the same element, from the account check through
+  the address change until the workspace is ready; it lifts for "This account
+  is not on a gym team"), two in `password-sign-in.test.tsx` (the form stays
+  on its door and keeps the decorator; the door reloads after 4 seconds if
+  it has not taken over, and the form comes back if even that fails) and two in `identity-panels.test.tsx` (no fixed pause).
+- Browser journeys on a built mock bundle (`PLAYWRIGHT_SERVER_MODE=start`,
+  2 workers): 75 of 75 pass (`sign-in-single-wait` new, `page-motion`,
+  `role-routing`, `happy-path`, `phone-pages`, `workflow-pass-7`). The new
+  spec records every address and every status on screen during a preview
+  gym sign-in: addresses are `/login/gym` then `/dashboard`, the only wait
+  named is "Signing you in…", and the workspace never draws its own cover.
+  The other journeys (about 85 of 160) were not run locally; CI runs them
+  all.
+- Measured on that built bundle, preview gym owner: the cover is in the page
+  6–12 ms after the click (355 ms before the plain-`import()` change), the
+  dashboard is mounted at about 550–690 ms, the cover starts lifting about
+  20 ms later and is gone about 680 ms after that. With every request slowed
+  by 600 ms the cover simply stays for the 1.7 s it takes; nothing else
+  shows. Arabic shows `جارٍ تسجيل الدخول…`.
+- Real-auth production build (Clerk development keys, Convex dev,
+  `NEXT_PUBLIC_RIVET_ARABIC=1`, demo auth off), signed out: `/`, `/login`,
+  the three doors and `/dashboard` answer 200 with server-rendered HTML; the
+  gym door shows its form with no cover and no errors from this change. A
+  load of `/dashboard` carrying the marker hides the server's "Loading your
+  gym" and shows "Signing you in…" once the page runs; without the marker it
+  says "Loading your gym" as before.
+
+**Not verified: a real Clerk sign-in.** It needs a person to type their own
+password and code, which an agent must not do. That leaves unproven, on
+Production: the form staying on its door after `finalize` (it relies on
+Clerk reporting the session to the page, which the old flow also relied on
+outside Safari; if it does not within 4 seconds the door reloads as it used
+to), the Safari hop going straight to the dashboard with the kept
+`decorateUrl`, and the timing with real network. If Clerk's decorator
+cannot be used late, the code falls back to a plain in-app navigation; the
+only loss would be Safari's cookie renewal for that sign-in. The release
+check is at the top of `docs/12_SYSTEM_MAPS_AND_RELEASE_RUNBOOK.md`.
+
+**Not done:**
+
+- An account that is already signed in and opens `www.rivetjo.com` still
+  passes through the dark `/login` page ("Checking sign-in") before the
+  cover, then changes host. Both hosts now say "Signing you in…", but the
+  dark page in between is still there.
+- Member sign-up (`customer-signup.client.tsx`) and invitation acceptance
+  (`accept-invitation.client.tsx`) have their own finishing steps and were
+  not changed. They end on the resolver, which now shows the same cover.
+- The gym session is still read twice during sign-in (`SessionProvider` when
+  the identity is ready, and `AutomaticGymEntry`). Not visible; left alone
+  because the second read carries the branch for selected-branch staff.
+
+**Separate finding, not fixed here: Production answers HTTP 500 on every
+page.** Checked signed out on 25 November 2026 at about 13:50 UTC,
+deployment `dpl_3udJDS4LA1oa1JffqQJLuphqkXpC` (`77d61b2e`): `/`, `/terms`,
+`/signup`, `/login`, `/login/gym`, `/login/member`, `/login/admin`,
+`/dashboard` and `/customer/discover` return status 500 with Next's error
+document (`<html id="__next_error__">`, empty body). The browser then builds
+the page itself, so the site still appears to work, but every full page load
+starts blank and search engines and link previews see an error. The same
+addresses with the `rsc: 1` header return 200 and `/api/health` returns 200,
+so the failure is in the HTML pass. These pages returned 200 on 10 November;
+three deployments happened since (`82a1187c`, `f7f01531`, `77d61b2e`). A
+local production build with real Clerk and Convex, with and without
+`NEXT_PUBLIC_RIVET_ARABIC=1`, answers 200, so the cause needs Vercel's
+runtime log, which the local CLI cannot read. Nothing in CI or the browser
+journeys checks the document's status code, which is why it went unseen.
+
+Read first: `apps/web/src/lib/auth/signing-in.ts`,
+`apps/web/src/components/auth/signing-in-cover.tsx`,
+`apps/web/src/app/login/identity-panels.client.tsx`,
+`apps/web/src/app/login/password-sign-in.client.tsx`,
+`apps/web/e2e/sign-in-single-wait.spec.ts`.
+
 ## Next.js 16.4.6 for the November security advisories (23 November 2026)
 
 CI's `pnpm audit --prod` failed on `82a1187c` with seven moderate advisories

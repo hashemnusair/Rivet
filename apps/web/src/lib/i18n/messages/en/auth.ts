@@ -185,14 +185,7 @@ export const auth = {
   /** What happens after sign-in: opening the right page, or explaining why not. */
   identity: {
     signedIn: "You’re signed in",
-    gettingReady: "Getting your account ready",
-    openingAccount: "Opening your account",
-    confirmingInvitation: "Confirming your gym invitation",
-    checkingInvitation: "Checking your gym invitation",
-    openingGym: "Opening your gym",
-    openingMemberships: "Opening your memberships",
-    openingConsole: "Opening the platform console",
-    openingPayment: "Opening the payment page",
+    signingIn: "Signing you in…",
 
     deactivatedTitle: "This account was deactivated",
     deactivatedBody: "This RIVET account was deactivated by your gym. Ask the gym owner or manager to restore your access, or sign out and use another account.",

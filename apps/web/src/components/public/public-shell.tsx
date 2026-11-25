@@ -15,6 +15,7 @@ import { PublicDocumentPage } from "@/components/public/public-document-page";
 import { Monogram } from "@/components/ui/misc";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { useSignInArrival } from "@/lib/auth/signing-in";
 import { useApp } from "@/lib/providers/app-providers";
 import { useCustomerPersona, useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
@@ -62,6 +63,9 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   const protectedMemberRoute = isProtectedMemberRoute(pathname);
   const signedOut = !DEMO_AUTH_BYPASS && clerkLoaded && !clerkSignedIn;
   const opening = memberAppOpening({ protectedRoute: protectedMemberRoute, previewSessionReady, customerSignedIn, signedOut, identity, experienceStatus });
+  // Arriving from sign-in: the "Signing you in…" cover stays until the
+  // member's pages can open, so this shell does not draw a second one.
+  const signInArrival = useSignInArrival(!opening);
   const identityDestination = identity.status === "ready" ? destinationFor(identity) : undefined;
   const mockGymRole = DEMO_AUTH_BYPASS ? session?.roles[0] : undefined;
   const elevatedDestination = protectedMemberRoute
@@ -114,7 +118,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   // mounted while it waits: a cold preview restores its member after
   // hydration, and mounting the public layout first would replace the page
   // then, discarding an early tap or input focus along with its subtree.
-  const curtain = <WorkspaceCurtain ready={!opening} label={t("publicCompletion.memberShell.loading")} launch />;
+  const curtain = <WorkspaceCurtain ready={!opening || signInArrival.covered} label={t(signInArrival.arriving ? "auth.identity.signingIn" : "publicCompletion.memberShell.loading")} launch />;
   if (opening) return <>{null}{curtain}</>;
 
   // A visitor who is not signed in as a member is on the public site: the

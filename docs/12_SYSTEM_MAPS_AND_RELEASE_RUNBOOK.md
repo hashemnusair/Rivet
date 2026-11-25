@@ -1,5 +1,40 @@
 # 12 — System Maps and Release Runbook
 
+## One "Signing you in…" screen — 25 November 2026
+
+Frontend only (no Convex deploy, no Clerk setting). After the password, and a
+code when Clerk asks for one, a single full-screen cover says "Signing you
+in…" until the page for that account is ready; the address changes once.
+Details and the before/after list are in `CURRENT_STATE.md`.
+
+Release check, with a real account (an agent cannot do this; nobody types a
+password or code for someone else):
+
+1. In Chrome, open `dashboard.rivetjo.com/login/gym`, sign in as a gym owner.
+   Expect: button spins, then one light screen "Signing you in…", then the
+   dashboard. The address bar shows `/login/gym`, then `/dashboard`, nothing
+   else. No "Signed in as" card, no "Loading your gym".
+2. The same in Safari or on an iPhone. The address bar may flash Clerk's host
+   once on the way to `/dashboard`; the sign-in page must not appear again.
+3. Sign in at the gym door with a member account: "This account is not on a
+   gym team" appears with its sign-out, not a stuck cover.
+4. A selected-branch staff account with two branches: "Choose a branch"
+   appears; after choosing, the same cover, then `/reception` or `/dashboard`.
+5. `app.rivetjo.com/login/member` and `platform.rivetjo.com/login/admin`: the
+   same single screen, landing on `/customer/my-gyms` and `/platform`.
+
+If the sign-in page visibly loads a second time about 4 seconds after the
+password, the safety net fired (the door did not take over from the form):
+sign-in still completes, but report it. If sign-in stalls, the cover gives
+the page back after 15 seconds. Reverting the commit restores the previous
+flow with no data change.
+
+**Open at the time of this release:** every Production page answered HTTP 500
+with an empty server render (the browser rebuilds the page). See the
+"Separate finding" in `CURRENT_STATE.md`. Add a status-code check for `/`,
+`/login/gym` and `/dashboard` to the smoke steps below once it is fixed;
+"the page loads" is not enough to catch it.
+
 ## Domain and sign-in production release — 10 November 2026
 
 Released application commit `cd1fadc8a03ec862b1437d58f7a803a25fe435cc` to `main`

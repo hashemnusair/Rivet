@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { useState, type ReactNode } from "react";
 import { useLocale, type TFunction } from "@/lib/i18n/provider";
 import { englishT } from "./english-t";
-import { LoginLoading } from "./login-chrome";
+import { SigningInWait } from "./signing-in-wait";
 
 /** Field messages come from the reader's language; the exported default is English. */
 export function createProfileCompletionSchema(t: TFunction) {
@@ -35,7 +35,8 @@ const EMAIL_SLOT = "\uE000";
 export function ProfileCompletionGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser();
 
-  if (!isLoaded) return <LoginLoading />;
+  // Clerk already reports a session here; its user record is the last of the same wait.
+  if (!isLoaded) return <SigningInWait />;
   if (!isSignedIn || !user) return null;
   if (user.firstName?.trim() && user.lastName?.trim()) return children;
 

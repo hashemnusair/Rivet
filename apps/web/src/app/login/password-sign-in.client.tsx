@@ -4,6 +4,7 @@ import { AuthFlowError, authErrorText, authMessage, renderAuthMessage } from "@/
 import type { MessageDescriptor, TKey } from "@/lib/i18n/core";
 import { latinDigits } from "@/lib/utils/text";
 import { safeInternalRedirect } from "@/lib/routing/host-routing";
+import { reloadSignedInDoor, rememberSignInUrlDecorator, SIGNING_IN_MAX_COVER_MS, useSigningInHold } from "@/lib/auth/signing-in";
 import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ArrowLeft, ArrowRight, KeyRound, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -20,6 +21,13 @@ type VerificationKind = "email_code" | "phone_code" | "totp" | "backup_code";
 /** Forgot password: ask for the email, then take the emailed code and a new password together. */
 type ResetStep = "email" | "code";
 
+/**
+ * How long the door has to replace this form after Clerk accepts. It does so
+ * as soon as Clerk reports the session to the page, normally at once. Past
+ * this, the door is loaded again instead, as every sign-in used to do.
+ */
+export const DOOR_TAKEOVER_FALLBACK_MS = 4_000;
+
 /** Clerk says "no such account" the same way for sign-in; here it gets its own words. */
 function resetSendMessage(error: unknown): MessageDescriptor {
   const message = authMessage(error, "authErrors.codeSendFailed");
@@ -35,6 +43,11 @@ function resetSendMessage(error: unknown): MessageDescriptor {
  * email-code reset in the same card; a successful reset signs the person in
  * and, if Clerk then wants a second factor, continues into the same second
  * step as a normal sign-in.
+ *
+ * Once Clerk has accepted the sign-in, everything left is one wait behind the
+ * "Signing you in…" cover. On a door (the usual case) the form does not
+ * navigate at all: the door itself reads the account, checks it belongs
+ * there and opens its page, so the address changes once, to that page.
  */
 export function PasswordSignIn({ audience = "account", redirectUrl = "/login", signUp = true }: { audience?: Audience; redirectUrl?: string; signUp?: boolean }) {
   const { signIn, errors, fetchStatus } = useSignIn();
@@ -61,34 +74,69 @@ export function PasswordSignIn({ audience = "account", redirectUrl = "/login", s
   const [finishing, setFinishing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const busy = fetchStatus === "fetching" || finishing || submitting;
+  // From the moment Clerk has accepted the sign-in, the rest is one wait.
+  useSigningInHold(finishing);
+
+  // The door replaces this form as soon as Clerk reports the session. If it
+  // has not, load the door again with the session Clerk just started.
+  const [awaitedDoor, setAwaitedDoor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!awaitedDoor) return;
+    const timer = window.setTimeout(() => reloadSignedInDoor(awaitedDoor), DOOR_TAKEOVER_FALLBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [awaitedDoor]);
+
+  // And if even that leaves this form on screen, give it back rather than
+  // leave a spinner for good.
+  useEffect(() => {
+    if (!finishing) return;
+    const timer = window.setTimeout(() => {
+      setFinishing(false);
+      setLocalError((current) => current ?? { key: "auth.signIn.errors.notFinished" });
+    }, SIGNING_IN_MAX_COVER_MS);
+    return () => window.clearTimeout(timer);
+  }, [finishing]);
 
   const finish = async () => {
     if (!signIn || signIn.status !== "complete") return false;
     setFinishing(true);
+    let entering = false;
     try {
       const continuation = safeInternalRedirect(redirectUrl, "/login");
       // Complete on the selected portal so its Convex role check runs before
       // any continuation. The generic resolver deliberately has no audience.
       const portalPath = PORTALS[audience].href;
       const resolver = continuation.startsWith("/login") ? portalPath : `${portalPath}?next=${encodeURIComponent(continuation)}`;
+      // On the door itself there is nowhere to go yet: it checks the account
+      // in place and then opens the right page. Clerk's address decorator
+      // (Safari's cookie renewal) is kept for that one navigation, instead of
+      // being spent on reloading this sign-in page.
+      const onPortal = window.location.pathname === portalPath
+        && safeInternalRedirect(new URLSearchParams(window.location.search).get("next"), portalPath) === safeInternalRedirect(redirectUrl, portalPath);
       let decoratedRedirect = resolver;
       const { error } = await signIn.finalize({
         navigate: async ({ decorateUrl }) => {
-          decoratedRedirect = decorateUrl(resolver);
+          if (onPortal) rememberSignInUrlDecorator(decorateUrl);
+          else decoratedRedirect = decorateUrl(resolver);
         },
       });
       if (error) {
+        rememberSignInUrlDecorator(null);
         setLocalError(authMessage(error, "auth.signIn.errors.couldNotSignIn"));
         return false;
       }
-      if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
+      if (onPortal) setAwaitedDoor(resolver);
+      else if (/^https?:\/\//i.test(decoratedRedirect)) window.location.assign(decoratedRedirect);
       else router.replace(decoratedRedirect);
+      entering = true;
       return true;
     } catch (error) {
+      rememberSignInUrlDecorator(null);
       setLocalError(authMessage(error, "auth.signIn.errors.couldNotSignIn"));
       return false;
     } finally {
-      setFinishing(false);
+      // Still signing in: the cover stays until the door takes over.
+      if (!entering) setFinishing(false);
     }
   };
 

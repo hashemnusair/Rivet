@@ -20,6 +20,7 @@ import { WorkspaceCurtain } from "@/components/motion/workspace-curtain";
 import { Input } from "@/components/ui/input";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { useSignInArrival } from "@/lib/auth/signing-in";
 import { useExperience } from "@/lib/providers/experience-provider";
 import { cn } from "@/lib/utils/cn";
 import { IntentPrefetchLink } from "@/components/shell/intent-prefetch-link";
@@ -78,6 +79,11 @@ export function PlatformShell({ children }: { children: ReactNode }) {
   // The phone drawer closes whenever the route changes (Escape is the dialog's own).
   useEffect(() => { setOpen(false); }, [pathname]);
 
+  const consoleReady = Boolean(identityReady && previewSessionReady && experienceReady && identitySignedIn && authorized && platformAdminSignedIn);
+  // Arriving from sign-in: the "Signing you in…" cover stays until the
+  // console is ready, so this shell does not draw a second one.
+  const signInArrival = useSignInArrival(consoleReady);
+
   const signOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
@@ -100,9 +106,8 @@ export function PlatformShell({ children }: { children: ReactNode }) {
     );
   }
 
-  const consoleReady = Boolean(identityReady && previewSessionReady && experienceReady && identitySignedIn && authorized && platformAdminSignedIn);
   // Second child either way, so the curtain lifts off the console it covered.
-  const curtain = <WorkspaceCurtain ready={consoleReady} label={t("platformConsole.shell.checkingAccess")} />;
+  const curtain = <WorkspaceCurtain ready={consoleReady || signInArrival.covered} label={t(signInArrival.arriving ? "auth.identity.signingIn" : "platformConsole.shell.checkingAccess")} />;
   if (!consoleReady) return <>{null}{curtain}</>;
 
   return (

@@ -14,6 +14,7 @@ import { TenantBrandProvider } from "@/components/shell/tenant-brand-provider";
 import { Topbar } from "@/components/shell/topbar";
 import { DEMO_AUTH_BYPASS } from "@/lib/auth/demo-auth";
 import { destinationFor, useRivetIdentity } from "@/lib/auth/rivet-identity";
+import { useSignInArrival } from "@/lib/auth/signing-in";
 import { isConvexMode } from "@/lib/api/ConvexGymOSApi";
 import { useApp } from "@/lib/providers/app-providers";
 import { useT } from "@/lib/i18n/provider";
@@ -71,6 +72,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const workspaceReady = Boolean(workspaceDestinationAllowed && identityReady && !sessionLoading && !identityStillResolving && identitySignedIn && signedIn && !exportOnly);
 
   useDampedRootOverscroll(scrollShellRef, workspaceReady);
+  // Arriving from sign-in: the "Signing you in…" cover stays until the
+  // workspace is ready, so this shell does not draw a second one.
+  const signInArrival = useSignInArrival(workspaceReady);
 
   // A gym owner who has not signed RIVET's subscription agreement gets a
   // blocking modal over the workspace until they do. Staff are never
@@ -117,7 +121,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // The curtain is the second child either way, so React keeps it across the
   // change and it lifts off the shell it was covering instead of vanishing.
-  const curtain = <WorkspaceCurtain ready={workspaceReady} label={t("palette.layout.loadingGym")} />;
+  const curtain = <WorkspaceCurtain ready={workspaceReady || signInArrival.covered} label={t(signInArrival.arriving ? "auth.identity.signingIn" : "palette.layout.loadingGym")} />;
   // Termination exports do not require choosing an unrelated active workspace.
   if (exportRouteAllowed && (exportOnly || !workspaceDestinationAllowed)) return <TerminationExportFrame>{children}</TerminationExportFrame>;
   if (!workspaceReady) return <>{null}{curtain}</>;
