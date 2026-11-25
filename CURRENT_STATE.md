@@ -153,6 +153,15 @@ past day; it says "Paid until {date}".
   Production data beyond the read-only probes of `/billing` and the
   names-only environment check.
 
+### Release
+
+Convex was deployed to Production first (`pnpm convex:deploy -- --yes`,
+`descriptive-meerkat-589`), then `91ea5c36` was pushed to `main`. GymOS CI
+passed (4m50s), the Vercel Production deployment succeeded
+(`dpl_7qfi3Ay7xbQJmtG9EZDLne4aaSw6`), and `pnpm --filter web check:live`
+passed for all 9 pages. Nobody has yet opened the cancel dialog or the
+banner on Production with a real sign-in.
+
 ## Production answered HTTP 500 on every page: cause and fix (25 November 2026)
 
 From the `82a1187c` deployment on 23 November until this fix, every HTML page
