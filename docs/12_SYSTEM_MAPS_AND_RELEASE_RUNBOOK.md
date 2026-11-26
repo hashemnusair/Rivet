@@ -2297,7 +2297,7 @@ PT always belongs to one gym tenant. An active, unfrozen membership must cover t
 | `RIVET_ALLOW_DEMO_SEED` | `1` to use the seeded demo gym | `1` if the seeded gym is used | **Never set** | Fail-closed switch for demo fixtures (`convex/demoSeedGuard.ts`): without it `seed:seedDemoTenant` refuses to run and a `seed:` fixture account cannot be claimed by an email match | `1` |
 | `RIVET_EMAIL_ALLOWLIST` | — | — | Comma list of addresses or `@domain`s | In `allowlist` mode only the addresses and `@domain`s on this list are sent to. A gym's subscription does not bypass it: a real gym's owner, staff and members receive nothing until they are listed here or the mode is `live`; everyone else is suppressed with a reason | — |
 | `RIVET_OPERATIONAL_EMAIL_GLOBAL_TYPES` | Empty | — | — | Explicit global message-kind allowlist | — |
-| `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | — | Global platform-billing gate; default off, exact enable value is `1` | — |
+| `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` | Absent / `0` | — | **`1` since 26 November 2026** (Elias's instruction) | Global platform-billing gate; default off, exact enable value is `1`. On: renewal invoices 14 days before a term ends, reminders, past-due marking, suspension 21 days after the due date. Preview first with `convex run subscriptionReconciliation:preview --prod` (counts only) | — |
 | `CONVEX_DEPLOYMENT` | Development selector | — | — | — | — |
 | `CONVEX_DEPLOY_KEY` | Development operator key | Never | Avoid unless Vercel is the approved deploy operator | — | Staging key for codegen/smoke |
 | `PLAYWRIGHT_CLERK_STORAGE_STATE` | External file path | — | Never | — | Local-only staging session JSON |

@@ -788,9 +788,11 @@ discount (`subscriptionDiscountMinor`) is excluded from later term credits.
 
 ### Before this works in Production
 
-- `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` is **not set** in Production
-  (names-only check, 19 October). Without it no renewal invoices, reminders,
-  past-due marking or suspension run. Set it to `1` once a paying gym exists.
+- `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` has been **`1` in Production
+  since 26 November 2026**, on Elias's instruction (it was not set before, so
+  no renewal invoices, reminders, past-due marking or suspension ran). The
+  preview before the switch showed one gym, one invoice to raise, and no
+  past-due or suspension actions; see `CURRENT_STATE.md`.
 - Enter RIVET's CliQ alias and bank details in console → Billing → **Where
   gyms pay**. Until then the payment page tells gyms to contact RIVET and
   emailed invoice PDFs say RIVET sends the details; once set, both show them.

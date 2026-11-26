@@ -42,14 +42,35 @@ not the link:
   (`commerce.notice.overdue.bodyStopPassed`, `commerce.checkout.accessEndsPassed`,
   English and Arabic). The unused `bodyNoInvoice` strings were removed.
 
-**Not changed, needs Elias or Hashem.** With the job off, no gym on
-Production is ever sent a renewal invoice, so no gym can renew from inside
-the product; RIVET has to issue the invoice from the platform console. Two
-ways forward, neither done here because both change how gyms are billed:
-set `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED=1` (invoices 14 days before
-the term ends, reminders, past due, suspension after 21 days), or add a
-"Renew" step that lets the owner raise the next invoice from `/billing`.
-After this release Test Gym shows no banner until it has an invoice.
+**Automatic invoices switched on (26 November 2026, Elias's instruction).**
+With the job off, no gym on Production was ever sent a renewal invoice, so
+no gym could renew from inside the product. Elias chose to turn the job on
+rather than add an owner "Renew" step.
+
+- Preview first (`subscriptionReconciliation:preview`, counts only): 1 gym
+  on Production, 1 eligible, **1 invoice to raise, 0 to mark past due, 0 to
+  suspend**. The one boundary is 27 October 2026 (Test Gym).
+- `RIVET_SUBSCRIPTION_RECONCILIATION_ENABLED` set to `1` on Convex Production
+  (`descriptive-meerkat-589`); the names-only check lists it.
+- The job was run once by hand so the result could be read:
+  `invoicesCreated: 1, markedPastDue: 0, suspended: 0`. A second preview
+  shows nothing left to do. The hourly cron carries on from here.
+- Effect on Test Gym: it now has an open invoice for 27 October to
+  27 November, dated 26 November and due 14 days later, and the "invoice
+  issued" email was queued to its owner. The banner is back with the invoice
+  number and amount, and "Pay now" opens that invoice on `/billing`.
+- Known rough edges of switching on a month late: the banner title says
+  "Your RIVET payment is late" although the invoice is not yet due (the paid
+  month ended, the invoice is new); and when that invoice is confirmed paid
+  the term moves to 27 November, which has also passed, so the next invoice
+  is raised within the hour. Gyms invoiced on time (14 days ahead) hit
+  neither.
+- Not checked: that RIVET's CliQ alias and bank details are entered in
+  console → Billing → Where gyms pay (without them `/billing` tells the gym
+  to contact RIVET), and that the email arrived. Nobody has opened the
+  banner or `/billing` on Production with a real sign-in since the switch.
+- To switch off: remove the variable or set it to anything other than `1`
+  in the Convex dashboard. Invoices already raised stay.
 
 ### 2. How a gym cancels its RIVET subscription (answer, nothing built)
 
