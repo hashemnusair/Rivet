@@ -75,6 +75,11 @@ row and the cancel dialog show the request. **Not verified:** anything on
 Production with a real sign-in, and the notification to RIVET staff in a
 browser (server test only).
 
+**Release (27 November).** Convex Production deployed first with
+`pnpm convex:deploy -- --yes`, then commit `cb4543da` pushed to `main`. CI
+green, the Vercel Production deployment succeeded, and
+`pnpm --filter web check:live` passed for 9 of 9 pages.
+
 **Also settled:** ticking "Yes, it has been paid" when cancelling a member
 who owes money stays as built on 25 November: a record in the audit event
 only, never a change to the balance. Money is recorded only through Collect
