@@ -1,5 +1,85 @@
 # GymOS / RIVET current implementation state
 
+## A gym owner can ask RIVET to cancel the subscription (27 November 2026)
+
+Follow-up to the 25 November entry below, item 2 ("how can gyms cancel
+their membership with RIVET"). Until now there was no way in the product:
+only RIVET staff could cancel a gym, in the console. The go-ahead to build
+this came through the top session under Elias's delegation ("You can also
+decide what works for the decisions"), not in his own words. Frontend and
+`convex/` both changed; Convex is released first.
+
+**What it does.** Settings → Subscription has a new panel at the bottom,
+shown to the owner only: "Cancel RIVET subscription" → "Ask to cancel". The
+owner gives a reason and sends a request. **Nothing about the subscription
+changes**: no status, date, invoice or access is touched. The panel then
+says "You asked to cancel", the date, who asked, the reason, that RIVET will
+contact them to agree the end date, and offers "Withdraw request" while the
+request is open.
+
+**RIVET staff.** Every platform administrator gets a notification that
+opens `/platform/billing?gym=<gym>`. In console → Billing → Gyms the gym's
+row shows "Asked to cancel on <date>" under its status, and the existing
+"Cancel subscription" dialog shows who asked, when and why. That existing
+action (`platform.gym.update` with status `cancelled`) is still the only
+thing that cancels a gym; using it closes the open request.
+
+**Server.** `convex/platformCommerce.ts`:
+
+- `billing.cancel_request.create` `{ reason }` and
+  `billing.cancel_request.withdraw`. Both require `actor.role === "owner"`
+  on the server. This is deliberately stricter than the plan-change check
+  (`owner` or `settings.manage`): a manager who can open Settings →
+  Subscription can neither ask nor withdraw, and `billing.plans` does not
+  tell them a request exists (`canRequestCancel` and `cancelRequest` are
+  only returned to the owner).
+- A request is a `domainRecords` row, entity type
+  `subscriptionCancelRequest`, status `open` → `withdrawn` or `closed`. One
+  open request per gym; asking again returns the open one. No schema change.
+- Immutable `platformAuditEvents`: `subscription.cancel_requested` (with the
+  reason, the status, plan and term end at that moment) and
+  `subscription.cancel_request_withdrawn`, both on entity `platform_gym`.
+- `platform.snapshot` adds `cancelRequest` to each gym for the console; the
+  public gym projection never carries it.
+- The mock API has the same two calls, checks and audit rows.
+
+**Agreement wording.** The dialog repeats three lines of the signed
+subscription agreement as it stands (English 1.3, Arabic 1.3; the clauses
+are the same in 1.1 and 1.2) and links to Settings → Agreement:
+
+- either side can end it with at least 30 days' written notice;
+- it ends at the close of the billing period in which the notice period
+  ends;
+- after it ends, the gym can export (Arabic agreement: تحميل) its data for
+  30 days.
+
+No term, price or limit was added or changed, and the product does not work
+out an end date.
+
+**Open question for Elias and Hashem (not decided here).** The agreement
+asks for *written notice*, and the public Terms say notices go by email or
+WhatsApp to the agreement contacts. Nothing says a request made in the
+product counts as that notice, so the screens do not claim it does: they
+say RIVET will contact the gym to agree the end date. If you want the
+request date to start the 30 days, that is an agreement or Terms change.
+Listed in `docs/19` under Open [decide] items.
+
+**Checks (27 November).** Typecheck and lint clean; 2,926 unit and server
+tests pass, including four new server tests (request changes nothing and is
+audited; owner only, including a manager; withdraw; closed when RIVET
+cancels in the console), two Settings screen tests and one console test.
+`python3 docs/arabic/verify-lock.py` passes. Clicked through in the mock
+preview (`web-mock`): owner asks, sees the open request, withdraws, asks
+again; the same screens in Arabic; a manager has no way to ask; the console
+row and the cancel dialog show the request. **Not verified:** anything on
+Production with a real sign-in, and the notification to RIVET staff in a
+browser (server test only).
+
+**Also settled:** ticking "Yes, it has been paid" when cancelling a member
+who owes money stays as built on 25 November: a record in the audit event
+only, never a change to the balance. Money is recorded only through Collect
+payment.
+
 ## Late-payment banner, cancel-with-money-owed, and dead deep links (25 November 2026)
 
 Elias's list from the gym-owner view of Production (member page of Test Gym,

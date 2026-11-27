@@ -89,4 +89,47 @@ describe("subscription and invoices", () => {
     // Until it is paid, the plan card says what is left to do.
     expect(await screen.findByTestId("pending-upgrade")).toHaveTextContent("Upgrade to Basic");
   });
+
+  it("lets the owner ask RIVET to cancel, shows what happens next, and lets them withdraw", async () => {
+    const user = userEvent.setup();
+    const { api } = await renderWithApp(<SubscriptionSection />, { role: "owner" });
+    const panel = await screen.findByTestId("cancel-request");
+    expect(panel).toHaveTextContent("Nothing is cancelled until RIVET confirms it with you.");
+    await user.click(within(panel).getByRole("button", { name: "Ask to cancel" }));
+    const dialog = await screen.findByRole("dialog", { name: "Ask RIVET to cancel?" });
+    // The agreement's own notice terms, with the way to read the whole thing.
+    const terms = within(dialog).getByTestId("cancel-request-terms");
+    expect(terms).toHaveTextContent("Either side can end the agreement with at least 30 days' written notice.");
+    expect(terms).toHaveTextContent("The agreement ends at the close of the billing period in which the notice period ends.");
+    expect(within(terms).getByRole("link", { name: "Read your agreement" })).toHaveAttribute("href", "/settings?section=agreement");
+    // A reason is required before anything is sent.
+    expect(within(dialog).getByRole("button", { name: "Send request" })).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Why do you want to cancel?"), "We are closing the gym.");
+    await user.click(within(dialog).getByRole("button", { name: "Send request" }));
+
+    const open = await screen.findByTestId("cancel-request-open");
+    expect(open).toHaveTextContent("You asked to cancel");
+    expect(open).toHaveTextContent("RIVET will contact you to agree the end date.");
+    expect(open).toHaveTextContent("Your reason: We are closing the gym.");
+    // The subscription itself is untouched, and RIVET staff can see the request.
+    expect((await api.getBillingPlans()).status).toBe("active");
+    const snapshot = await api.getPlatformSnapshot();
+    expect(snapshot.gyms.filter((gym) => gym.cancelRequest).map((gym) => gym.cancelRequest?.reason)).toEqual(["We are closing the gym."]);
+    expect(snapshot.auditEvents[0]).toMatchObject({ action: "subscription.cancel_requested" });
+
+    await user.click(within(open).getByRole("button", { name: "Withdraw request" }));
+    expect(await screen.findByTestId("cancel-request")).toBeInTheDocument();
+    const after = await api.getPlatformSnapshot();
+    expect(after.gyms.some((gym) => gym.cancelRequest)).toBe(false);
+    expect(after.auditEvents[0]).toMatchObject({ action: "subscription.cancel_request_withdrawn" });
+  });
+
+  it("keeps the cancel request to the owner: a manager sees no way to ask and is refused", async () => {
+    const { api } = await renderWithApp(<SubscriptionSection />, { role: "manager" });
+    await screen.findByTestId("subscription-summary");
+    await screen.findAllByTestId("subscription-invoice-row");
+    expect(screen.queryByTestId("cancel-request")).not.toBeInTheDocument();
+    await expect(api.requestSubscriptionCancel({ reason: "Not mine to ask" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(api.withdrawSubscriptionCancel()).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });

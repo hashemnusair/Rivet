@@ -202,6 +202,8 @@ export const communicationCompletion: typeof EnCommunicationCompletion = {
     aiProposalFor: "أعدّه RIVET لـ {name}",
     applicationAwaitingReview: "طلب تسجيل نادٍ بانتظار المراجعة",
     paymentToConfirm: "دفعة نادٍ بانتظار التأكيد",
+    cancelRequested: "نادٍ طلب إلغاء اشتراكه",
+    cancelRequestWithdrawn: "نادٍ سحب طلب إلغاء اشتراكه",
     provisioningNeedsCorrection: "تجهيز النادي يحتاج إلى تصحيح يدوي",
     provisioningFailed: "تعذّر تجهيز النادي",
     agreementSigned: "وقّع {gym} اتفاقية الاشتراك",

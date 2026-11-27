@@ -249,6 +249,8 @@ export const activityLog = {
     planCatalogUpdate: "Pricing plan changed",
     planChangeRequested: "Plan change requested",
     planChangeCancelled: "Plan change cancelled",
+    subscriptionCancelRequested: "Gym asked to cancel",
+    subscriptionCancelRequestWithdrawn: "Request to cancel withdrawn",
     invoiceCreate: "Invoice created",
     invoiceIssue: "Invoice sent",
     invoiceVoid: "Invoice cancelled",

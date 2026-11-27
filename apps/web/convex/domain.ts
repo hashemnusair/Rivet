@@ -70,7 +70,7 @@ import { platformInvoiceAttachment } from "./platformInvoiceDocument";
 import { COMMERCIAL_TERMS_VERSION, LEGACY_PLAN_CATALOGUE, isCurrentPlan, PLAN_CATALOGUE, gymMonthlyPriceMinor, isQuotedPlan, validQuotedPriceMinor, termPriceMinor } from "./planCatalogue";
 import { assertOrganizationFitsPlan, effectivePlan, effectiveOrganizationPlan, enforceBranchCapacity, enforceMemberRestoreCapacity, enforceMembershipCapacity, enforceStaffCapacity, staffMembershipCounts } from "./planCapacity";
 import { pendingOnboardingFee } from "./onboardingBilling";
-import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, commerceMutation, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
+import { COMMERCE_MUTATIONS, COMMERCE_QUERIES, billingNotice, closeCancelRequest, commerceMutation, openCancelRequest, commerceQuery, commercialSettings, createFirstInvoice, settlePaymentRequest, prepareUpgradeActivation } from "./platformCommerce";
 import { resolveMessagingMode, RETIRED_CHANNEL_REASON } from "./messagingMode";
 import { buildMemberFollowUpContext, followUpHandoffDraft, type FollowUpDeliveryLike, type FollowUpMembershipLike, type FollowUpRelatedTask, type FollowUpTimelineLike, type MemberFollowUpContext } from "./followupAssist";
 import { aiMutation, aiQuery, previewDigest, type AiDomainPort, type MemberBriefFacts } from "./ai";
@@ -6277,6 +6277,8 @@ async function queryData(ctx: QueryCtx, operation: string, input: Data, request:
         view: { ...marketplaceView(platformMarketplaceProjection({ ...listing, logoUrl }, sameTenantOrganization, entitlement), true),
           currentTermValueMinor: termInvoice ? fundedSubscriptionValue(data(termInvoice.data)) : undefined,
           pendingOnboardingFeeMinor: setupAlreadyPaid ? 0 : sameTenantOrganization?.onboardingFeeMinor ?? 0,
+          // The owner's open request to cancel, for RIVET staff only.
+          cancelRequest: sameTenantOrganization ? await openCancelRequest(ctx, sameTenantOrganization._id) : undefined,
         } as Data,
         provisioned: Boolean(sameTenantOrganization),
         organizationId: sameTenantOrganization ? String(sameTenantOrganization._id) : undefined,
@@ -10107,6 +10109,8 @@ async function mutationData(ctx: MutationCtx, operation: string, input: Data, re
       before: platformSubscriptionSnapshot(current, organization, entitlementBefore),
       after: { ...platformSubscriptionSnapshot(updated, updatedOrganization, updatedEntitlement), ...(issuedTermInvoice ? { termInvoice: issuedTermInvoice } : {}) },
     });
+    // Cancelling answers the owner's request to cancel, if one is open.
+    if (organization && requestedStatus === "cancelled") await closeCancelRequest(ctx, organization._id, Date.now());
     if (organization && statusTransitioned && (requestedStatus === "suspended" || requestedStatus === "cancelled")) {
       const recipient = await platformGymOwnerRecipient(ctx, gymId);
       if (recipient && recipient.organization._id === organization._id) await queueOperationalEmail(ctx, {

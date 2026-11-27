@@ -208,6 +208,8 @@ export const communicationCompletion = {
     aiProposalFor: "Prepared by RIVET for {name}",
     applicationAwaitingReview: "Gym application awaiting review",
     paymentToConfirm: "Gym payment to confirm",
+    cancelRequested: "A gym asked to cancel",
+    cancelRequestWithdrawn: "A gym withdrew its request to cancel",
     provisioningNeedsCorrection: "Gym provisioning requires manual correction",
     provisioningFailed: "Gym provisioning failed",
     agreementSigned: "{gym} signed its subscription agreement",

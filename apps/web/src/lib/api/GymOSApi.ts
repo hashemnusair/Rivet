@@ -518,6 +518,21 @@ export interface BillingPlans {
   blockedReason?: "owner_only" | "not_active";
   /** An upgrade waiting for its payment or for RIVET to confirm it. */
   pending?: PlatformBillingInvoice;
+  /** The owner may ask RIVET to cancel. Only ever set for the owner. */
+  canRequestCancel?: boolean;
+  /** The owner's open request to cancel. Only ever set for the owner. */
+  cancelRequest?: SubscriptionCancelRequest;
+}
+
+/**
+ * A gym owner's request to cancel the RIVET subscription. It changes nothing
+ * by itself: RIVET staff see it in the console and cancel there.
+ */
+export interface SubscriptionCancelRequest {
+  id: string;
+  requestedAt: string;
+  requestedByName: string;
+  reason: string;
 }
 
 export interface SubmitPlatformPaymentInput {
@@ -1193,6 +1208,10 @@ export interface GymOSApi {
   /** Asks to move up to a bigger plan; returns the payment page for the new invoice. */
   requestPlanChange(input: { plan: PlatformSaasPlan["name"]; organizationId?: string }): Promise<BillingCheckout>;
   cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans>;
+  /** Owner only. Sends RIVET a request to cancel; the subscription itself does not change. */
+  requestSubscriptionCancel(input: { reason: string }): Promise<BillingPlans>;
+  /** Owner only. Takes back an open request to cancel. */
+  withdrawSubscriptionCancel(): Promise<BillingPlans>;
   submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult>;
   listGymApplications(query?: { status?: GymApplicationStatus; search?: string }): Promise<PlatformGymApplication[]>;
   subscribePlatformApplications(onValue: (applications: PlatformGymApplication[]) => void, onError?: (error: unknown) => void): Promise<() => void>;

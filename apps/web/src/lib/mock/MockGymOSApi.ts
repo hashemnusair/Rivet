@@ -52,6 +52,7 @@ import type {
   WebsiteOffer,
   BillingCheckout,
   BillingPlans,
+  SubscriptionCancelRequest,
   PlanChangeOption,
   SupportPaymentRequest,
   CreatePromoCodeInput,
@@ -803,6 +804,8 @@ export class MockGymOSApi implements GymOSApi {
   private readonly workspaceAccessSubscribers = new Map<(access: T.WorkspaceAccess) => void, ((error: unknown) => void) | undefined>();
   private platformPlans: PlatformSaasPlan[];
   private platformInvoices: PlatformBillingInvoice[];
+  /** The preview gym owner's open request to cancel its RIVET subscription. */
+  private subscriptionCancelRequest?: SubscriptionCancelRequest;
   private classSessions: T.ClassSession[] = [];
   private classCoaches: T.ClassCoach[] = [];
   private classOccurrences: T.ClassOccurrence[] = [];
@@ -885,6 +888,7 @@ export class MockGymOSApi implements GymOSApi {
     this.freezeRequests = [];
     this.customerMemberLinks.clear();
     this.platformInvoices = MOCK_INVOICES.map((invoice) => ({ ...invoice }));
+    this.subscriptionCancelRequest = undefined;
     this.seedRestrictedPreviewInvoice();
     this.commerce = mockCommerceSettings();
     this.promoCodes = mockPromoCodes();
@@ -2746,7 +2750,7 @@ export class MockGymOSApi implements GymOSApi {
         const organization = tenant?.organization ?? (this.isProvisionedGym(gym) ? this.db.organization : undefined);
         const termInvoice = this.platformInvoices.find(invoice => invoice.gymId === gym.id && invoice.status !== "void" && invoice.periodEnd === organization?.currentPeriodEndsAt);
         const setupAlreadyPaid = this.platformInvoices.some(invoice => invoice.gymId === gym.id && invoice.status === "paid" && (invoice.onboardingFeeMinor ?? 0) > 0);
-        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym), currentTermValueMinor: termInvoice ? fundedSubscriptionValue(termInvoice) : undefined, pendingOnboardingFeeMinor: setupAlreadyPaid ? 0 : organization?.onboardingFeeMinor ?? 0 };
+        return { ...cloned, ...(logoUrl ? { logoUrl } : {}), isProvisioned: this.isProvisionedGym(gym), currentTermValueMinor: termInvoice ? fundedSubscriptionValue(termInvoice) : undefined, pendingOnboardingFeeMinor: setupAlreadyPaid ? 0 : organization?.onboardingFeeMinor ?? 0, ...(this.subscriptionCancelRequest && organization === this.db.organization ? { cancelRequest: { ...this.subscriptionCancelRequest } } : {}) };
       }),
       bookings: this.trialBookings.map((booking) => ({ ...booking })),
       invoices: this.platformInvoices.map((invoice) => ({ ...invoice })),
@@ -3144,7 +3148,40 @@ export class MockGymOSApi implements GymOSApi {
       options: blockedReason ? [] : this.planChangeOptions(),
       ...(blockedReason ? { blockedReason } : {}),
       ...(pending ? { pending: { ...pending, ...(pending.paymentClaim ? { paymentClaim: { ...pending.paymentClaim } } : {}) } } : {}),
+      // Parity with Convex: only the owner asks to cancel, so only the owner is told about it.
+      ...(role === "owner" ? { canRequestCancel: org.status !== "cancelled", ...(this.subscriptionCancelRequest ? { cancelRequest: { ...this.subscriptionCancelRequest } } : {}) } : {}),
     };
+  }
+
+  requestSubscriptionCancel(input: { reason: string }): Promise<BillingPlans> {
+    return this.respond(() => {
+      this.requireBillingAccess();
+      const org = this.db.organization;
+      if (currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can ask to cancel the RIVET subscription.");
+      const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+      if (!reason) throw ApiError.of(ERR.VALIDATION, "A reason is required for this action.", { fieldErrors: { reason: ["Required"] } });
+      if (reason.length > 1_000) throw ApiError.of(ERR.VALIDATION, "Keep the reason under 1,000 characters.", { fieldErrors: { reason: ["Too long"] } });
+      if (this.subscriptionCancelRequest) return this.billingPlansView();
+      const id = `CAN-${mockUuid()}`;
+      this.subscriptionCancelRequest = { id, requestedAt: nowISO(), requestedByName: this.actor().name, reason };
+      this.recordPlatformAudit({ action: "subscription.cancel_requested", entityType: "platform_gym", entityPublicId: PROVISIONED_MOCK_GYM_ID, entityLabel: org.name, summary: `${org.name} asked to cancel its RIVET subscription`, reason, after: { requestId: id, subscriptionStatus: org.status, plan: org.subscriptionPlan ?? null } });
+      void this.emitPlatformSnapshotSubscribers();
+      return this.billingPlansView();
+    });
+  }
+
+  withdrawSubscriptionCancel(): Promise<BillingPlans> {
+    return this.respond(() => {
+      this.requireBillingAccess();
+      const org = this.db.organization;
+      if (currentRole(this.db) !== "owner") throw ApiError.of(ERR.FORBIDDEN, "Only the gym owner can ask to cancel the RIVET subscription.");
+      const open = this.subscriptionCancelRequest;
+      if (!open) throw ApiError.of(ERR.CONFLICT, "There is no open request to withdraw.");
+      this.subscriptionCancelRequest = undefined;
+      this.recordPlatformAudit({ action: "subscription.cancel_request_withdrawn", entityType: "platform_gym", entityPublicId: PROVISIONED_MOCK_GYM_ID, entityLabel: org.name, summary: `${org.name} withdrew its request to cancel`, reason: "", before: { requestId: open.id, status: "open", requestedAt: open.requestedAt }, after: { requestId: open.id, status: "withdrawn" } });
+      void this.emitPlatformSnapshotSubscribers();
+      return this.billingPlansView();
+    });
   }
 
   getBillingPlans(): Promise<BillingPlans> {
@@ -4049,6 +4086,8 @@ export class MockGymOSApi implements GymOSApi {
         organization.trialEndsAt = gym.trialEndsAt;
         organization.currentPeriodEndsAt = gym.currentPeriodEndsAt;
         organization.cancelledAt = gym.cancelledAt;
+        // Parity with Convex: cancelling answers the owner's request to cancel.
+        if (nextStatus === "cancelled" && organization === this.db.organization) this.subscriptionCancelRequest = undefined;
         organization.subscriptionStatusReason = gym.subscriptionStatusReason;
         organization.updatedAt = nowISO();
         const modulePlan = nextPlan as T.WorkspaceModulePlan;

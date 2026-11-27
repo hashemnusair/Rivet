@@ -58,6 +58,8 @@ export const COMMERCE_MUTATIONS = [
   "billing.payment.correction_request",
   "billing.plan_change.request",
   "billing.plan_change.cancel",
+  "billing.cancel_request.create",
+  "billing.cancel_request.withdraw",
 ] as const;
 
 const SETTINGS_KEY = "commercial";
@@ -649,6 +651,8 @@ async function plansView(ctx: ReadContext, actor: ActorContext): Promise<Data> {
     options: block ? [] : await planChangeOptions(ctx, organization, Date.now()),
     ...(block ? { blockedReason: block } : {}),
     ...(pending ? { pending: invoiceView(pending, organization.name) } : {}),
+    // Only the owner asks to cancel, so only the owner is told about it.
+    ...(actor.role === "owner" ? { canRequestCancel: organization.status !== "cancelled", ...(await cancelRequestFields(ctx, organization._id)) } : {}),
   };
 }
 
@@ -738,6 +742,126 @@ async function cancelPlanChange(ctx: MutationCtx, input: Data, request: RequestA
     before: { status: invoice.status },
     after: { status: "void" },
   });
+  return await plansView(ctx, actor);
+}
+
+// ---------------------------------------------------------------- A gym asking to cancel its RIVET subscription
+
+const CANCEL_REQUEST = "subscriptionCancelRequest";
+
+/** An owner's open request to cancel, as the owner and RIVET staff see it. */
+export interface SubscriptionCancelRequest {
+  id: string;
+  requestedAt: string;
+  requestedByName: string;
+  reason: string;
+}
+
+async function openCancelRequestRow(ctx: ReadContext, organizationId: Id<"organizations">): Promise<Doc<"domainRecords"> | undefined> {
+  const rows = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", CANCEL_REQUEST)).collect();
+  return rows.find((row) => record(row.data).status === "open");
+}
+
+/** The gym's open request to cancel, if it has one. */
+export async function openCancelRequest(ctx: ReadContext, organizationId: Id<"organizations">): Promise<SubscriptionCancelRequest | undefined> {
+  const row = await openCancelRequestRow(ctx, organizationId);
+  if (!row) return undefined;
+  const value = record(row.data);
+  return { id: row.publicId, requestedAt: text(value.requestedAt), requestedByName: text(value.requestedByName), reason: text(value.reason, 2_000) };
+}
+
+async function cancelRequestFields(ctx: ReadContext, organizationId: Id<"organizations">): Promise<{ cancelRequest?: SubscriptionCancelRequest }> {
+  const request = await openCancelRequest(ctx, organizationId);
+  return request ? { cancelRequest: request } : {};
+}
+
+/** RIVET cancelled the gym: an open request has been answered. */
+export async function closeCancelRequest(ctx: MutationCtx, organizationId: Id<"organizations">, now: number): Promise<void> {
+  const row = await openCancelRequestRow(ctx, organizationId);
+  if (row) await ctx.db.patch(row._id, { data: { ...record(row.data), status: "closed", closedAt: iso(now), updatedAt: iso(now) }, updatedAt: now });
+}
+
+/** The console row for this gym: where the audit event points and where RIVET staff are sent. */
+async function gymListingId(ctx: ReadContext, organization: Doc<"organizations">): Promise<string> {
+  const listing = await ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organization._id).eq("entityType", "marketplaceGym")).first();
+  return listing?.publicId ?? publicOrganizationId(organization);
+}
+
+async function tellRivetStaff(ctx: MutationCtx, organization: Doc<"organizations">, input: { kind: string; title: string; titleKey: "communicationCompletion.notifications.cancelRequested" | "communicationCompletion.notifications.cancelRequestWithdrawn"; requestId: string; gymId: string }): Promise<void> {
+  await notifyPlatformAdmins(ctx, {
+    kind: input.kind,
+    title: input.title,
+    body: organization.name,
+    titleMessage: systemMessage(input.titleKey),
+    href: `/platform/billing?gym=${encodeURIComponent(input.gymId)}`,
+    dedupeKey: `${input.kind}:${input.requestId}`,
+  });
+}
+
+function requireOwner(actor: ActorContext): void {
+  // The owner signed the agreement, so only the owner may ask to end it.
+  if (actor.role !== "owner") domainError("FORBIDDEN", "Only the gym owner can ask to cancel the RIVET subscription.", { correlationId: actor.correlationId });
+}
+
+/**
+ * The owner asks RIVET to cancel. Nothing about the subscription changes
+ * here: RIVET staff see the request in the console and cancel there, under
+ * the agreement's notice terms, after talking to the gym.
+ */
+async function requestSubscriptionCancel(ctx: MutationCtx, input: Data, request: RequestArgs): Promise<Data> {
+  const actor = await requireBillingActor(ctx, request);
+  requireOwner(actor);
+  const organization = actor.organization;
+  if (organization.status === "cancelled") domainError("CONFLICT", "This subscription is already cancelled.", { correlationId: actor.correlationId });
+  requireReason(input.reason, actor.correlationId);
+  const reason = input.reason.trim();
+  if (reason.length > 1_000) domainError("VALIDATION_ERROR", "Keep the reason under 1,000 characters.", { fieldErrors: { reason: ["Too long"] }, correlationId: actor.correlationId });
+  if (await openCancelRequestRow(ctx, organization._id)) return await plansView(ctx, actor);
+  const now = Date.now();
+  const id = `CAN-${crypto.randomUUID()}`;
+  await ctx.db.insert("domainRecords", {
+    organizationId: organization._id,
+    entityType: CANCEL_REQUEST,
+    publicId: id,
+    createdAt: now,
+    updatedAt: now,
+    data: { id, status: "open", reason, requestedAt: iso(now), requestedById: publicUserId(actor.user), requestedByName: actor.user.fullName, createdAt: iso(now), updatedAt: iso(now) },
+  });
+  const gymId = await gymListingId(ctx, organization);
+  await platformAudit(ctx, actor, {
+    action: "subscription.cancel_requested",
+    entityType: "platform_gym",
+    entityPublicId: gymId,
+    entityLabel: organization.name,
+    summary: `${organization.name} asked to cancel its RIVET subscription`,
+    reason,
+    after: { requestId: id, subscriptionStatus: organization.status, plan: organization.subscriptionPlan, ...(organization.currentPeriodEndsAt !== undefined ? { currentPeriodEndsAt: iso(organization.currentPeriodEndsAt) } : {}) },
+  });
+  await tellRivetStaff(ctx, organization, { kind: "subscription_cancel_requested", title: "A gym asked to cancel", titleKey: "communicationCompletion.notifications.cancelRequested", requestId: id, gymId });
+  return await plansView(ctx, actor);
+}
+
+/** The owner changed their mind while the request was still open. */
+async function withdrawSubscriptionCancel(ctx: MutationCtx, request: RequestArgs): Promise<Data> {
+  const actor = await requireBillingActor(ctx, request);
+  requireOwner(actor);
+  const organization = actor.organization;
+  const row = await openCancelRequestRow(ctx, organization._id);
+  if (!row) domainError("CONFLICT", "There is no open request to withdraw.", { correlationId: actor.correlationId });
+  const now = Date.now();
+  const value = record(row.data);
+  await ctx.db.patch(row._id, { data: { ...value, status: "withdrawn", withdrawnAt: iso(now), withdrawnById: publicUserId(actor.user), updatedAt: iso(now) }, updatedAt: now });
+  const gymId = await gymListingId(ctx, organization);
+  await platformAudit(ctx, actor, {
+    action: "subscription.cancel_request_withdrawn",
+    entityType: "platform_gym",
+    entityPublicId: gymId,
+    entityLabel: organization.name,
+    summary: `${organization.name} withdrew its request to cancel`,
+    before: { requestId: row.publicId, status: "open", requestedAt: value.requestedAt },
+    after: { requestId: row.publicId, status: "withdrawn" },
+  });
+  await tellRivetStaff(ctx, organization, { kind: "subscription_cancel_request_withdrawn", title: "A gym withdrew its request to cancel", titleKey: "communicationCompletion.notifications.cancelRequestWithdrawn", requestId: row.publicId, gymId });
   return await plansView(ctx, actor);
 }
 
@@ -1085,5 +1209,7 @@ export async function commerceMutation(ctx: MutationCtx, operation: string, inpu
   if (operation === "billing.payment.correction_request") return await requestPaymentCorrection(ctx, input, request);
   if (operation === "billing.plan_change.request") return await requestPlanChange(ctx, input, request);
   if (operation === "billing.plan_change.cancel") return await cancelPlanChange(ctx, input, request);
+  if (operation === "billing.cancel_request.create") return await requestSubscriptionCancel(ctx, input, request);
+  if (operation === "billing.cancel_request.withdraw") return await withdrawSubscriptionCancel(ctx, request);
   domainError("NOT_FOUND", "Unknown operation.");
 }

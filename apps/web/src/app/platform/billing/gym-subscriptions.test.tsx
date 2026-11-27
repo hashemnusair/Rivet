@@ -65,6 +65,22 @@ describe("Gym subscriptions section", () => {
     await user.click(screen.getByRole("button", { name: `More actions for ${gym}` }));
   };
 
+  it("marks a gym whose owner asked to cancel, and shows the reason where RIVET cancels", async () => {
+    const user = userEvent.setup();
+    const asked = gym({ id: "gym-asked", name: "Pulse Gym", cancelRequest: { id: "CAN-1", requestedAt: "2026-11-20T09:00:00.000Z", requestedByName: "Rana Haddad", reason: "We are closing the gym." } });
+    render(<GymSubscriptions gyms={[...gyms, asked]} />);
+
+    expect(screen.getAllByTestId("gym-cancel-asked")).toHaveLength(1);
+    expect(screen.getByRole("row", { name: /Pulse Gym/ })).toHaveTextContent("Asked to cancel on 20 Nov 2026");
+    // Asking changes nothing: the gym is still active until RIVET cancels it here.
+    expect(screen.getByRole("row", { name: /Pulse Gym/ })).toHaveTextContent("Active");
+    await openMenu(user, "Pulse Gym");
+    await user.click(await screen.findByRole("menuitem", { name: "Cancel subscription" }));
+    const request = within(await screen.findByRole("dialog")).getByTestId("gym-cancel-request");
+    expect(request).toHaveTextContent("Rana Haddad asked to cancel on 20 Nov 2026.");
+    expect(request).toHaveTextContent("Their reason: We are closing the gym.");
+  });
+
   it("lists provisioned gyms with their plan, status and paid-through date, and an Enterprise gym's quote", () => {
     render(<GymSubscriptions gyms={gyms} />);
 

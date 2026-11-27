@@ -3,7 +3,7 @@ import { useLocale } from "@/lib/i18n/provider";
 
 import { AddOnSummary } from "@/features/subscriptions/add-on-controls";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, FileText, Receipt } from "lucide-react";
+import { ArrowUpRight, FileText, Receipt, Undo2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -22,6 +22,9 @@ import { invoicePdfIntent, openInvoicePdf, usePaymentDetailsLoader } from "@/fea
 import { SettingsPanel, SettingsSection } from "@/features/settings/settings-layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
+import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/misc";
 import { EmptyState, QueryErrorState } from "@/components/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -133,6 +136,77 @@ function PendingUpgrade({ invoice }: { invoice: PlatformBillingInvoice }) {
   );
 }
 
+/**
+ * The owner's way to ask RIVET to cancel. It sends a request and changes
+ * nothing else: RIVET staff cancel in the console after talking to the gym.
+ * The agreement lines repeat the signed agreement; they add no new terms.
+ */
+function CancelSubscriptionPanel() {
+  const { t, isolate } = useLocale();
+  const { session } = useApp();
+  const f = useFormat(session?.organization.timezone);
+  const queryClient = useQueryClient();
+  const plans = useApiQuery(qk.billingPlans, (api) => api.getBillingPlans()).data;
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const send = useApiMutation((api) => api.requestSubscriptionCancel({ reason: reason.trim() }), {
+    successMessage: t("commerce.cancelRequest.sent"),
+    onSuccess: (next) => { queryClient.setQueryData(qk.billingPlans, next); setOpen(false); setReason(""); },
+  });
+  const withdraw = useApiMutation((api) => api.withdrawSubscriptionCancel(), {
+    successMessage: t("commerce.cancelRequest.withdrawn"),
+    onSuccess: (next) => { queryClient.setQueryData(qk.billingPlans, next); },
+  });
+  const request = plans?.cancelRequest;
+  // The server names the owner; anyone else gets neither field and sees nothing here.
+  if (!plans || (!request && !plans.canRequestCancel)) return null;
+  if (request) {
+    return (
+      <SettingsPanel title={t("commerce.cancelRequest.openTitle")} testId="cancel-request-open">
+        <p className="text-[13.5px] leading-6 text-ink-2">{t("commerce.cancelRequest.openBody", { date: isolate(f.date(request.requestedAt)), name: isolate(request.requestedByName) })}</p>
+        <p className="mt-2 text-[13px] leading-5 text-ink-2" dir="auto">{t("commerce.cancelRequest.openReason", { reason: isolate(request.reason) })}</p>
+        <div className="mt-4">
+          <Button variant="secondary" onClick={() => withdraw.mutate()} loading={withdraw.isPending} data-testid="cancel-request-withdraw"><Undo2 className="rtl:-scale-x-100" aria-hidden />{t("commerce.cancelRequest.withdraw")}</Button>
+        </div>
+      </SettingsPanel>
+    );
+  }
+  return (
+    <SettingsPanel title={t("commerce.cancelRequest.title")} testId="cancel-request">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p className="min-w-0 max-w-xl flex-1 basis-64 text-[13.5px] leading-6 text-ink-2">{t("commerce.cancelRequest.body")}</p>
+        <Button variant="secondary" onClick={() => setOpen(true)} data-testid="cancel-request-start">{t("commerce.cancelRequest.action")}</Button>
+      </div>
+      <Dialog open={open} onOpenChange={(next) => { if (!send.isPending) setOpen(next); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("commerce.cancelRequest.dialogTitle")}</DialogTitle>
+            <DialogDescription>{t("commerce.cancelRequest.dialogBody")}</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div className="rounded-md border border-line bg-sunken/50 px-3.5 py-3" data-testid="cancel-request-terms">
+              <p className="text-[13px] font-medium">{t("commerce.cancelRequest.termsTitle")}</p>
+              <ul className="mt-1.5 list-disc space-y-1 ps-5 text-[13px] leading-5 text-ink-2">
+                <li>{t("commerce.cancelRequest.termNotice")}</li>
+                <li>{t("commerce.cancelRequest.termEnd")}</li>
+                <li>{t("commerce.cancelRequest.termExport")}</li>
+              </ul>
+              <Link href="/settings?section=agreement" className="mt-2 inline-block text-[13px] font-medium underline underline-offset-4">{t("commerce.cancelRequest.readAgreement")}</Link>
+            </div>
+            <Field label={t("commerce.cancelRequest.reasonLabel")} htmlFor="cancel-request-reason">
+              <Textarea id="cancel-request-reason" dir="auto" value={reason} maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder={t("commerce.cancelRequest.reasonPlaceholder")} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setOpen(false)} disabled={send.isPending}>{t("commerce.cancelRequest.keep")}</Button>
+            <Button variant="danger" onClick={() => send.mutate()} loading={send.isPending} disabled={!reason.trim()} data-testid="cancel-request-send">{t("commerce.cancelRequest.send")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SettingsPanel>
+  );
+}
+
 /** Settings → Subscription: the plan this gym is on, and every RIVET invoice with its PDF. */
 export function SubscriptionSection() {
   const { t, locale } = useLocale();
@@ -228,6 +302,7 @@ export function SubscriptionSection() {
           </Table>
         </SettingsPanel>
       )}
+      <CancelSubscriptionPanel />
     </SettingsSection>
   );
 }

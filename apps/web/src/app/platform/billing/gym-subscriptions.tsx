@@ -71,7 +71,7 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
                 <TableRow key={gym.id} id={`platform-gym-${gym.id}`} className={cn(focusedGymId === gym.id && "bg-sunken/60")}>
                   <TableCell className="ps-4 sm:ps-5"><Link href={`/platform/gyms/${gym.id}`} className="text-[13px] font-semibold underline-offset-4 hover:underline">{gym.name}</Link></TableCell>
                   <TableCell className="text-[13px] text-ink-2"><bdi dir="ltr">{gym.rivetPlan}</bdi> · {gym.billingInterval === "annual" ? t("platformFinance.wizard.annual") : t("platformFinance.wizard.monthly")}{gym.rivetPlan === "Enterprise" && gym.quotedPriceMinor ? <span className="block text-[12.5px] text-ink-3">{t("platformFinance.subscriptions.perMonth", { amount: isolateLtr(f.money(money(gym.quotedPriceMinor, "JOD"))) })}</span> : null}</TableCell>
-                  <TableCell><SubscriptionStatusBadge status={gym.subscriptionStatus} /></TableCell>
+                  <TableCell><SubscriptionStatusBadge status={gym.subscriptionStatus} />{gym.cancelRequest ? <span className="mt-1 block text-[12.5px] font-medium text-danger" data-testid="gym-cancel-asked">{t("platformFinance.subscriptions.cancelAsked", { date: isolate(f.date(gym.cancelRequest.requestedAt)) })}</span> : null}</TableCell>
                   <TableCell className="whitespace-nowrap text-[12.5px] text-ink-2">{gym.subscriptionStatus === "trial" && gym.trialEndsAt ? t("platformFinance.subscriptions.trialEnds", { date: f.date(gym.trialEndsAt) }) : gym.currentPeriodEndsAt ? f.date(gym.currentPeriodEndsAt) : t("platformFinance.subscriptions.notRecorded")}</TableCell>
                   <TableCell className="pe-4 sm:pe-5">
                     <div className="flex justify-end">
@@ -104,6 +104,12 @@ export function GymSubscriptions({ gyms, focusedGymId }: {
             <DialogDescription>{action ? t(`platformFinance.subscriptions.${action.kind}Description`) : ""}</DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {action?.kind === "cancel" && action.gym.cancelRequest ? (
+              <div className="mb-4 rounded-md border border-line bg-sunken/50 px-3.5 py-3 text-[13px] leading-5 text-ink-2" data-testid="gym-cancel-request">
+                <p>{t("platformFinance.subscriptions.cancelAskedBy", { name: isolate(action.gym.cancelRequest.requestedByName), date: isolate(f.date(action.gym.cancelRequest.requestedAt)) })}</p>
+                <p className="mt-1" dir="auto">{t("platformFinance.subscriptions.cancelAskedReason", { reason: isolate(action.gym.cancelRequest.reason) })}</p>
+              </div>
+            ) : null}
             <Field label={t("platformFinance.subscriptions.reason")} htmlFor="subscription-status-reason"><Textarea id="subscription-status-reason" value={reason} onChange={(event) => setReason(event.target.value)} placeholder={t("platformFinance.subscriptions.auditReasonPlaceholder")} /></Field>
           </DialogBody>
           <DialogFooter>

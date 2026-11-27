@@ -249,6 +249,8 @@ export const activityLog: typeof EnglishActivityLog = {
     planCatalogUpdate: "تعديل مزايا الباقة",
     planChangeRequested: "طلب تغيير الباقة",
     planChangeCancelled: "إلغاء طلب تغيير الباقة",
+    subscriptionCancelRequested: "طلب النادي إلغاء الاشتراك",
+    subscriptionCancelRequestWithdrawn: "سحب طلب إلغاء الاشتراك",
     invoiceCreate: "إنشاء فاتورة",
     invoiceIssue: "إصدار فاتورة",
     invoiceVoid: "إلغاء الفاتورة",

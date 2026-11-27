@@ -458,3 +458,100 @@ describe("Basic add-ons through payment collection", () => {
     expect(await t.run(ctx => ctx.db.get(organizationId))).toMatchObject({ subscriptionPlan: "Pro", subscriptionAddOns: { branch: 0, members: 0, staff: 0, operations: 0, finance: 0, reporting: 0 }, addOnsRevision: 2 });
   });
 });
+
+describe("a gym owner asking to cancel RIVET", () => {
+  const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  type Plans = { status: string; canRequestCancel?: boolean; cancelRequest?: { id: string; requestedAt: string; requestedByName: string; reason: string } };
+  type Snapshot = { gyms: Array<{ id: string; subscriptionStatus: string; cancelRequest?: { id: string; reason: string; requestedByName: string } }> };
+
+  async function activeGym(t: TestConvex<typeof schema>, slug: string) {
+    const seeded = await seedPendingGym(t, { slug });
+    const owner = t.withIdentity({ subject: `clerk-owner-${slug}` });
+    const platform = t.withIdentity({ subject: "clerk-platform" });
+    const first = await firstInvoice(t, seeded.organizationId);
+    await owner.mutation(api.domain.mutate, operation("billing.payment.submit", { invoiceId: first.publicId, method: "cliq", reference: "CLIQ-FIRST", payerName: "Gym Owner", paidOn: today() }));
+    await platform.mutation(api.domain.mutate, operation("platform.invoice.payment", { invoiceId: first.publicId, reference: "CLIQ-FIRST", reason: "Checked CliQ payment", paidAt: today() }));
+    // A manager who may change settings is still not the owner.
+    await t.run(async (ctx) => {
+      const now = Date.now();
+      const branch = (await ctx.db.query("branches").withIndex("by_organization", (q) => q.eq("organizationId", seeded.organizationId)).first())!;
+      const manager = await ctx.db.insert("users", { publicId: `manager-${slug}`, authSubject: `clerk-manager-${slug}`, email: `manager@${slug}.jo`, fullName: "Manager", platformAdmin: false, status: "active", createdAt: now, updatedAt: now });
+      await ctx.db.insert("organizationMemberships", { organizationId: seeded.organizationId, userId: manager, role: "manager", branchIds: [branch._id], active: true, branchScope: "all", invitationStatus: "accepted", createdAt: now, updatedAt: now });
+    });
+    return { ...seeded, owner, platform, manager: t.withIdentity({ subject: `clerk-manager-${slug}` }), desk: t.withIdentity({ subject: `clerk-desk-${slug}` }) };
+  }
+  const audits = (t: TestConvex<typeof schema>) => t.run(async (ctx) => (await ctx.db.query("platformAuditEvents").collect()).filter((event) => event.action.startsWith("subscription.cancel")));
+  const organization = (t: TestConvex<typeof schema>, id: Id<"organizations">) => t.run((ctx) => ctx.db.get(id));
+
+  it("sends RIVET a request without changing the subscription, and records it", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId, owner, platform } = await activeGym(t, "cancel-ask");
+    const before = await organization(t, organizationId);
+    expect(await owner.query(api.domain.query, operation("billing.plans"))).toMatchObject({ canRequestCancel: true });
+    await expectCode(owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "  " })), "VALIDATION_ERROR");
+
+    const plans = await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "We are closing the gym." })) as Plans;
+    expect(plans.cancelRequest).toMatchObject({ reason: "We are closing the gym.", requestedByName: "Gym Owner" });
+    // The gym is exactly as it was: still active, same term, nothing cancelled.
+    const after = await organization(t, organizationId);
+    expect(after).toMatchObject({ status: "active", currentPeriodEndsAt: before?.currentPeriodEndsAt });
+    expect(after?.cancelledAt).toBeUndefined();
+    expect(await audits(t)).toEqual([expect.objectContaining({ action: "subscription.cancel_requested", entityType: "platform_gym", entityPublicId: "listing-cancel-ask", actorName: "Gym Owner", reason: "We are closing the gym.", after: expect.objectContaining({ requestId: plans.cancelRequest!.id, subscriptionStatus: "active" }) })]);
+    // RIVET staff are told, and see it on the gym's row in the console.
+    const notices = await t.run(async (ctx) => (await ctx.db.query("operationalNotifications").collect()).filter((notice) => notice.kind === "subscription_cancel_requested"));
+    expect(notices).toEqual([expect.objectContaining({ href: "/platform/billing?gym=listing-cancel-ask", body: "Pending Gym" })]);
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as Snapshot;
+    expect(snapshot.gyms.find((gym) => gym.id === "listing-cancel-ask")).toMatchObject({ subscriptionStatus: "active", cancelRequest: { reason: "We are closing the gym.", requestedByName: "Gym Owner" } });
+
+    // Asking twice keeps the one request.
+    const again = await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "Another reason" })) as Plans;
+    expect(again.cancelRequest).toMatchObject({ id: plans.cancelRequest!.id, reason: "We are closing the gym." });
+    expect(await audits(t)).toHaveLength(1);
+  });
+
+  it("is the owner's alone: no other role can ask, withdraw or see the request", async () => {
+    const t = convexTest(schema, modules);
+    const { owner, manager, desk } = await activeGym(t, "cancel-owner");
+    for (const other of [manager, desk]) {
+      await expectCode(other.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "Not mine to ask" })), "FORBIDDEN");
+    }
+    await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "Moving to another system." }));
+    for (const other of [manager, desk]) {
+      await expectCode(other.mutation(api.domain.mutate, operation("billing.cancel_request.withdraw")), "FORBIDDEN");
+      const view = await other.query(api.domain.query, operation("billing.plans")) as Plans;
+      expect(view.cancelRequest).toBeUndefined();
+      expect(view.canRequestCancel).toBeUndefined();
+    }
+    expect(await audits(t)).toHaveLength(1);
+  });
+
+  it("lets the owner withdraw an open request, with its own record", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId, owner, platform } = await activeGym(t, "cancel-withdraw");
+    await expectCode(owner.mutation(api.domain.mutate, operation("billing.cancel_request.withdraw")), "CONFLICT");
+    const asked = await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "Too expensive for us." })) as Plans;
+    const plans = await owner.mutation(api.domain.mutate, operation("billing.cancel_request.withdraw")) as Plans;
+    expect(plans.cancelRequest).toBeUndefined();
+    expect(plans.canRequestCancel).toBe(true);
+    expect((await organization(t, organizationId))?.status).toBe("active");
+    expect((await audits(t)).map((event) => event.action)).toEqual(["subscription.cancel_requested", "subscription.cancel_request_withdrawn"]);
+    expect((await audits(t))[1]).toMatchObject({ before: { requestId: asked.cancelRequest!.id, status: "open" }, after: { status: "withdrawn" } });
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as Snapshot;
+    expect(snapshot.gyms.find((gym) => gym.id === "listing-cancel-withdraw")?.cancelRequest).toBeFalsy();
+    // The owner can ask again later.
+    const second = await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "Decided after all." })) as Plans;
+    expect(second.cancelRequest?.id).not.toBe(asked.cancelRequest!.id);
+  });
+
+  it("is answered when RIVET cancels the gym in the console, the only place that cancels", async () => {
+    const t = convexTest(schema, modules);
+    const { organizationId, owner, platform } = await activeGym(t, "cancel-console");
+    await owner.mutation(api.domain.mutate, operation("billing.cancel_request.create", { reason: "We are closing the gym." }));
+    await platform.mutation(api.domain.mutate, operation("platform.gym.update", { gymId: "listing-cancel-console", status: "cancelled", reason: "Owner asked to cancel; end date agreed by email." }));
+    expect((await organization(t, organizationId))?.status).toBe("cancelled");
+    const rows = await t.run((ctx) => ctx.db.query("domainRecords").withIndex("by_organization_type", (q) => q.eq("organizationId", organizationId).eq("entityType", "subscriptionCancelRequest")).collect());
+    expect(rows.map((row) => (row.data as { status: string }).status)).toEqual(["closed"]);
+    const snapshot = await platform.query(api.domain.query, operation("platform.snapshot")) as Snapshot;
+    expect(snapshot.gyms.find((gym) => gym.id === "listing-cancel-console")?.cancelRequest).toBeFalsy();
+  });
+});

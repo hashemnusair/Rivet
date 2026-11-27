@@ -810,5 +810,10 @@ discount (`subscriptionDiscountMinor`) is excluded from later term credits.
   Today they apply under the Terms, pay, and sign the agreement on first
   entry to the workspace, as before.
 - Whether to keep the 21-day grace or end access sooner (agreement change).
+- Whether an owner's "Ask to cancel" request in Settings → Subscription
+  (27 November 2026) counts as the agreement's written notice. The agreement
+  says "written notice of at least 30 days" and the Terms say notices go by
+  email or WhatsApp; neither names an in-product request. Today the screens
+  only say RIVET will contact the gym to agree the end date.
 - Promo codes and the website offer are public on the landing/form; codes can
   be guessed but only discount a first payment RIVET still has to approve.

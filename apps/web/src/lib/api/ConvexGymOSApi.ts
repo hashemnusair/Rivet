@@ -561,6 +561,8 @@ export class ConvexGymOSApi implements GymOSApi {
   getBillingPlans(): Promise<BillingPlans> { return this.query("billing.plans"); }
   requestPlanChange(input: { plan: PlatformSaasPlan["name"]; organizationId?: string }): Promise<BillingCheckout> { return this.mutate("billing.plan_change.request", input); }
   cancelPlanChange(input: { invoiceId: string }): Promise<BillingPlans> { return this.mutate("billing.plan_change.cancel", input); }
+  requestSubscriptionCancel(input: { reason: string }): Promise<BillingPlans> { return this.mutate("billing.cancel_request.create", input); }
+  withdrawSubscriptionCancel(): Promise<BillingPlans> { return this.mutate("billing.cancel_request.withdraw", {}); }
   async submitGymApplication(input: SubmitGymApplicationInput): Promise<SubmitGymApplicationResult> {
     try {
       if (!this.transport) throw ApiError.of(ERR.CONFIGURATION, "Convex is not configured for this deployment.");

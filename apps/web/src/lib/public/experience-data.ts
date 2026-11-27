@@ -74,6 +74,8 @@ export interface MarketplaceGym {
   currentTermValueMinor?: number;
   /** Platform-only onboarding amount still due on the next subscription invoice. */
   pendingOnboardingFeeMinor?: number;
+  /** Platform-only: the owner's open request to cancel the RIVET subscription. */
+  cancelRequest?: { id: string; requestedAt: string; requestedByName: string; reason: string };
   cancelledAt?: string;
   subscriptionStatusReason?: string;
   /** Platform-only archive marker. Archived tenants remain auditable but are
